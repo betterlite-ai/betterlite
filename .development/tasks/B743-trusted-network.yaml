@@ -1,7 +1,7 @@
 id: B743
 title: Trusted proxies and client network identity
 description: >-
-  Implement TrustedProxyConfig and NetworkContext with a maintained CIDR/IP parser. Keep IPv4-mapped IPv6
+  Implement TrustedProxyConfig and network resolution using B732's NetworkContext record and a maintained CIDR/IP parser. Keep IPv4-mapped IPv6
   normalization, trusted-proxy ranges, X-Forwarded-For hop selection and HTTPS source precedence. Only
   a trusted immediate peer can supply proxy-auth headers; malformed and missing addresses preserve the
   source fallback/denial distinction.
@@ -276,6 +276,7 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L26-L38
 out_of_scope:
+  - B732 owns NetworkContext at network.py L15-L18 below Principal; this task owns network resolution.
   - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
     production fallback.
 pitfalls:

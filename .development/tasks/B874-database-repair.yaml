@@ -4,7 +4,7 @@ description: >-
   Expose explicit offline tools/betterlite-db-admin repair commands for unassigned teams and verification-token
   CSV import. decode_verification_csv(&[u8]) uses the csv crate and typed column coercion, preserving
   JSON/null values and source per-row failure behavior. No repair runs during gateway startup. Reuse PostgresStore
-  and the existing DB fuzz workspace from B710.
+  and the existing DB fuzz workspace from B2307.
 
 
   Build the production database_repair module in betterlite-db; reuse the typed dependencies listed in
@@ -31,7 +31,7 @@ description: >-
   and limit-boundary inputs and add database_repair::tests::replays_the_database_repair_corpus. Reuse
   B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder
   cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching
-  URLs. B710 owns crates/betterlite-db/fuzz; depend on it and register this decoder target without recreating
+  URLs. B2307 owns crates/betterlite-db/fuzz; depend on it and register this decoder target without recreating
   the workspace.
 
 

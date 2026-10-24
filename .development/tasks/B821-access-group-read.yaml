@@ -1,18 +1,53 @@
 id: B821
 title: Access-group response projections and lookups
 description: >-
-  Implement typed access-group responses, batched attached-team/key labels and read routes for /v1/access_group.
-  Preserve admin-viewer versus write authority, missing-reference errors and exact assignment identifiers;
-  never expose raw keys in labels.
+  Implement the two access-group GET handlers and their unified aliases, plus the shared lower-level
+  projection/guard helpers used by B822. _require_proxy_admin permits only proxy_admin; _require_admin_view
+  uses B2314 to permit proxy_admin and proxy_admin_viewer. Both reject other roles with 403 detail.error=
+  "Admin-only endpoint. Not allowed to access this.". GET checks this guard BEFORE B124
+  get_prisma_client_or_throw, whose missing-DB error is 500 with CommonProxyErrors.db_not_connected_error.
+  List reads all groups ordered created_at descending, with no pagination; empty input returns () and
+  skips every enrichment query. Lookup uses the exact path ID and returns 404 detail="Access group
+  '<id>' not found". Cases viewer_and_admin_read, role_before_database, list_order_and_empty and
+  missing_group cover both path families. There is no management wrapper, local catch or
+  handle_exception_on_proxy call; B003 supplies the exception envelope type/param/code.
+
+  Own AccessGroupCreateRequest/UpdateRequest/Resource/Response from types/access_group.py and the
+  _ResourceNames/protocol/filter declarations. Create requires access_group_name; description and five
+  optional list fields default null. Update makes every field optional/null; retain field presence for
+  B822 exclude_unset handling. Resource requires id and nullable name. Response requires its IDs/name,
+  resource/assignment arrays, expanded resource tuples and created_at/updated_at; description and
+  created_by/updated_by default null. B003 owns the HTTP byte decoder; request_shape_defaults and
+  required_response_lists test these typed contracts, including a malformed stored null list rather
+  than silently normalizing it into a valid response.
+
+  _ids_across returns first-seen distinct IDs, skipping null arrays. Fetch teams once with OR of
+  access_group_ids.hasSome(group IDs) and team_id.in(stored assigned IDs). For each group, keep stored
+  team IDs that exist, then append teams whose own access_group_ids contains the group, deduplicating
+  in that order. Thus response assigned_team_ids repairs ghost/missing mirrors without writing them.
+  Empty _attached_team_ids_for returns {} without a query. Cases team_mirror_projection,
+  stored_then_carrying_order and empty_projection_no_io cover both directions of drift.
+
+  After the team query, concurrently obtain MCP, agent and key display names via B065 resource_display_names,
+  passing B136 config_mcp_servers and B141 global_agent_registry snapshots. Each category receives
+  first-seen IDs across all groups. B065 owns DB-over-config precedence and key_alias lookup; this task
+  maps names back to every original resource ID, retaining duplicates/order and null for missing labels.
+  Keys are identified by their stored hashes and names by aliases, never by plaintext key material.
+  _record_to_response preserves the raw row except corrected team IDs and four expanded lists; response
+  order follows record order. Cases label_batches_and_order, unknown_resource_null_label,
+  key_hash_and_alias_projection and enrichment_failure_propagates cover these shapes and failures.
+
+  _require_teams_exist skips an empty input, otherwise performs one transaction-scoped lookup and raises
+  400 string detail="Unknown team ids: <sorted comma-separated IDs>" for missing distinct IDs. It is a
+  B822 write precondition, not a GET validation. _cache_access_group_record converts record.dict() to
+  LiteLLM_AccessGroupTable then calls B734 _cache_access_object with the group ID; validation/cache
+  failures propagate and no database write occurs. Native require_teams_sorted_missing and
+  cache_typed_record cover these helpers with POSTGRES_TEST_URL fixtures or B860 testcontainers when
+  absent, failing on connection errors. No new setting, stored secret or license behavior is added.
 
 
   Also own GET /v1/unified_access_group and GET /v1/unified_access_group/{access_group_id}; register aliases
   exactly once.
-
-
-  Build the production access_group_read module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/access_group_endpoints.py:
@@ -43,40 +78,16 @@ description: >-
 
   Register these actual HTTP routes and aliases exactly once: GET /v1/access_group -> list_access_groups;
   GET /v1/unified_access_group -> list_access_groups; GET /v1/access_group/{access_group_id} -> get_access_group;
-  GET /v1/unified_access_group/{access_group_id} -> get_access_group. For each route send a typed successful
-  request, an invalid or missing target, and a caller lacking that route permission through B001 HttpCase
-  against the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
-  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
-  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
-  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
-  partial writes visible in fixture inspection.
+  GET /v1/unified_access_group/{access_group_id} -> get_access_group. B001 runs the named GET cases through
+  B052 on both servers, comparing JSON content-type, null labels and errors. Alias cases must prove
+  all four routes are registered once. List has no invalid-target branch.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Sizing: 168 listed function/property lines plus the request/response and protocol/record declarations;
+  allow 230 production, 320 behavior/Postgres tests, 0 helper adapters, 70 route/manifests/wiring,
+  0 decoder/fuzz and 0 config lines, 620 changed lines within a 650-line gate.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 168 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  168 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 381 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
 scope:
   paths:
     - crates/betterlite-server/src/access_group_read.rs
@@ -93,7 +104,7 @@ references:
     why: AccessGroupCreateRequest and AccessGroupResponse fields.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L49-L309
     why: Pinned implementation and exact ownership boundary for access_group_read.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L584-L613
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L580-L613
     why: Pinned implementation and exact ownership boundary for access_group_read.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L49-L49
     why: Own _AccessGroupRecord.access_group_id; preserve caller-visible values and failure ordering.
@@ -187,11 +198,11 @@ references:
     why: Own get_access_group; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L815-L847
     why: Unified-access-group aliases use the same handlers and response statuses.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8369-L8377
+    why: B124 missing-database error used after the read-role guard.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: list_access_groups,
-      group_by_id, missing_group, admin_viewer_read, non_admin_denied, team_label_batch.'
+  - text: All named role, response, label, mirror and cache cases in the description pass; Postgres tests
+      confirm read projections repair output without mutating stored assignment arrays.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -207,39 +218,31 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^access_group_read::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/access-group-read/get--v1-access-group-success.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-access-group-invalid-target.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-access-group-unauthorized-caller.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-success.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-invalid-target.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-unauthorized-caller.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-access-group-access-group-id-success.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-access-group-access-group-id-invalid-target.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-access-group-access-group-id-unauthorized-caller.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-access-group-id-success.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-access-group-id-invalid-target.yaml
-  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-access-group-id-unauthorized-caller.yaml
-  - tools/oracle/cases/management/access-group-read/list-access-groups.yaml
-  - tools/oracle/cases/management/access-group-read/group-by-id.yaml
+  - tools/oracle/cases/management/access-group-read/viewer-and-admin-read.yaml
+  - tools/oracle/cases/management/access-group-read/role-before-database.yaml
+  - tools/oracle/cases/management/access-group-read/list-order-and-empty.yaml
   - tools/oracle/cases/management/access-group-read/missing-group.yaml
-  - tools/oracle/cases/management/access-group-read/admin-viewer-read.yaml
-  - tools/oracle/cases/management/access-group-read/non-admin-denied.yaml
-  - tools/oracle/cases/management/access-group-read/team-label-batch.yaml
+  - tools/oracle/cases/management/access-group-read/team-mirror-projection.yaml
+  - tools/oracle/cases/management/access-group-read/stored-then-carrying-order.yaml
+  - tools/oracle/cases/management/access-group-read/label-batches-and-order.yaml
+  - tools/oracle/cases/management/access-group-read/unknown-resource-null-label.yaml
+  - tools/oracle/cases/management/access-group-read/key-hash-and-alias-projection.yaml
+  - tools/oracle/cases/management/access-group-read/unified-get-aliases.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/access_group_endpoints.py: B822 owns _sync_add_access_group_to_teams
+  - B065 owns resource_display_names and its DB/config name precedence; B822 owns all write routes and write aliases.
+  - 'litellm/proxy/management_endpoints/access_group_endpoints.py: B2340 owns _sync_add_access_group_to_teams
     (L317-L325), _sync_remove_access_group_from_teams (L328-L336), _sync_add_access_group_to_keys (L339-L347),
     _sync_remove_access_group_from_keys (L350-L358), _without_access_group (L361-L362), _detach_access_group_from_agents
     (L365-L376), _detach_access_group_from_agent_registry (L379-L393), _patch_team_caches_add_access_group
     (L401-L427), _patch_team_caches_remove_access_group (L430-L450), _patch_key_caches_add_access_group
-    (L453-L478), _patch_key_caches_remove_access_group (L481-L500), create_access_group (L513-L577), update_access_group
+    (L453-L478), _patch_key_caches_remove_access_group (L481-L500). B822 owns create_access_group (L513-L577), update_access_group
     (L620-L710), delete_access_group (L717-L813).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Unified-access-group GET aliases share exactly the same viewer permissions as the original routes.
+  - GET repairs assigned_team_ids in its response only; it does not persist the repaired mirror.
+  - Missing resource labels remain null while the resource IDs and their duplicate order stay in the response.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

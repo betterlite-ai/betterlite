@@ -1,9 +1,73 @@
 id: B796
 title: User lists, search and organization scoping
 description: >-
-  Implement /user/list and /user/filter/ui with typed pagination/sort/search and organization/team scope
-  resolution. Keep key counts batched and source role restrictions, including scope_user_search_to_org=false
-  default; all SQL filters are bound.
+  Implement only authenticated GET /user/list; B1203 owns /user/filter/ui and its
+  scope_user_search_to_org setting. This route reads no configuration setting and has no
+  management_endpoint_wrapper or local except block. Defaults are role,user_ids,sso_user_ids,
+  user_email,search,team,sort_by,organization_ids=null; page=1 (minimum 1), page_size=25
+  (1..100),sort_order=asc. Unknown query fields are ignored; the actual SSO selector is
+  sso_user_ids, not the docstring's sso_ids. Cases query_defaults, page_bounds_422,
+  unknown_query_ignored and sso_selector_spelling compare HTTP behavior.
+
+  Missing DB raises HTTPException 500 detail.error='No db connected. prisma client=None'
+  before authorization. Admin-view roles proxy_admin/proxy_admin_viewer keep organization_ids
+  unchanged. Others need non-null caller ID, then B736 get_user_object(user_id_upsert=false)
+  with cache/logging collaborators. Only ValueError is translated; null row or no org_admin
+  memberships also raises 403 detail.error='Only proxy admins and organization admins can list
+  users.'. Unexpected lookup errors propagate to outer 500. The role label alone grants nothing.
+  Cases database_before_scope, admin_view_unrestricted, membership_role_required,
+  caller_missing_value_error_403 and lookup_failure_500 cover the distinction.
+
+  Collect organization IDs for memberships whose role is exactly org_admin, retaining empty
+  IDs and duplicates. For a truthy requested string, split commas, strip/drop blanks and
+  intersect sets; empty intersection raises 403 detail.error='You do not have org_admin access
+  to the requested organization(s).'. Otherwise use all allowed IDs. Join with commas; ordering
+  of the set intersection is not a wire guarantee. Cases org_scope_default,
+  requested_org_intersection, requested_blanks_forbidden and duplicate_org_memberships.
+  A stored org_admin membership whose ONLY organization_id is empty string passes the nonempty
+  membership-list check, joins to empty, and produces no org filter later; preserve this source
+  edge in empty_org_id_filter_gap instead of inventing validation in this handler.
+
+  Build conjunctive filters: truthy role is exact, with no role-enum validation; truthy user_ids
+  splits/strips/drops blanks, then ONE ID uses case-insensitive contains, zero or multiple use
+  exact IN. Non-null user_email uses insensitive contains even for empty string. Non-null team
+  uses teams.has even for empty string. Non-null sso_user_ids uses split/strip/drop-blank exact
+  IN, including empty IN. Truthy organization_ids adds membership.some organization_id IN only
+  when the stripped list is nonempty. Merge B1203 _user_search_where: falsey search adds nothing,
+  otherwise OR of insensitive user_id/user_email contains without trimming. AND it with other
+  filters, removing only top-level null predicates. Cases role_unknown_empty_result,
+  single_id_contains_multiple_ids_exact, comma_only_ids_empty_in, email_empty_not_omitted,
+  team_empty_not_omitted, sso_empty_in, admin_blank_org_filter_omitted, search_and_filters,
+  search_whitespace_and_wildcards pin the precise Postgres predicates. Bind all values.
+
+  With null sort_by, ignore even invalid sort_order and use created_at desc. Otherwise allowed
+  columns are exactly user_id,user_email,created_at,spend,user_alias,user_role (case-sensitive).
+  Invalid column returns 400 detail.error listing those six in that order. Lowercase sort_order
+  must be asc/desc, without stripping; otherwise 400 detail.error="Invalid sort order. Must be
+  'asc' or 'desc'". Cases default_sort_ignores_order, sort_columns_and_case,
+  sort_order_case_not_whitespace and sort_column_error_first verify order validation.
+
+  Query users with skip=(page-1)*page_size,take=page_size and selected order, then count with the
+  SAME predicate, then count keys separately for EACH returned user in sequence. There is no
+  transaction/snapshot across these reads and no batched key-count query. Empty user IDs skip
+  key queries; duplicate IDs repeat reads and the last count replaces the map entry. Count
+  all keys with matching user_id and team_id null OR not litellm-dashboard: blocked,expired,
+  master and other-team keys still count. Cases page_count_then_keys, empty_page_no_key_queries,
+  duplicate_key_count_reads, key_count_excludes_only_ui and separate_reads_can_race prove this.
+
+  Return users,total,page,page_size,total_pages=ceil(total/page_size), with total_pages=0 for
+  zero total, even when page is beyond the last. For each row dump, remove only the three
+  directory metadata fields via B791 and validate B720 user model plus B124 key_count default0.
+  B720 excludes password from serialization and normalizes null spend/models/teams; other
+  user fields remain, including budget counters, memberships, reset flags and object permissions.
+  Do not apply V1 user-info key filtering or master-return settings. Cases full_row_projection,
+  password_excluded_by_model, directory_metadata_redacted, key_count_default_zero and
+  total_pages_empty_and_out_of_range compare every field and null/default behavior.
+
+  All owned HTTPExceptions use the outer {detail:...} envelope, with no OpenAI type/param/code.
+  Unexpected repository/model failures reach B124's 500 internal_server_error envelope, absent
+  param/code, subject to B731's database-unavailable classification. Cases handler_error_envelope
+  and invalid_row_error_envelope compare the route; it never calls handle_exception_on_proxy.
 
 
   Build the production user_list module in betterlite-server; reuse the typed dependencies listed in the
@@ -16,13 +80,9 @@ description: >-
   _authorize_user_list_request (L2136-L2199; 58 source lines), get_users (L2224-L2388; 135 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /user/list -> get_users. For each route
-  send a typed successful request, an invalid or missing target, and a caller lacking that route permission
-  through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes
-  instead prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
+  HTTP cases use running pinned MIT and betterlite gateways. postgres_filter_queries and
+  postgres_read_order use POSTGRES_TEST_URL or testcontainers with isolated schemas; unavailable
+  infrastructure fails. No write/rollback test is appropriate for this read-only task.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -31,9 +91,10 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Implement decode_user_list_query with B001's maintained query extraction, typed defaults and
+  validation; no hand-written percent decoder. Add user_list_query to B770's existing server fuzz
+  workspace for duplicate fields, percent escapes, invalid integers, comma lists and bounds.
+  Consume the existing gateway URI-size limit, with no new setting. B2334 owns the response envelope.
 
 
   The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
@@ -41,9 +102,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 245 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  245 production, 139 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 449 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  Sizing: 245 source lines before docstring removal including the route query declaration;
+  allow 245 production, 330 behavior/Postgres tests, 65 wiring and 50 decoder/fuzz lines,
+  690 changed lines within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -60,12 +121,15 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/user-list/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/user_list_query.rs
+    - crates/betterlite-server/fuzz/corpus/user_list_query/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2067-L2388
     why: Pinned implementation and exact ownership boundary for user_list.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2607-L2860
-    why: Pinned implementation and exact ownership boundary for user_list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2205-L2215
+    why: B1203 owns the search predicate; its separate UI route is not owned here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L153-L233
     why: LitellmUserRoles request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2067-L2101
@@ -74,13 +138,14 @@ references:
     why: Own _validate_sort_params; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2136-L2199
     why: Own _authorize_user_list_request; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2224-L2388
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2218-L2388
     why: Own get_users; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L19-L69
+    why: B720 user projection defaults and password exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3794-L3795
+    why: B124 key_count projection default.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: paginated_list, sort_validation,
-      key_counts.'
+  - text: Every named description case covers its exact filter, scope, sort, count or projection branch.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -88,24 +153,51 @@ dod:
     proof:
       - oracle
       - behavior-tests
+  - text: postgres_filter_queries and postgres_read_order prove actual filters, unbatched key counts
+      and separate page/count reads against independent fixtures.
+    proof:
+      - postgres-tests
+  - text: The production query decoder and its added corpus replay reject invalid pagination without panics.
+    proof:
+      - query-corpus
 checks:
-  optional: []
+  optional:
+    - mutants
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_list::tests::/)
         - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual query/filter and ordered-read tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_list::tests::postgres_filter_queries$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_list::tests::postgres_read_order$/)'
+    - id: query-corpus
+      why: The named decoder fuzz target or newly added query corpus is missing or fails replay.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/user_list_query.rs
+        && grep -q user_list_query crates/betterlite-server/fuzz/Cargo.toml
+        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/user_list_query)"
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_user_list_query_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/user-list/get--user-list-success.yaml
-  - tools/oracle/cases/management/user-list/get--user-list-invalid-target.yaml
-  - tools/oracle/cases/management/user-list/get--user-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/user-list/paginated-list.yaml
-  - tools/oracle/cases/management/user-list/sort-validation.yaml
-  - tools/oracle/cases/management/user-list/key-counts.yaml
+  - tools/oracle/cases/management/user-list/query-defaults.yaml
+  - tools/oracle/cases/management/user-list/page-bounds-422.yaml
+  - tools/oracle/cases/management/user-list/membership-role-required.yaml
+  - tools/oracle/cases/management/user-list/requested-org-intersection.yaml
+  - tools/oracle/cases/management/user-list/empty-org-id-filter-gap.yaml
+  - tools/oracle/cases/management/user-list/single-id-contains-multiple-ids-exact.yaml
+  - tools/oracle/cases/management/user-list/email-empty-not-omitted.yaml
+  - tools/oracle/cases/management/user-list/search-and-filters.yaml
+  - tools/oracle/cases/management/user-list/default-sort-ignores-order.yaml
+  - tools/oracle/cases/management/user-list/sort-order-case-not-whitespace.yaml
+  - tools/oracle/cases/management/user-list/key-count-excludes-only-ui.yaml
+  - tools/oracle/cases/management/user-list/full-row-projection.yaml
+  - tools/oracle/cases/management/user-list/total-pages-empty-and-out-of-range.yaml
+  - tools/oracle/cases/management/user-list/handler-error-envelope.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B1203 owns /user/filter/ui, scope_user_search_to_org and _user_search_where;
+    B2334 owns query identity helpers and UserListResponse; B791 owns metadata redaction;
+    B720/B124 own user/key-count projections; B736 owns caller membership loading.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -113,8 +205,7 @@ out_of_scope:
     _hash_password_in_dict (L184-L203), _strip_password_from_response (L206-L213), _update_internal_new_user_params
     (L216-L249), _check_duplicate_user_field (L252-L291), _check_duplicate_user_email (L294-L304), _check_duplicate_user_id
     (L307-L316), _add_user_to_organizations (L319-L351), _add_user_to_team (L354-L410), _fetch_user_team_ids
-    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720), _is_valid_user_id
-    (L723-L732), get_user_id_from_request (L735-L753), _normalize_user_info_user_id (L756-L760).'
+    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B791 owns _enforce_user_info_access
     (L763-L790), _UserInfoDataClient.get_data (L795-L795), _UserInfoDataClient.get_data (L798-L804), _UserInfoDataClient.get_data
     (L807-L813), _get_user_info_keys (L816-L824), _get_user_info_teams (L827-L876), _redact_scim_enterprise_metadata
@@ -140,8 +231,9 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - User search applies caller organization scope before batching key counts.
+  - One user_ids value means substring search; two values switch to exact IN matching.
+  - sort_order is ignored without sort_by, and key counts exclude only litellm-dashboard sessions.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

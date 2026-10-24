@@ -1,14 +1,43 @@
 id: B810
 title: Bulk team member additions and permissions
 description: >-
-  Implement /team/bulk_member_add, permissions_list, permissions_update and permissions_bulk_update using
-  shared membership and permission services. Preserve partial-result indexing, deduplication, default
-  permission expansion and scoped all-team updates.
+  Implement the four team_member_bulk routes with B1231 request/response types. Bulk add is a single
+  B808 team_member_add call, not a loop of independently successful additions. Check the database first
+  (500 db_not_connected); all_users defaults false and requires proxy_admin (403), then replaces supplied
+  members with every user ordered created_at descending, role user and their ID/email. Reject an empty
+  result with 400 and more than 500 members with 400 before entering the try block. Pass only team_id,
+  members and max_budget_in_team (default null) to B808. Match each result in input order to the first
+  updated user by truthy ID OR truthy email, and to membership by truthy ID only. A missing match still
+  has success=true and null expanded rows. Return the entire delegated model_dump as updated_team.
+  Any exception inside this try, including result construction, is logged and becomes HTTP 200 with
+  every input marked failed, error=str(exception), zero successes and updated_team=null. Earlier writes
+  are not undone. Cases bulk_all_users_replaces_input, bulk_empty_and_501, bulk_first_match_and_null_rows,
+  bulk_delegate_failure_is_200 and bulk_failure_preserves_writes cover these distinct paths.
 
+  Permissions reads use B737 database-only team lookup and B801 accessors. Allow B2314 admin-view,
+  B800 proxy/team/org administrators, or an available team under B803; otherwise 403 retains the source
+  /team/member_add diagnostic. Missing database is 500 with detail.error="No db connected". Only null
+  stored permissions expand to B800 defaults; an explicit empty list remains empty. Return all available
+  permissions in B800 group order. Updating requires B800 administrative scope even for available teams,
+  stores the supplied list unchanged, returns the updated team, and returns 404 if update returns no row.
+  This update handler has neither management_endpoint_wrapper nor explicit cache eviction/audit; do not
+  add them. Cases read_scope_matrix, null_vs_empty_permissions, write_scope_and_exact_list and
+  vanished_update_row cover the asymmetric contracts.
 
-  Build the production team_member_bulk module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Bulk permission update checks database then proxy_admin (403 "Only proxy admins can bulk-update team
+  permissions"). Empty permissions return "No permissions provided", teams_updated=0 and the response
+  model's permissions_appended=null before validating targets. Defaults are team_ids=null and
+  apply_to_all_teams=false. Neither target mode produces 400 "Must provide team_ids or set
+  apply_to_all_teams=true"; both produce 400 "Cannot set both apply_to_all_teams=true and team_ids".
+  Specific IDs are fetched once; any missing IDs produce 404 "Team(s) not found: [...]" with sorted IDs
+  before any update. Merge sets, skip teams already containing every permission, sort changed lists
+  alphabetically and commit one B724 batch. All-team mode reads 500 rows ordered team_id ascending,
+  advances by last ID with skip=1, and commits each page separately; a later failure preserves earlier
+  batches. Return "Team permissions updated successfully", the number changed (not scanned), and the
+  original permission list including duplicates/order. Cases empty_permissions_precedes_target_check,
+  exclusive_target_modes, missing_ids_before_write, merge_sorted_changed_only, original_append_echo,
+  all_team_cursor_500 and later_page_failure_preserves_batch prove these rules. Unknown permission enums
+  fail B1231 decoding with 422 before the handler.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -21,40 +50,27 @@ description: >-
 
   Register these actual HTTP routes and aliases exactly once: POST /team/bulk_member_add -> bulk_team_member_add;
   GET /team/permissions_list -> team_member_permissions; POST /team/permissions_update -> update_team_member_permissions;
-  POST /team/permissions_bulk_update -> bulk_update_team_member_permissions. For each route send a typed
-  successful request, an invalid or missing target, and a caller lacking that route permission through
-  B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes instead
-  prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
+  POST /team/permissions_bulk_update -> bulk_update_team_member_permissions. B001 HTTP cases exercise
+  these handlers with B052 authentication; compare null fields, content-type and B003 error envelopes
+  including type/param/code. Only bulk addition catches exceptions locally; none of these handlers calls
+  handle_exception_on_proxy. Use B865 effects for the other three source-decorated routes, excluding
+  permissions_update. Missing bearer is middleware behavior, not a fabricated handler branch.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary,
+  using POSTGRES_TEST_URL when set and testcontainers otherwise; an unusable configured URL fails.
   Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
   Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
   Sizing: 340 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  340 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 553 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  300 production, 400 behavior/Postgres tests, 0 helper adapters, 80 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 780 changed lines estimated within an 800-line gate.
 
 
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  No environment variable or config key is read in these owned ranges. Native tests exercise matching,
+  pagination, exception timing and Postgres effects without a helper adapter that invokes handlers.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_bulk.rs
@@ -69,7 +85,7 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4126-L4308
     why: Pinned implementation and exact ownership boundary for team_member_bulk.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6256-L6509
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6249-L6509
     why: Pinned implementation and exact ownership boundary for team_member_bulk.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4649-L4651
     why: TeamAddMemberResponse request/response fields and defaults.
@@ -89,11 +105,11 @@ references:
     why: Own _append_permissions_to_specific_teams; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6482-L6509
     why: Own _append_permissions_to_all_teams; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L24-L127
+    why: Defaults, permission enum validation and nullable expanded results.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: bulk_add_partial, permission_list,
-      append_permission, specific_team_selection, all_teams_admin_only, stable_result_order.'
+  - text: All named bulk-add, read/write scope, target-mode, merge and pagination cases in the description
+      exist; native Postgres tests prove writes survive later failures and permissions_update has no wrapper effects.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -109,28 +125,22 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_member_bulk::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-member-bulk/post--team-bulk-member-add-success.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-bulk-member-add-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-bulk-member-add-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-member-bulk/get--team-permissions-list-success.yaml
-  - tools/oracle/cases/management/team-member-bulk/get--team-permissions-list-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-bulk/get--team-permissions-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-permissions-update-success.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-permissions-update-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-permissions-update-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-permissions-bulk-update-success.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-permissions-bulk-update-invalid-target.yaml
-  - tools/oracle/cases/management/team-member-bulk/post--team-permissions-bulk-update-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-member-bulk/bulk-add-partial.yaml
-  - tools/oracle/cases/management/team-member-bulk/permission-list.yaml
-  - tools/oracle/cases/management/team-member-bulk/append-permission.yaml
-  - tools/oracle/cases/management/team-member-bulk/specific-team-selection.yaml
-  - tools/oracle/cases/management/team-member-bulk/all-teams-admin-only.yaml
-  - tools/oracle/cases/management/team-member-bulk/stable-result-order.yaml
+  - tools/oracle/cases/management/team-member-bulk/bulk-all-users-replaces-input.yaml
+  - tools/oracle/cases/management/team-member-bulk/bulk-empty-and-501.yaml
+  - tools/oracle/cases/management/team-member-bulk/bulk-delegate-failure-is-200.yaml
+  - tools/oracle/cases/management/team-member-bulk/read-scope-matrix.yaml
+  - tools/oracle/cases/management/team-member-bulk/null-vs-empty-permissions.yaml
+  - tools/oracle/cases/management/team-member-bulk/write-scope-and-exact-list.yaml
+  - tools/oracle/cases/management/team-member-bulk/empty-permissions-precedes-target-check.yaml
+  - tools/oracle/cases/management/team-member-bulk/exclusive-target-modes.yaml
+  - tools/oracle/cases/management/team-member-bulk/missing-ids-before-write.yaml
+  - tools/oracle/cases/management/team-member-bulk/merge-sorted-changed-only.yaml
+  - tools/oracle/cases/management/team-member-bulk/original-append-echo.yaml
+  - tools/oracle/cases/management/team-member-bulk/bulk-proxy-admin-only.yaml
+  - tools/oracle/cases/management/team-member-bulk/unknown-permission-enum.yaml
+  - tools/oracle/cases/management/team-member-bulk/database-and-lookup-errors.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -211,8 +221,10 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - All-team permission updates require the source administrator gate.
+  - The bulk-add catch converts authorization and database failures from the delegated handler into failed items with HTTP 200.
+  - An empty append list bypasses mutually exclusive target validation, but never bypasses the proxy-admin check.
+  - All-team permission merging can overwrite a concurrent writer and is not a transaction across pages.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

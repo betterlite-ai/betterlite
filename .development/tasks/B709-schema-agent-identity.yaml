@@ -1,48 +1,58 @@
 id: B709
 title: Postgres migrations for agent identity
 description: >-
-  Preserve this exact ordered cohort of pinned migration.sql files as production SQL under crates/betterlite-db/migrations
-  with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
-  earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
-  the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
-  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
-  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
-  regression cases, not the recovery algorithm.
+  Finish the pinned SQL catalog with the seven scoped migrations after B708. Store exact bytes under
+  their original names, including agent_engine followed by lens_run_history and rename_lens. Implement
+  schema_agent_identity tests for table defaults, identity uniqueness, delete effects and the final
+  rename; B873 owns running the catalog and writing deployment history. This task does not implement
+  identity authentication or a new migration recovery service.
+
+  AgentsTable gains required enabled=true, execution_mode='autonomous', identity_managed=false and
+  later nullable JSONB kill_switch. SpendLogs.billing_agent_id is nullable TEXT. AgentIdentity has
+  agent_id TEXT primary key, active=true, required provider/issuer/tenant_id/client_id/revision, nullable
+  service_principal_id/last_authenticated_at, nullable required_roles TEXT[] default [] and nullable
+  required_scopes TEXT[] default ['user_impersonation']. The arrays remain nullable despite their
+  defaults. Unique indexes cover (provider,tenant_id,client_id) and (issuer,service_principal_id);
+  multiple null principals under one issuer are allowed when the provider tuple differs.
+
+  RetiredAgentIdentity has binding_id TEXT primary key, nullable agent_id and required provider/issuer/
+  tenant_id/client_id, with its own unique provider tuple. SQL does not enforce uniqueness across live
+  and retired tables. RetiredAgent has original_agent_id TEXT primary key and required retired_at now,
+  with no foreign key back to AgentsTable. VerifiedSubject requires subject_id/issuer/tenant_id/oid,
+  kind='human', verified_via='sso_interactive' and verified_at now, nullable user_id, a user lookup index
+  and unique (issuer,tenant_id,oid). These TEXT defaults are not enum CHECK constraints.
+
+  AgentIdentity.agent_id deletes CASCADE and updates CASCADE from AgentsTable. RetiredAgentIdentity's
+  nullable agent_id deletes SET NULL and updates CASCADE instead, preserving retired binding records.
+  VerifiedSubject.user_id deletes and updates CASCADE from UserTable. The migration does not create
+  a RetiredAgent record when an agent is deleted; that is application behavior. Preserve the named
+  foreign keys and their source conname guards. MCPServer.pinned_tools is nullable JSONB default {};
+  adding it neither validates tool schemas nor fetches a server.
+
+  DailyModelUsage has composite primary key (date,model_group,model,custom_llm_provider,task_type),
+  all required TEXT. DOUBLE PRECISION spend and BIGINT prompt_tokens/completion_tokens/request_count/
+  successful_requests/failed_requests default 0. created_at defaults now, updated_at is required
+  without default, and separate indexes cover date/model_group. No NULL dimension is permitted here,
+  unlike the earlier daily-spend tables.
+
+  Engine initially has id TEXT primary key, required INTEGER version=0 and JSONB data without default.
+  EngineWorker has id primary key, required unique TEXT token_hash and required JSONB data. EngineRun
+  requires id primary key, engine_id, created_at without default and JSONB data, with an
+  (engine_id,created_at) index and no engine foreign key. The final DO block renames tables in order
+  Engine to Lens, EngineRun to LensRun and EngineWorker to LensWorker; it renames engine_id to lens_id
+  only if pg_attribute finds a live old column through to_regclass('"LiteLLM_LensRun"'). Then rename
+  all three primary-key indexes, the worker token_hash unique index and the run lookup index to their
+  Lens spellings. Preserve OIDs, rows, version/data/token_hash bytes and uniqueness. A repeated rename
+  with only final names is a no-op, but an occupied destination name is an error; do not merge tables
+  or discard either. A late index-rename collision rolls back the DO statement's earlier renames.
 
 
-  This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
-  service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
-  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
-  and restart-skips-applied tests, so this data task never depends on the deploy runner.
-
-
-  Build the production schema_agent_identity module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 137 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  137 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 312 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Use B700 query sessions and B860's independent temporary database fixtures, preferring
+  POSTGRES_TEST_URL and starting testcontainers only when absent. Compare all column/default/nullability,
+  unique-index and foreign-key facts with separately applied pinned SQL, and clean up on failures.
+  The seven files contain 121 nonblank, noncomment SQL lines and cost 155 physical production lines;
+  allow 230 Postgres/identity test lines plus 30 registration lines, 415 within 450. No byte parser or
+  HTTP adapter is added; keep adjacent test modules below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/schema_agent_identity.rs
@@ -74,13 +84,23 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20261001100000_rename_lens/migration.sql#L1-L18
     why: Pinned implementation and exact ownership boundary for schema_agent_identity.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
-      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: pinned_sql_checksums validates the seven exact files/order; postgres_catalog compares all column defaults and named index/FK definitions against independent SQL application.
+    proof: [behavior-tests, postgres-tests]
+  - text: 'postgres_identity_defaults covers agent_enabled_autonomous_unmanaged,
+      billing_agent_and_kill_switch_nullable, identity_active_and_nullable_role_scope_defaults,
+      identity_provider_tuple_unique, issuer_principal_unique_with_nulls,
+      live_and_retired_tuple_uniqueness_separate, retired_timestamp_no_agent_fk,
+      verified_human_interactive_defaults_and_unique_subject, text_defaults_not_enum_checks,
+      agent_delete_live_cascade_retired_set_null, user_delete_subject_cascade,
+      identity_parent_updates_cascade and no_automatic_retired_record.'
+    proof: [postgres-tests]
+  - text: 'postgres_usage_and_lens covers pinned_tools_nullable_empty_object,
+      daily_model_five_counters_zero_required_dimensions_and_updated_at,
+      engine_zero_version_required_json, worker_unique_hash_unchanged,
+      engine_run_required_created_at_without_fk, lens_names_and_five_index_renames,
+      rename_preserves_oids_rows_and_hash_bytes, rename_already_final_noop,
+      rename_existing_destination_error and late_index_collision_rolls_back_do.'
+    proof: [postgres-tests]
 checks:
   optional: []
   commands:
@@ -89,20 +109,19 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_agent_identity::tests::/)
         - test(/replays_the_/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_agent_identity::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_agent_identity::tests::postgres_failure_effects$/)'
+      why: Identity defaults/deletion or the data-preserving Lens rename differs from the pinned SQL.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_agent_identity::tests::postgres_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B708 supplies preceding SQL; B701 verifies the complete final schema and B873 records migration execution.
+  - B2305 validates MCP pinned-tools values and B858 projects them into MCP rows; this migration only adds the JSONB column.
+  - Agent authentication and Lens worker token hashing are runtime callers; this SQL retains existing token_hash bytes and creates no credential codec.
 pitfalls:
-  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
-  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
-    candidate itself.
+  - required_scopes defaults to user_impersonation but still accepts NULL at the database layer.
+  - Deleting an agent removes its live identity while retaining the retired binding with agent_id=NULL.
+  - Engine-to-Lens renaming includes index names; renaming only tables leaves the pinned catalog mismatched.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 450
   max_new_expects: 0
 review_level: standard

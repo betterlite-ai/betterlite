@@ -1,90 +1,142 @@
 id: B702
-title: Postgres migrations for baseline
+title: Preserve and verify the initial Postgres migration
 description: >-
-  Preserve this exact ordered cohort of pinned migration.sql files as production SQL under crates/betterlite-db/migrations
-  with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
-  earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
-  the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
-  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
-  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
-  regression cases, not the recovery algorithm.
+  Copy 20250326162113_baseline/migration.sql byte for byte into betterlite-db's production migrations
+  and register its original directory identity and checksum in MigrationCatalog. This task owns the
+  SQL data and its regression tests, not a second baseline/adoption service. B716 decides whether an
+  existing schema may be adopted; B873 owns deploy ledger writes, checksums and restart skipping.
+  The file creates 17 tables, six additional indexes and fourteen guarded foreign keys. Retain the
+  order: all tables, then indexes, then foreign keys. Do not add application encryption, UUID generation,
+  timestamp updates or transaction wrappers that are absent from this migration.
 
+  All columns are checked by ordinal, exact quoted name, PostgreSQL type, nullability and default in
+  an independent catalog fixture. BudgetTable has TEXT budget_id primary key; optional DOUBLE
+  PRECISION max_budget/soft_budget, INTEGER max_parallel_requests, BIGINT tpm_limit/rpm_limit, JSONB
+  model_max_budget, TEXT budget_duration and TIMESTAMP(3) budget_reset_at. Its required created_by and
+  updated_by have no default, and required created_at/updated_at default CURRENT_TIMESTAMP.
+  CredentialsTable similarly requires TEXT credential_id/name/actors, JSONB credential_values and
+  both timestamp defaults, while credential_info is nullable JSONB. ProxyModelTable requires TEXT
+  model_id/name/actors and JSONB litellm_params, permits null model_info, and has the same timestamps.
+  Neither secret-bearing JSON column is transformed by SQL.
 
-  This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
-  service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
-  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
-  and restart-skips-applied tests, so this data task never depends on the deploy runner.
+  OrganizationTable requires TEXT organization_id/alias/budget_id/actors, spend DOUBLE PRECISION 0,
+  metadata and model_spend JSONB {}, and created_at/updated_at now; models is a nullable TEXT array
+  without an empty-array default. ModelTable uses SERIAL id, nullable JSONB aliases, required actors
+  and both timestamp defaults. TeamTable requires TEXT team_id, members_with_roles/metadata/model_spend/
+  model_max_budget JSONB {}, spend=0, blocked=false and both timestamps now. team_alias/organization_id,
+  admins/members/models arrays, max_budget, max_parallel_requests, tpm_limit/rpm_limit, budget_duration,
+  budget_reset_at and INTEGER model_id are nullable without defaults. members_with_roles is an object
+  default {}, not an array; preserve that historical value.
 
+  UserTable requires only TEXT user_id, spend=0 and metadata/model_spend/model_max_budget JSONB {}.
+  Nullable teams and allowed_cache_controls default empty TEXT arrays; nullable created_at/updated_at
+  default now. Nullable TEXT user_alias/team_id/sso_user_id/organization_id/password/user_role/user_email,
+  models array, max_budget/max_parallel_requests/tpm_limit/rpm_limit and budget_duration/reset_at have
+  no defaults. VerificationToken requires TEXT token, soft_budget_cooldown=false, spend=0 and the six
+  JSONB objects aliases/config/permissions/metadata/model_spend/model_max_budget default {}. Its nullable
+  allowed_cache_controls defaults [], created_at/updated_at default now, and all key_name/key_alias,
+  expires, user_id/team_id, blocked, limits, max_budget, budget_duration/reset_at, budget_id,
+  organization_id and created_by/updated_by fields have no default. In particular blocked is nullable,
+  unlike TeamTable and EndUserTable; no token is synthesized or hashed by the database.
 
-  Build the production schema_baseline module in betterlite-db; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  EndUserTable requires TEXT user_id, spend=0 and blocked=false, with nullable alias,
+  allowed_model_region/default_model/budget_id. Config has required TEXT param_name primary key and
+  nullable JSONB param_value. SpendLogs requires TEXT request_id/call_type, api_key/model default '',
+  DOUBLE PRECISION spend=0, INTEGER total_tokens/prompt_tokens/completion_tokens=0, and TIMESTAMP(3)
+  startTime/endTime without defaults. completionStartTime is nullable. Nullable model_id/model_group/
+  custom_llm_provider/api_base/user/cache_hit/cache_key default ''; metadata/messages/response default
+  JSONB {}, request_tags defaults JSONB []; team_id/end_user/requester_ip_address have no default.
+  ErrorLogs requires TEXT request_id and both times without defaults; api_base/model_group/
+  litellm_model_name/model_id/exception_type/exception_string/status_code are required TEXT default '',
+  and request_kwargs is required JSONB default {}. status_code remains TEXT, not INTEGER.
 
+  UserNotifications requires request_id/user_id/justification/status and permits null models array.
+  TeamMembership has composite primary key (user_id,team_id), required spend=0 and nullable budget_id.
+  OrganizationMembership has composite primary key (user_id,organization_id), nullable user_role and
+  budget_id, nullable spend default 0 and nullable created_at/updated_at default now. InvitationLink
+  requires id/user_id/expires_at/created_at/created_by/updated_at/updated_by without timestamp defaults,
+  is_accepted=false and nullable accepted_at. AuditLog requires id/action/table_name/object_id,
+  updated_at default now and changed_by/changed_by_api_key default ''; before_value/updated_values
+  are nullable JSONB. No other default or foreign key is implied by a field's name.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Verify unique indexes on credential_name, TeamTable.model_id and UserTable.sso_user_id, nonunique
+  SpendLogs.startTime/end_user indexes, and the extra unique OrganizationMembership(user_id,
+  organization_id) index despite its duplicate primary-key coverage. Nullable unique keys permit
+  multiple nulls. All fourteen foreign keys cascade updates. Deletes restrict OrganizationTable's
+  budget, OrganizationMembership's user/organization, and InvitationLink's user/created_by/updated_by;
+  deletes set null for TeamTable's organization/model, UserTable's organization, VerificationToken's
+  budget/organization, EndUserTable's budget, TeamMembership's budget and OrganizationMembership's
+  budget. Membership user/team names alone create no extra foreign keys. Test actual cascades and
+  restrictions, with a separate fixture for each relationship so another constraint cannot mask it.
 
+  Every table/index uses IF NOT EXISTS. Each foreign-key DO block looks for conname anywhere in
+  pg_constraint, without schema/table qualification. Reapplying to the same intact schema preserves
+  rows, but existing drifted tables are not repaired, and a same-named constraint in another schema
+  suppresses creation. Retain those quirks in the copied SQL. Use B860's isolated database mode for
+  independently applying upstream and candidate copies; a deliberate two-schema test demonstrates
+  the name-collision behavior. Both configured POSTGRES_TEST_URL and absent-variable testcontainers
+  use real Postgres and fail when unavailable. Cleanup runs on every exit.
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 376 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  376 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 551 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  There are 339 nonblank, noncomment SQL lines, 376 including comments and 430 physical lines. Exact
+  copying therefore costs 430 production lines, not 339. Allocate 300 focused catalog/default/constraint
+  test lines and 30 catalog/crate wiring lines, 760 within 800. Compare checksum against the pinned
+  source fixture, never a checksum recomputed from the candidate alone. No helper or byte parser is
+  added; B700 supplies typed query/session access and B860 the fixture.
 scope:
   paths:
     - crates/betterlite-db/src/schema_baseline.rs
     - crates/betterlite-db/src/schema_baseline/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/schema_baseline/fixtures/**
     - crates/betterlite-db/migrations/20250326162113_baseline/migration.sql
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250326162113_baseline/migration.sql#L1-L430
-    why: Pinned implementation and exact ownership boundary for schema_baseline.
+    why: Exact baseline bytes, all column defaults, indexes and globally guarded foreign keys.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
-      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: 'baseline_sql_identity checks pinned_bytes_and_checksum, original_directory_registration,
+      statement_order_tables_indexes_foreign_keys and seventeen_tables_six_indexes_fourteen_foreign_keys.
+      baseline_catalog_columns compares every column ordinal/type/nullability/default and every primary key against an independently applied upstream copy.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'baseline_defaults has named cases budget_nullable_limits_and_required_actors,
+      credentials_required_values_nullable_info, proxy_model_required_params_nullable_info,
+      organization_json_spend_and_nullable_models, serial_model_id_and_nullable_aliases,
+      team_object_roles_false_blocked_and_nullable_arrays, user_nullable_empty_arrays_and_timestamps,
+      key_six_objects_false_cooldown_and_nullable_blocked, end_user_false_blocked,
+      config_nullable_json, spend_log_empty_strings_json_arrays_and_required_times,
+      error_log_text_status_and_required_times, notification_required_status_nullable_models,
+      team_membership_required_spend, organization_membership_nullable_defaults,
+      invitation_no_timestamp_defaults and audit_empty_actor_defaults.'
+    proof: [postgres-tests]
+  - text: 'baseline_constraints covers credential_name_unique, team_model_unique_nulls,
+      sso_id_unique_nulls, spend_time_and_end_user_indexes and redundant_membership_unique_index.
+      baseline_foreign_keys names each of the fourteen constraints as an rstest case and checks
+      its exact referenced column, update cascade and delete restrict/set-null behavior.'
+    proof: [postgres-tests]
+  - text: 'baseline_reapply covers rows_preserved, drifted_existing_table_not_repaired,
+      foreign_key_name_in_other_schema_suppresses_creation and independent_databases_do_not_collide.
+      Raw credential/password/key values remain unchanged by applying this SQL.'
+    proof: [postgres-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_baseline::tests::/)
-        - test(/replays_the_/)'
+      why: The exact baseline file or its catalog registration differs from the pin.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_baseline::tests::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_baseline::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_baseline::tests::postgres_failure_effects$/)'
+      why: Catalog/default/constraint or reapplication behavior has no passing real-Postgres cases.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_baseline::tests::baseline_/) - test(/baseline_sql_identity/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B701 validates the final schema after all cohorts; B703-B709 own subsequent migration SQL.
+  - B716 owns adoption and migration locks, and B873 applies files and records the deployment ledger.
+  - B860 owns independent Postgres fixture databases, including POSTGRES_TEST_URL selection and cleanup.
 pitfalls:
-  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
-  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
-    candidate itself.
-budget:
-  max_changed_lines: 575
-  max_new_expects: 0
+  - The baseline's conname guard can skip a foreign key because another schema already has that name.
+  - Team members_with_roles defaults to {} here even though later application models normally use a list.
+  - CREATE TABLE IF NOT EXISTS preserves a wrong existing definition; rerunning this file is not a schema repair.
 review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

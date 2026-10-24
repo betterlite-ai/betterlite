@@ -1,10 +1,36 @@
 id: B749
 title: Search and vector-store permission checks
 description: >-
-  Implement ResourceAccess for search tool names and vector-store UUIDs from typed object permissions.
-  Resolve managed vector-store rows through the database, preserve missing-versus-empty permissions and
-  admin bypasses from source, and return the same denial envelope. RAG/provider execution stays outside
-  auth.
+  Implement search-tool and vector-store permission checks with no role-based admin bypass in these
+  helpers. Missing permissions and None/empty search_tools are unrestricted; otherwise exact names
+  must match. A denial is 403 key_model_access_denied, param search_tool_name, even for a team or
+  project object. Missing team allows. can_user_view_search_tool runs key then team and returns False
+  only for ProxyException; unrelated failures propagate. No wildcard or prefix grants are inferred.
+
+  Managed-vector lookup returns [] before cache access for no IDs or no DB. Probe each UUID in input
+  order at managed_vector_store_id:<uuid>, collecting hits first (including duplicates), then one
+  B726 ManagedVectorStoresRepository query for missed vector_store_id.in with take=len(misses).
+  Use B2315's bounded vector-store adapter. Project model_dump, else dict, then iterable row fallback
+  when the result is not a nonempty dict; skip an empty projection. Validate, cache each row with
+  B733 management TTL, then append it after all cache hits. Missing rows are omitted. Errors propagate
+  and earlier cache writes remain; this does not promise results in original UUID order or a transaction.
+
+  vector_store_access_check skips and DEBUG-logs when no DB exists. Consume an optional VectorStoreIds
+  selector installed by B1062 registry composition through a port owned here; absent registry supplies
+  no ordinary IDs. Independently append a nonempty string retrieval_config.vector_store_id for RAG,
+  deduplicating registry IDs then RAG ID by first occurrence. No IDs DEBUG-logs and skips. For a nonnull
+  key object_permission_id (including empty string), read B725 ObjectPermissionRepository fresh through
+  B2315, then do the same for the team. Cached token permission contents are not authoritative here.
+  Missing permission rows, None vector_stores and [] all allow. Otherwise reject the first disallowed
+  ID with 401 key_vector_store_access_denied/team_vector_store_access_denied/org_vector_store_access_denied
+  according to object_type, param vector_store and code 401. The orchestration calls only key/team,
+  in that order; errors stop before the next query. There is no organization lookup or admin exemption.
+
+  is_valid_fallback_model calls B004 route_request with model, messages=[{role:user, content:'Who was
+  Alexander?'}], route_type=acompletion and the supplied router/user_model. It awaits routing preparation,
+  not the returned provider coroutine, then returns True. Preserve route-selection failures and no
+  provider execution. Test preparation with a recording collaborator, and verify no mock-provider hit.
+  Database cases use POSTGRES_TEST_URL or testcontainers; no row is changed by these permissions.
 
 
   Build the production auth_resource_grants module in betterlite-auth; reuse the typed dependencies listed
@@ -21,7 +47,9 @@ description: >-
   (L6691-L6718; 23 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.vector_store_registry=None.
+  litellm.vector_store_registry is a runtime object defaulting to None, not a
+  litellm_settings.vector_store_registry scalar setting. B1062 owns the top-level registry configuration
+  and installs the selection service; this task accepts its typed optional handle.
 
 
   Add the auth_resource_grants operation under B856 Management::auth. Python calls only the owned MIT
@@ -31,40 +59,26 @@ description: >-
   a auth-resource-grants-* seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Booted requests distinguish search-tool403 from vector-store401 and exercise a RAG retrieval ID
+  even when the registry selector is absent. B732 supplies the permission service; denied requests
+  must stop before provider dispatch without adding an administrator bypass.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B860 database rows give the key and team different vector-store lists and stale cached permissions;
+  use POSTGRES_TEST_URL with testcontainers fallback to prove fresh key-then-team reads.
 
 
-  Write betterlite-config::auth_resource_grants::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Only pure permission projections and repository fixtures enter the helper oracle. The orchestration
+  that reads proxy_server.prisma_client and the routing probe run through HTTP/native integration,
+  not a Python helper importing the booted proxy's globals.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Resource IDs and permissions are already decoded; this task never downloads a vector-store file
+  or enables the enterprise managed-file hook while checking access.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 255 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  255 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 583 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 255 source lines; allow 255 production, 290 tests, 85 adapters and 65 wiring,
+  695 within 750. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -90,12 +104,6 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/auth/auth-resource-grants/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/auth_resource_grants.rs
-    - crates/betterlite-config/src/auth_resource_grants/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/auth-resource-grants-*
     - crates/betterlite-server/src/auth/auth_resource_grants.rs
     - crates/betterlite-server/src/auth/auth_resource_grants/**
   lint_tables: false
@@ -125,14 +133,28 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6691-L6718
     why: Own _can_object_call_vector_stores; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1517-L1522
-    why: litellm_settings.vector_store_registry default and read site.
+    why: Runtime registry defaults None; auth_checks.py L6644-L6651 consumes it, with RAG handled independently.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: search_tool_allowlist,
-      team_search_denial, vector_store_uuid, missing_managed_store, empty_permissions, valid_fallback_model.'
+  - text: 'Search cases: absent_permission_unrestricted, empty_search_list_unrestricted,
+      exact_search_name, search_no_wildcards, team_missing_allows,
+      team_denial_uses_key_type, view_key_before_team, view_proxy_error_false,
+      view_other_error_propagates and admin_has_no_helper_bypass.'
     proof:
       - behavior-tests
+  - text: 'Lookup cases: no_db_or_ids_no_io, ordered_cache_hits_first,
+      duplicate_uuid_hits_kept, batched_misses_take_count, row_projection_precedence,
+      empty_projection_skipped, missing_rows_omitted, management_ttl_applied,
+      lookup_failure_propagates and cache_partial_writes_survive. Native postgres_vector_rows
+      verifies bound identifiers and raw relation decoding.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Vector cases: no_db_debug_skip, no_ids_debug_skip, rag_without_registry,
+      invalid_rag_id_ignored, registry_then_rag_dedup, key_before_team_query,
+      empty_permission_id_queries, missing_row_unrestricted, null_empty_vector_lists,
+      first_vector_denial_fields and fresh_row_beats_token_copy. The routing-probe cases are
+      fallback_probe_exact_payload, fallback_probe_error and fallback_probe_no_provider_call.'
+    proof: [behavior-tests, stage-wiring-tests, oracle]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -144,23 +166,17 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
       - stage-wiring-tests
       - behavior-tests
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_resource_grants::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E 'test(/^(auth::)?auth_resource_grants::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -172,15 +188,6 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-resource-grants-*")"
         && grep -rlq "auth_resource_grants" tools/oracle/fuzz/corpus/helper_case/auth-resource-grants-*
         && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_resource_grants::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-resource-grants-*")"
-        && grep -rlq "vector_store_registry" crates/betterlite-config/fuzz/corpus/config_yaml/auth-resource-grants-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_resource_grants::tests::/)
@@ -191,17 +198,16 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-resource-grants/vector-store-uuid.yaml
   - tools/oracle/cases/helpers/auth-resource-grants/missing-managed-store.yaml
   - tools/oracle/cases/helpers/auth-resource-grants/empty-permissions.yaml
-  - tools/oracle/cases/helpers/auth-resource-grants/valid-fallback-model.yaml
+  - tools/oracle/cases/helpers/auth-resource-grants/row-cache-order.yaml
   - tools/oracle/cases/auth/auth-resource-grants/search-tool-allowlist.yaml
   - tools/oracle/cases/auth/auth-resource-grants/team-search-denial.yaml
   - tools/oracle/cases/auth/auth-resource-grants/vector-store-uuid.yaml
   - tools/oracle/cases/auth/auth-resource-grants/missing-managed-store.yaml
   - tools/oracle/cases/auth/auth-resource-grants/empty-permissions.yaml
   - tools/oracle/cases/auth/auth-resource-grants/valid-fallback-model.yaml
+  - tools/oracle/cases/auth/auth-resource-grants/rag-and-live-permissions.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -314,8 +320,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - An empty object-permission list differs from a missing list in the source admin bypass.
+  - Search-tool denials use key_model_access_denied for teams too, while vector-store denials choose the object-specific type and 401.
+  - Cached vector rows are returned before database misses, so mixed hit/miss results do not retain request order.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

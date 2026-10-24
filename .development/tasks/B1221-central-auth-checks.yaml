@@ -1,10 +1,39 @@
 id: B1221
 title: Centralized authenticated common-check composition
 description: >-
-  Compose CommonAuthChecks with prefetched user/team/org/project/end-user objects in the pinned order
-  for already authenticated callers. Preserve custom_auth_run_common_checks=false, explicit free-model
-  bypass and agent trace-ID requirements. PassThroughRegistry is an injected read port installed by B102,
-  so configured routes do not create a dependency cycle.
+  Compose common checks once for an authenticated principal. Unless force_virtual_key_checks=true,
+  skip B868 public routes/B741 additional-public routes, exact configured pass-through paths whose auth
+  is not boolean true (missing, null and non-boolean values included), B756 no-auth dev mode, then
+  custom auth when custom_auth_run_common_checks is false. Read only general_settings.pass_through_endpoints
+  (default None) and general_settings.custom_auth_run_common_checks (default False); there are no
+  top-level aliases and no pass-through registry lookup. Forced checks bypass all four exemptions.
+
+  Reuse token.end_user_id, otherwise B880 extracts/validates it using headers and request data plus
+  B739's key default budget ID. Stamp a resolved ID back only when the key budget ID is non-null.
+  Concurrently B888 _safe_fetch retrieves team (except litellm-dashboard), user without upsert, project,
+  end-user (only truthy ID, passing token/key budgets), and global spend with token or empty string.
+  B1225 _noop_none keeps positions for absent entities. Gather exceptions per slot. In positional order
+  propagate ProxyException/BudgetExceededError before any fallback. Team HTTPException falls back only
+  when B888 _token_can_vouch_for_team accepts it; otherwise rethrow. Dashboard always uses the token
+  team snapshot. Other exception-valued slots become None independently, preserving successful slots.
+
+  Own carry_team_and_user_budget_state from carried_budget_state.py L18-L34, whose only production caller
+  is this stage. When a team exists, replace team_budget_snapshot with B2313's budget_reset_at/max_budget
+  record and copy team_model_max_budget, including None/empty values. When a user exists, replace
+  user_budget_snapshot with budget_reset_at/max_budget/user_alias. Missing entities leave old snapshots
+  untouched; do not clear them. Then call B888 _inherit_org_identity. PROXY_ADMIN token role
+  replaces even a non-admin DB user with an admin user object, retaining only fetched spend (zero if
+  absent) and token.user_id or litellm_proxy_admin_name. Copy project metadata/alias to the token. With
+  truthy end_user_id, non-null key budget ID and DB, call B1225's budget overlay, preserving token limits
+  only for custom auth. Compute the free-model bypass through B1225. B1106 pre-seeds litellm_metadata
+  for its routes before merging x-litellm-tags, so header tags participate in budget checks.
+
+  Bind B2316 admission counter keys, then in try/finally call B754 common_checks, B753 team-model budget
+  only when budgets are not skipped (model resolution through B881), and B1225 reservation handoff.
+  Always release_spend_counter_batch for failures/success in that try; earlier failures occur before
+  this release scope. No admin bypass of common_checks exists here. B757 renders HTTPException as
+  auth_error with its status/param (default string None), BudgetExceededError as 429 budget_exceeded
+  param null, and preserves ProxyException. The individual checks own their error details.
 
 
   Build the production central_auth_checks module in betterlite-auth; reuse the typed dependencies listed
@@ -14,17 +43,15 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/user_api_key_auth.py:
   _run_centralized_common_checks (L2755-L3110; 276 source lines).
+  Also own carry_team_and_user_budget_state (carried_budget_state.py L18-L34; 17 executable lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.pass_through_endpoints=None;
-  general_settings.custom_auth_run_common_checks=False; pass_through_endpoints=None; custom_auth_run_common_checks=False.
+  B002 config tests load the two general_settings fields and preserve their source branch semantics.
 
 
-  Add the central_auth_checks operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a central-auth-checks-*
-  seed to B171 helper_case, which already owns this decoder.
+  This is stateful orchestration, so exercise it in native integration tests and booted HTTP oracle cases.
+  Use actual fetch, budget and reservation implementations with POSTGRES_TEST_URL or testcontainers;
+  do not add a helper adapter that replaces the pipeline with recorded collaborators.
 
 
   The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
@@ -41,7 +68,7 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::central_auth_checks::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::central_auth_checks::tests::default_common_checks, pass_through_auth_presence and custom_common_enabled.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -58,9 +85,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 276 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  276 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 598 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 293 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  293 production, 345 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 753 changed lines estimated within a 775-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -74,14 +101,6 @@ scope:
     - crates/betterlite-auth/src/central_auth_checks/**
     - crates/betterlite-auth/src/lib.rs
     - crates/betterlite-auth/Cargo.toml
-    - tools/oracle/src/helpers/central_auth_checks.rs
-    - tools/oracle/src/helpers/central_auth_checks/**
-    - tools/oracle/helpers/central_auth_checks.py
-    - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/auth.rs
-    - tools/oracle/helpers/management/auth.py
-    - tools/oracle/cases/helpers/central-auth-checks/**
-    - tools/oracle/fuzz/corpus/helper_case/central-auth-checks-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
@@ -98,25 +117,28 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2755-L3110
     why: Own _run_centralized_common_checks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/carried_budget_state.py#L18-L34
+    why: Move this single-caller helper below the B071 budget job instead of creating an auth-to-job cycle.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2806-L2811
     why: general_settings.pass_through_endpoints default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2824-L2829
     why: general_settings.custom_auth_run_common_checks default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1-L6
-    why: custom_auth_run_common_checks default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: common_policy_order,
-      custom_common_off, priced_model_checks, agent_trace_id.'
+  - text: >-
+      Cases public_exemption, pass_through_auth_not_true, exact_path_only, no_auth_dev_skip,
+      custom_common_off, forced_checks_override_skips, reuse_end_user_id, stamp_key_budget_identity,
+      concurrent_positional_fetches, dashboard_team_no_read, no_user_no_upsert,
+      empty_token_global_spend, first_auth_exception_propagates, missing_team_keeps_other_context,
+      token_vouched_team_fallback, rejected_team_fallback, carry_before_org_inheritance,
+      snapshot_rebind_preserves_null_and_zero, absent_entity_keeps_snapshot,
+      admin_role_not_demoted, project_context_copied, custom_budget_overlay,
+      metadata_preseed_before_header_tags, common_policy_order, priced_model_checks,
+      free_model_skips_team_budget, reservation_after_checks and batch_release_on_each_exit
+      assert the named call order, inputs, error envelope and downstream suppression.
     proof:
       - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
       against the real MIT server.
     proof:
@@ -140,16 +162,6 @@ checks:
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^central_auth_checks::tests::/)
         - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/central_auth_checks.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/central-auth-checks-*")"
-        && grep -rlq "central_auth_checks" tools/oracle/fuzz/corpus/helper_case/central-auth-checks-*
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-tests
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^central_auth_checks::tests::/)
@@ -164,18 +176,17 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::central_auth_checks::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/central-auth-checks/common-policy-order.yaml
-  - tools/oracle/cases/helpers/central-auth-checks/custom-common-off.yaml
-  - tools/oracle/cases/helpers/central-auth-checks/priced-model-checks.yaml
-  - tools/oracle/cases/helpers/central-auth-checks/agent-trace-id.yaml
   - tools/oracle/cases/auth/central-auth-checks/common-policy-order.yaml
   - tools/oracle/cases/auth/central-auth-checks/custom-common-off.yaml
   - tools/oracle/cases/auth/central-auth-checks/priced-model-checks.yaml
-  - tools/oracle/cases/auth/central-auth-checks/agent-trace-id.yaml
+  - tools/oracle/cases/auth/central-auth-checks/public-and-forced-checks.yaml
+  - tools/oracle/cases/auth/central-auth-checks/admin-team-budget.yaml
+  - tools/oracle/cases/auth/central-auth-checks/header-tag-budget.yaml
+  - tools/oracle/cases/auth/central-auth-checks/missing-team-retains-user-budget.yaml
+  - tools/oracle/cases/auth/central-auth-checks/carried-team-and-user-budget-state.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B071 retains carried_budget_state.py carry_organization_budget_state (L37-L43) and carried_budget_metadata (L46-L59).
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -221,8 +232,9 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve custom_auth_run_common_checks=false, explicit free-model bypass and agent trace-ID requirements.
+  - Collapsing gather failures into one None context would bypass valid user/project/end-user budgets when only the team lookup fails.
+  - Header tags must be merged after choosing metadata versus litellm_metadata and before common_checks reads them.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

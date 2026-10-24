@@ -1,10 +1,71 @@
 id: B791
 title: User info and administrator projections
 description: >-
-  Implement /user/info and /v2/user/info with owner/admin/org/team visibility checks, scoped key/team
-  lists and enterprise metadata redaction. Preserve disable_master_key_return=false source setting while
-  ensuring response secrets are only exposed by the specifically authorized source branch. No paid tier
-  gate restricts the response.
+  Implement authenticated GET /user/info and GET /v2/user/info, both with B865 management effects.
+  Both query parameters user_id default null. These are unpaginated reads with no premium_user
+  branch. V1 normalizes the raw query through B2334, then rechecks resolved ownership: null,
+  proxy_admin/proxy_admin_viewer or exact caller ID passes; otherwise HTTPException 403 names
+  target and caller IDs. A literal-plus/space mismatch must not bypass this recheck. V1 checks
+  DB after authorization; absent DB raises the ordinary database-not-connected exception.
+  Omitted ID for an admin-view caller selects the all-teams/keys projection; otherwise default
+  to caller ID. Missing user, including an unbound caller, raises 404 'User {user_id} not found'.
+  Cases v1_self_default, v1_admin_explicit_target, v1_other_forbidden, plus_space_recheck,
+  v1_unbound_missing, v1_missing_user and v1_database_absent pin these branches.
+
+  V1 loads teams before keys. Call B813 list-team service with synthetic path /user/info and
+  requested ID; accept only a list result. Merge the target row's truthy list of teams with
+  the first list, preserving first occurrence by team_id; the helper's null-target fallback
+  fetches caller teams. Only the FIRST list is supplied for key-alias enrichment, even if a
+  team appears in the merged list. Sort returned teams by team_alias or empty string. Cases
+  team_merge_order_and_dedup, caller_team_fallback, nonlist_team_result and alias_uses_first_list
+  cover these details. Use an injected B813 service, not a call to its HTTP handler.
+
+  Build user_id,user_info,keys,teams. If user_info is null but keys is not, synthesize
+  spend=sum(key.spend default 0). Strip password from dict/model user_info, set missing metadata
+  to null, and remove only scim_enterprise,scim_entitlements,scim_roles from metadata dicts.
+  Other metadata and non-dictionaries pass through the helper; malformed values may fail
+  response validation. Add non-null model_max_budget_usage from B071 with entity USER, ID,
+  user's model budgets and limiter dual cache. Cases response_nulls_and_spend, password_removed,
+  directory_metadata_redacted, metadata_other_values_preserved and model_budget_usage pin this.
+
+  V2 checks DB FIRST (HTTPException 500 CommonProxyErrors.db_not_connected_error), reparses raw
+  user_id only when it contains a space, then defaults null to caller ID. Still-null ID raises
+  400 'user_id is required. Either pass it as a query parameter or authenticate with a user-bound
+  key.' Admin-view and self fetch target with object_permission included. Otherwise fetch
+  caller, require truthy caller.teams, fetch target once, then all caller teams; a B800
+  team-admin membership permits a target whose teams contains that team's ID. Org-admin alone
+  grants nothing. Missing and unauthorized targets both produce 404 'User not found: {user_id}';
+  unexpected reads propagate, never become a false 404. Cases v2_self_default, v2_admin_view,
+  v2_team_admin_shared_team, v2_org_admin_not_sufficient, v2_missing_and_forbidden_equal,
+  v2_unbound_400, v2_database_first and v2_db_failure_500 assert reads and object_permission.
+
+  V2 returns only user_id,user_email,user_alias,user_role,spend,max_budget,models,budget_duration,
+  budget_reset_at,metadata,created_at,updated_at,sso_user_id,teams,object_permission,
+  model_max_budget,model_max_budget_usage. Missing spend defaults 0, falsey models/teams become
+  empty lists, other optional values stay null. Apply directory redaction and B071 usage.
+  Spend is the current resettable counter, not lifetime usage; no keys or team objects and
+  no pagination. Cases v2_projection_defaults and v2_reset_counter_not_history compare all fields.
+
+  Admin V1 uses one Postgres query with independent json_agg subqueries: all teams and keys
+  excluding team_id=litellm-dashboard while retaining null team IDs. Null aggregates become [],
+  null key models becomes []; validate rows and sort teams by alias-or-empty. Empty query
+  result or invalid rows fail. Fetch admin's own row afterwards, remove password ONLY: this
+  branch does NOT redact SCIM metadata or add model usage. Cases admin_global_projection,
+  admin_empty_aggregates, admin_invalid_row, admin_self_missing and admin_metadata_asymmetry.
+
+  Key projection preserves order and all row fields including stored token hash; it does not
+  decrypt credentials. Null input becomes []. Only exact master-hash match AND the setting
+  disable_master_key_return is boolean true drops a master row (default false; string 'true'
+  and integer 1 do not). Dump via model_dump, falling back to dict on any exception; exclude
+  dashboard tokens. Non-null team IDs get first matching alias or JSON null; no team gets
+  literal string 'None'. Cases key_master_exact_boolean, key_ui_session_filtered,
+  key_dump_fallback and key_alias_null_vs_string cover these branches.
+
+  Each route's own except logs then calls B124 handle_exception_on_proxy: HTTPException becomes
+  internal_server_error with its status and param from detail or string 'None'; ordinary errors
+  become 500, existing ProxyException passes through. Preserve B2334 query-decoder errors under
+  this mapping. Cases route_error_mapping and query_decoder_error compare status,type,message,
+  param,code; auth failures before handlers remain B052's.
 
 
   Build the production user_info module in betterlite-server; reuse the typed dependencies listed in the
@@ -23,18 +84,13 @@ description: >-
   (L1244-L1283; 34 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.disable_master_key_return=False;
-  disable_master_key_return=False.
+  Pinned setting: general_settings.disable_master_key_return=false, read at L1258-L1263.
+  Preserve its exact-boolean predicate at the B002 configuration boundary.
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /user/info -> user_info; GET /v2/user/info
-  -> user_info_v2. For each route send a typed successful request, an invalid or missing target, and a
-  caller lacking that route permission through B001 HttpCase against the running pinned MIT proxy and
-  betterlite. Public login/session routes instead prove bad credentials or invalid/expired codes. Compare
-  status, response model including null/absent fields, error type/param/code, content-type, redirect/cookie
-  headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper invocations.
-  handle_exception_on_proxy controls management error mapping; keep source partial writes visible in fixture
-  inspection.
+  B001 HTTP cases exercise both routes against running gateways. Native cases cover helper-only
+  null/nonlist/fallback branches. Postgres checks use POSTGRES_TEST_URL or testcontainers and
+  fail if infrastructure is unavailable. There are no database writes.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -43,11 +99,9 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::user_info::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config cases master_return_default_false and master_return_exact_boolean call B002 and inspect
+  keys for absent,false,true,string and numeric settings. Seed config_yaml with the real nested
+  setting; this component has no fallback parser.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -60,9 +114,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 391 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  391 production, 151 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 657 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
+  Sizing: 391 source lines before docstring removal including declarations and SQL; allow
+  315 production, 350 behavior/Postgres tests, 70 wiring and 50 config lines, 785 changed lines
+  within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -107,11 +161,11 @@ references:
     why: Own _redact_scim_enterprise_metadata; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L896-L924
     why: Own _build_user_info_response; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L934-L1005
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L927-L1005
     why: Own user_info; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1008-L1064
     why: Own _check_user_info_v2_access; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1074-L1170
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1067-L1170
     why: Own user_info_v2; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1173-L1176
     why: Own _fetch_admin_teams_and_keys_rows; preserve caller-visible values and failure ordering.
@@ -121,13 +175,15 @@ references:
     why: Own _process_keys_for_user_info; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1258-L1263
     why: general_settings.disable_master_key_return default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1-L6
-    why: disable_master_key_return default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3567-L3600
+    why: B124 owns the complete response models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L17-L19
+    why: Exact directory keys used by the owned redaction set at L879-L881.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: self_info, other_user_denied,
-      admin_info, org_admin_scope, team_key_redaction, v2_pagination, disable_master_key_return.'
+  - text: Every named description case proves its branch, including access differences, admin metadata
+      asymmetry, exact booleans, query ordering and complete response projections.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -158,23 +214,25 @@ checks:
         && grep -rlq "disable_master_key_return" crates/betterlite-config/fuzz/corpus/config_yaml/user-info-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/user-info/get--user-info-success.yaml
-  - tools/oracle/cases/management/user-info/get--user-info-invalid-target.yaml
-  - tools/oracle/cases/management/user-info/get--user-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/user-info/get--v2-user-info-success.yaml
-  - tools/oracle/cases/management/user-info/get--v2-user-info-invalid-target.yaml
-  - tools/oracle/cases/management/user-info/get--v2-user-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/user-info/self-info.yaml
-  - tools/oracle/cases/management/user-info/other-user-denied.yaml
-  - tools/oracle/cases/management/user-info/admin-info.yaml
-  - tools/oracle/cases/management/user-info/org-admin-scope.yaml
-  - tools/oracle/cases/management/user-info/team-key-redaction.yaml
-  - tools/oracle/cases/management/user-info/v2-pagination.yaml
-  - tools/oracle/cases/management/user-info/disable-master-key-return.yaml
-deviations: []
+  - tools/oracle/cases/management/user-info/v1-self-default.yaml
+  - tools/oracle/cases/management/user-info/v1-other-forbidden.yaml
+  - tools/oracle/cases/management/user-info/plus-space-recheck.yaml
+  - tools/oracle/cases/management/user-info/v1-missing-user.yaml
+  - tools/oracle/cases/management/user-info/admin-global-projection.yaml
+  - tools/oracle/cases/management/user-info/admin-metadata-asymmetry.yaml
+  - tools/oracle/cases/management/user-info/key-master-exact-boolean.yaml
+  - tools/oracle/cases/management/user-info/v2-team-admin-shared-team.yaml
+  - tools/oracle/cases/management/user-info/v2-missing-and-forbidden-equal.yaml
+  - tools/oracle/cases/management/user-info/v2-unbound-400.yaml
+  - tools/oracle/cases/management/user-info/v2-projection-defaults.yaml
+  - tools/oracle/cases/management/user-info/route-error-mapping.yaml
+deviations:
+  - what: Admin query debug logs redact credential-bearing row fields.
+    why: Source logs whole key rows; README requires native_admin_results_redacted to prove redaction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1203-L1205
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2334 owns query decoding and bulk records; B124 owns response models and exception conversion;
+    B071 owns model-budget usage; B813 owns team-list service authorization.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -182,8 +240,7 @@ out_of_scope:
     _hash_password_in_dict (L184-L203), _strip_password_from_response (L206-L213), _update_internal_new_user_params
     (L216-L249), _check_duplicate_user_field (L252-L291), _check_duplicate_user_email (L294-L304), _check_duplicate_user_id
     (L307-L316), _add_user_to_organizations (L319-L351), _add_user_to_team (L354-L410), _fetch_user_team_ids
-    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720), _is_valid_user_id
-    (L723-L732), get_user_id_from_request (L735-L753), _normalize_user_info_user_id (L756-L760).'
+    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B792 owns _update_internal_user_params
     (L1286-L1341), _schedule_user_update_audit_log (L1344-L1371), _check_user_update_authz (L1374-L1399),
     _invalidate_user_spend_counter_if_changed (L1402-L1416), _clears_object_permission (L1419-L1428),
@@ -205,8 +262,9 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - disable_master_key_return=false is not permission for every caller to see a master credential.
+  - Admin V1 without an ID omits directory redaction; explicit-ID V1 and V2 apply it.
+  - V2 denies unrelated org admins with 404 and has no pagination; V1 other-user denial is 403.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

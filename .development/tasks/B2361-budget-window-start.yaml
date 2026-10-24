@@ -1,0 +1,91 @@
+id: B2361
+title: Budget window coercion and start instants
+description: >-
+  Extract get_budget_window_start (L1268-L1284), _coerce_datetime (L1287-L1298) and
+  _coerce_window (L894-L908) from budget_reservation.py into betterlite-auth::budget_window_start.
+  These small inputs must sit below team admission, key admission and later reservations; none
+  needs to depend on the B071 reservation engine to calculate a window's start instant.
+
+  A mapping is already a window. A string is parsed as JSON and retained only if its root is a
+  mapping; parse errors and scalar/list roots become an empty mapping without a warning. Otherwise
+  call model_dump only when callable and retain only a mapping result; an exception from model_dump
+  propagates. Use B192's JSON primitives and an explicit typed model projection for native inputs.
+  Missing budget_duration returns None. Convert a supplied duration with the source string semantics
+  and call B199 duration_in_seconds; every duration exception becomes None. A datetime reset_at is
+  accepted unchanged. A string reset_at replaces Z with +00:00 before ISO parsing; malformed strings,
+  null and other shapes become None. No reset instant means injected UTC now minus duration.
+  A naive reset instant acquires UTC, and an aware reset retains its offset; subtract the duration
+  from that instant. This code does not reset budgets or persist its result.
+
+  The owned ranges contain 42 nonblank, noncomment lines. Allow 90 production, 180 behavioral
+  tests, 65 helper adapters, 45 decoder/fuzz and 20 wiring lines, 400 total. Register the pure
+  budget_window_start operation in B856 Management::auth; the Python adapter invokes these real
+  functions with a controlled clock and model fixture, and compares None versus instants and errors.
+  New B171 helper seeds exercise the operation tag. Production decode_budget_window accepts stored
+  JSON strings, with a 1048576-byte and depth-64 limit before allocation through B192. Limit overflow
+  produces the same empty window as malformed JSON, so admission sees no derived start, not a
+  fabricated reset instant. Fuzz that production decoder in B733's existing auth fuzz workspace.
+scope:
+  paths:
+    - crates/betterlite-auth/src/budget_window_start.rs
+    - crates/betterlite-auth/src/budget_window_start/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/budget_window_start.rs
+    - crates/betterlite-auth/fuzz/corpus/budget_window_start/**
+    - tools/oracle/src/helpers/budget_window_start.rs
+    - tools/oracle/helpers/budget_window_start.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/budget-window-start/**
+    - tools/oracle/fuzz/corpus/helper_case/budget-window-start-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L894-L908
+    why: Mapping, JSON string and model projection with distinct failure treatment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1268-L1298
+    why: Duration failures, ISO coercion and the reset-or-now subtraction.
+dod:
+  - text: 'Cases mapping_identity, json_object, json_malformed_or_nonobject_empty,
+      no_callable_model_dump_empty, model_dump_nonmapping_empty, model_dump_exception_propagates,
+      duration_missing_or_invalid_none, duration_string_conversion, reset_missing_uses_now,
+      reset_invalid_uses_now, reset_naive_utc, reset_offset_preserved, reset_z_iso and negative_duration
+      compare the actual pinned functions. Native window_byte_and_depth_limits and
+      replays_the_budget_window_start_corpus cover the newly bounded decoder.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, parser-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: A clock or coercion change must fail a named boundary case.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_window_start::tests::/) - test(replays_the_budget_window_start_corpus)'
+    - id: helper-python
+      why: The adapter must call the pinned window functions rather than duplicate their algorithm.
+      run: test -f tools/oracle/helpers/budget_window_start.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new operation must be accepted by the existing helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/budget-window-start-*)" && grep -rlq budget_window_start tools/oracle/fuzz/corpus/helper_case/budget-window-start-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: Hostile stored-window strings must reach the production decoder in corpus replay.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/budget_window_start.rs && grep -q budget_window_start crates/betterlite-auth/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/budget_window_start)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_budget_window_start_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/budget-window-start/coercion.yaml
+  - tools/oracle/cases/helpers/budget-window-start/duration-and-clock.yaml
+  - tools/oracle/cases/helpers/budget-window-start/reset-instants.yaml
+deviations:
+  - what: Stored window JSON beyond 1048576 bytes or depth 64 becomes an empty window and yields no start instant.
+    why: Bound parsing work while retaining the source's malformed-window fallback; window_byte_and_depth_limits proves both limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L894-L908
+out_of_scope:
+  - B071 retains every other budget_reservation.py function, including counter reads, reservation writes,
+    request estimation and release. B199 owns duration grammar; B887 owns team window admission.
+    B751 owns key-window admission and must consume this lower helper when its task is implemented.
+pitfalls:
+  - Invalid reset_at falls back to now, whereas invalid budget_duration returns None.
+  - A failing model_dump is not caught by the string-JSON fallback.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

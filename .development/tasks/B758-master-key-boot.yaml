@@ -133,8 +133,8 @@ oracle_cases:
   - tools/oracle/cases/helpers/master-key-boot/development-override-warning.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B730 owns the shared MIGRATE_FROM_MASTER_KEY_ENV_VAR name at master_key_boot_check.py L18
+    and the stored-value counting/migration service; use its lower config field instead of defining it here.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - Only the stripped known default sk-1234 is specially refused; do not invent minimum entropy rules.

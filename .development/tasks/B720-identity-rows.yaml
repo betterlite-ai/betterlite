@@ -1,79 +1,85 @@
 id: B720
-title: Typed identity and budget database rows
+title: Verification-token, user and end-user row contracts
 description: >-
-  Add typed KeyRow, UserRow, BudgetRow and EndUserRow with serde/database adapters for every pinned field.
-  Handle JSON columns stored as either objects or JSON strings and missing/null separately. Convert money
-  at the SQL boundary to rust_decimal::Decimal while leaving the Postgres schema unchanged; typed JSON
-  metadata gets named passthrough only where necessary. Preserve effective temporary budgets with injected
-  now and model allowlist sentinels.
+  Implement betterlite-db::identity_rows for LiteLLM_VerificationToken,
+  LiteLLM_DeletedVerificationToken, LiteLLM_UserTable, SCIMPlaceholder and LiteLLM_EndUserTable.
+  B2310 owns the shared budget, permission and organization-membership types they embed. These
+  row models construct and serialize data; they do not encrypt credentials, hash tokens, decide
+  model permissions or write database rows. Use B700 RowCodec with native types and preserve
+  field presence for partial updates instead of merging omitted values into explicit nulls.
 
+  VerificationToken has no required fields. spend and total_spend default 0.0; models defaults [];
+  aliases, config, metadata, permissions, model_spend, model_max_budget and budget_fallbacks default
+  {}. budget_fallbacks maps strings to string lists; the other dict/list declarations keep their
+  source element flexibility through named data payloads rather than assuming every model entry
+  is a string. allowed_cache_controls and allowed_routes default [] but accept explicit null.
+  soft_budget_cooldown defaults false and is not nullable. rotation_count defaults 0 and auto_rotate
+  false; both accept explicit null. All remaining fields default None: token, key_name, key_alias,
+  max_budget, expires, user_id, team_id, agent_id, project_id, max_parallel_requests, tpm_limit,
+  rpm_limit, tpd_limit, budget_duration, budget_reset_at, key_type, blocked, litellm_budget_table,
+  budget_id, org_id, created_at, created_by, updated_at, updated_by, settings_updated_at, last_active,
+  object_permission_id, object_permission, access_group_ids, rotation_interval, last_rotation_at,
+  key_rotation_at, router_settings and budget_limits. litellm_budget_table is a generic dict here,
+  not the typed budget used by end users. object_permission uses B2310. budget_limits is a list
+  of dicts; access_group_ids a string list. expires accepts an arbitrary string or datetime without
+  requiring every string to parse as a timestamp. Other timestamp fields validate as datetimes.
 
-  The byte boundary is decode_identity_rows(&[u8]) for stored JSON/string columns read from Postgres and
-  Redis; its fuzz target calls this production decoder. Count field declarations as well as validators
-  when implementing the complete row contracts.
+  Preserve strings such as '*' and 'all-proxy-models' as values, with no expansion in this layer.
+  A null token spend/models/dict field fails unless its declaration is nullable; the key model has
+  no user-style normalizer. DeletedVerificationToken inherits every key field and adds id,
+  organization_id, deleted_at, deleted_by, deleted_by_api_key and litellm_changed_by, all None by
+  default. It retains both inherited org_id and separate organization_id. Serialization does not
+  hash or redact token/deleted_by_api_key values, which are required storage fields; diagnostic
+  messages must not echo row payloads.
 
+  UserTable requires user_id. user_alias, team_id, sso_user_id, organization_id,
+  object_permission_id, password, password_reset_required, last_breach_check_at, user_role,
+  max_budget, user_email, metadata, max_parallel_requests, tpm_limit, rpm_limit, budget_duration,
+  budget_reset_at, created_at, updated_at, organization_memberships and object_permission default
+  None. teams, models, allowed_cache_controls and policies default []; teams/cache controls/policies
+  contain strings while models retains the unparameterized source list. spend defaults 0.0;
+  model_spend and model_max_budget default {} but allow explicit null. Its before-validator maps
+  both missing and explicit-null spend to 0.0, models to [] and teams to []; no other null is
+  repaired. password remains readable internally but is excluded from every normal model dump,
+  including an explicit include request; do not serialize it accidentally through an SQL row adapter.
+  organization_memberships and object_permission decode through B2310. Keep the inherited
+  unknown-field-ignore behavior, fresh mutable defaults and named validation paths for bad fields.
 
-  Build the production identity_rows module in betterlite-db; reuse the typed dependencies listed in the
-  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  SCIMPlaceholder requires placeholder_user_id, resolved_user_ids and team_ids, the latter two
+  tuples of strings (JSON arrays at the wire). Empty tuples are valid, order and duplicate IDs
+  survive and no lookup or canonicalization occurs here. EndUserTable requires user_id and blocked;
+  it has no default blocked=false. alias, allowed_model_region, default_model, budget_id,
+  litellm_budget_table, object_permission_id and object_permission default None, and spend defaults
+  0.0. Only missing/null spend is normalized. allowed_model_region is exactly 'eu' or 'us',
+  case-sensitive; unknown/uppercase values fail. Embedded budget and permissions use B2310.
 
+  No owned validator calls json.loads on dict/list fields: a stored string containing JSON is
+  rejected rather than accepted as an object. Repository-specific string conversions remain with
+  their owners. Validate an outer stored row through decode_identity_rows(&[u8]); retain normal
+  scalar coercions that Pydantic permits, without broadening container shapes. Money uses checked
+  rust_decimal::Decimal at the SQL boundary without altering the pinned DOUBLE PRECISION schema;
+  reject nonfinite/out-of-range amounts instead of erasing them or making budgets unlimited.
+  Neither this layer nor its oracle adapter invents HTTP status/type/param/code for model validation.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/models/verification_token.py:
-  row_contracts (L1-L79; 69 source lines). litellm/models/user.py: row_contracts (L1-L79; 66 source lines).
-  litellm/models/budget.py: row_contracts (L1-L72; 54 source lines). litellm/models/end_user.py: row_contracts
-  (L1-L36; 28 source lines).
+  The pure identity_rows helper in B856's database namespace constructs/dumps the actual pinned
+  classes and exposes internal password separately only as a boolean presence assertion. Cover
+  every declared field with minimal-default and explicit-value roundtrips, then malformed/null cases
+  per distinct field category. B171 owns HelperCase envelope decoding. B860 Postgres fixtures use
+  POSTGRES_TEST_URL when set, otherwise testcontainers; assert stored JSON versus typed defaults
+  and existing float columns, with no invented transactional row operation. Add the identity_rows
+  fuzz target to B2307's workspace for the production decoder, limited to 1048576 bytes and depth
+  64. Replay all row kinds, truncated JSON/UTF-8, duplicate fields and exact/over-limit payloads.
 
-
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
-  Add the identity_rows operation under B856 Management::database. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a identity-rows-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This task owns the outside-byte boundary identity_rows::decode_identity_rows(&[u8]) -> Result<TypedValue,DecodeError>
-  for stored key/user/org JSON columns. Production calls this decoder before its typed policy functions;
-  the cargo-fuzz target identity_rows calls that same function. Seed valid, truncated, malformed, duplicate-field
-  and limit-boundary inputs and add identity_rows::tests::replays_the_identity_rows_corpus. Reuse B002
-  limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap
-  bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs.
-  B710 owns crates/betterlite-db/fuzz; depend on it and register this decoder target without recreating
-  the workspace.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 217 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  217 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 508 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  Moving budget.py to B2310 and omitting the two unused user methods leaves about 154 nonblank
+  noncomment lines. Allow 200 native fields/code, 290 field/coercion/Postgres tests, 65 helper
+  adapters, 45 fuzz and 30 wiring lines, 630 within 700. Separate key, user and end-user modules
+  so every source file stays below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/identity_rows.rs
     - crates/betterlite-db/src/identity_rows/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/identity_rows/fixtures/**
     - tools/oracle/src/helpers/identity_rows.rs
     - tools/oracle/src/helpers/identity_rows/**
     - tools/oracle/helpers/identity_rows.py
@@ -87,83 +93,72 @@ scope:
     - crates/betterlite-db/fuzz/corpus/identity_rows/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L1-L79
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L1-L79
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L1-L72
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/end_user.py#L1-L36
-    why: Own row_contracts; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L16-L79
+    why: Every key default, nullable field, generic budget dict and deleted-key additions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L19-L61
+    why: User fields, password exclusion and the three null-normalized fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/user.py#L74-L79
+    why: SCIM placeholder's required ordered tuple fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/end_user.py#L17-L36
+    why: Required blocked flag, exact region literals, typed nested rows and spend normalization.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: json_string_columns,
-      missing_versus_null, expired_temp_budget, zero_budget, decimal_roundtrip, postgres_pinned_rows,
-      postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: The production decode_identity_rows decoder is used by the service and its fuzz target and rejects
-      malformed/oversize input without panic.
-    proof:
-      - behavior-tests
-      - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
-    proof:
-      - behavior-tests
+  - text: 'Oracle tests name key_all_defaults, key_all_explicit_fields_roundtrip,
+      key_nullable_lists_and_rotation_fields, key_nonnullable_nulls_fail,
+      key_generic_budget_dict_and_typed_permission, key_expires_string_stays_string,
+      key_model_sentinels_are_plain_values, deleted_key_additions_and_two_org_ids,
+      user_all_defaults_and_required_id, user_all_explicit_fields_roundtrip,
+      user_spend_models_teams_null_normalization, other_user_nulls_not_normalized,
+      user_password_excluded_even_when_included, nested_membership_and_permission,
+      placeholder_required_tuples_preserve_order_and_duplicates,
+      end_user_all_defaults_and_required_blocked, end_user_region_exact_literals,
+      end_user_null_spend_and_typed_budget, json_strings_are_not_container_values,
+      unknown_fields_ignored, fresh_mutable_defaults and pydantic_scalar_coercion_boundaries.
+      The all-fields cases assert every field listed in the description, not just selected examples.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'postgres_identity_rows_preserve_storage_types checks key/user/end-user rows through the
+      pinned schema, including explicit zero and nullable JSON/array fields. Native tests
+      identity_money_nonfinite_and_overflow_rejected and native_identity_row_size_and_depth_limits
+      prove the documented differences. replays_the_identity_rows_corpus invokes the production decoder.'
+    proof: [behavior-tests, postgres-tests, parser-corpus]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_rows::tests::/)
-        - test(/replays_the_/)'
+      why: Field defaults, null normalization and password omission need assertions separate from corpus replay.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_rows::tests::/) - test(replays_the_identity_rows_corpus)'
     - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/identity_rows.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
+      why: Adapters must instantiate the real row models and preserve their validation boundary.
+      run: test -f tools/oracle/helpers/identity_rows.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/identity-rows-*")"
-        && grep -rlq "identity_rows" tools/oracle/fuzz/corpus/helper_case/identity-rows-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Require a new identity_rows operation seed in the existing typed envelope corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/identity-rows-*")" && grep -rlq identity_rows tools/oracle/fuzz/corpus/helper_case/identity-rows-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/identity_rows::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/identity_rows::tests::postgres_failure_effects$/)'
+      why: Existing SQL column types and nulls must survive the new row codec.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/identity_rows::tests::postgres_identity_rows_preserve_storage_types$/)'
     - id: parser-corpus
-      why: The named production decoder target, added corpus or replay is missing or fails.
-      run: test -f crates/betterlite-db/fuzz/fuzz_targets/identity_rows.rs && grep -q "identity_rows"
-        crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
-        -- crates/betterlite-db/fuzz/corpus/identity_rows)" && cargo nextest run --locked -p betterlite-db
-        --no-tests=fail -E 'test(replays_the_identity_rows_corpus)'
+      why: External stored-row bytes must reach the same decoder in production and fuzz replay.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/identity_rows.rs && grep -q identity_rows crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/identity_rows)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_identity_rows_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/identity-rows/json-string-columns.yaml
-  - tools/oracle/cases/helpers/identity-rows/missing-versus-null.yaml
-  - tools/oracle/cases/helpers/identity-rows/expired-temp-budget.yaml
-  - tools/oracle/cases/helpers/identity-rows/zero-budget.yaml
-  - tools/oracle/cases/helpers/identity-rows/decimal-roundtrip.yaml
+  - tools/oracle/cases/helpers/identity-rows/key-fields-and-deletion.yaml
+  - tools/oracle/cases/helpers/identity-rows/user-normalization-and-password.yaml
+  - tools/oracle/cases/helpers/identity-rows/scim-placeholder-tuples.yaml
+  - tools/oracle/cases/helpers/identity-rows/end-user-region-and-budget.yaml
+  - tools/oracle/cases/helpers/identity-rows/container-and-scalar-validation.yaml
 deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L1-L79
+  - what: Stored identity-row JSON over 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound this new stored-data decoder; native_identity_row_size_and_depth_limits tests both limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L16-L65
+  - what: Identity-row monetary values outside Decimal's finite range fail decoding instead of remaining Python floats.
+    why: Checked conversion implements money-is-decimal without changing the SQL schema; identity_money_nonfinite_and_overflow_rejected prevents fallback to zero or unlimited budgets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L20-L22
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2310 owns budget.py, object_permission.py and organization_membership.py, including the temporary-budget methods and membership email projection.
+  - LiteLLM_UserTable.is_over_budget and has_model_access have no caller at the pin; do not add unused policy methods or their cases.
 pitfalls:
-  - A stored JSON string is distinct from SQL NULL and must not erase an explicit zero budget.
+  - Key spend=null is invalid, while user and end-user spend=null are normalized to zero.
+  - Deleted keys carry both org_id and organization_id, which must not be collapsed into one field.
+  - A user's password can be read internally but Field(exclude=True) wins even over a serialization include request.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

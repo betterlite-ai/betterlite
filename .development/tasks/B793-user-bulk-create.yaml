@@ -1,10 +1,88 @@
 id: B793
 title: Bulk user creation and team roster reconciliation
 description: >-
-  Implement BulkUserCreation with preflight row partitioning, normalized emails, existing conflicts, bounded
-  create-many, locked team rosters and per-user key/org follow-up. Preserve original row result indexes
-  and partial failure compensation, including removing failed team assignments. Reuse UserPatch/PasswordPolicy/KeyCreation,
-  not repeated implementations.
+  Implement the injected bulk-create service consumed by B1222 POST /management/v1/users/bulk.
+  B2334 owns the 1..500 wire limit, default auto_create_key=false and password/invite rejection;
+  this helper itself accepts any sequence, including empty. It does not register a route or
+  perform a global caller-role check. Cases empty_batch and request_contract_handoff pin those edges.
+
+  Assign a UUID for every falsey user_id, then record FIRST indexes by ID and normalized email
+  (strip().lower() only for truthy email; empty is null, whitespace becomes empty string).
+  Later duplicate IDs fail before duplicate emails, before row validation, even if the earlier
+  row is itself invalid. Error literals are 'Duplicate user_id in request: {id}' and
+  'Duplicate user_email in request: {original_email}'. Cases falsey_id_uuid,
+  email_empty_whitespace_case, duplicate_id_before_email and invalid_first_reserves_identity.
+  Requested admin/admin-viewer roles require proxy_admin, otherwise return the descriptive
+  administrative-user error naming requested/caller roles. Validate budget duration through B861,
+  then caller permissions through B892; any exception becomes a row error via B1201's
+  HTTP-detail/error extractor. Cases admin_role_row_error and row_validation_error_order.
+
+  Teams select non-null legacy team_id first, including empty string; otherwise explicit teams
+  (empty suppresses defaults), otherwise B1226 default teams. Convert strings to records with
+  role=user, budget=null, preserve duplicate team IDs and order. Team-resolution exceptions are
+  OUTSIDE the per-row validation catch and abort the service. Cases team_selector_precedence,
+  explicit_empty_teams, default_team_records and malformed_default_aborts.
+
+  Query sorted requested IDs once and sorted unique ORIGINAL truthy emails once with mode=insensitive;
+  normalized input is not used in that email query. Empty pending skips both. Normalize returned
+  email rows for comparison, so whitespace-padded input can miss an existing unpadded email.
+  Load sorted distinct requested team IDs once, validate rows, then gather B800 TEAM_OR_ORG_ADMIN
+  checks. Missing team error is 'Team id={id} does not exist'; denied is 'Call not allowed. User
+  not proxy admin OR team admin. team_id={id}'. Query/permission exceptions propagate globally.
+  Reject rows in ID-conflict, email-conflict, team-errors order, joining team errors with '; '
+  in requested order, including duplicates. Cases set_queries_and_empty_skip,
+  original_email_query_spacing, conflict_precedence, unusable_team_errors and preflight_query_failure.
+
+  Count billable users even when none are creatable. Source then rejects the ENTIRE creatable
+  batch if LicenseCheck.is_over_limit(existing+creatable), before preparation/writes, with
+  ManagementProblem status=403,type=urn:litellm:error:license-limit-exceeded,title='License limit
+  exceeded',detail='License is over limit. Please contact support@berri.ai to upgrade your license.'.
+  There are no OpenAI param/code fields in that problem. MIT without license data has no cap.
+  Betterlite has no paid-tier cap per README; native_bulk_users_no_license_seat_cap proves this
+  deliberate difference. Equality cases billable_count_before_prepare and mit_no_license_cap use
+  the reachable uncapped MIT branch, not a fabricated premium entitlement.
+
+  Prepare rows SEQUENTIALLY: dump request except user_id, inject assigned ID, apply B790 defaults,
+  validate JSON object, call B816 _set_object_permission, validate object and B1201 _UserRow.
+  Any failure warns with row index and exception class only, then returns a row failure; a
+  permission row written earlier is not rolled back. Cases preparation_serial_order,
+  prepare_failure_warns_class and permission_row_survives_prepare_failure. B1201 owns shared
+  pending/prepared/user/team records and their field defaults; reuse its extra-ignore row adapter.
+
+  Call B1201 insert-many/fallback, then each locked team write in assignment iteration order,
+  detach failed team assignments, and publish team metrics/cache effects. These are separate
+  operations, not one transaction; unexpected collaborator failure aborts after earlier writes.
+  Only then perform per-user key work, then organization work, then audit reads/writes. Cases
+  insert_roster_detach_publish_order, no_global_rollback and followups_after_rosters prove the
+  orchestration; B1201 owns insert fallback, roster locking and compensation internals.
+
+  Key work selects truthy auto_create_key, invokes B893 generate_key_helper_fn with
+  request_type=key,table_name=key and NON-NULL fields ONLY from this exact include set:
+  user_id,team_id,agent_id,duration,key_alias,models,aliases,config,permissions,blocked,spend,
+  budget_fallbacks,budget_limits,metadata,max_parallel_requests,tpm_limit,rpm_limit,
+  allowed_cache_controls,model_max_budget,model_rpm_limit,model_tpm_limit,mcp_rpm_limit,
+  tag_rpm_limit,guardrails,policies,prompts,object_permission_id. In particular max_budget and
+  budget_duration are not forwarded. Validate returned token as string; extra fields are ignored.
+  B893 owns callback-variable encryption through metadata_json_with_limits before key storage;
+  B1201 owns the same user-row metadata projection. Cases key_field_allowlist,
+  key_max_budget_not_forwarded, key_response_validation and callback_storage_handoff.
+
+  Per-user work is bounded to BULK_NEW_USER_CONCURRENCY=10 through B1201 _bounded, retaining
+  exceptions as outcomes. Organizations for ONE user are added serially in original order,
+  preserving duplicates, with OrgMember(role=internal_user), original caller and synthetic path
+  /user/bulk_new; first exception stops that user's remaining orgs. Calls use injected B828
+  services, never FastAPI wrappers in native code or oracle adapters. Cases concurrency_ten,
+  organizations_serial_stop and followup_failure_is_result.
+
+  Audit rereads sorted created IDs once (empty skips), then bounded B797 created audits with
+  caller.user_id changed-by, before=null, after=row JSON excluding nulls. Read failures propagate;
+  individual audit exceptions warn with class and continue. Cases audit_sorted_reread,
+  audit_read_failure_after_writes and audit_row_warning. No background scheduling here.
+  Return original input order. Created rows remain success=true even when teams/key/orgs fail:
+  error joins team errors, 'Failed to create key: ...', then 'Failed to add user to organizations: ...'.
+  Teams lists only landed teams; key is string or null; clean error=null. Failed rows have
+  success=false,teams=null,key=null. Meta counts created by success, not error absence. Cases
+  success_with_followup_error, combined_error_order, failure_null_fields and result_indexes_and_counts.
 
 
   Build the production user_bulk_create module in betterlite-server; reuse the typed dependencies listed
@@ -20,7 +98,9 @@ description: >-
   _prepare_user (L337-L348; 12 source lines), _generate_key (L669-L675; 7 source lines), _add_to_organizations
   (L678-L689; 12 source lines), _run_per_user (L692-L699; 8 source lines), _write_audit_logs (L702-L732;
   31 source lines), _to_result (L748-L756; 9 source lines), _failure_result (L759-L760; 2 source lines),
-  bulk_create_users (L763-L863; 94 source lines).
+  bulk_create_users (L763-L863; 94 source lines). Also own _CreatedUser L165-L171,
+  _KeyResponse/_KEY_RESPONSE L177-L182 and _KEY_FIELDS L633-L666. Shared concurrency=10
+  and row/team declarations L77-L163, plus JSON/error adapters L174-L175, belong to lower B1201.
 
 
   Add the user_bulk_create operation under B856 Management::users. Python calls only the owned MIT helper
@@ -48,13 +128,14 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 293 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  293 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 536 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  Sizing: 293 function lines before docstring removal plus about 45 owned record/allowlist lines;
+  allow 335 production, 355 behavior/Postgres tests, 65 adapters and 30 wiring, 785 changed lines
+  within an 800-line gate. Shared lower-level records are counted in B1201, not duplicated here.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
+  Native-only deviation test in this module: native_bulk_users_no_license_seat_cap.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 scope:
@@ -111,8 +192,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L763-L863
     why: Own bulk_create_users; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: duplicate_input_email,
-      existing_user_conflict, unusable_team, key_follow_up_error, postgres_pinned_rows, postgres_failure_effects.'
+  - text: Every named description case covers its exact branch; postgres_pinned_rows and
+      postgres_failure_effects prove query spacing, permission-first preparation and partial follow-ups.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -124,7 +205,7 @@ dod:
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
     proof:
       - postgres-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: native_bulk_users_no_license_seat_cap proves the explicit seat-cap deviation.
     proof:
       - behavior-tests
 checks:
@@ -149,18 +230,26 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_create::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/user_bulk_create::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/user-bulk-create/duplicate-input-email.yaml
-  - tools/oracle/cases/helpers/user-bulk-create/existing-user-conflict.yaml
-  - tools/oracle/cases/helpers/user-bulk-create/unusable-team.yaml
-  - tools/oracle/cases/helpers/user-bulk-create/key-follow-up-error.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/duplicate-id-before-email.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/invalid-first-reserves-identity.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/team-selector-precedence.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/original-email-query-spacing.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/unusable-team-errors.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/prepare-failure-warns-class.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/insert-roster-detach-publish-order.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/key-field-allowlist.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/organizations-serial-stop.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/audit-row-warning.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/combined-error-order.yaml
+  - tools/oracle/cases/helpers/user-bulk-create/result-indexes-and-counts.yaml
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L1-L863
+  - what: A batch is not rejected with the license-limit-exceeded 403 when it exceeds licensed seats.
+    why: README Decisions removes paid-tier user caps; the owned code really calls is_over_limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L795-L806
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B1222 owns bulk HTTP routes and problem serialization; B2334 owns public request/response contracts.
+    B1201 owns shared pending/prepared/team records, row adapters, concurrency constant and user-row
+    metadata storage; B893 owns key generation/storage; B797 owns audits; B828 owns org-member writes.
   - 'litellm/proxy/management_helpers/bulk_user_creation.py: B1201 owns _user_table (L260-L261), _user_create_payload
     (L375-L408), _bounded (L411-L418), _insert_users (L421-L469), _assignments_by_team (L472-L484), _default_member_budget_id
     (L501-L510), _team_tx_db (L513-L514), _membership_tx_db (L517-L518), _write_team_roster (L521-L581),
@@ -168,8 +257,9 @@ out_of_scope:
     (L735-L745).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - The bulk result indexes remain aligned with input rows after normalization and partial failure.
+  - The first invalid duplicate still reserves its email, and the database email query does not strip it.
+  - success=true can accompany an error; meta.created counts the persisted user, not successful follow-ups.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

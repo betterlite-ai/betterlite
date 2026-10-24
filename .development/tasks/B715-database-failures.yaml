@@ -1,166 +1,170 @@
 id: B715
-title: Database outage classification and bounded lookup
+title: Bounded database lookups and safe database metrics
 description: >-
-  Implement bounded database lookup and a single reconnect-and-retry for idempotent reads over DbFault.
-  Preserve PROXY_DB_LOOKUP_DEADLINE_SECONDS=10, reconnect timeout 2 seconds and lock timeout 0.1 seconds.
-  Cancellation releases permits and owned abandoned lookups; metrics carry safe operation metadata without
-  SQL parameters.
+  Implement betterlite-db::database_failures for db_lookup_gate.py and log_db_metrics.py. Supply a
+  runtime-local lookup semaphore, monotonic stall tracker, deadline wrapper and database service
+  metrics. This task does not own reconnect-and-retry: B872 owns call_with_db_reconnect_retry and
+  B738 owns the auth-key query's reconnect timeout/lock timeout. The semaphore is not automatically
+  acquired by bounded_db_lookup; callers decide which work runs inside it. Preserve that distinction
+  so nested or independent bounded lookups do not unexpectedly serialize or deadlock.
 
+  Load PROXY_DB_LOOKUP_MAX_CONCURRENCY as max(1,int(getenv('PROXY_DB_LOOKUP_MAX_CONCURRENCY','25')))
+  and PROXY_DB_LOOKUP_DEADLINE_SECONDS as max(0.1,float(getenv('PROXY_DB_LOOKUP_DEADLINE_SECONDS','10'))).
+  Defaults apply only to absent env values. Explicit empty/nonnumeric input raises at import in
+  LiteLLM and must stop native configuration loading. Negative/zero concurrency clamps to 1;
+  negative/zero deadline clamps to 0.1. Preserve Python max's nonfinite behavior: NaN and -infinity
+  become the 0.1 floor, while +infinity yields no finite deadline. Do not silently substitute 10.
+  B002 must load both env values and pass them to this module; seed its existing config_yaml corpus.
 
-  Build the production database_failures module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  LoopBoundSemaphore.current lazily creates a semaphore for the running loop and recreates it when
+  the loop changes; native tests use separate runtimes to prove no loop-bound waiter is reused. The
+  stall tracker starts with no hit, records the injected monotonic clock and reports whether
+  now-last_hit < window_seconds, strictly less at the boundary. A successful lookup does not clear
+  a previous hit. DBLookupStallTracker.clear has no production caller at the pin and is excluded.
+  B130 owns the health consumer's PROXY_DB_LOOKUP_STALL_WINDOW_SECONDS=30 setting and readiness effect;
+  this tracker accepts its window argument without another env read.
 
+  bounded_db_lookup uses its explicit deadline_seconds whenever non-None, including zero or negative
+  values, otherwise the configured default. Start the awaitable once and wait for it within that
+  budget. On expiry request cancellation, arrange to consume a later exception unless the task is
+  cancelled, record a stall, then immediately raise DBLookupDeadlineExceeded with lookup and
+  deadline_seconds fields and the exact '{lookup} lookup did not answer within {deadline:g}s' message.
+  Do not wait for a cancellation-resistant operation before returning the deadline. Its caller-owned
+  semaphore permit can remain occupied until that operation unwinds. Cancellation of the waiting
+  caller cancels the child and propagates cancellation without recording a timeout hit. A completed
+  DBLookupDeadlineExceeded is rethrown unchanged, without recording another hit; another TimeoutError
+  records a hit and is wrapped in DBLookupDeadlineExceeded with its cause preserved. Other query
+  exceptions and successful results pass through unchanged. Owned tasks must consume abandoned
+  failures rather than producing unhandled-task diagnostics; this is not a SQL retry policy.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/db_lookup_gate.py:
-  LoopBoundSemaphore.__init__ (L17-L20; 4 source lines), LoopBoundSemaphore.current (L22-L27; 6 source
-  lines), DBLookupDeadlineExceeded.__init__ (L31-L34; 4 source lines), DBLookupStallTracker.__init__ (L40-L42;
-  3 source lines), DBLookupStallTracker.record_hit (L44-L45; 2 source lines), DBLookupStallTracker.clear
-  (L47-L48; 2 source lines), DBLookupStallTracker.stalled_within (L50-L53; 4 source lines), _consume_abandoned_lookup
-  (L60-L62; 3 source lines), bounded_db_lookup (L65-L90; 26 source lines). litellm/proxy/db/log_db_metrics.py:
-  _safe_db_event_metadata (L17-L25; 8 source lines), log_db_metrics (L28-L103; 61 source lines), _is_exception_related_to_db
-  (L106-L114; 7 source lines), _handle_logging_db_exception (L117-L140; 21 source lines).
+  The metrics wrapper records wall-clock start/end times around the function. For a successful call
+  whose name does not contain the case-sensitive substring 'PROXY', schedule B012's success hook
+  without awaiting it: service DB ('postgres'), call_type=the function name, parent_otel_span from that
+  exact keyword, duration=(end-start).total_seconds(), and safe metadata. _safe_db_event_metadata
+  keeps only table_name when it is a string, including an empty string, and otherwise returns None;
+  tokens, SQL arguments, request bodies, auth objects and span objects never enter event_metadata.
 
+  A successful name containing 'PROXY' has a different branch: only when positional args[1] is a
+  dict and B110's _get_parent_otel_span_from_kwargs returns a non-None span does it schedule a success
+  event. That event uses BATCH_WRITE_TO_DB ('batch_write_to_db'), duration=0.0 and event_metadata=None,
+  with the same start/end times and call_type. Do not infer this span from args[0] or fall back to
+  the outer parent_otel_span keyword. Missing/malformed positional data or no span silently drops
+  that success metric. Use B110's helper as a dependency rather than copying its metadata precedence.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): PROXY_DB_LOOKUP_DEADLINE_SECONDS='10'.
+  On an ordinary exception, emit a DB failure only for the source's PrismaError, httpx.ConnectError
+  and httpx.TimeoutException families, represented through B872's native fault categories. This
+  includes database data/constraint errors as metrics, not just reconnectable failures; unrelated
+  application errors and non-DB cancellation produce no DB failure event. Failure hooks always use
+  service DB, even for a PROXY-named function, real elapsed duration, keyword parent span and the
+  same safe table-only metadata. Unlike success hooks, await the failure hook before rethrowing the
+  original exception. If the failure hook itself throws, that new error propagates; do not claim the
+  original error is guaranteed to survive sink failure. A success-hook scheduling error can occur
+  after the function's write committed, so metrics cannot make the database operation atomic.
 
+  Only _safe_db_event_metadata gets a pure helper oracle operation, calling the actual Python function
+  and the Rust projection with typed inputs. The decorator reads proxy_server globals and must not
+  be called from a HelperCall. Native metric tests inject B012's sink and B110's span resolver; native
+  async tests cover cancellation and deadline effects. B860 supplies Postgres through POSTGRES_TEST_URL
+  or testcontainers, with a blocked real SELECT and a committed write whose metric sink fails.
+  Check permit release when the owned lookup actually ends, the timeout cause/message, event order,
+  and durable rows. No additional outside-byte decoder is introduced.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  Write betterlite-config::database_failures::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 151 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  151 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 376 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The owned functions total 149 nonblank noncomment lines after excluding the uncalled clear method.
+  Allow 170 deadline/metric code, 300 behavior and Postgres tests, 80 config/tests, 65 helper adapters
+  and 30 registration lines, 645 within 700. Separate gate, deadline and metric modules below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/database_failures.rs
     - crates/betterlite-db/src/database_failures/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/database_failures/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/database_failures.rs
     - crates/betterlite-config/src/database_failures/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*
+    - tools/oracle/src/helpers/database_failures.rs
+    - tools/oracle/helpers/database_failures.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/database-failures/**
+    - tools/oracle/fuzz/corpus/helper_case/database-failures-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L1-L590
-    why: Pinned implementation and exact ownership boundary for database_failures.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L1-L90
-    why: Pinned implementation and exact ownership boundary for database_failures.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L1-L140
-    why: Pinned implementation and exact ownership boundary for database_failures.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L17-L20
-    why: Own LoopBoundSemaphore.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L22-L27
-    why: Own LoopBoundSemaphore.current; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L31-L34
-    why: Own DBLookupDeadlineExceeded.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L40-L42
-    why: Own DBLookupStallTracker.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L44-L45
-    why: Own DBLookupStallTracker.record_hit; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L47-L48
-    why: Own DBLookupStallTracker.clear; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L50-L53
-    why: Own DBLookupStallTracker.stalled_within; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L60-L62
-    why: Own _consume_abandoned_lookup; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L65-L90
-    why: Own bounded_db_lookup; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L17-L25
-    why: Own _safe_db_event_metadata; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L28-L103
-    why: Own log_db_metrics; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L106-L114
-    why: Own _is_exception_related_to_db; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L117-L140
-    why: Own _handle_logging_db_exception; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1811-L1816
-    why: PROXY_DB_LOOKUP_DEADLINE_SECONDS default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/services.py#L14-L27
+    why: ServiceTypes.DB serializes as postgres, including on the PROXY-function failure branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L14-L90
+    why: Runtime-local gate, monotonic hit tracking, exact deadline exception and cancellation behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1810-L1812
+    why: Actual import-time int/float reads and clamps; the health consumer owns the stall-window setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L17-L140
+    why: Table-only metadata, two success branches, selected exception families and awaited failure hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3743-L3810
+    why: B738 acquires the semaphore inside the shared deadline; the lower deadline function does not acquire it.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: transport_one_retry,
-      lookup_deadline, cancel_releases_permit, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Gate/deadline tests cover semaphore_runtime_recreation, bounded_lookup_does_not_acquire_gate,
+      stall_initially_absent, stall_window_strict_boundary, success_does_not_clear_stall,
+      explicit_deadline_over_default, zero_negative_explicit_deadline,
+      timeout_fields_and_exact_message, cancellation_resistant_lookup_returns_deadline,
+      abandoned_failure_consumed, cancelled_child_not_queried_for_exception,
+      caller_cancel_no_stall_hit, existing_deadline_exception_unchanged,
+      timeout_cause_preserved and unrelated_query_error_unchanged.'
+    proof: [behavior-tests]
+  - text: 'Metric tests cover ordinary_success_scheduled, db_service_wire_value_postgres, exact_keyword_parent_span,
+      table_only_metadata, empty_table_name_retained, nonstring_table_name_dropped,
+      proxy_substring_case_sensitive, proxy_args_second_dictionary,
+      proxy_span_uses_shared_resolver, proxy_success_zero_duration,
+      proxy_missing_span_drops_success, db_data_error_is_failure_metric,
+      connect_and_timeout_error_metrics, unrelated_error_no_metric,
+      cancellation_no_failure_metric, failure_hook_awaited_before_rethrow,
+      proxy_failure_still_db_service, failure_hook_error_replaces_original and sensitive_metadata_absent.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Actual config loading proves lookup_defaults, concurrency_floor_one,
+      deadline_floor_point_one, invalid_integer_stops_startup, invalid_float_stops_startup,
+      explicit_empty_env_stops_startup and nonfinite_deadline_semantics.'
+    proof: [config-tests, config-corpus]
+  - text: 'postgres_blocked_lookup_deadline and postgres_metric_failure_keeps_committed_write prove
+      timeout/cancellation and metric failures do not invent SQL rollback; metadata helper seeds replay.'
+    proof: [postgres-tests, helper-case-corpus]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_failures::tests::/)
-        - test(/replays_the_/)'
+      why: Async ownership, timeout mapping and each metric branch must pass without relying on generic row checks.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_failures::tests::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_failure_effects$/)'
+      why: A blocked native query and a post-commit metric failure must have the stated real database effects.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_blocked_lookup_deadline$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_metric_failure_keeps_committed_write$/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_failures::tests::/)
-        - test(/replays_the_/)'
+      why: The loader must clamp valid numeric inputs and fail startup for malformed ones.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_failures::tests::/) - test(/replays_the_/)'
     - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*")"
-        && grep -rlq "PROXY_DB_LOOKUP_DEADLINE_SECONDS" crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases: []
+      why: New numeric env boundaries must replay through B002's production decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*")" && grep -rlq PROXY_DB_LOOKUP_MAX_CONCURRENCY crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: Only the pure table-metadata projection may enter the helper oracle.
+      run: test -f tools/oracle/helpers/database_failures.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new metadata operation must be accepted by the existing HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-failures-*")" && grep -rlq database_failures tools/oracle/fuzz/corpus/helper_case/database-failures-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/database-failures/table-metadata-only.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/db/exception_handler.py: B872 owns _batch_postgres_sqlstate (L47-L51), PrismaDBExceptionHandler.is_database_connection_error
-    (L85-L112), PrismaDBExceptionHandler.is_database_infrastructure_error (L115-L149), PrismaDBExceptionHandler.is_prisma_data_error
-    (L152-L172), PrismaDBExceptionHandler.is_database_transport_error (L175-L215), PrismaDBExceptionHandler.is_prisma_error
-    (L218-L221), PrismaDBExceptionHandler.is_deadlock_error (L224-L237), PrismaDBExceptionHandler.postgres_sqlstate
-    (L240-L251), PrismaDBExceptionHandler.is_read_only_transaction_error (L254-L263), PrismaDBExceptionHandler.is_prisma_engine_internal_error
-    (L266-L292), PrismaDBExceptionHandler.is_permanent_database_fault (L352-L365), _coerce_timeout (L445-L451),
-    _DBReconnectClient.attempt_db_reconnect (L460-L466), call_with_db_reconnect_retry (L469-L590), _exception_types
-    (L54-L62).'
-  - 'litellm/proxy/db/exception_handler.py: B1217 owns _exception_chain (L29-L36), _database_service_unavailable_errors
-    (L39-L44), PrismaDBExceptionHandler.should_allow_request_on_db_unavailable (L71-L82), PrismaDBExceptionHandler.is_database_service_unavailable_error
-    (L295-L349), PrismaDBExceptionHandler.database_unavailable_message (L368-L381), PrismaDBExceptionHandler.service_unavailable_proxy_exception
-    (L384-L390), PrismaDBExceptionHandler.find_database_service_unavailable_error_in_chain (L393-L403),
-    PrismaDBExceptionHandler.is_database_service_unavailable_error_in_chain (L406-L419), PrismaDBExceptionHandler.handle_db_exception
-    (L422-L435).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - DBLookupStallTracker.clear has no caller in production at the pin; only its upstream unit test invokes it.
+  - B872 owns exception_handler.py classification, _coerce_timeout, _DBReconnectClient and
+    call_with_db_reconnect_retry; B1217 owns unavailable-error chain traversal, policy and 503 projection.
+  - B738 owns key lookup's gate acquisition and reconnect timeout 2s/lock timeout 0.1s;
+    B130 owns the health check that reads the stall-window setting and reports degraded readiness.
+  - B012 owns service hook dispatch/exporters; B110 owns _get_parent_otel_span_from_kwargs. This task
+    only selects the DB event shape and success/failure scheduling order.
 pitfalls:
-  - The reconnect retry applies to a read whose first failure is classified as transport failure, not
-    to an uncertain write.
+  - A successful lookup leaves the recent stall marker intact until its strict time window expires.
+  - Only the second positional argument can supply the PROXY success span; the outer keyword span is ignored there.
+  - Failure metrics are awaited and can replace the original exception, while success metrics are scheduled.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

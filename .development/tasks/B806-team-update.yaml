@@ -1,71 +1,80 @@
 id: B806
-title: Team update and patch endpoints
+title: Team update validation and ordered persistence
 description: >-
-  Implement /team/update and PATCH /team/{team_id} through TeamPatch, field permissions, limits and organization-move
-  services. Preserve omitted/null fields, budget_reset_at calculation and object-permission updates; publish
-  cache changes after successful writes.
+  Implement only POST /team/update; B1205 registers PATCH /team/{team_id} and calls the executor
+  contract implemented here. Require DB (500 db_not_connected_error), team_id (400 No team id passed
+  in), then nonnegative finite max_budget/team_member_budget/soft_budget (400 naming the field).
+  B861 validates both durations and model budgets. Read the existing team: missing is 404 for proxy
+  admins but 403 for everyone else, preventing ID probing. B800 strongest_role supplies access;
+  no role is 403, and team admins must use B1200's filtered request, not the original resent fields.
+  B2301 validates router weights; B745 enforces admin-only output estimates and batch token limits;
+  B861 checks passthrough and disable_global_guardrails grants against stored metadata.
 
+  A nonnull new soft_budget must be below requested nonnull max_budget or the stored cap; a nonnull
+  new max_budget must exceed requested nonnull soft_budget or stored numeric soft_budget. Each is
+  400 with its respective strictly lower/greater diagnostic. Explicit null still falls back to the
+  stored counterpart for validation. For a nonempty destination organization different from current,
+  non-proxy-admins require a live destination org_admin membership (403 otherwise). Then B805 validates
+  models/limits/membership and may write organization memberships. Empty organization_id is rewritten
+  to None; the subsequent B879 org lookup still falls back to the OLD organization for B1204 limits.
+  B803 applies a max-budget guard for no organization or team-admin access, and always checks model
+  ceiling authority. Preserve these differences when unsetting the organization.
 
-  Build the production team_update module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Serialize only supplied fields; model_max_budget=null becomes {}. Strip the server-owned
+  team_member_budget_id from submitted metadata. Only an explicitly present metadata field invokes
+  B801 validation, with existing metadata stripped of that server key and alias chosen from request
+  when nonnull, otherwise stored alias. B1205 computes budget reset fields: omitted duration preserves,
+  null clears, nonnull recomputes; nonempty budget_limits initializes each reset_at. If member fields
+  or metadata-backed fields are written without metadata, deep-copy existing metadata. A submitted
+  dict restores the stored server-owned budget ID after callback validation; metadata=null does not.
+
+  For any supplied member budget/rate/duration fields, choose B802 upsert when at least one value is
+  nonnull, otherwise clear. Upsert precedes membership backfill and B805 cache eviction when a truthy
+  budget ID and nonempty roster exist. No member fields means only removing those input-only keys.
+  Next, a nonnull object_permission calls B818's all-proxy MCP guard and B1205's object-permission
+  write. B861 moves metadata-backed fields, then B2304.encrypt_callback_vars transforms every nonnull
+  metadata object BEFORE persistence. Test logging/callback_settings credentials with the real codec,
+  already-prefixed values and the source helper's encryption-error plaintext fallback; do not silently
+  replace it with mandatory encryption. Secret-manager settings are not callback_vars and are left
+  as the helper specifies. Returned rows and audit patches retain the source stored representation.
+
+  If model_aliases was supplied, remove it and call B805's model-table upsert, keeping a returned
+  nonnull model_id. JSON-serialize nonnull router_settings, then B124.jsonify_team_object serializes
+  database JSON fields. B803 writes the team, using its conditional budget update when required.
+  A None row or None team_id becomes 400 Team doesn't exist. On success, log the team ID, call
+  B819.sync_team_access_group_membership, refresh the cached team through B801, then, when B065's
+  audit policy is enabled, schedule B805's audit with litellm-changed-by. Return {team_id, data: row}.
+  The route has NO transaction encompassing these writes; org/member budgets, permissions and aliases
+  can remain after a failed final team write. Group sync is AFTER the team write and BEFORE cache
+  refresh, unlike B804's create transaction. A sync failure leaves the stored update in place.
+
+  Its own except delegates to B124.handle_exception_on_proxy: HTTPException keeps status but becomes
+  internal_server_error with openai_error_param; ProxyException keeps its type/status/param/code;
+  other failures use status_code or 500 and internal_server_error. Compare these fields and content-type
+  through the booted proxy, ignoring only /error/message wording. There is no local premium_user branch;
+  no-license differences are owned by B861/B801. B1200 owns team_admin_editable_team_fields and B065
+  owns litellm.store_audit_logs/LITELLM_STORE_AUDIT_LOGS; do not add duplicate config readers here.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
   update_team (L2109-L2565; 398 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Route cases name the concrete errors and write boundaries below. Do not register PATCH again or
+  compare this handler through the helper oracle; B1205 uses the shared executor to return its own shape.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /team/update -> update_team. For each
-  route send a typed successful request, an invalid or missing target, and a caller lacking that route
-  permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Inspect callback ciphertext and earlier member/alias writes in B860 Postgres fixtures configured by
+  POSTGRES_TEST_URL, falling back to testcontainers only when absent and failing on setup errors.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Sizing: 398 nonblank, noncomment lines include the long route documentation; reuse all named
+  dependencies within 330 production, 395 behavior/Postgres tests and 65 wiring lines, 790 within 800.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 398 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  398 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 611 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  Register team_update using B052 auth and B865's management completion effects at the existing decorator.
 scope:
   paths:
     - crates/betterlite-server/src/team_update.rs
@@ -79,19 +88,33 @@ scope:
     - crates/betterlite-server/src/team_update/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2109-L2687
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2107-L2565
     why: Pinned implementation and exact ownership boundary for team_update.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2219-L2281
     why: UpdateTeamRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2284-L2292
     why: PatchTeamRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2109-L2565
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2107-L2565
     why: Own update_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: team_update, readonly_field_denied,
-      organization_change, partial_write_order, postgres_pinned_rows, postgres_failure_effects.'
+      organization_change, partial_write_order, postgres_pinned_rows, postgres_failure_effects,
+      no_database, missing_team_id, negative_budget_fields, nonfinite_budget_fields,
+      missing_team_admin_404, missing_team_other_403, unrelated_team_403, team_admin_filtered_request,
+      invalid_duration, invalid_model_budget, invalid_router_weights, estimates_admin_only,
+      batch_limit_admin_only, passthrough_admin_only, global_guardrail_admin_only,
+      soft_budget_ceiling, max_budget_floor, explicit_null_counterpart, destination_scope_403,
+      unset_org_checks_old_limits, org_admin_budget_growth, team_admin_budget_guard,
+      model_budget_null_map, omitted_metadata_skips_validator, submitted_metadata_stripped,
+      metadata_preserves_server_id, metadata_null_not_restored, member_limit_upsert,
+      member_limits_all_null, backfill_before_team_write, unchanged_budget_clock,
+      cleared_budget_clock, budget_windows_initialized, mcp_wildcard_grant,
+      object_permission_null_skip, callback_ciphertext_stored, callback_cipher_failure_fallback,
+      callback_ciphertext_unchanged, aliases_before_team_write, router_json_storage,
+      missing_written_row_400, sync_before_cache_refresh, audit_after_refresh,
+      response_nested_row, http_exception_mapping, proxy_exception_mapping and unknown_failure_500.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -102,9 +125,6 @@ dod:
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
     proof:
       - postgres-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
-    proof:
-      - behavior-tests
 checks:
   optional: []
   commands:
@@ -117,21 +137,23 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_update::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_update::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-update/post--team-update-success.yaml
-  - tools/oracle/cases/management/team-update/post--team-update-invalid-target.yaml
-  - tools/oracle/cases/management/team-update/post--team-update-unauthorized-caller.yaml
   - tools/oracle/cases/management/team-update/team-update.yaml
   - tools/oracle/cases/management/team-update/readonly-field-denied.yaml
   - tools/oracle/cases/management/team-update/organization-change.yaml
   - tools/oracle/cases/management/team-update/partial-write-order.yaml
-deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2109-L2687
+  - tools/oracle/cases/management/team-update/existence-and-error-mapping.yaml
+  - tools/oracle/cases/management/team-update/budget-validation-and-guards.yaml
+  - tools/oracle/cases/management/team-update/admin-only-grants.yaml
+  - tools/oracle/cases/management/team-update/destination-and-unset-org.yaml
+  - tools/oracle/cases/management/team-update/metadata-and-member-defaults.yaml
+  - tools/oracle/cases/management/team-update/budget-reset-fields.yaml
+  - tools/oracle/cases/management/team-update/callback-storage.yaml
+  - tools/oracle/cases/management/team-update/alias-router-storage.yaml
+  - tools/oracle/cases/management/team-update/sync-cache-audit-order.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2304 owns callback-variable selection and its encryption fallback; B2303 owns ciphertext format
+    and encryption settings. This task must call the concrete transform before storing team metadata.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -215,8 +237,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Unrelated team patches preserve budget_reset_at instead of restarting a budget window.
+  - Clearing organization_id still checks limits against the stored organization before writing null.
+  - Restoring the server-owned team_member_budget_id happens after the metadata callback has seen stripped metadata.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

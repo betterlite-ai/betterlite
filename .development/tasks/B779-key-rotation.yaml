@@ -1,10 +1,32 @@
 id: B779
-title: Regenerate keys with bounded overlap
+title: Schedule automatic key rotation and expired overlap cleanup
 description: >-
   Implement KeyRotationManager and register its server-owned scheduler after key regeneration routes exist.
   The job cleans expired deprecated keys, selects due keys, calls the common authorized regeneration service
   as the internal jobs principal, and continues after a per-key failure. Preserve Redis lock failure as
   a skipped cycle and ensure shutdown drains the job.
+
+  Reuse B070's PodLockManager from the spend writer. Only a manager with Redis attempts a lock; otherwise
+  every worker runs the cycle without a distributed lock. The cron lock id is litellm_key_rotation_job,
+  distinct from scheduler id key_rotation_job. Clamp the lock TTL to at least 300 seconds, pass the
+  manager's default reentrant behavior, warn and return on false/None acquisition, and release only an
+  acquired lock in finally, including an empty result and failed query. Lock implementation and its Redis
+  error logging belong to B070; do not copy them into the scheduler.
+
+  Delete deprecated rows with revoke_at strictly before UTC now through B726 before selecting keys.
+  A missing table or other cleanup error is debug-logged and swallowed. Select auto_rotate=true and
+  key_rotation_at null or at/before now through B722; null schedules rotate immediately, without a
+  rotation_interval filter. Query/process failures log and end the cycle; a single rotation failure
+  logs and proceeds to the next key. Preserve success/failure ordering while keeping tokens out of logs.
+
+  RegenerateKeyRequest takes token or empty string, the original alias, and grace_period or None when
+  the env string is empty. B2314's internal-jobs principal sets api_key/key_alias=litellm_internal_jobs,
+  team_id/team_alias/user_id=system and role PROXY_ADMIN. Call B895's regeneration service with
+  litellm_changed_by=litellm_internal_jobs. Only a GenerateKeyResponse with token_id and a nonempty
+  rotation_interval gets the second write: on the NEW token set rotation_count=(old count or 0)+1,
+  last_rotation_at=now and key_rotation_at from B1224's interval calculator. A typed response always
+  invokes B784's rotation hook after that write; a different response type invokes neither. A failed
+  bookkeeping write can leave a successfully regenerated key without its new schedule and skips this hook.
 
 
   Build the production key_rotation module in betterlite-server; reuse the typed dependencies listed in
@@ -15,7 +37,7 @@ description: >-
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/key_rotation_manager.py:
   KeyRotationManager.__init__ (L44-L46; 3 source lines), KeyRotationManager.process_rotations (L48-L111;
   48 source lines), KeyRotationManager._find_keys_needing_rotation (L113-L133; 18 source lines), KeyRotationManager._cleanup_expired_deprecated_keys
-  (L135-L147; 13 source lines), KeyRotationManager._should_rotate_key (L149-L161; 9 source lines), KeyRotationManager._rotate_key
+  (L135-L147; 13 source lines), KeyRotationManager._rotate_key
   (L163-L208; 35 source lines).
 
 
@@ -25,14 +47,16 @@ description: >-
 
   LITELLM_KEY_ROTATION_ENABLED="false"; LITELLM_KEY_ROTATION_CHECK_INTERVAL_SECONDS=86400; LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS=600
   with max(value,300). The scheduler registration is proxy_server.py:11072-11108; B779 owns its native
-  equivalent.
+  equivalent. B129's str_to_bool trims and ignores case, accepts true/false, and returns None for other
+  strings; only true enables scheduling. Missing DB warns and registers nothing; setup exceptions warn
+  and allow startup to continue. Both integer env vars use int() at import, so empty or noninteger text
+  prevents startup even when rotation is disabled. Grace-period parsing belongs to B895/B1224.
 
 
-  Add the key_rotation operation under B856 Management::keys. Python calls only the owned MIT helper with
-  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-rotation-*
-  seed to B171 helper_case, which already owns this decoder.
+  scheduled_due_key is a Rust Postgres integration test that calls the production scheduler and the real
+  B895 regeneration service. There is no helper-oracle operation: _rotate_key invokes a handler that reads
+  proxy globals. The regeneration wire contract is covered by B895's HTTP corpus; this task checks job
+  scheduling, warnings and database effects with injected clock/Redis failures and real Postgres rows.
 
 
   Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
@@ -43,7 +67,8 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::key_rotation::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::key_rotation::tests::rotation_env_defaults, rotation_true_only,
+  invalid_interval_stops_startup, invalid_lock_ttl_stops_startup, lock_ttl_floor and grace_empty_to_none.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -60,29 +85,22 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 126 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  126 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 413 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  Sizing: 117 nonblank, noncomment manager lines after removing the uncalled predicate, plus the 29-line
+  scheduler block. Allow 160 production, 270 behavior/Postgres tests, 45 scheduler wiring and 70 config
+  lines, 545 changed lines within a 600-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  rotation_log_redaction proves diagnostics retain a key name or a safe identifier without copying
+  the token prefix used by LiteLLM when key_name is absent.
 scope:
   paths:
     - crates/betterlite-server/src/key_rotation.rs
     - crates/betterlite-server/src/key_rotation/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/key_rotation.rs
-    - tools/oracle/src/helpers/key_rotation/**
-    - tools/oracle/helpers/key_rotation.py
-    - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
-    - tools/oracle/cases/helpers/key-rotation/**
-    - tools/oracle/fuzz/corpus/helper_case/key-rotation-*
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/key_rotation/fixtures/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
@@ -92,10 +110,6 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5448-L5986
-    why: Pinned implementation and exact ownership boundary for key_rotation.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L1-L208
-    why: Pinned implementation and exact ownership boundary for key_rotation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487-L1495
     why: RegenerateKeyRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L44-L46
@@ -108,8 +122,6 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L135-L147
     why: Own KeyRotationManager._cleanup_expired_deprecated_keys; preserve caller-visible values and failure
       ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L149-L161
-    why: Own KeyRotationManager._should_rotate_key; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L163-L208
     why: Own KeyRotationManager._rotate_key; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11072-L11108
@@ -118,17 +130,21 @@ references:
     why: LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1719-L1724
     why: LITELLM_KEY_ROTATION_GRACE_PERIOD default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1715-L1724
+    why: Enablement and import-time integer parsing, independent of the lock clamp.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/pod_lock_manager.py#L34-L195
+    why: B070 owns acquisition, reentrancy and compare/delete release used by the job.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3526-L3542
+    why: B2314 owns the internal-jobs principal projection; check its exact fields in the scheduled request.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: scheduled_due_key, rotation_not_due,
-      postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'Named scheduler tests: scheduled_due_key, null_schedule_due, rotation_not_due, equality_is_due,
+      auto_rotate_required, no_redis_runs, lock_denied_skips, acquired_lock_released, empty_cycle_releases,
+      query_failure_releases, cleanup_before_select, cleanup_failure_continues, revoke_equality_retained,
+      key_failure_continues, new_token_schedule, missing_interval_skips_write, untyped_response_skips_hook,
+      internal_jobs_principal, grace_empty_to_none, missing_database_warns, setup_failure_warns,
+      disabled_job_absent and shutdown_drains_rotation.'
     proof:
       - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
     proof:
       - postgres-tests
@@ -137,7 +153,7 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: rotation_log_redaction covers a named key, unnamed token and missing token without exposing token bytes.
     proof:
       - behavior-tests
 checks:
@@ -148,16 +164,6 @@ checks:
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_rotation::tests::/)
         - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/key_rotation.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-rotation-*")"
-        && grep -rlq "key_rotation" tools/oracle/fuzz/corpus/helper_case/key-rotation-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_rotation::tests::postgres_pinned_rows$/)'
@@ -171,17 +177,13 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-*")"
         && grep -rlq "LITELLM_KEY_ROTATION_LOCK_TTL_SECONDS" crates/betterlite-config/fuzz/corpus/config_yaml/key-rotation-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/helpers/key-rotation/scheduled-due-key.yaml
-  - tools/oracle/cases/helpers/key-rotation/rotation-not-due.yaml
+oracle_cases: []
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5448-L5986
+  - what: Rotation success/failure logs omit the first eight token characters when the key has no name.
+    why: Secrets-stay-secret requires safe diagnostics even for unnamed keys and collaborator failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/key_rotation_manager.py#L94-L105
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - KeyRotationManager._should_rotate_key (L149-L161) has no caller at the pin; the database query determines eligibility.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -467,8 +469,9 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
-  - The rotation lock TTL is independent of the daily scheduler interval and has a 300-second floor.
+  - The unused _should_rotate_key would suppress keys without rotation_interval, but the live query does not.
+  - The scheduler performs a second bookkeeping write after regeneration, so a failure cannot undo the new token.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

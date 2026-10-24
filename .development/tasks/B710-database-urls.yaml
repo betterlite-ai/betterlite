@@ -1,475 +1,187 @@
 id: B710
 title: Writer and reader database URL settings
 description: >-
-  Implement DatabaseSettings and password-auth DatabaseEndpoints in betterlite-config and parsed DbEndpoint
-  in betterlite-db. Preserve explicit DATABASE_URL over discrete password fields, replica opt-in, percent
-  encoding and reader pool-parameter allowlisting. Token strategy and token-dependent URL branches belong
-  to B712 through an injected endpoint resolver; no reverse B710 dependency on token signing.
+  Implement DatabaseURLSettings and password endpoint selection in betterlite-config and
+  betterlite-db::database_urls. Use B2307's URL/query/flag policy and byte decoder. Own the settings
+  declarations, from_env, tls_params, build_writer_url/build_reader_url, the password and precedence
+  parts of _assemble_writer_url/_assemble_reader_url, _password_url, _raise_for_unsupported_scheme
+  and the password-result part of apply_writer_url_to_env. Also own the older
+  construct_database_url_from_env_vars CLI helper. B712 owns token strategy resolution, its minting
+  branches and normalized enabled flags; B051 sequences those with password selection and B711 TLS.
+  Receive a resolved auth mode from that caller, so this lower password module never calls B712.
 
+  Settings are read at call time, case-insensitively, with extra fields ignored by this internal model.
+  DATABASE_URL, DIRECT_URL, DATABASE_HOST, DATABASE_USER/DATABASE_USERNAME, DATABASE_NAME,
+  DATABASE_SCHEMA, DATABASE_PASSWORD, DATABASE_SSLMODE and DATABASE_SSLROOTCERT default absent;
+  DATABASE_PORT is the string '5432'. DATABASE_USER wins over DATABASE_USERNAME when both are
+  supplied, including an explicitly empty USER. Every *_READ_REPLICA counterpart defaults absent,
+  with USER preferred over USERNAME there too. DATABASE_DISABLE_PREPARED_STATEMENTS defaults false
+  and uses B2307's strict boolean parser. DATABASE_MAX_IDLE_CONNECTION_LIFETIME is an optional integer,
+  absent by default; invalid integer input stops settings loading, not a warning fallback.
+  IAM_TOKEN_DB_AUTH and AZURE_POSTGRESQL_AUTH are strict false-by-default fields whose conflict and
+  token behavior belong to B712. A truthy DATABASE_SSLROOTCERT with no truthy DATABASE_SSLMODE adds
+  sslmode=verify-full; explicit nonempty sslmode wins. Empty TLS strings are omitted.
 
-  DatabaseURLSettings._assemble_writer_url owns only password and precedence logic; its token branch L410-L435
-  is B712.
+  With password auth a truthy pinned DATABASE_URL returns no replacement. Otherwise require truthy
+  host, user and name; missing or empty required fields produce no URL, without warning. Encode user,
+  database name and a truthy password using quote_plus: spaces become '+', reserved characters are
+  escaped and an already percent-encoded input is encoded again. Missing/empty password omits both
+  colon and password. Host and string port are interpolated as supplied. Append a truthy schema
+  literally after '?schema=' before B2307 adds missing TLS keys; do not silently give this password
+  path B712's normalized quoting. Pinned TLS query keys, including blanks, win over discrete fields.
 
+  Reader assembly first requires a truthy DATABASE_HOST_READ_REPLICA, then preserves any truthy
+  DATABASE_URL_READ_REPLICA. If assembling, reader port/user/name/schema/password each uses its truthy
+  replica field or the writer discrete field, never fields parsed from DATABASE_URL. Thus an empty
+  replica password falls back to the writer password, and a pinned writer URL alone cannot supply
+  a reader username. Missing user or name produces no password reader URL. Pinned reader URLs are
+  retained by the composing caller even when there is no reader host. A no-replacement result is
+  distinct from an empty URL. apply_writer_url_to_env returns true only when a new writer is assembled;
+  represent its ordered result as typed configuration updates rather than changing process globals.
 
-  DatabaseURLSettings._assemble_reader_url owns only password and precedence logic; its token branch L476-L500
-  is B712.
+  Preserve the older CLI helper separately: it reads DATABASE_USERNAME only, requires host/username/name,
+  ignores DATABASE_USER and DATABASE_PORT, emits no ':5432', and otherwise uses the same quote_plus,
+  optional password and literal-schema rules. It calls from_env only after its required fields pass
+  to obtain TLS params; malformed unrelated settings can therefore fail this branch, while missing
+  required fields return None without loading that model. This distinction needs named cases, not a
+  replacement of both functions by one convenient assembler.
 
+  Register general_settings.database_url (default None), database_connection_pool_limit=10,
+  database_connection_timeout=None, database_connection_pool_timeout=None, database_connect_timeout=None,
+  database_socket_timeout=None, database_disable_prepared_statements=false,
+  database_extra_connection_params=None, database_max_idle_connection_lifetime=None,
+  database_statement_timeout=None and database_lock_timeout=None through B002. A non-None database_url
+  wins over DATABASE_URL, even an empty string; resolve its os.environ/ reference through B129 first.
+  Only when both config URL and environment URL are absent does the CLI try discrete fields.
+  database_connection_timeout wins when non-None, then database_connection_pool_timeout, then 60;
+  zero survives. The pool limit defaults to 10 only when the key is absent. Optional connect/socket
+  values are passed to the query policy; do not invent an invalid-number fallback. Statement/lock
+  values use B2307's optional-float validation. YAML disable-prepared string values use B129's parser
+  ('true' only after strip/lower); nonstrings use truthiness, and the strict env flag is ORed with it.
+  Extra connection params override the named writer/direct params. Reader explicit values win and
+  only B2307's allowlist follows the writer; B051 applies statement/lock options separately.
 
-  Create crates/betterlite-db/fuzz/Cargo.toml and .gitignore exactly once here, register database_urls
-  -> decode_database_url(&[u8]) -> Result<DbEndpoint,DbError>, and require later DB parsers to depend
-  on this fuzz workspace. Configuration YAML itself uses B002 config_yaml.
+  The componentized path uses DATABASE_MAX_IDLE_CONNECTION_LIFETIME before the default 60. The CLI
+  uses general_settings.database_max_idle_connection_lifetime before 60 and does not use that env
+  variable as a lifetime fallback. In both paths a lifetime already pinned on a URL wins. Component
+  scheme validation skips falsey URLs and checks writer, direct, reader in that order, raising
+  RuntimeError with B2307's exact message before any URL update. CLI validation checks present writer
+  and direct values, including empty strings, and exits 1 with that message; the CLI shell owns its
+  colored stderr rendering. Do not attach invented HTTP status/type/param fields to startup failures.
 
+  Differential helper cases call only the actual password/TLS/settings methods with explicit settings
+  snapshots, including the CLI construction helper under an isolated env snapshot. Config tests must
+  invoke the B002 loader for every named key and env alias. Connection side effects, token minting,
+  process-env compatibility updates and TLS handshakes belong to their consuming services; this task
+  does not connect to Postgres or write stored secrets. Seed B002's existing config_yaml corpus and
+  B171's HelperCase corpus; all URL byte parsing and its fuzz manifest now come from B2307.
 
-  Build the production database_urls module in betterlite-db; reuse the typed dependencies listed in the
-  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
-
-
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/db_url_settings.py:
-  idle_lifetime_params (L111-L119; 8 source lines), add_missing_query_params (L122-L136; 14 source lines),
-  reader_shareable_params (L257-L259; 3 source lines), connection_params_from_url (L262-L266; 5 source
-  lines), token_refresh_params_from_url (L269-L279; 10 source lines), unsupported_db_scheme (L282-L298;
-  15 source lines), unsupported_db_scheme_message (L301-L309; 9 source lines), DatabaseURLSettings.from_env
-  (L360-L362; 3 source lines), DatabaseURLSettings.tls_params (L375-L392; 17 source lines), DatabaseURLSettings.build_writer_url
-  (L394-L406; 12 source lines), DatabaseURLSettings._assemble_writer_url (L408-L449; 40 source lines),
-  DatabaseURLSettings.build_reader_url (L451-L461; 10 source lines), DatabaseURLSettings._assemble_reader_url
-  (L463-L512; 47 source lines), DatabaseURLSettings._password_url (L515-L538; 23 source lines), DatabaseURLSettings._raise_for_unsupported_scheme
-  (L540-L558; 18 source lines), DatabaseURLSettings.apply_writer_url_to_env (L560-L578; 16 source lines).
-  litellm/proxy/proxy_cli.py: _build_db_connection_url_params (L65-L97; 32 source lines). litellm/proxy/utils.py:
-  construct_database_url_from_env_vars (L8399-L8433; 26 source lines). litellm-proxy-extras/litellm_proxy_extras/utils.py:
-  str_to_bool (L36-L39; 4 source lines).
-
-
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DATABASE_HOST=None;
-  DATABASE_USERNAME=None; DATABASE_PASSWORD=None; DATABASE_NAME=None; DATABASE_SCHEMA=None; DATABASE_URL=''.
-
-
-  general_settings.database_url=None resolves os.environ/ before DATABASE_URL/discrete fields. database_connection_pool_limit=10;
-  database_connection_timeout falls back to database_connection_pool_timeout=60; database_connect_timeout=None,
-  database_socket_timeout=None, database_statement_timeout=None and database_lock_timeout=None. Apply
-  statement/lock timeouts to writer and reader options, never DIRECT_URL. database_disable_prepared_statements=false
-  combines with DATABASE_DISABLE_PREPARED_STATEMENTS=false; native PgConnectOptions::statement_cache_capacity(0)
-  and non-persistent queries implement disabled statement caching. database_extra_connection_params=None;
-  database_max_idle_connection_lifetime=None falls back to DATABASE_MAX_IDLE_CONNECTION_LIFETIME then
-  60. DATABASE_URL/DIRECT_URL/HOST/USER/USERNAME/NAME/SCHEMA/PASSWORD default absent, DATABASE_PORT=5432;
-  every *_READ_REPLICA counterpart defaults absent and inherits the writer discrete value except HOST
-  (reader opt-in). Writer config pool values override URL query parameters; explicit replica URL parameters
-  win and only CONNECTION_PARAM_KEYS inherit, never schema/search_path.
-
-
-  Add the database_urls operation under B856 Management::database. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a database-urls-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Write betterlite-config::database_urls::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This task owns the outside-byte boundary database_urls::decode_database_url(&[u8]) -> Result<TypedValue,DecodeError>
-  for Postgres URL bytes, query pairs and discrete password endpoint inputs. Production calls this decoder
-  before its typed policy functions; the cargo-fuzz target database_urls calls that same function. Seed
-  valid, truncated, malformed, duplicate-field and limit-boundary inputs and add database_urls::tests::replays_the_database_urls_corpus.
-  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
-  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
-  fetching URLs. B710 owns crates/betterlite-db/fuzz; create its manifest with this real decoder target
-  here.
-
-
-  Create the DB cargo-fuzz workspace and manifest once here; later DB decoder tasks depend directly on
-  B710.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 312 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  312 production, 157 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 659 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  The owned settings/password ranges contain about 195 nonblank noncomment lines including docstrings,
+  plus the 26-line CLI construction helper. Allow 230 endpoint/config-policy, 300 behavior/config tests,
+  70 adapters, 70 loader wiring and 35 registration lines, 705 within 800. Keep each Rust file below
+  300 lines and avoid reproducing the lower query helpers.
 scope:
   paths:
     - crates/betterlite-db/src/database_urls.rs
     - crates/betterlite-db/src/database_urls/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - Cargo.toml
-    - deny.toml
-    - crates/betterlite-db/src/database_urls/fixtures/**
-    - tools/oracle/src/helpers/database_urls.rs
-    - tools/oracle/src/helpers/database_urls/**
-    - tools/oracle/helpers/database_urls.py
-    - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/database.rs
-    - tools/oracle/helpers/management/database.py
-    - tools/oracle/cases/helpers/database-urls/**
-    - tools/oracle/fuzz/corpus/helper_case/database-urls-*
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/database_urls.rs
     - crates/betterlite-config/src/database_urls/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/database-urls-*
-    - crates/betterlite-db/fuzz/Cargo.toml
-    - crates/betterlite-db/fuzz/fuzz_targets/database_urls.rs
-    - crates/betterlite-db/fuzz/corpus/database_urls/**
-    - crates/betterlite-db/fuzz/.gitignore
+    - tools/oracle/src/helpers/database_urls.rs
+    - tools/oracle/helpers/database_urls.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/database-urls/**
+    - tools/oracle/fuzz/corpus/helper_case/database-urls-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L111-L136
-    why: Pinned implementation and exact ownership boundary for database_urls.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L257-L620
-    why: Pinned implementation and exact ownership boundary for database_urls.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L111-L119
-    why: Own idle_lifetime_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L122-L136
-    why: Own add_missing_query_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L257-L259
-    why: Own reader_shareable_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L262-L266
-    why: Own connection_params_from_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L269-L279
-    why: Own token_refresh_params_from_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L282-L298
-    why: Own unsupported_db_scheme; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L301-L309
-    why: Own unsupported_db_scheme_message; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L360-L362
-    why: Own DatabaseURLSettings.from_env; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L375-L392
-    why: Own DatabaseURLSettings.tls_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L394-L406
-    why: Own DatabaseURLSettings.build_writer_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L408-L449
-    why: Own DatabaseURLSettings._assemble_writer_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L451-L461
-    why: Own DatabaseURLSettings.build_reader_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L463-L512
-    why: Own DatabaseURLSettings._assemble_reader_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L515-L538
-    why: Own DatabaseURLSettings._password_url; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L540-L558
-    why: Own DatabaseURLSettings._raise_for_unsupported_scheme; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L560-L578
-    why: Own DatabaseURLSettings.apply_writer_url_to_env; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L65-L97
-    why: Own _build_db_connection_url_params; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L312-L362
+    why: Actual env aliases, case policy and defaults, read by from_env at call time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L375-L409
+    why: TLS defaults and writer composition; token resolution is supplied by B712.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L437-L475
+    why: Pinned writer precedence and reader opt-in/fallback values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L502-L578
+    why: Password reader construction, raw schema interpolation and scheme guard/update results.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8399-L8433
-    why: Own construct_database_url_from_env_vars; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L36-L39
-    why: Own str_to_bool; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L60-L116
-    why: Pool defaults and native mapping of CLI database config.
+    why: Older CLI password assembler ignores DATABASE_USER and DATABASE_PORT.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1243-L1385
-    why: Writer override, replica allowlist, statement/lock timeout and DIRECT_URL exceptions.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8408-L8413
-    why: DATABASE_HOST default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8409-L8414
-    why: DATABASE_USERNAME default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8410-L8415
-    why: DATABASE_PASSWORD default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8411-L8416
-    why: DATABASE_NAME default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8412-L8417
-    why: DATABASE_SCHEMA default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L1-L6
-    why: DATABASE_URL default and read site.
+    why: Actual config read sites and the CLI lifetime, pool, URL and timeout precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L580-L621
+    why: B051's component composition uses env idle lifetime and preserves pinned reader params.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: explicit_url_wins, discrete_password_percent_encoding,
-      reader_inherits_pool_only, unsupported_scheme, duplicate_query_retained, writer_config_overrides_pool,
-      replica_keeps_query, direct_no_statement_timeout, external_pooler_no_prepared_statements.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: The production decode_database_url decoder is used by the service and its fuzz target and rejects
-      malformed/oversize input without panic.
-    proof:
-      - behavior-tests
-      - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
-    proof:
-      - behavior-tests
+  - text: 'Password and TLS composition matches the pin; named cases: explicit_writer_no_replacement,
+      empty_writer_assembles, required_writer_fields, password_absent_or_empty, quote_plus_credentials,
+      already_encoded_password_reencoded, literal_schema_then_tls, root_only_verify_full,
+      explicit_sslmode_and_blank_query, reader_host_opt_in, pinned_reader_no_replacement,
+      reader_truthy_fallbacks, empty_reader_password_inherits, reader_does_not_parse_writer_url,
+      writer_update_result, scheme_validation_order, falsey_component_urls_skipped,
+      cli_username_only_no_port, cli_missing_fields_skips_settings_validation.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Real loader tests cover every setting and failure: env_defaults_and_alias_precedence,
+      case_insensitive_env, strict_disable_env_flag, invalid_idle_integer_stops_loading,
+      config_url_and_secret_precedence, explicit_empty_config_url, pool_timeout_precedence,
+      optional_timeouts_and_extra_overrides, config_disable_string_vs_env,
+      invalid_statement_timeout_stops_loading, component_idle_env_vs_cli_config,
+      pinned_idle_value_wins, reader_query_allowlist, direct_no_added_statement_timeout,
+      present_empty_cli_url_rejected.'
+    proof: [config-tests, config-corpus]
+  - text: New helper settings cases are dispatched through the existing typed management decoder.
+    proof: [helper-python, helper-case-corpus, oracle]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_urls::tests::/)
-        - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/database_urls.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-urls-*")"
-        && grep -rlq "database_urls" tools/oracle/fuzz/corpus/helper_case/database-urls-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Password construction, reader precedence and scheme failures are independently checked.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_urls::tests::/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_urls::tests::/)
-        - test(/replays_the_/)'
+      why: Every named database setting must actually load and reach the endpoint/query policy.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_urls::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: Password/settings adapters must call the pinned helpers and type-check.
+      run: test -f tools/oracle/helpers/database_urls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Added settings operations must be represented in new HelperCase seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-urls-*")" && grep -rlq database_urls tools/oracle/fuzz/corpus/helper_case/database-urls-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-urls-*")"
-        && grep -rlq "DATABASE_HOST" crates/betterlite-config/fuzz/corpus/config_yaml/database-urls-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-    - id: parser-corpus
-      why: The named production decoder target, added corpus or replay is missing or fails.
-      run: test -f crates/betterlite-db/fuzz/fuzz_targets/database_urls.rs && grep -q "database_urls"
-        crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
-        -- crates/betterlite-db/fuzz/corpus/database_urls)" && cargo nextest run --locked -p betterlite-db
-        --no-tests=fail -E 'test(replays_the_database_urls_corpus)'
+      why: New nested general_settings and env-resolution inputs must replay through the actual loader.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-urls-*")" && grep -rlq database_url crates/betterlite-config/fuzz/corpus/config_yaml/database-urls-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/database-urls/explicit-url-wins.yaml
-  - tools/oracle/cases/helpers/database-urls/discrete-password-percent-encoding.yaml
-  - tools/oracle/cases/helpers/database-urls/reader-inherits-pool-only.yaml
-  - tools/oracle/cases/helpers/database-urls/unsupported-scheme.yaml
-  - tools/oracle/cases/helpers/database-urls/duplicate-query-retained.yaml
-  - tools/oracle/cases/helpers/database-urls/writer-config-overrides-pool.yaml
-  - tools/oracle/cases/helpers/database-urls/replica-keeps-query.yaml
-  - tools/oracle/cases/helpers/database-urls/direct-no-statement-timeout.yaml
-  - tools/oracle/cases/helpers/database-urls/external-pooler-no-prepared-statements.yaml
-deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L111-L119
+  - tools/oracle/cases/helpers/database-urls/writer-password-precedence.yaml
+  - tools/oracle/cases/helpers/database-urls/reader-fallbacks.yaml
+  - tools/oracle/cases/helpers/database-urls/password-and-schema-encoding.yaml
+  - tools/oracle/cases/helpers/database-urls/tls-defaults.yaml
+  - tools/oracle/cases/helpers/database-urls/settings-validation.yaml
+  - tools/oracle/cases/helpers/database-urls/scheme-guard-order.yaml
+  - tools/oracle/cases/helpers/database-urls/cli-password-builder.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B051 owns ProxyExtrasDBManager.setup_database
-    (L1285-L1315), ProxyExtrasDBManager.build_request_log_indexes (L1318-L1330), ProxyExtrasDBManager.run_migration_job
-    (L1333-L1342), ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B711 owns ProxyExtrasDBManager._libpq_tls_params
-    (L733-L753), ProxyExtrasDBManager._strip_prisma_query_params (L716-L730).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B716 owns _MigrateAttemptBudget.exhausted (L108-L109),
-    _MigrateAttemptBudget.attempt_number (L112-L113), _MigrateAttemptBudget.spend (L115-L116), _MigrateAttemptBudget.after_contention
-    (L118-L125), _migration_timestamp (L188-L195), _max_migration_timestamp (L198-L202), ProxyExtrasDBManager._get_migration_names
-    (L323-L327), ProxyExtrasDBManager._read_migration_ledger (L356-L376), ProxyExtrasDBManager._failed_migration_logs
-    (L379-L387), ProxyExtrasDBManager._failed_migration_recovered (L390-L396).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B717 owns ProxyExtrasDBManager._is_permission_error
-    (L409-L433), ProxyExtrasDBManager._setup_database_v2 (L951-L990), ProxyExtrasDBManager._run_database_v2
-    (L993-L1101), ProxyExtrasDBManager._v2_failed_migration_name (L1104-L1111), ProxyExtrasDBManager._v2_failed_migration_started_at
-    (L1114-L1116), ProxyExtrasDBManager._v2_roll_back_migration_best_effort (L1119-L1129), ProxyExtrasDBManager._budget_after_deploy_failure
-    (L1132-L1226), ProxyExtrasDBManager.apply_replica_identity_full_if_requested (L1252-L1282).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B857 owns ProxyExtrasDBManager.raise_if_lens_rename_pending
-    (L630-L657), ProxyExtrasDBManager.spend_logs_is_partitioned (L660-L702), ProxyExtrasDBManager._warn_if_db_ahead_of_head
-    (L756-L825), ProxyExtrasDBManager._invalid_litellm_indexes (L828-L832), ProxyExtrasDBManager._index_repair
-    (L835-L841), ProxyExtrasDBManager._repair_index (L844-L860), ProxyExtrasDBManager.repair_invalid_indexes
-    (L863-L926), ProxyExtrasDBManager._repair_under_migration_lock (L929-L948).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._create_baseline_migration:
-    v1 only; native v2 recovery does not call it.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_env: Prisma filesystem/tool discovery
-    is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_command: Prisma filesystem/tool discovery
-    is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._get_prisma_dir: Prisma
-    filesystem/tool discovery is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_sql_comments: v1 only; native startup
-    always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_spend_logs_pk_clauses: v1 only; native
-    startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::filter_partitioned_spend_logs_diff: v1 only;
-    native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration: v1
-    only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_specific_migration:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration_best_effort:
-    no caller at the pin.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._is_idempotent_error: v1
-    only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_all_migrations:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migrations_applied:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._run_migrations: v1 only;
-    native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migration_applied:
-    no caller at the pin.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
-    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
-  - 'litellm/proxy/db/db_url_settings.py: B711 owns translate_libpq_ssl_params (L221-L254).'
-  - 'litellm/proxy/db/db_url_settings.py: B712 owns DatabaseURLSettings.token_auth (L364-L373), DatabaseURLSettings._assemble_writer_url.token_branch
-    (L410-L435), DatabaseURLSettings._assemble_reader_url.token_branch (L476-L500).'
-  - 'litellm/proxy/db/db_url_settings.py::_VerifiedChainSource.get_verified_chain: Prisma-only first-certificate
-    bundle workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_verified_chain_der: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_server_trust_anchor: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::pin_bundle_root: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_replace_file: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::DatabaseURLSettings.apply_to_env: native config returns resolved
-    values; B051 composes TLS/token/pool stages without mutating process environment.'
-  - 'litellm/proxy/proxy_cli.py: B717 owns resolve_v2_migration_resolver (L184-L191).'
-  - 'litellm/proxy/utils.py: B786 owns hash_password (L7128-L7136), verify_password (L7139-L7156), migrate_passwords_to_scrypt_async
-    (L7159-L7185).'
-  - 'litellm/proxy/db/db_url_settings.py::DatabaseURLSettings.apply_to_env (L580-L620): native config
-    returns resolved values; B051 composes TLS/token/pool stages without mutating process environment.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param (L705-L713):
-    Prisma CLI --schema filename plumbing; native MigrationCatalog is compiled.'
-  - 'litellm/proxy/proxy_cli.py: B121 owns the remaining functions _drop_script_dir_from_sys_path (L36-L46),
-    _pg_options_with_timeouts (L113-L149), _url_query_value (L152-L156), _with_query_value (L159-L163),
-    append_query_params (L166-L181), deprecated_v2_flag_passed_on_cli (L194-L198), ProxyInitializationHelpers._echo_litellm_version
-    (L202-L205), ProxyInitializationHelpers._run_health_check (L207-L211), ProxyInitializationHelpers._run_config_validation
-    (L213-L230), ProxyInitializationHelpers._run_test_chat_completion (L232-L280), ProxyInitializationHelpers._get_default_unvicorn_init_args
-    (L282-L325), ProxyInitializationHelpers._apply_uvicorn_max_requests_jitter (L327-L353), ProxyInitializationHelpers._get_reload_options
-    (L355-L374), ProxyInitializationHelpers._patch_statreload_extra_paths (L376-L415), ProxyInitializationHelpers._configure_dev_reload
-    (L417-L433), ProxyInitializationHelpers._init_hypercorn_server (L435-L466), ProxyInitializationHelpers._init_granian_server
-    (L468-L516), ProxyInitializationHelpers._run_gunicorn_server (L518-L632), ProxyInitializationHelpers._run_ollama_serve
-    (L634-L644), ProxyInitializationHelpers._is_port_in_use (L646-L651), ProxyInitializationHelpers._get_loop_type
-    (L653-L658), ProxyInitializationHelpers._prometheus_callback_configured (L660-L672), ProxyInitializationHelpers._maybe_setup_prometheus_multiproc_dir
-    (L674-L702), run_server (L705-L1579).'
-  - 'litellm/proxy/utils.py: B124 owns the remaining functions _EndUserBatchTable.upsert (L300-L300),
-    _EndUserSpendBatch.litellm_endusertable (L304-L305), _BatchUpdateTable.update (L309-L309), _UpdateManyBatch.litellm_verificationtoken
-    (L313-L314), _UpdateManyBatch.litellm_usertable (L316-L317), _UpdateManyBatch.litellm_endusertable
-    (L319-L320), _UpdateManyBatch.litellm_budgettable (L322-L323), _UpdateManyBatch.litellm_teamtable
-    (L325-L326), _UpdateManyBatch.commit (L328-L328), print_verbose (L336-L348), _get_email_logger_class
-    (L351-L375), InternalUsageCache.__init__ (L379-L380), InternalUsageCache.async_get_cache (L382-L394),
-    InternalUsageCache.async_set_cache (L396-L410), InternalUsageCache.async_batch_set_cache (L412-L424),
-    InternalUsageCache.async_batch_get_cache (L426-L436), InternalUsageCache.async_increment_cache (L438-L452),
-    InternalUsageCache.set_cache (L454-L466), InternalUsageCache.get_cache (L468-L478), _accepts_litellm_call_info
-    (L487-L492), _record_raising_guardrail (L495-L498), _UpstreamStreamBoundary.__init__ (L504-L507),
-    _UpstreamStreamBoundary.__getattr__ (L509-L510), _UpstreamStreamBoundary.__aiter__ (L512-L513), _UpstreamStreamBoundary.__anext__
-    (L515-L522), _StreamIteratorHook.__call__ (L526-L526), _is_client_error_exception (L529-L534), _exception_changes_request_flow
-    (L537-L544), _policy_state_metadata (L547-L566), _policy_pipelines (L569-L575), _pipeline_step_guardrail_names
-    (L578-L579), pipeline_managed_guardrail_names (L582-L587), _partition_post_call_callbacks (L590-L607),
-    _merge_pipeline_metadata_bucket (L610-L619), _merge_pipeline_metadata_writes (L622-L636), _pipeline_step_supports_streaming
-    (L639-L649), _post_call_pipelines (L652-L655), _is_pending_background_response (L661-L662), _guardrails_outside_pipeline
-    (L665-L669), _guardrails_run_standalone_pre_call (L672-L679), _without_names (L682-L694), _withdraw_deferred_claims
-    (L697-L719), _defer_post_call_pipelines (L722-L753), _tag_matched_deferrals (L756-L766), _body_selected_deferrals
-    (L769-L774), _pipeline_unsupported_streaming_guardrails (L777-L786), _pipeline_is_streamable (L789-L803),
-    _streaming_pipeline_translation (L806-L808), stream_gated_guardrail_names (L811-L823), _streamable_post_call_pipelines
-    (L826-L858), _prompt_block_text (L861-L867), _system_prompt_text (L870-L875), _count_request_input_tokens
-    (L878-L890), _estimate_dispatched_failure_usage (L893-L906), _failure_usage_to_lift (L938-L972), _reached_deployment
-    (L978-L983), _stamp_deployment_attribution (L986-L1012), _deployment_attribution_for_model_group (L1015-L1068),
-    _call_type_for_route (L1071-L1080), _failure_fields_to_lift (L1086-L1111), _overrides_hook (L1141-L1143),
-    _overrides_moderation_hook (L1146-L1147), _names_kept_by_listing_callbacks (L1159-L1173), _raise_malformed_listing_filter_return
-    (L1176-L1182), ProxyLogging.__init__ (L1194-L1232), ProxyLogging.startup_event (L1234-L1275), ProxyLogging._ensure_deprecation_check_scheduled
-    (L1277-L1292), ProxyLogging.update_values (L1294-L1347), ProxyLogging._add_proxy_hooks (L1349-L1371),
-    ProxyLogging.get_proxy_hook (L1373-L1377), ProxyLogging._init_litellm_callbacks (L1379-L1425), ProxyLogging.update_request_status
-    (L1427-L1445), ProxyLogging._convert_user_api_key_auth_to_dict (L1447-L1459), ProxyLogging._convert_mcp_to_llm_format
-    (L1461-L1532), ProxyLogging._convert_llm_result_to_mcp_response (L1534-L1592), ProxyLogging._extract_modified_arguments_from_content
-    (L1594-L1629), ProxyLogging._parse_arguments_manually (L1631-L1658), ProxyLogging._convert_llm_result_to_mcp_during_response
-    (L1660-L1695), ProxyLogging.get_combined_callback_list (L1697-L1700), ProxyLogging._parse_pre_mcp_call_hook_response
-    (L1702-L1720), ProxyLogging._create_mcp_request_object_from_kwargs (L1722-L1737), ProxyLogging._convert_mcp_hook_response_to_kwargs
-    (L1739-L1766), ProxyLogging.process_pre_call_hook_response (L1768-L1783), ProxyLogging._should_use_guardrail_load_balancing
-    (L1785-L1800), ProxyLogging._execute_guardrail_hook (L1802-L1857), ProxyLogging._execute_guardrail_with_load_balancing
-    (L1859-L1901), ProxyLogging._process_guardrail_callback (L1903-L1996), ProxyLogging._run_sequential_guardrail_callback
-    (L1998-L2077), ProxyLogging._process_prompt_template (L2079-L2152), ProxyLogging._process_guardrail_metadata
-    (L2154-L2181), ProxyLogging._maybe_execute_pipelines (L2183-L2238), ProxyLogging._handle_pipeline_result
-    (L2240-L2317), ProxyLogging.has_pre_call_guardrails (L2319-L2341), ProxyLogging.pre_call_hook (L2368-L2581),
-    ProxyLogging._run_parallel_pre_call_guardrails (L2583-L2646), ProxyLogging._handle_sensitive_data_route_exception
-    (L2648-L2697), ProxyLogging._emit_guardrail_metrics (L2699-L2716), ProxyLogging._run_guardrail_with_metrics
-    (L2718-L2753), ProxyLogging._wrap_streaming_iterator_with_enrichment (L2755-L2770), ProxyLogging._callback_capabilities
-    (L2777-L2878), ProxyLogging._stream_requires_guardrail_translation (L2880-L2888), ProxyLogging.has_post_call_response_headers_callbacks
-    (L2890-L2892), ProxyLogging.has_streaming_callbacks (L2894-L2897), ProxyLogging.has_streaming_chunk_hook_overrides
-    (L2899-L2904), ProxyLogging.needs_iterator_wrap (L2906-L2911), ProxyLogging.needs_per_chunk_streaming_hook
-    (L2913-L2919), ProxyLogging.has_during_call_guardrails (L2921-L2923), ProxyLogging.during_call_hook
-    (L2925-L2993), ProxyLogging._run_during_call_guardrail (L2995-L3030), ProxyLogging.failed_tracking_alert
-    (L3032-L3044), ProxyLogging.budget_alerts (L3046-L3091), ProxyLogging.alerting_handler (L3093-L3154),
-    ProxyLogging.failure_handler (L3156-L3195), ProxyLogging.post_call_failure_hook (L3197-L3314), ProxyLogging._is_proxy_only_llm_api_error
-    (L3316-L3346), ProxyLogging._handle_logging_proxy_only_error (L3348-L3448), ProxyLogging._dispatch_proxy_only_failure_handlers
-    (L3450-L3474), ProxyLogging._run_post_call_pipelines (L3476-L3492), ProxyLogging.post_call_success_hook
-    (L3494-L3601), ProxyLogging._run_parallel_post_call_guardrails (L3603-L3662), ProxyLogging.post_mcp_call_hook
-    (L3664-L3716), ProxyLogging.post_call_response_headers_hook (L3718-L3775), ProxyLogging.hidden_by_listing_callbacks
-    (L3777-L3787), ProxyLogging._build_litellm_call_info (L3789-L3810), ProxyLogging.is_a2a_streaming_response
-    (L3812-L3814), ProxyLogging.async_post_call_streaming_hook (L3816-L3903), ProxyLogging.async_post_call_streaming_iterator_hook
-    (L3905-L4021), ProxyLogging._pipeline_gated_stream (L4023-L4086), ProxyLogging._record_served_stream_output
-    (L4088-L4093), ProxyLogging._fire_deferred_stream_logging (L4095-L4115), ProxyLogging._discard_deferred_stream_logging_for_failure
-    (L4117-L4132), ProxyLogging._arelease_max_parallel_requests_on_disconnect (L4134-L4156), ProxyLogging._init_response_taking_too_long_task
-    (L4158-L4168), on_backoff (L4174-L4176), jsonify_object (L4179-L4189), _lookup_deprecated_key (L4201-L4247),
-    _ConfigRow.__init__ (L4266-L4268), _config_cache_key (L4271-L4272), _pack_config_row (L4275-L4276),
-    _unpack_config_row (L4279-L4284), get_config_param (L4287-L4297), evict_config_param (L4300-L4301),
-    invalidate_config_param (L4304-L4307), prefetch_config_params (L4310-L4331), _StaleReadEngine.observe
-    (L4371-L4373), _StaleReadEngine.is_still_live (L4375-L4392), PrismaClient.__init__ (L4416-L4562),
-    PrismaClient.writer_db (L4564-L4569), PrismaClient.read_db (L4571-L4582), PrismaClient.tx (L4584-L4590),
-    PrismaClient.get_request_status (L4592-L4615), PrismaClient.hash_token (L4617-L4621), PrismaClient.jsonify_object
-    (L4623-L4633), PrismaClient.check_view_exists (L4635-L4727), PrismaClient.get_generic_data (L4729-L4790),
-    PrismaClient._query_first_with_cached_plan_fallback (L4792-L4852), PrismaClient.get_data (L4854-L5266),
-    PrismaClient.jsonify_team_object (L5268-L5274), PrismaClient.insert_data (L5277-L5423), PrismaClient.update_data
-    (L5426-L5662), PrismaClient.delete_data (L5665-L5728), PrismaClient.connect (L5731-L5761), PrismaClient.disconnect
-    (L5764-L5791), PrismaClient._get_engine_pid (L5793-L5812), PrismaClient._is_engine_alive (L5814-L5823),
-    PrismaClient._reap_all_zombies (L5825-L5846), PrismaClient._try_waitpid_watch (L5848-L5907), PrismaClient._waitpid_thread_func
-    (L5909-L5925), PrismaClient._consume_expected_death (L5927-L5944), PrismaClient._on_engine_death_from_thread
-    (L5946-L5972), PrismaClient._try_pidfd_watch (L5974-L5992), PrismaClient._on_pidfd_readable (L5994-L6034),
-    PrismaClient._poll_engine_proc (L6036-L6073), PrismaClient._cleanup_engine_watcher (L6075-L6089),
-    PrismaClient._start_engine_watcher (L6091-L6129), PrismaClient._stop_engine_watcher (L6131-L6135),
-    PrismaClient._handle_writer_engine_replaced (L6137-L6151), PrismaClient._run_reconnect_cycle (L6153-L6309),
-    PrismaClient._cooldown_applies (L6311-L6348), PrismaClient._attempt_reconnect_inside_lock (L6350-L6433),
-    PrismaClient.attempt_db_reconnect (L6435-L6541), PrismaClient.start_db_health_watchdog_task (L6543-L6566),
-    PrismaClient.stop_db_health_watchdog_task (L6568-L6579), PrismaClient.start_view_setup_task (L6581-L6584),
-    PrismaClient.stop_view_setup_task (L6586-L6592), PrismaClient._run_view_setup (L6594-L6606), PrismaClient._attempt_view_setup
-    (L6608-L6620), PrismaClient._log_view_setup_timeout (L6622-L6638), PrismaClient._view_setup_gate_table_present
-    (L6640-L6644), PrismaClient._db_health_watchdog_loop (L6646-L6680), PrismaClient.recreate_read_only_writer
-    (L6682-L6706), PrismaClient._writer_is_read_only (L6708-L6713), PrismaClient._probe_target_wrapper
-    (L6715-L6725), PrismaClient._run_health_probe (L6727-L6738), PrismaClient._probe_answers_now (L6740-L6746),
-    PrismaClient._planned_engine_replacement_absorbed (L6748-L6786), PrismaClient._report_health_check_failure
-    (L6788-L6808), PrismaClient.health_check (L6810-L6843), PrismaClient._get_spend_logs_row_count (L6845-L6870),
-    PrismaClient._set_spend_logs_row_count_in_proxy_state (L6872-L6891), PrismaClient._validate_response_time
-    (L6894-L6903), PrismaClient._clean_details (L6905-L6913), PrismaClient.save_health_check_result (L6915-L6954),
-    PrismaClient.get_health_check_history (L6956-L6982), PrismaClient.get_all_latest_health_checks (L6984-L6986),
-    PrismaClient.get_latest_health_checks_for_models (L6988-L6990), _cache_user_row (L6996-L7009), _should_use_smtp_ssl
-    (L7012-L7018), _create_smtp_connection (L7021-L7024), _send_smtp_message (L7027-L7056), send_email
-    (L7059-L7116), hash_token (L7119-L7125), _hash_token_if_needed (L7188-L7197), enqueue_spend_logs (L7200-L7229),
-    request_spend_log_flush (L7232-L7243), _wait_for_spend_log_flush_request (L7246-L7253), dequeue_spend_logs
-    (L7256-L7268), ProxyUpdateSpend.update_end_user_spend (L7272-L7309), ProxyUpdateSpend.update_spend_logs
-    (L7311-L7401), ProxyUpdateSpend.disable_spend_updates (L7403-L7413), update_spend (L7416-L7458), _park_spend_logs_in_redis
-    (L7461-L7468), requeue_spend_logs (L7471-L7479), recover_parked_spend_logs (L7482-L7503), _total_queued_spend_transactions
-    (L7506-L7529), update_daily_tag_spend (L7532-L7574), update_spend_logs_job (L7577-L7594), _run_spend_logs_job
-    (L7597-L7702), drain_spend_logs_queue (L7708-L7724), _drain_spend_logs_queue_to_db (L7727-L7743),
-    _park_remaining_spend_logs (L7746-L7754), _monitor_spend_logs_queue (L7757-L7830), _is_transient_spend_log_write_error
-    (L7836-L7837), _create_spend_logs_with_poison_isolation (L7840-L7903), _raise_failed_update_spend_exception
-    (L7906-L7927), _get_month_end_date (L7930-L7933), _is_projected_spend_over_limit (L7936-L7960), _get_projected_spend_over_limit
-    (L7963-L7992), _is_valid_team_configs (L7995-L8006), _to_ns (L8009-L8010), _check_and_merge_model_level_guardrails
-    (L8013-L8097), _merge_guardrails_with_existing (L8100-L8125), get_error_message_str (L8128-L8145),
-    _get_redoc_url (L8148-L8162), _get_docs_url (L8165-L8179), _get_openapi_url (L8182-L8196), _recreate_writer_on_read_only_transaction
-    (L8199-L8202), handle_exception_on_proxy (L8205-L8237), _premium_user_check (L8240-L8257), is_known_model
-    (L8260-L8274), is_known_vector_store_index (L8277-L8284), join_paths (L8287-L8307), get_custom_url
-    (L8310-L8339), get_proxy_base_url (L8342-L8346), get_server_root_path (L8349-L8356), normalize_route_for_root_path
-    (L8359-L8366), get_prisma_client_or_throw (L8369-L8377), is_valid_api_key (L8380-L8396), _get_validated_team_object
-    (L8436-L8453), _get_team_object_for_access_groups (L8456-L8475), _get_access_group_models (L8478-L8501),
-    _agent_access_group_visible_models (L8504-L8546), get_available_models_for_user (L8549-L8676), _safe_get_model_info
-    (L8679-L8688), _resolve_listing_model_info (L8691-L8729), _first_token_limit (L8732-L8736), _group_token_limit
-    (L8739-L8758), create_model_info_response (L8761-L8858), validate_model_access (L8861-L8893), model_dump_with_preserved_fields
-    (L8903-L8940).'
+  - B2307 owns idle_lifetime_params, add_missing_query_params, reader_shareable_params,
+    connection_params_from_url, token_refresh_params_from_url, unsupported_db_scheme,
+    unsupported_db_scheme_message and the URL byte decoder/fuzz workspace, plus the CLI query helpers.
+  - B712 owns DatabaseURLSettings.token_auth, _assemble_writer_url L410-L435 and _assemble_reader_url
+    L476-L500, and enabled-token normalization in apply_writer_url_to_env. These are composed above
+    password policy and are not invoked through an upward dependency.
+  - B711 owns translate_libpq_ssl_params and the native replacement of _VerifiedChainSource,
+    _verified_chain_der, _server_trust_anchor, pin_bundle_root and _replace_file; B051 owns
+    DatabaseURLSettings.apply_to_env composition without global env mutation.
+  - B121 owns other proxy_cli.py entry/worker/diagnostic functions; B717 owns resolve_v2_migration_resolver.
+    B051 invokes database settings and lowered URL helpers, without importing the CLI task.
+  - B129 owns get_secret_str, get_secret and secret-manager str_to_bool used by CLI configuration policy.
+  - B2302 owns proxy/utils.py get_server_root_path and normalize_route_for_root_path; B124 owns the
+    remaining proxy utility functions outside construct_database_url_from_env_vars. They are not
+    dependencies of password construction.
 pitfalls:
-  - An operator-pinned replica URL is never overwritten by token or password assembly.
-  - DIRECT_URL receives pool settings but no statement_timeout or lock_timeout options.
-  - Reader sharing excludes schema and search_path even when they arrived through database_extra_connection_params.
+  - DATABASE_USER and DATABASE_PORT affect DatabaseURLSettings but not the older CLI password builder.
+  - An empty replica password inherits the writer password because the fallback uses truthiness.
+  - The CLI does not apply DATABASE_MAX_IDLE_CONNECTION_LIFETIME as its idle-timeout fallback.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

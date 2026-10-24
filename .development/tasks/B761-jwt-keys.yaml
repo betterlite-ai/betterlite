@@ -12,6 +12,45 @@ description: >-
   and the distinct HTTP-status error path; these are injected-clock tests, not live sleeps.
 
 
+  Discovery detection is substring .well-known/openid-configuration anywhere in the configured URL,
+  not a suffix test. Cache discovery under litellm_oidc_discovery_<url> and keys under
+  litellm_jwt_auth_keys_<resolved-url>. Nonnull fresh cache hits bypass refresh; acquire a per-key lock
+  on misses and recheck. Cache timestamp accepts numeric int/float, including Python bool, not numeric
+  strings. On a refresh, check the unreachable marker before fetching; only JWKSUnreachableError
+  stores a 30-second marker. Success writes fresh value, then stale copy, then wall-clock write time,
+  the latter two only for positive stale TTL and with ttl+stale_ttl. Writes are sequential, not atomic;
+  cache errors propagate and prior writes remain. A stale copy needs both value and numeric timestamp,
+  allows age exactly ttl+stale_ttl and negative age, and uses current settings so lowering stale TTL
+  takes effect immediately. A served stale copy emits WARN with age/remaining lifetime; it does not
+  renew those timestamps. Missing/expired/disabled stale data rethrows the outage.
+
+  Own the cache/retry constants at handle_jwt.py L102-L107: stale value prefix litellm_stale_,
+  write-time prefix litellm_stale_written_at_, outage prefix litellm_jwks_unreachable_, attempts=3,
+  retry delay=0.25 and outage TTL=30.
+
+
+  Each transport failure before the last attempt WARNs and waits 0.25 then 0.5 seconds. A third
+  transport failure becomes JWKSUnreachableError; status errors, JSON errors and cache errors are
+  never retried or stale-eligible. Discovery requires exactly status 200, valid JSON and a truthy
+  jwks_uri; failures retain the distinct status/body, parse and missing-field messages. DEBUG logs
+  bracket discovery fetching/resolution. JWKS likewise requires 200; JSON failure ERROR-logs response
+  text then raises Error parsing response: <error>. Check server logs for original response. Use its
+  keys member when present, otherwise the response itself; never strip key material to just kid.
+
+
+  JWT_PUBLIC_KEY_URL absent raises Missing JWT Public Key URL from environment.; present empty or
+  comma/whitespace-only gives an empty URL list and a no-matching-key error. Trim comma-separated URLs
+  and try in order. Only NoMatchingJWTPublicKeyError DEBUG-logs and continues; an unreachable first
+  endpoint ERROR-logs and immediately returns 503 auth_provider_unavailable, param string None, with
+  the signature-could-not-be-verified/retry-shortly message. Other errors propagate through B757 as
+  auth_error 401. A kid miss never forces refresh of an otherwise fresh cache. parse_keys preserves
+  the peculiar cardinality rules: a length-one dict or list accepts matching kid or absent requested
+  kid; longer lists require a nonnull matching kid and choose the last match; longer dicts iterate
+  field names and yield no key. Empty values yield none. NoRegisteredAgents returns empty/None.
+  Domain checks default unrestricted; otherwise compare the final @ segment exactly, case-sensitive,
+  without validating email structure. There are no database writes and no caller-selected fetch URLs.
+
+
   Build the production jwt_keys module in betterlite-auth; reuse the typed dependencies listed in the
   backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
   tests.rs files.
@@ -47,7 +86,9 @@ description: >-
   to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::jwt_keys::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::jwt_keys::tests::ttl_defaults_600_and_3600, ttl_unconstrained_stale_nonnegative,
+  stale_zero_disables_and_negative_rejects, jwt_public_url_absent_empty_and_comma_list,
+  email_domain_default_none_and_exact_match. Invalid settings fail validation, not fallback.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -64,18 +105,16 @@ description: >-
   the workspace.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  JWKS helper comparisons inject an HTTP source and clocks, covering stale-cache behavior without
+  contacting a live identity provider. Native decoder-bound cases remain separate from equal MIT inputs.
 
 
-  Sizing: 255 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  255 production, 172 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 617 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  Sizing: 255 production, 290 table-driven tests, 80 helper adapters, 50 wiring, 65 decoder/fuzz and
+  60 config lines, 800 changed lines. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: discovery_and_jwks_byte_depth_limits_return_auth_error.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 
@@ -189,9 +228,19 @@ references:
     why: Own JWTHandler.is_allowed_domain; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L963-L968
     why: JWT_PUBLIC_KEY_URL default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L919-L929
     why: litellm_jwtauth.public_key_stale_ttl default and read site.
 dod:
+  - text: 'Additional named cases: discovery_substring_detection_and_exact_cache_keys,
+      fresh_nonnull_and_lock_recheck, numeric_timestamp_not_string, stale_age_equal_negative_missing,
+      live_ttl_reduction_applies_to_old_copy, cache_write_order_and_partial_failure,
+      only_transport_outage_is_backed_off, stale_warning_does_not_extend_life,
+      discovery_status_parse_missing_uri_errors, jwks_status_parse_log_and_keys_envelope,
+      absent_empty_and_ordered_url_list, kid_miss_continues_without_refresh,
+      first_outage_stops_url_iteration_with_503_fields, key_dict_cardinality_and_last_matching_kid,
+      no_registered_agents_defaults, email_last_segment_case_sensitive.'
+    proof:
+      - behavior-tests
   - text: 'Implement the owned behavior and ordered failure effects; named tests: configured_jwks, oidc_discovery,
       fresh_cache, stale_on_transient_outage, stale_window_exhausted, kid_mismatch, malformed_jwks, negative_stale_ttl_validation,
       zero_stale_ttl_fail_closed, configured_stale_ttl, transport_three_attempts, http_error_no_transport_retry,
@@ -214,7 +263,8 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: 'Native discovery_and_jwks_byte_depth_limits_return_auth_error proves bounded JSON failure maps
+      to 401 auth_error without retry or stale fallback.'
     proof:
       - behavior-tests
   - text: The real HTTP exception mapper preserves invalid-token and unavailable-key failures before identity
@@ -282,8 +332,7 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L116-L116
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B762 owns signature verification and userinfo HTTP calls; B869 owns JWT setting validation.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -329,6 +378,6 @@ out_of_scope:
 pitfalls:
   - A negative public_key_stale_ttl is validation failure, while zero disables stale fallback.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

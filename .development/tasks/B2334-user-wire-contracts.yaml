@@ -1,0 +1,119 @@
+id: B2334
+title: User bulk wire records and query identity decoding
+description: >-
+  Split B790's bulk wire records and raw user-info query decoder from its mutation services.
+  Own types/proxy/management_endpoints/internal_user_endpoints.py L15-L160 except B770's
+  InsensitiveContains L20-L22; internal_user_endpoints.py _is_valid_user_id/get_user_id_from_request/
+  _normalize_user_info_user_id L723-L760; and management_v1.py ResourceResponse L68-L71.
+  Lower that tiny data-only envelope here so these contracts do not depend on B067's later routes.
+
+  UserSearchWhere holds OR tuples mapping user_id/user_email to B770 InsensitiveContains.
+  UserListResponse requires users,total,page,page_size,total_pages. BulkUpdateUserRequest defaults
+  users=null,all_users=false,user_updates=null; all_users may be null. Its combination validator
+  runs ONLY when user_updates is explicitly provided: require truthy users OR all_users with
+  truthy user_updates, then reject truthy users plus all_users. Omitted user_updates skips it
+  because defaults are not validated, so {} and conflicting users/all_users can reach B795.
+  Cases update_defaults, update_explicit_null, update_valid_selection,
+  update_present_field_conflict and update_omitted_field_skips_validation preserve this difference.
+
+  UserUpdateResult requires success and defaults user_id,user_email,error,updated_user to null.
+  BulkUpdateUserResponse requires results,total_requested,successful_updates,failed_updates.
+  BulkDeleteUserRequest forbids extras and requires user_ids tuple length 1..500, without trimming
+  or deduplication. UserDeleteResult requires user_id,success; user_email/error=null,teams_removed=().
+  BulkDeleteUsersResponse is {data:tuple}, without meta/links. Cases update_response_defaults,
+  delete_bounds_and_extras, delete_duplicates_preserved and delete_response_empty_teams cover all fields.
+
+  BulkNewUserItem inherits B124 NewUserRequest, overrides auto_create_key=false, forbids extras,
+  and rejects truthy parsed send_invite_email; null/false pass. The inherited password validator
+  rejects all non-null passwords, including empty string. B124 owns other inherited defaults,
+  including user_role=null,teams=null,send_invite_email=null and team records role=user/budget=null.
+  BulkNewUserRequest forbids extras and requires 1..500 users. UserCreateResult requires success;
+  user_id,user_email,teams,key,error default null, distinct from empty teams. BulkNewUserMeta
+  requires total_requested,created,failed, and BulkNewUserResponse requires data tuple and meta.
+  Cases new_key_opt_in, new_invite_rejected, new_password_rejected, new_bounds_and_extras and
+  new_response_nulls cover each contract. Other BaseModel response records ignore extra fields.
+
+  _is_valid_user_id permits at most 512 Unicode code points and rejects only U+0000..U+001F;
+  empty string and DEL are valid. Raw query recovery takes the FIRST unanchored regex match
+  user_id=([^&]*), so other_user_id= can match. Percent-decode once with unquote, preserving
+  literal plus and using UTF-8 replacement for invalid encoded bytes, then validate. Absent or
+  invalid returns null. Normalization invokes recovery only when the supplied non-null ID
+  contains a literal space; otherwise it returns the value without rechecking length/controls.
+  Cases id_character_boundaries, id_plus_preserved, id_first_unanchored_match,
+  id_percent_decode_once, id_invalid_utf8_replacement, id_controls_null and
+  id_normalization_only_for_spaces pin the exact grammar and bypass.
+
+  Implement user_contracts::decode_bulk_user_request and decode_user_info_query using B003
+  bounded JSON and maintained percent decoding, with no new URL parser. Add user_contracts fuzz
+  replay to B770's server workspace for request variants, omitted/null fields, query escapes,
+  malformed UTF-8 and limit boundaries. Pure models/query helpers use B171; route owners
+  B795/B796/B854 supply HTTP envelopes. No DB, config or license behavior belongs here.
+  Native user_contract_input_limits proves the explicit bound deviation. Keep modules under 300 lines.
+
+  Sizing: approximately 140 nonblank noncomment record/query lines excluding docstrings;
+  allow 180 production, 260 tests, 65 adapters, 55 fuzz and 30 wiring, 590 within 650.
+  These complete contracts plus B790 mutation/membership tests would exceed 800.
+scope:
+  paths:
+    - crates/betterlite-server/src/user_contracts.rs
+    - crates/betterlite-server/src/user_contracts/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/user_contracts.rs
+    - crates/betterlite-server/fuzz/corpus/user_contracts/**
+    - tools/oracle/src/helpers/user_contracts.rs
+    - tools/oracle/helpers/user_contracts.py
+    - tools/oracle/src/helpers/management/users.rs
+    - tools/oracle/helpers/management/users.py
+    - tools/oracle/cases/helpers/user-contracts/**
+    - tools/oracle/fuzz/corpus/helper_case/user-contracts-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L15-L160
+    why: Own bulk/list records and constants except B770 InsensitiveContains L20-L22.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L723-L760
+    why: Own ID predicate and raw-query normalization below user-info routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/management_v1.py#L68-L71
+    why: Own ResourceResponse without a dependency on management routes.
+dod:
+  - text: All named field/default, validator-timing and query cases match pinned models/helpers.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: Production byte decoders and newly added helper seeds replay their bounded corpora.
+    proof: [parser-corpus, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: A record, validator or identity-decoding case is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_contracts::tests::/) - test(/replays_the_/)'
+    - id: parser-corpus
+      why: Production decoder fuzzing or replay is absent.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/user_contracts.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_user_contracts_corpus)'
+    - id: helper-python
+      why: The pure model/query adapter fails strict checking.
+      run: test -f tools/oracle/helpers/user_contracts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No newly added contract seed exercises the helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/user-contracts-*')" && grep -rlq user_contracts tools/oracle/fuzz/corpus/helper_case/user-contracts-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/user-contracts/update-validator-timing.yaml
+  - tools/oracle/cases/helpers/user-contracts/create-delete-bounds.yaml
+  - tools/oracle/cases/helpers/user-contracts/response-defaults.yaml
+  - tools/oracle/cases/helpers/user-contracts/query-plus-controls-and-substring.yaml
+deviations:
+  - what: Apply inherited request bounds or fallback 1048576 bytes/JSON depth 64 at the new
+      decoder, returning a typed limit failure.
+    why: README bounded parsing; user_contract_input_limits proves the concrete boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L42-L72
+out_of_scope:
+  - B770 owns InsensitiveContains, B124 inherited request/row declarations, B067 the other
+    management_v1 response shapes. B790 retains mutation/role helpers; B791 info, B792 updates,
+    B795 bulk updates, B796 list, B797 deletion, B798 activity, B1203 search and B1226 default teams.
+pitfalls:
+  - Omitting user_updates bypasses the field validator while explicit null invokes it.
+  - Replacing unanchored raw query matching with a query-map lookup changes accepted identities.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

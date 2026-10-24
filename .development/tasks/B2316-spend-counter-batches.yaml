@@ -1,0 +1,155 @@
+id: B2316
+title: Request-local spend-counter reads and shared batch scopes
+description: >-
+  Implement betterlite-auth::spend_counter_batch for spend_tracking/spend_counter_batch.py below
+  authentication prefetch, reservation and post-call accounting. B070 retains spend persistence,
+  B071 reservations and B124 the live-counter read/write policy; all call this lower component.
+  Use B126 Redis/request-pipeline primitives, B733 shared counter keys and B2314 resolved key
+  fields. PendingSpendIncrement is an immutable pair of required counter_key and increment; it
+  does not perform a write or impose positivity. Monetary values use checked Decimal, retaining
+  negatives and exact finite values. No environment setting or new outside-byte parser is added.
+
+  A new SpendCounterBatch is open, with empty bound/fetched sets, empty loaded map and empty
+  in-flight result list. Capture the active request Redis batch for the supplied Redis client
+  once at construction and register the declare-pending flush hook when present. bind unions
+  keys only while open. close marks closed without flushing or clearing state. read returns None
+  immediately if closed or unbound; otherwise load pending data and return (value,true) only when
+  the result map contains the key. A present null is an authoritative Redis miss; an absent key
+  means the caller must read Redis itself. No result here carries authoritative=false.
+
+  Serialize concurrent loads, while permitting record/forget during a suspended read, using native
+  request-owned state and a shared pending result; do not hold a mutex guard across an await.
+  Without a request batch, compute bound-minus-fetched, mark those keys fetched BEFORE the MGET,
+  request sorted keys and validate the returned string-keyed map of nullable numeric values.
+  Merge fetched values underneath existing loaded values so a recorded write wins over an older
+  read response. An ordinary fetch or validation failure logs DEBUG that per-key reads take over
+  and yields an empty map. Already marked keys are not retried by this batch after a failure;
+  the caller's ordinary Redis path handles them. Concurrent first readers share one load.
+
+  With a request batch, declare-pending is a no-op when closed or without that batch. Otherwise
+  mark unread bound keys fetched and append the result of batch.mget(sorted(keys)). A load first
+  declares pending keys, snapshots and clears the in-flight list, then awaits its results in list
+  order. Each ordinary exception or invalid result logs DEBUG and skips only that result; later
+  results still merge. Existing loaded values win over every result, so the first accepted value
+  for a duplicate key wins unless record replaces it. Hooks triggered by another pipeline user
+  can declare spend keys before their first read; no separate MGET is added for already fetched
+  keys. Cancellation propagates rather than becoming a fallback diagnostic.
+
+  record while open adds the key to bound and fetched sets and overwrites its loaded value;
+  it is a no-op when closed. forget always removes the key from all three, even after close.
+  Preserve the source race: an already pending reply can reinsert a forgotten value into loaded,
+  but cannot rebind the key; read still returns None until it is bound again. A later rebind marks
+  it fetchable again, and the already loaded value still wins that merge. Closing during a read
+  does not retroactively abort the read that passed its initial open check. Do not silently
+  strengthen these rules with invalidation generations or retries.
+
+  Replace the Python context variable, named spend_counter_batch with default None, by explicit
+  request-local scope state passed through auth and accounting. Entering a scope with Redis=None
+  leaves any active outer scope unchanged. With Redis present, reuse an open outer batch and bind
+  the new keys even if the inner Redis handle differs; otherwise create a new batch and remember
+  the previous active value. Exit restores only when this scope installed a batch, on success or
+  error; it does not close that batch. release closes the active batch if any. Nested scope exit
+  cannot close or clear an outer batch. Async tasks inherit the intended request state without
+  sharing it with a different request; no global mutable registry or detached task is introduced.
+
+  active/bind/record/forget/read wrappers are native scope access or enum matches, not one-line
+  forwarding functions. With no active batch, mutation wrappers do nothing and the read wrapper
+  returns None. read_batched_spend_counter first binds its single key, then reads, allowing budget
+  windows discovered later to join the next MGET. bind_admission_counter_keys is idempotent and
+  can add identifiers acquired after initial auth without removing earlier bound keys.
+
+  Entity counter construction accepts only string IDs, including empty strings. Emit spend:key:{token},
+  spend:team:{team_id}, spend:team_member:{user_id}:{team_id} only when BOTH team/user are strings,
+  spend:user:{user_id}, spend:end_user:{end_user_id}, spend:org:{org_id} and B733 spend:project:{id}.
+  There is no trim, delimiter escaping or token rehashing. admission_counter_keys projects these
+  fields from the resolved key plus the explicitly supplied end user. post_call_counter_keys adds
+  spend:tag:{tag} and B733 spend:model_access_group:{group} for truthy string entries only; empty
+  tags/groups and nonstrings are ignored, unlike empty entity IDs. Results are sets, deduplicated
+  without promising iteration order. The pure spend_counter_batch oracle calls the actual source
+  key constructors; normalize only set ordering in the adapter.
+
+  Native tests with the real B126 batch abstraction and recording Redis transport cover scopes,
+  suspended-read races, error fallback, map validation and command order. Source float validation
+  permits numeric strings and bools (0/1); retain those finite conversions. Nonfinite or out-of-range
+  results cause the native whole-map validation failure and DEBUG fallback, not a partially loaded
+  map. The 212 nonblank noncomment lines excluding docstrings include the unused counter_keys
+  property; omit its three lines. Allow 220 implementation, 330 tests, 85 adapters and 35 wiring,
+  670 within 750. Separate key projection, scope state and batch transport files below 300 lines.
+scope:
+  paths:
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
+    - crates/betterlite-auth/src/spend_counter_batch.rs
+    - crates/betterlite-auth/src/spend_counter_batch/**
+    - tools/oracle/src/helpers/spend_counter_batch.rs
+    - tools/oracle/helpers/spend_counter_batch.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/spend-counter-batch/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-counter-batch-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L21-L138
+    why: Pending increments, load/merge state and the difference between missing and authoritative null.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L141-L177
+    why: Scope reuse, restoration and explicit release; None Redis does not clear an outer scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L180-L281
+    why: Exact entity/tag/group keys and active-scope mutation/read behavior.
+dod:
+  - text: 'Key cases name all_entity_counter_formats, only_string_entity_ids,
+      empty_entity_ids_kept, team_member_requires_two_string_ids, delimiters_not_escaped,
+      token_not_rehashed, admission_uses_explicit_end_user, post_call_tags_and_groups_truthy_strings,
+      post_call_project_default_none and counter_sets_deduplicate.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Load cases name new_batch_empty_and_open, closed_or_unbound_read_none,
+      present_null_is_authoritative, omitted_key_requires_direct_read,
+      first_read_mget_sorted_pending_only, concurrent_readers_share_load,
+      keys_marked_fetched_before_await, recorded_write_wins_old_reply,
+      failed_fetch_debug_and_no_batch_retry, malformed_map_drops_whole_result,
+      numeric_string_and_bool_counter_values, pending_hook_joins_existing_pipeline,
+      collect_clears_inflight_before_await, failed_result_does_not_skip_later_results,
+      first_loaded_value_wins_duplicate_reply, cancelled_load_propagates,
+      late_keys_join_next_fetch and close_during_read_does_not_abort_it.'
+    proof: [behavior-tests]
+  - text: 'State/scope cases name record_binds_and_marks_fetched, closed_record_and_bind_noop,
+      forget_clears_even_closed, pending_reply_does_not_rebind_forgotten_key,
+      rebound_forgotten_key_keeps_loaded_merge_precedence, no_active_scope_wrappers,
+      none_redis_preserves_outer, open_outer_reused_even_different_redis,
+      closed_outer_gets_new_inner, exit_restores_on_success_and_failure,
+      exit_does_not_close_batch, release_closes_only_active, request_state_isolated,
+      bind_on_read_adds_window_key and admission_rebind_adds_new_ids.'
+    proof: [behavior-tests]
+  - text: 'Native numeric tests name negative_increment_allowed, exact_decimal_counter_merge,
+      nonfinite_map_debug_fallback and out_of_range_map_debug_fallback.'
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Pending-read races and scope lifetime must pass through production batch state.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^spend_counter_batch::/)'
+    - id: helper-python
+      why: Counter-key equality must call the pinned constructors with their string/type distinctions.
+      run: test -f tools/oracle/helpers/spend_counter_batch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: New spend-counter operation seeds must be present before helper corpus replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/spend-counter-batch-*")" && grep -rlq spend_counter_batch tools/oracle/fuzz/corpus/helper_case/spend-counter-batch-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-counter-batch/admission-keys.yaml
+  - tools/oracle/cases/helpers/spend-counter-batch/post-call-keys.yaml
+  - tools/oracle/cases/helpers/spend-counter-batch/empty-nonstring-and-duplicate-ids.yaml
+deviations:
+  - what: Nonfinite or out-of-range Redis numeric maps trigger DEBUG fallback to per-key reads instead of entering batch state as Python floats.
+    why: Checked Decimal values cannot represent those source values; finite numeric coercions and negative values remain supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L116-L135
+out_of_scope:
+  - SpendCounterBatch.counter_keys has no production caller at the pin and is not exposed as a new API.
+  - B126 owns request Redis batches and their byte decoder; B070 owns reseeding and persistence, B071 reservations and B124 counter-write policy.
+pitfalls:
+  - A present null from MGET is authoritative, while an absent map entry demands another read path.
+  - Scope exit restores the previous active value but does not perform release or close.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

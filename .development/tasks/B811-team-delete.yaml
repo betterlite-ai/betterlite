@@ -1,14 +1,45 @@
 id: B811
 title: Delete and archive teams with reference cleanup
 description: >-
-  Implement /team/delete with archive records, dependent key/membership cleanup and reference sweeping
-  in writer transactions. Derive affected member identities before removing the roster so every relevant
-  auth/cache entry can be invalidated. Preserve deleted-team archive fields and audit event ordering.
+  Implement POST /team/delete as the source's ordered deletion workflow, not one transaction. Missing
+  database is 500 detail.error="No db connected"; null team_ids is 400 "No team id passed in". Empty
+  lists succeed with deleted_teams=[] and duplicates are not normalized. Read each requested team and
+  authorize B800 TEAM_OR_ORG_ADMIN before any archive write. Both missing rows and read exceptions become
+  404 "Team not found, passed team_id=..."; model validation is outside that catch. Scope denial uses
+  B800 team_access_denied. Cases delete_empty_and_null, all_targets_before_archive, read_error_is_404
+  and delete_scope_matrix distinguish these paths and preserve requested response order.
 
+  Archive all teams with one UTC deleted_at, caller user_id/api_key and the raw optional
+  litellm-changed-by header. JSON-encode non-null members_with_roles, metadata, model_spend,
+  model_max_budget and router_settings; discard litellm_model_table, object_permission, id,
+  budget_limits and default_team_member_models. Preserve stored ciphertext inside metadata without
+  decrypting or re-encrypting it. Empty records skip create_many. Then, when B065 enables auditing,
+  re-read each team, skip missing rows and schedule deleted events with before_value=json(exclude_none),
+  updated_values="{}", a UUID/time, caller API key and B065's authorized changed_by resolution. The
+  archive header is deliberately raw while the audit identity is policy controlled. Cases archive_json
+  and audit_archive_identity_difference prove that distinction; audit settings and their loader belong
+  to B065 rather than a new config key here.
 
-  Build the production team_delete module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Fetch key rows and B738 JWT mapping cache keys, archive nonempty keys through B777, delete team keys
+  through B124, then issue B784 deletion audit events, B734 key-cache invalidation and B878 JWT eviction.
+  Next call B836 delete_team_models. A failure at any stage preserves prior archives, deletions and
+  scheduled events. Sweep every user with SQL array_remove(teams,$1) WHERE $1=ANY(teams), once per input
+  ID, then delete memberships. Resolve member cache IDs from the saved roster after this first sweep:
+  include all non-null IDs (including empty strings), resolve only email-only members with one B723
+  case-insensitive find_by_emails call per team, and return a sorted unique union. Cases
+  key_archive_delete_cache_order, model_failure_leaves_prior_effects, stale_user_reference_sweep and
+  email_only_identity_recovery inspect these effects rather than promising whole-request rollback.
+
+  Only the final team deletion and second sweep share a transaction. Acquire B819 TEAM_ADVISORY_LOCK_SQL
+  for every sorted input ID, delete team rows, repeat the user-array sweep and membership deletion on
+  that same connection, then commit. Concurrent member_add uses the same lock; retain unrelated team
+  array additions. Immediately afterward evict team ID/alias caches concurrently through B734, then
+  for each team B878-evict user IDs and concurrently invalidate member spend state through B734. Finally
+  emit B807 metrics from empty rosters and invoke B819 access-group sync for each saved team. Cache or
+  sync failures propagate after deletion; metric failure retains B807's warn/drop behavior. Native
+  postgres_failure_effects injects failure at each stage, postgres_pinned_rows checks archives and
+  sweeps, and postgres_member_add_delete_race proves the advisory-lock boundary. Post-commit cache
+  failure and sync order have named tests post_commit_cache_failure and empty_roster_metric_then_sync.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -22,47 +53,20 @@ description: >-
 
 
   Register these actual HTTP routes and aliases exactly once: POST /team/delete -> delete_team. For each
-  route send a typed successful request, an invalid or missing target, and a caller lacking that route
-  permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  route exercise the named cases through B001 and B052, comparing status, B003 error type/param/code,
+  JSON content-type and deleted_teams. The handler has only the per-team lookup catch described above;
+  it does not call handle_exception_on_proxy. B865 wraps this route and must not hide its partial effects.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Archive/delete fixtures must inspect retained rows through B860's POSTGRES_TEST_URL database;
+  use testcontainers only without that variable, and treat connection/start errors as test failures.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Sizing: 313 nonblank, noncomment function lines including docstrings, plus the owned three-line SQL
+  declaration at L390-L392; allow 300 production, 400 behavior/Postgres tests, 0 helper adapters,
+  80 route/manifests/wiring, 0 decoder/fuzz and 0 config lines, 780 changed lines within an 800-line gate.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 313 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  313 production, 157 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 535 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
 scope:
   paths:
     - crates/betterlite-server/src/team_delete.rs
@@ -76,7 +80,7 @@ scope:
     - crates/betterlite-server/src/team_delete/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4313-L4712
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4311-L4712
     why: Pinned implementation and exact ownership boundary for team_delete.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2311-L2318
     why: DeleteTeamRequest request/response fields and defaults.
@@ -104,12 +108,11 @@ references:
     why: Own _save_deleted_team_records; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L4697-L4712
     why: Own _persist_deleted_team_records; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L390-L392
+    why: Own the atomic array_remove statement used by both reference sweeps.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_archive, delete_keys,
-      membership_identity_recovery, reference_sweep, unauthorized_delete, rollback, post_commit_eviction,
-      postgres_pinned_rows, postgres_failure_effects.'
+  - text: The named archive, identity, scope and cache cases in the description pass; only the final team
+      deletion plus second sweep rolls back together, and every earlier effect remains observable.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -132,20 +135,18 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_delete::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_delete::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-delete/post--team-delete-success.yaml
-  - tools/oracle/cases/management/team-delete/post--team-delete-invalid-target.yaml
-  - tools/oracle/cases/management/team-delete/post--team-delete-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-delete/team-archive.yaml
-  - tools/oracle/cases/management/team-delete/delete-keys.yaml
-  - tools/oracle/cases/management/team-delete/membership-identity-recovery.yaml
-  - tools/oracle/cases/management/team-delete/reference-sweep.yaml
-  - tools/oracle/cases/management/team-delete/unauthorized-delete.yaml
-  - tools/oracle/cases/management/team-delete/rollback.yaml
-  - tools/oracle/cases/management/team-delete/post-commit-eviction.yaml
+  - tools/oracle/cases/management/team-delete/delete-empty-and-null.yaml
+  - tools/oracle/cases/management/team-delete/all-targets-before-archive.yaml
+  - tools/oracle/cases/management/team-delete/delete-scope-matrix.yaml
+  - tools/oracle/cases/management/team-delete/archive-json.yaml
+  - tools/oracle/cases/management/team-delete/audit-archive-identity-difference.yaml
+  - tools/oracle/cases/management/team-delete/key-archive-delete-cache-order.yaml
+  - tools/oracle/cases/management/team-delete/stale-user-reference-sweep.yaml
+  - tools/oracle/cases/management/team-delete/email-only-identity-recovery.yaml
+  - tools/oracle/cases/management/team-delete/database-required.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B777 owns key archival transforms, B836 owns BYOK model deletion and B065 owns audit enablement and actor policy.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -224,8 +225,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Recover member identities before deleting the roster so cache eviction remains complete.
+  - The first reference sweep precedes the locked transaction, so its writes survive a later team-delete rollback.
+  - Archives accept the raw litellm-changed-by header even when the audit actor policy ignores that header.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

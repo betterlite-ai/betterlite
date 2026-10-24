@@ -114,6 +114,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/callback-registry/capacity-boundary.yaml
 deviations: []
 out_of_scope:
+- B2304 owns callback_utils.py L710-L793 and its credential-selection constants L40-L53; registration
+  composes that completed service instead of owning the stored callback encryption algorithms.
 - Real exporters arrive in M5; Python callable discovery and CustomLogger instances arrive in B164-B165.
 - Team/key callback persistence and authorization are M4.
 - >-

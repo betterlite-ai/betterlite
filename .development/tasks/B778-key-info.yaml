@@ -5,6 +5,50 @@ description: >-
   windows, explicit deleted-key lookup and source access restrictions. Return key hashes/masked names
   only where the pinned API returns them; raw secrets are never reconstructed from storage.
 
+  GET /key/info uses the caller's api_key when the query key is null or empty. Hash only an sk-
+  prefix through B770, query the live token including its budget relation, then the latest archived
+  row ordered by deleted_at descending. Remove token from info, set status to deleted for an
+  archive or B897's derived status for a live key, and attach B816 object permissions. Echo key
+  exactly as requested or selected from the caller, even when it is a raw supplied secret.
+  Cases info_default_key, info_empty_key, info_prefix_normalization, info_latest_archive,
+  info_live_precedes_archive, info_status_and_permission and info_request_key_echo pin the projection.
+
+  Authorization short-circuits for proxy admin/viewer, exact caller.api_key == queried key,
+  caller.user_id == row.user_id, or B800 user_belongs_to_keys_team. The user comparison does not
+  require non-null IDs: null equals null. Cases info_admin_viewer, info_exact_key,
+  info_same_owner, info_null_owner_equality, info_team_member and info_unrelated_denied preserve
+  that behavior. Missing keys raise ProxyException 404 not_found_error, param key, code 404.
+  Denial is HTTPException 403 passed through this route's handle_exception_on_proxy call, yielding
+  internal_server_error with openai_error_param and code 403. Ordinary failures including missing
+  DB yield 500 internal_server_error. Cases info_missing_error_shape and info_database_error_shape
+  compare those fields; error messages identify missing key, access denial or database failure
+  with betterlite wording under README Decisions.
+
+  POST /v2/key/info is hidden from OpenAPI and has no management wrapper. B124 KeyRequest requires
+  at least one truthy keys/key_aliases list; a null body has the route's 422 missing-data error.
+  Copy keys or start with [], append non-null tokens found by alias, and avoid any token query
+  when that list is empty. No rows returns an empty info array; inaccessible rows are silently
+  omitted, not rejected. Try model_dump and fall back to dict on failure. Strip token but do not
+  add GET's status or object-permission enrichment. The response key is the original data.keys,
+  including null for aliases-only requests, and info follows query order. Cases v2_aliases_only,
+  v2_keys_plus_aliases, v2_unknown_alias_no_unbounded_query, v2_missing_rows_empty,
+  v2_foreign_rows_filtered, v2_dump_fallback, v2_projection_difference and v2_null_body_422 cover
+  these paths. The route's L4340-L4343 except block applies B124 handle_exception_on_proxy, so
+  its explicit 422 becomes internal_server_error/code 422; schema validation still precedes it.
+
+  Both routes prefer a truthy row model_max_budget, otherwise the budget relation's dict value,
+  and call B071 build_model_max_budget_usage with entity_type KEY and the key hash. B770 parses
+  stored budget windows; no windows omits budget_limits_usage, while windows with no nonempty
+  string budget_duration produce {}. Concurrent window reads retain input order, with duplicate
+  durations taking the last result. B124 get_current_spend receives spend:key:<hash>:window:<duration>,
+  fallback_spend 0.0, window_entity_type Key, entity ID/hash, duration and B071 get_budget_window_start.
+  max_budget accepts numeric values or float-parseable strings, including bool as 0/1; absent,
+  unsupported and unparsable values become null. Round current_spend to four decimals. V2 requires
+  a truthy token before usage lookup; GET calls the window helper regardless. Cases
+  model_budget_relation_fallback, window_budget_coercion, window_counter_arguments,
+  window_usage_rounding, window_empty_vs_invalid_duration, window_duplicate_duration_last and
+  v2_missing_token_omits_usage verify the helper inputs and returned fields. No database writes occur.
+
 
   Build the production key_info module in betterlite-server; reuse the typed dependencies listed in the
   backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
@@ -23,14 +67,9 @@ description: >-
   column type; retain source storage types.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /v2/key/info -> info_key_fn_v2; GET
-  /key/info -> info_key_fn. For each route send a typed successful request, an invalid or missing target,
-  and a caller lacking that route permission through B001 HttpCase against the running pinned MIT proxy
-  and betterlite. Public login/session routes instead prove bad credentials or invalid/expired codes.
-  Compare status, response model including null/absent fields, error type/param/code, content-type, redirect/cookie
-  headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper invocations.
-  handle_exception_on_proxy controls management error mapping; keep source partial writes visible in fixture
-  inspection.
+  Register both paths once. Route and authorization cases use B001 HTTP against booted proxies;
+  usage helper cases use injected counters and real parsed records. Postgres fixtures use
+  POSTGRES_TEST_URL or testcontainers, fail on unavailable infrastructure and clean a unique schema.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -50,14 +89,14 @@ description: >-
 
 
   Sizing: 294 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  294 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 507 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  294 production, 350 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 709 changed lines estimated within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to GET only;
+  POST /v2/key/info is not decorated. Neither route reads litellm-changed-by.
 scope:
   paths:
     - crates/betterlite-server/src/key_info.rs
@@ -84,17 +123,17 @@ references:
     why: Own _budget_window_usage; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4231-L4245
     why: Own _build_budget_limits_usage; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4254-L4343
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4248-L4343
     why: Own info_key_fn_v2; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4348-L4479
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4346-L4479
     why: Own info_key_fn; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4482-L4491
     why: Own _find_deleted_key_info; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_info, v2_multiple_keys,
-      deleted_key_info, model_budget_usage, window_budget_usage, other_user_denied.'
+  - text: Every named description case passes, including archive ordering, GET/POST projection and
+      error differences, filtered rows and exact budget-counter arguments.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -110,12 +149,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_info::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/key-info/post--v2-key-info-success.yaml
-  - tools/oracle/cases/management/key-info/post--v2-key-info-invalid-target.yaml
-  - tools/oracle/cases/management/key-info/post--v2-key-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/key-info/get--key-info-success.yaml
-  - tools/oracle/cases/management/key-info/get--key-info-invalid-target.yaml
-  - tools/oracle/cases/management/key-info/get--key-info-unauthorized-caller.yaml
+  - tools/oracle/cases/management/key-info/v2-filters-inaccessible-rows.yaml
+  - tools/oracle/cases/management/key-info/v2-aliases-and-empty-results.yaml
+  - tools/oracle/cases/management/key-info/get-missing-and-denied-error-shapes.yaml
+  - tools/oracle/cases/management/key-info/null-owner-equality.yaml
   - tools/oracle/cases/management/key-info/key-info.yaml
   - tools/oracle/cases/management/key-info/v2-multiple-keys.yaml
   - tools/oracle/cases/management/key-info/deleted-key-info.yaml
@@ -124,8 +161,9 @@ oracle_cases:
   - tools/oracle/cases/management/key-info/other-user-denied.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B071 owns model usage and budget-window start calculations; B124 owns get_current_spend,
+    get_data, KeyRequest and exception projection. B770 owns stored-window decoding and prefix
+    hashing; B2314 owns its hash implementation. This task never reconstructs a stored secret.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -163,7 +201,7 @@ out_of_scope:
     (L5171-L5188), delete_key_aliases (L5191-L5208).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B780 owns _check_proxy_or_team_admin_for_key
     (L5989-L6015), _validate_reset_spend_value (L6018-L6053), _set_spend_counter_with_floor_and_broadcast
-    (L6056-L6087), _budget_limit_windows (L6090-L6104), _advance_one_key_budget_window (L6107-L6131),
+    (L6056-L6087), _advance_one_key_budget_window (L6107-L6131),
     _reset_key_budget_windows (L6134-L6172), reset_key_spend_fn (L6181-L6278).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B781 owns validate_key_list_check
     (L6281-L6376), _fetch_user_team_objects (L6379-L6394), _get_admin_team_ids_from_objects (L6397-L6402),
@@ -219,8 +257,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - GET /key/info and POST /v2/key/info have different selectors but neither reconstructs raw secrets.
+  - A successful aliases-only v2 response has key null, not the resolved token list.
+  - Adding a non-null guard to the user_id equality check changes source authorization for ownerless keys.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

@@ -1,9 +1,24 @@
 id: B1208
 title: Team block state and auxiliary read routes
 description: >-
-  Implement team members/me, block/unblock, metadata_schema and available routes with caller membership
-  and team-admin policy. Blocking evicts the affected auth team immediately after its write. Preserve
-  configured default-team availability and missing-versus-empty metadata schemas.
+  Implement the five team read/state routes below. Members/me checks DB (HTTPException 500), then
+  caller user_id (400), then B737's team lookup. Match the first roster ID OR exact email; even an admin
+  absent from the roster gets 404. Load B2318 membership and B736 user without upsert. Return caller ID,
+  team ID/alias, roster role and the DB user's email (None if absent). Missing membership returns spend=0,
+  total_spend=0, budget_id=null and litellm_budget_table=null; otherwise copy those membership fields.
+
+  Block/unblock raise a plain exception for no DB, 404 detail.error for a missing team, and B800's
+  team_access_denied outside TEAM_OR_ORG_ADMIN. Write only blocked=true/false and return the record.
+  These three routes have B865 management effects: eviction follows its alert/span processing. There
+  is no local exception mapper. HTTPException retains FastAPI detail with no type/param/code; generic
+  no-DB errors become 500 error.type=internal_server_error with code/param absent in the global handler.
+
+  Metadata schema returns fields from B801 TEAM_METADATA_SCHEMA_REGISTRY, [] when unconfigured; it is
+  advisory and has authentication but no target lookup. Available checks DB first (400 detail.error),
+  then litellm_settings.default_internal_user_params (default None), whose available_teams defaults None.
+  None returns [] without a user query; [] still looks up the caller and can return 404 User not found.
+  Exclude IDs in user.teams, query the remaining IDs and omit absent team rows. Neither read route has
+  management effects. B801 provides the typed table readers; B1231 supplies request/response contracts.
 
 
   Build the production team_state module in betterlite-server; reuse the typed dependencies listed in
@@ -22,13 +37,10 @@ description: >-
 
   Register these actual HTTP routes and aliases exactly once: GET /team/{team_id}/members/me -> team_member_me;
   POST /team/block -> block_team; POST /team/unblock -> unblock_team; GET /team/metadata_schema -> get_team_metadata_schema;
-  GET /team/available -> list_available_teams. For each route send a typed successful request, an invalid
-  or missing target, and a caller lacking that route permission through B001 HttpCase against the running
-  pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials or invalid/expired
-  codes. Compare status, response model including null/absent fields, error type/param/code, content-type,
-  redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper
-  invocations. handle_exception_on_proxy controls management error mapping; keep source partial writes
-  visible in fixture inspection.
+  GET /team/available -> list_available_teams. Use B001 HTTP cases for the named branches and compare
+  status, full response including nulls, content-type and actual error shape. B860 inspects block writes
+  against POSTGRES_TEST_URL supplied by CI, otherwise testcontainers. These routes neither read
+  litellm-changed-by nor emit cookies/redirects.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -37,7 +49,7 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::team_state::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::team_state::tests::loads_available_teams, absent_available_teams and empty_available_teams.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -55,14 +67,13 @@ description: >-
 
 
   Sizing: 202 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  202 production, 145 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 462 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  202 production, 260 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 577 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  exercise real virtual-key lookup and permission policy. Apply B865 only to members/me, block and unblock.
 scope:
   paths:
     - crates/betterlite-server/src/team_state.rs
@@ -81,23 +92,28 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/team-state-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5019-L5123
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5012-L5123
     why: Own team_member_me; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5128-L5178
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5126-L5178
     why: Own block_team; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5183-L5227
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5181-L5227
     why: Own unblock_team; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5236-L5245
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5230-L5245
     why: Own get_team_metadata_schema; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5249-L5288
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5248-L5288
     why: Own list_available_teams; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L457-L462
-    why: litellm_settings.default_internal_user_params default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+    why: Default None; the available_teams read is team_endpoints.py L5263-L5270 above.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2082
+    why: Global generic-error response used by block/unblock without a DB.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: members_me, not_a_member,
-      block_team, unblock_team, metadata_schema.'
+  - text: >-
+      Cases me_no_db_500, me_no_user_id_400, me_by_id, me_by_email, admin_not_member_404,
+      me_no_membership_defaults, me_membership_budget, me_missing_user_email, block_no_db_500,
+      block_missing_team_404, block_scoped_admin, block_denied, unblock_scoped_admin, unblock_denied,
+      wrapper_evicts_after_alert_and_span, metadata_empty, metadata_declared_fields,
+      available_no_db_400, available_unset_no_user_query, available_empty_missing_user_404,
+      available_excludes_memberships and available_missing_rows exercise every route branch.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -128,21 +144,10 @@ checks:
         && grep -rlq "default_internal_user_params" crates/betterlite-config/fuzz/corpus/config_yaml/team-state-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/team-state/get--team-team-id-members-me-success.yaml
-  - tools/oracle/cases/management/team-state/get--team-team-id-members-me-invalid-target.yaml
-  - tools/oracle/cases/management/team-state/get--team-team-id-members-me-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-state/post--team-block-success.yaml
-  - tools/oracle/cases/management/team-state/post--team-block-invalid-target.yaml
-  - tools/oracle/cases/management/team-state/post--team-block-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-state/post--team-unblock-success.yaml
-  - tools/oracle/cases/management/team-state/post--team-unblock-invalid-target.yaml
-  - tools/oracle/cases/management/team-state/post--team-unblock-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-state/get--team-metadata-schema-success.yaml
-  - tools/oracle/cases/management/team-state/get--team-metadata-schema-invalid-target.yaml
-  - tools/oracle/cases/management/team-state/get--team-metadata-schema-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-state/get--team-available-success.yaml
-  - tools/oracle/cases/management/team-state/get--team-available-invalid-target.yaml
-  - tools/oracle/cases/management/team-state/get--team-available-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-state/database-and-identity-errors.yaml
+  - tools/oracle/cases/management/team-state/me-membership-defaults.yaml
+  - tools/oracle/cases/management/team-state/block-unblock-permissions.yaml
+  - tools/oracle/cases/management/team-state/available-absent-empty-filtered.yaml
   - tools/oracle/cases/management/team-state/members-me.yaml
   - tools/oracle/cases/management/team-state/not-a-member.yaml
   - tools/oracle/cases/management/team-state/block-team.yaml
@@ -150,8 +155,6 @@ oracle_cases:
   - tools/oracle/cases/management/team-state/metadata-schema.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -217,8 +220,8 @@ out_of_scope:
     (L838-L906), _check_team_rpm_tpm_limits (L909-L944), check_org_team_model_specific_limits (L947-L978),
     check_org_team_rpm_tpm_limits (L981-L1003), _check_org_team_limits (L1006-L1106), _check_user_team_limits
     (L1109-L1178).'
-  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1205 owns patch_team (L2574-L2642), _set_budget_reset_at
-    (L2645-L2663), handle_update_object_permission (L2666-L2687).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B2370 owns patch_team (L2568-L2642);
+    B1205 owns _set_budget_reset_at (L2645-L2663) and handle_update_object_permission (L2666-L2687).'
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B1206 owns _process_team_members (L2859-L2913),
     _resolve_member_identity (L2916-L2945), _member_already_in_team (L2948-L2953), _resolve_existing_member_user_ids
     (L3078-L3094), _pre_existing_user_ids (L3097-L3114), _validate_member_user_id_provisioning (L3120-L3153),
@@ -233,8 +236,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Blocking evicts the affected auth team immediately after its write.
+  - Members/me accepts an email match even when the roster entry has a different non-null user_id; it uses OR.
+  - An empty available_teams setting still requires a user row, while an absent setting returns before that lookup.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

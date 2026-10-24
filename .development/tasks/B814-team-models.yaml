@@ -1,14 +1,31 @@
 id: B814
 title: Team model allowlist mutation
 description: >-
-  Implement /team/model/add and /team/model/delete with model-group expansion, stable deduplication and
-  parent organization restrictions. Write the stored allowlist then invalidate grants, without changing
-  provider deployment configuration.
+  Implement POST /team/model/add and /team/model/delete and the append_team_models service called by
+  BYOK writers. Both request types require team_id and models, accepting an empty list. Neither handler
+  expands groups, validates model existence nor checks the parent organization's model ceiling. Each
+  checks database (500 detail.error="No db connected"), reads the team (404 "Team not found, passed
+  team_id=..."), then allows B800 proxy/team/org administrators; denial is 403 "Only proxy admin or team
+  admin can modify team models", even for org-admin authorization. Cases required_fields_and_empty,
+  database_then_target_then_scope and arbitrary_model_grants prove the actual validation boundary.
 
+  Addition executes one parameterized SQL UPDATE. Treat null or zero-cardinality existing models as
+  ['all-proxy-models'], concatenate the requested strings and SELECT DISTINCT unnest into an array.
+  Deduplication has no stable order promise; compare sets in append_union and unrestricted_sentinel,
+  including an empty append to null/empty existing models. Concurrent appends do not lose either grant.
+  Then separately update updated_at to UTC now through the writer, including litellm_model_table and
+  object_permission, so the returned/cache row is current and retains both relations. A missing returned
+  row raises the same 404; a failed re-fetch does not roll back the first SQL statement. B801 refreshes
+  the team cache after the write, and that failure also leaves the stored models. Native Postgres cases
+  concurrent_appends, writer_refresh_relations and append_partial_write cover those boundaries.
 
-  Build the production team_models module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Deletion reads the old list (null becomes []), filters every occurrence whose exact string is in the
+  request, and writes that snapshot list with the same two included relations. Preserve remaining order
+  and duplicates; deleting the final grant stores [] and thus restores unrestricted semantics. A
+  concurrent append can be overwritten by this read/filter/write path: do not replace it with the
+  append SQL's atomic merge. Missing update result is 404; cache refresh occurs afterward. Cases
+  delete_all_occurrences, delete_last_grant, delete_snapshot_race and cache_failure_after_write exercise
+  this asymmetry. No license branch, environment variable or local exception wrapper exists here.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -17,40 +34,18 @@ description: >-
 
 
   Register these actual HTTP routes and aliases exactly once: POST /team/model/add -> team_model_add;
-  POST /team/model/delete -> team_model_delete. For each route send a typed successful request, an invalid
-  or missing target, and a caller lacking that route permission through B001 HttpCase against the running
-  pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials or invalid/expired
-  codes. Compare status, response model including null/absent fields, error type/param/code, content-type,
-  redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper
-  invocations. handle_exception_on_proxy controls management error mapping; keep source partial writes
-  visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  POST /team/model/delete -> team_model_delete. Exercise both through B001 with B052 auth and B865
+  decorators. Errors use B003's HTTPException envelope, including type/param/code, rather than an invented
+  handle_exception_on_proxy call. Native database tests use POSTGRES_TEST_URL when configured, otherwise
+  B860 testcontainers, and fail on startup/connect errors. The unused add_new_models_to_team remains
+  excluded; its Python set conversion must not replace the live SQL algorithm.
 
 
   Sizing: 142 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  142 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 355 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  160 production, 300 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 525 changed lines estimated within a 550-line gate.
 
 
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
 scope:
   paths:
     - crates/betterlite-server/src/team_models.rs
@@ -69,17 +64,15 @@ references:
     why: TeamModelAddRequest request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4764-L4768
     why: TeamModelDeleteRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6057-L6112
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6051-L6112
     why: Own team_model_add; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6115-L6164
     why: Own append_team_models; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6173-L6247
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L6167-L6247
     why: Own team_model_delete; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: append_new_model, duplicate_existing_model,
-      delete_model, org_model_denial, empty_model_list, cache_refresh.'
+  - text: Every named case in the description proves SQL append semantics, snapshot deletion, scope or
+      failure ordering; actual Postgres tests exercise concurrent writers and relation-preserving refresh.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -95,22 +88,16 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_models::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/team-models/post--team-model-add-success.yaml
-  - tools/oracle/cases/management/team-models/post--team-model-add-invalid-target.yaml
-  - tools/oracle/cases/management/team-models/post--team-model-add-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-models/post--team-model-delete-success.yaml
-  - tools/oracle/cases/management/team-models/post--team-model-delete-invalid-target.yaml
-  - tools/oracle/cases/management/team-models/post--team-model-delete-unauthorized-caller.yaml
-  - tools/oracle/cases/management/team-models/append-new-model.yaml
-  - tools/oracle/cases/management/team-models/duplicate-existing-model.yaml
-  - tools/oracle/cases/management/team-models/delete-model.yaml
-  - tools/oracle/cases/management/team-models/org-model-denial.yaml
-  - tools/oracle/cases/management/team-models/empty-model-list.yaml
-  - tools/oracle/cases/management/team-models/cache-refresh.yaml
+  - tools/oracle/cases/management/team-models/required-fields-and-empty.yaml
+  - tools/oracle/cases/management/team-models/database-then-target-then-scope.yaml
+  - tools/oracle/cases/management/team-models/arbitrary-model-grants.yaml
+  - tools/oracle/cases/management/team-models/append-union.yaml
+  - tools/oracle/cases/management/team-models/unrestricted-sentinel.yaml
+  - tools/oracle/cases/management/team-models/writer-refresh-relations.yaml
+  - tools/oracle/cases/management/team-models/delete-all-occurrences.yaml
+  - tools/oracle/cases/management/team-models/delete-last-grant.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -195,8 +182,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Adding a duplicate team model preserves stable order and does not duplicate the grant.
+  - SELECT DISTINCT unnest does not promise the stable ordering of the deletion path.
+  - An empty append to models=[] writes all-proxy-models rather than leaving the array empty.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: security

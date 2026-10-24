@@ -1,9 +1,47 @@
 id: B1202
 title: Bulk team-member removal transaction
 description: >-
-  Implement the bulk team-member removal service used by management_v1 users with writer-locked team rosters,
-  canonical user/email matching and ordered per-row errors. It is not the single-member /team/member_delete
-  implementation. Return deleted key identities before cache invalidation.
+  Implement the service behind bulk team-member removal, retaining exact case-sensitive user/email matching
+  and original result indexes. First load the team through B724; absent team raises B007 ManagementProblem
+  with type urn:litellm:error:team-not-found, title Team not found, status 404 and detail Team id=<id> does
+  not exist in db. Only then call B800 get_team_access().allows with TEAM_OR_ORG_ADMIN. Denial is status
+  403, type urn:litellm:error:forbidden, title Forbidden and detail Call not allowed. User not proxy admin
+  OR team admin OR org admin for this team. route='/management/v1/teams/<id>/members/bulk_delete'. These
+  are problem details, without OpenAI error param/code; route registration and wire serialization remain
+  with the management surface, not this service.
+
+  A later request is duplicate when any earlier request has its non-null user_id or non-null user_email,
+  including an empty email. Do not normalize email case. Filter duplicates before the transaction and map
+  matched indexes back afterward. Own the _TeamRemoval and roster/teams-write declarations L75-L100 and
+  the 60-second _BATCH_TX_TIMEOUT at L67. B2363 owns MemberIdentity, duplicate detection, matching and
+  query predicates below this service and B1231's request contracts. The enclosing HTTP TeamMemberRef's
+  exactly-one rule and 1..500 batch limit remain B1231's responsibility. Accept B2363's typed identities;
+  callers convert their HTTP contracts without a dependency back from this service to their decoder.
+
+  Within the 60-second transaction acquire B819 TEAM_ADVISORY_LOCK_SQL before re-reading the roster under
+  B724's lock. A vanished team raises the same 404. Query requested IDs and truthy email-only requests using
+  sorted IN predicates under OR. Fill a missing request email only from a matching user whose teams array
+  contains this team; an explicit email is never replaced. An ID request matches its ID or an email-only
+  roster entry with the same email, never a different non-null roster ID merely sharing the email. A pure
+  email request matches exact email; user-row matching with an ID always uses only that ID.
+
+  Preserve roster order while partitioning removed/kept members. Fetch removed IDs not already loaded;
+  collect stale user rows that still list this team. Cleanup IDs combine removed roster IDs and stale rows,
+  so stale array-only members count as matched and get keys removed. Select keys for this team and cleanup
+  IDs, then snapshot B738 JWT mapping cache keys before any delete. Write the kept roster only when a roster
+  member was removed; next remove every occurrence of this team from each stale user.teams array; next delete
+  matching memberships even for an empty ID set; then, when keys exist, archive with B777 and changed_by=None
+  inside the transaction before deleting the keys. Return the minimal team with kept roster, cleanup IDs,
+  matched indexes, deleted key rows and mapping keys, constructing the team through B859's row contract.
+  Do not delete user rows, invitations or organization
+  memberships here. Failure at any transaction write rolls back these effects together.
+
+  After commit, invoke B784 deleted-key audit logging only if keys existed, await B734 key-cache deletion,
+  await B878 mapping eviction/broadcast, and finally emit B111 team-member metrics. Audit/cache exceptions
+  propagate after commit and prevent subsequent steps; do not add compensation. A missing metrics logger
+  is a no-op; metric failure debug-logs Prometheus: failed to emit team members metric: <message> and still
+  returns results. Each result retains the original submitted ID/email and order, with success=true and
+  error=None for a match, otherwise success=false and Duplicate member in request or User not found in team.
 
 
   Build the production bulk_team_removal module in betterlite-server; reuse the typed dependencies listed
@@ -13,37 +51,21 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/bulk_user_deletion.py:
   _TeamRemoval.deleted_key_tokens (L99-L100; 2 source lines), _team_not_found (L120-L128; 9 source lines),
-  _team_tx_db (L153-L154; 2 source lines), _membership_tx_db (L161-L162; 2 source lines), _same_email
-  (L177-L178; 2 source lines), _addresses_member (L181-L184; 4 source lines), _with_row_email (L187-L190;
-  4 source lines), _remove_members_from_team (L219-L288; 67 source lines), _emit_team_members_metric (L291-L298;
-  8 source lines), _duplicate_member_indexes (L301-L310; 10 source lines), bulk_remove_team_members (L313-L365;
-  48 source lines), _forbidden (L131-L134; 4 source lines), _in_filter (L137-L138; 2 source lines), _eq_filter
-  (L141-L142; 2 source lines), _team_users_filter (L145-L146; 2 source lines), _any_filter (L149-L150;
-  2 source lines), _user_tx_db (L157-L158; 2 source lines), _token_tx_db (L165-L166; 2 source lines),
-  _addresses_user (L193-L196; 4 source lines).
+  _team_tx_db (L153-L154; 2 source lines), _membership_tx_db (L161-L162; 2 source lines),
+  _remove_members_from_team (L219-L288; 67 source lines), _emit_team_members_metric (L291-L298;
+  8 source lines), bulk_remove_team_members (L313-L365; 48 source lines), _forbidden (L131-L134;
+  4 source lines), _user_tx_db (L157-L158; 2 source lines), _token_tx_db (L165-L166; 2 source lines).
 
 
-  Add the bulk_team_removal operation under B856 Management::teams. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a bulk-team-removal-*
-  seed to B171 helper_case, which already owns this decoder.
+  Limit this B856 Management::teams operation to the two problem constructors; B2363 compares the
+  matching/query helpers separately. Compare exact problem fields against the pin and seed B171's
+  existing helper_case decoder. Exercise the stateful removal service natively against Postgres, including
+  commit-before-cache-failure, rather than invoking it through a purportedly pure helper adapter.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 178 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  178 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 415 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  After moving 32 matching/filter lines to B2363, 146 helper lines and approximately 20 declaration lines
+  remain before docstring exclusion. Allow 230 production, 360 transaction/integration tests, 45 problem
+  adapters and 35 wiring, totaling 670 within 700. No setting or byte decoder is introduced by the service.
 
 
   Use betterlite-postgres-fixture as a dev-dependency, selecting POSTGRES_TEST_URL when set and testcontainers
@@ -76,38 +98,39 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L161-L162
     why: Own _membership_tx_db; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L177-L178
-    why: Own _same_email; preserve caller-visible values and failure ordering.
+    why: B2363's exact email predicate consumed during roster partitioning.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L181-L184
-    why: Own _addresses_member; preserve caller-visible values and failure ordering.
+    why: B2363 distinguishes email-only roster entries from entries with another ID.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L187-L190
-    why: Own _with_row_email; preserve caller-visible values and failure ordering.
+    why: B2363 completes missing email only after this service limits eligible user rows.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L219-L288
     why: Own _remove_members_from_team; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L291-L298
     why: Own _emit_team_members_metric; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L301-L310
-    why: Own _duplicate_member_indexes; preserve caller-visible values and failure ordering.
+    why: B2363 supplies original duplicate indexes before this service opens its transaction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L313-L365
     why: Own bulk_remove_team_members; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L131-L134
     why: Own _forbidden; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L137-L138
-    why: Own _in_filter; preserve caller-visible values and failure ordering.
+    why: B2363 sorts IN values used by this transaction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L141-L142
-    why: Own _eq_filter; preserve caller-visible values and failure ordering.
+    why: B2363's equality predicate identifies the affected roster/user rows.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L145-L146
-    why: Own _team_users_filter; preserve caller-visible values and failure ordering.
+    why: B2363 combines team and user scope for membership/key deletion.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L149-L150
-    why: Own _any_filter; preserve caller-visible values and failure ordering.
+    why: B2363 retains the requested ID/email OR branches.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L157-L158
     why: Own _user_tx_db; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L165-L166
     why: Own _token_tx_db; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_deletion.py#L193-L196
-    why: Own _addresses_user; preserve caller-visible values and failure ordering.
+    why: B2363's user-row matching determines whether stale array-only membership counts as matched.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: duplicate_member, email_match,
-      team_not_found, partial_failure.'
+  - text: 'Integration cases duplicate_removed_before_transaction, email_backfill_requires_user_team,
+      exact_missing_team_problem, exact_forbidden_problem, lookup_before_authorization,
+      result_original_identity_and_index, missing_logger_noop and metric_exception_debug_only name the policies.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -116,8 +139,11 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Concurrent bulk roster deletes and failure rollback preserve actual Postgres membership/key
-      state.
+  - text: 'postgres_concurrent_roster_delete checks lock-before-fresh-read and concurrent addition/removal.
+      postgres_delete_rollback checks the 60-second timeout and failure after each ordered write, including
+      archive-before-delete. postgres_post_commit_effects checks audit, key-cache, mapping-cache and metric
+      order, vanished team, stale array-only membership, email-only roster, all team-array occurrences,
+      no-key path and committed data surviving each post-commit failure.'
     proof:
       - postgres-tests
 checks:
@@ -141,23 +167,23 @@ checks:
       why: Actual bulk roster locking or transactional deletion effects fail.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bulk_team_removal::tests::postgres_concurrent_roster_delete$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bulk_team_removal::tests::postgres_delete_rollback$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bulk_team_removal::tests::postgres_post_commit_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/bulk-team-removal/duplicate-member.yaml
-  - tools/oracle/cases/helpers/bulk-team-removal/email-match.yaml
   - tools/oracle/cases/helpers/bulk-team-removal/team-not-found.yaml
-  - tools/oracle/cases/helpers/bulk-team-removal/partial-failure.yaml
+  - tools/oracle/cases/helpers/bulk-team-removal/forbidden-problem.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2363 owns bulk_user_deletion.py L137-L150, L177-L196 and L301-L310, plus MemberDeleteRequest in _types.py L4660-L4669.
+  - B777 owns deleted-key archive projection; only existing stored token hashes are passed to it here.
   - 'litellm/proxy/management_helpers/bulk_user_deletion.py: B794 owns _UserBatchDeletion.deleted_key_tokens
     (L110-L111), _invitation_tx_db (L169-L170), _org_membership_tx_db (L173-L174), _error_message (L199-L206),
     _bounded (L209-L216), _caller_admin_org_ids (L368-L376), _scope_error (L379-L385), _delete_user_rows
     (L388-L419), _delete_users_tx (L422-L461), _delete_users (L464-L510), bulk_delete_users (L513-L596).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - It is not the single-member /team/member_delete implementation.
+  - Request duplicate detection and roster identity matching use different rules; do not reuse one predicate for both.
+  - The module docstring's whole-user-batch atomicity belongs to B794, while this service commits one team's removal before cache work.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

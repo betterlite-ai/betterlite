@@ -1,53 +1,35 @@
 id: B058
-title: Organization activity and management integration
+title: Organization daily activity scope
 description: >-
-  Expose /organization/daily/activity using authorized organization entity scope and DailyActivityRepository.
-  Register split organization/access-group/permission services and inject their validators/synchronizers
-  into key and team writes; these hooks execute production transaction plans and never replace permission
-  checks with success stubs. Projects use ProjectRepository here; project HTTP handlers are absent from
-  the MIT checkout and are not inferred from enterprise code; the MIT project row/repository and auth
-  checks are included.
+  Own get_organization_daily_activity and resolve_organization_daily_activity_scope at
+  organization_endpoints.py L565-L663, including _OrganizationDailyActivityScope. Register GET
+  /organization/daily/activity once with B052 authentication and SpendAnalyticsPaginatedResponse.
+  Require a database first or raise HTTP500 with detail.error=CommonProxyErrors.db_not_connected_error.
+  Defaults are organization_ids, exclude_organization_ids, start_date, end_date, model and api_key
+  absent, page=1 and page_size=10. Truthy ID strings split on commas without trimming or deduplication;
+  empty strings become None. Pass pagination/date validation to B074, without inventing route limits.
 
+  B732's admin-view predicate lets proxy admin/view callers skip membership lookup. Others query B726
+  OrganizationMembershipRepository for their user_id and retain only ORG_ADMIN.value memberships.
+  Explicit requested IDs must all be in that tuple. The first forbidden ID raises HTTP403 detail.error
+  User is not org_admin for Organization= <id>. Without explicit IDs use those admin memberships,
+  including an empty tuple; never widen it to all organizations. Admin/view callers without IDs get
+  an unrestricted None scope. Membership errors propagate; there is no stale permission fallback.
 
-  Build the production organization_activity module in betterlite-server; reuse the typed dependencies
-  listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
-  with adjacent tests.rs files.
+  B826's typed adapter over B723 OrganizationRepository loads metadata with B700 find_many_in for a
+  concrete scope, otherwise find_many(where={}). Metadata maps ID to organization_alias, including
+  null aliases. Missing rows do not change the requested IDs or produce404. Call B074 get_daily_activity
+  with table litellm_dailyorganizationspend, entity_id_field organization_id, None or the original scope
+  list, metadata, split exclusions and every date/model/key/page argument. This route has no except
+  block and never calls handle_exception_on_proxy; preserve B003's global HTTP exception envelopes
+  and propagate repository/activity errors. It performs no writes or synchronization.
 
-
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/organization_endpoints.py:
-  get_organization_daily_activity (L565-L613; 45 source lines), resolve_organization_daily_activity_scope
-  (L621-L663; 42 source lines).
-
-
-  Register these actual HTTP routes and aliases exactly once: GET /organization/daily/activity -> get_organization_daily_activity.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 87 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  87 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 300 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Implement organization_activity in betterlite-server with files below 300 lines and adjacent tests.
+  B860 provisions independent Postgres fixtures for the real MIT server and betterlite, using
+  POSTGRES_TEST_URL or testcontainers. Compare full status/body/error fields and inspect query scope.
+  B001 HttpCase exercises the real route; no helper-only substitute or invented not-found case.
+  Reuse B003 query decoding; no new parser/fuzz target. Allow 100 production, 220 table-driven tests
+  and 70 wiring lines, 390 within a 450-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/organization_activity.rs
@@ -60,75 +42,39 @@ scope:
     - tools/oracle/cases/management/organization-activity/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L565-L663
-    why: Pinned implementation and exact ownership boundary for organization_activity.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L565-L613
-    why: Own get_organization_daily_activity; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L621-L663
-    why: Own resolve_organization_daily_activity_scope; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L560-L663
+    why: Route defaults, scope queries, first unauthorized ID and direct activity delegation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_admin_activity,
-      proxy_admin_activity, cross_org_denied, timezone_window, page_empty, grant_revoked_before_next_call.'
-    proof:
-      - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
+  - text: 'Named cases: database_required_before_scope, query_defaults_and_passthrough,
+      comma_ids_preserve_spaces_empty_segments_duplicates, admin_view_skips_memberships,
+      only_org_admin_memberships_count, first_foreign_id403_exact_detail,
+      absent_ids_empty_memberships_never_all, explicit_empty_tuple_helper_scope,
+      admin_absent_ids_all_rows, metadata_alias_null_and_missing_row,
+      activity_table_entity_exclusions_and_pagination, repository_and_activity_errors_propagate,
+      membership_revocation_effective_next_request, no_writes.'
+    proof: [behavior-tests, oracle]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^organization_activity::tests::/)
-        - test(/replays_the_/)'
+      why: Scope or observable route behavior differs from the pinned implementation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^organization_activity::tests::/) - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/organization-activity/get--organization-daily-activity-success.yaml
-  - tools/oracle/cases/management/organization-activity/get--organization-daily-activity-invalid-target.yaml
-  - tools/oracle/cases/management/organization-activity/get--organization-daily-activity-unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-activity/org-admin-activity.yaml
-  - tools/oracle/cases/management/organization-activity/proxy-admin-activity.yaml
-  - tools/oracle/cases/management/organization-activity/cross-org-denied.yaml
-  - tools/oracle/cases/management/organization-activity/timezone-window.yaml
-  - tools/oracle/cases/management/organization-activity/page-empty.yaml
-  - tools/oracle/cases/management/organization-activity/grant-revoked-before-next-call.yaml
+  - tools/oracle/cases/management/organization-activity/admin-view-all.yaml
+  - tools/oracle/cases/management/organization-activity/org-admin-explicit-and-default.yaml
+  - tools/oracle/cases/management/organization-activity/empty-membership-scope.yaml
+  - tools/oracle/cases/management/organization-activity/first-foreign-id-denied.yaml
+  - tools/oracle/cases/management/organization-activity/query-defaults-and-comma-ids.yaml
+  - tools/oracle/cases/management/organization-activity/missing-row-is-not404.yaml
+  - tools/oracle/cases/management/organization-activity/no-database.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B826 owns _enterprise_license_required
-    (L96-L108), _ObjectPermissionRow.object_permission_id (L116-L116), _UserTableClient.find_unique (L120-L120),
-    _BudgetTableClient.create (L124-L124), _ObjectPermissionTableClient.create (L128-L128), _OrganizationTableClient.create
-    (L132-L134), _OrganizationTableClient.find_unique (L136-L138), _OrganizationTableClient.find_many
-    (L140-L144), _OrganizationTableClient.update (L146-L151), _OrganizationTableClient.delete (L153-L155),
-    _OrganizationMembershipTableClient.create (L159-L159), _OrganizationMembershipTableClient.find_unique
-    (L161-L163), _OrganizationMembershipTableClient.find_many (L165-L167), _OrganizationMembershipTableClient.update
-    (L169-L171), _OrganizationMembershipTableClient.delete (L173-L173), _OrganizationMembershipTableClient.delete_many
-    (L175-L175), _TeamTableClient.delete_many (L179-L179), _VerificationTokenTableClient.find_many (L183-L183),
-    _VerificationTokenTableClient.delete_many (L185-L185), _ObjectPermissionTxClient.upsert (L193-L195),
-    _BudgetTxClient.update (L199-L199), _TransactionTables.litellm_objectpermissiontable (L204-L204),
-    _TransactionTables.litellm_budgettable (L207-L207), _TransactionTables.litellm_organizationtable (L210-L210),
-    _TransactionManager.__aenter__ (L214-L214), _TransactionManager.__aexit__ (L216-L221), _table (L225-L225),
-    _table (L229-L229), _table (L233-L233), _table (L237-L237), _table (L241-L241), _table (L245-L245),
-    _table (L249-L249), _table (L252-L262), _verify_org_access (L265-L306), build_budget_write_data (L317-L333),
-    handle_nested_budget_structure_in_organization_update_request (L336-L357), new_organization (L366-L557),
-    _set_object_permission (L666-L690).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B827 owns update_organization (L699-L808),
-    handle_update_object_permission (L811-L835), update_organization_v2 (L844-L997), delete_organization
-    (L1006-L1057), _delete_organization_keys (L1060-L1079).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B828 owns organization_member_add (L1281-L1397),
-    find_member_if_email (L1400-L1420), organization_member_update (L1430-L1572), organization_member_delete
-    (L1580-L1621), add_member_to_organization (L1624-L1706).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B1212 owns list_organization (L1088-L1185),
-    info_organization (L1194-L1232), deprecated_info_organization (L1240-L1271).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B074 owns daily activity filtering, time windows, pagination and response aggregation.
+  - B826 owns organization table adapters; B700 owns chunked membership reads.
+  - Organization writes, access groups, permissions and projects remain their existing task owners.
 pitfalls:
-  - A non-admin service-account key with no user_id must not issue an unfiltered organization activity
-    query.
+  - An empty organization-membership tuple is a restricted empty scope, unlike None for an admin.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 450
   max_new_expects: 0
 review_level: security

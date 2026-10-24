@@ -1,14 +1,50 @@
 id: B816
 title: Object permission writes and cache coherence
 description: >-
-  Implement ObjectPermissionPatch and object-permission attach/upsert/update helpers over ObjectPermissionRepository.
-  Preserve explicit field deletion, absent nested object behavior and shared cache invalidation across
-  key/user/team/org objects. Grant-specific validators are separate services.
+  Implement permission attachment, preparation, creation and update over B725 ObjectPermissionRepository.
+  Own the optional/nullable ObjectPermissionDict fields mcp_servers, mcp_access_groups,
+  mcp_tool_permissions, mcp_toolsets, blocked_tools, vector_stores, agents, agent_access_groups, models,
+  search_tools, mcp_tool_search_enabled and read-only skills; this record supplies no populated defaults.
+  attach_object_permission_to_dict raises ValueError("Prisma client not found") even when no ID is present
+  if the DB is absent. Only a truthy ID triggers a lookup; absent rows preserve an existing attached
+  object, while found rows replace it using model_dump with dict() fallback. Cases attach_db_first,
+  attach_falsey_or_missing_id and attach_v1_fallback test the mutation of the original dictionary.
 
+  prepare_object_permission_upsert performs no write. A truthy existing ID is retained, otherwise mint
+  a UUID and still query it. Read existing fields excluding unset/null; validate changed tool grants
+  through the owned ambiguity check and B817 resolver. Shallow-merge incoming fields over the row and
+  finally force the chosen object_permission_id, ignoring an incoming override. Whenever merged
+  mcp_tool_permissions is present, B192 safe_dumps serializes it, including explicit null as the string
+  "null". Omitted grant fields survive; an incoming tool map replaces the whole map, not its keys.
+  Native prepare_no_write, pinned_upsert_id, shallow_replace_and_null and safe_json_tool_map prove this.
 
-  Build the production object_permissions module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  handle_update_object_permission_common checks DB before popping object_permission. Missing or null
+  returns None without a write; a string runs json.loads, and valid non-object values normalize to {}.
+  Invalid JSON propagates after the input field has been popped. Upsert identical prepared records for
+  create/update, debug-log the returned row and return its ID. This helper neither links a parent row
+  nor invalidates caches nor owns a transaction. Cases update_pop_before_parse, non_object_empty_upsert
+  and upsert_before_parent_failure retain these partial effects. _set_object_permission differs: missing
+  DB or absent field leaves input untouched; a non-dict field is removed without writing. For a dict,
+  omit null values and caller-supplied ID, validate ambiguity, serialize a present tool map and create
+  even an empty record. Set the returned ID and remove the nested field only after create succeeds.
+  Cases create_null_cleaning, create_empty_record and create_failure_keeps_input cover that path.
+
+  _mcp_tool_permission_entries parses JSON strings or validates mappings as dict[str,list[str]|None];
+  other raw types produce {}. Null lists become empty sets and duplicates/order are ignored for equality;
+  malformed JSON or wrong values fail. Reject ambiguity only for new/changed entries, including a changed
+  empty tool set; deleting an entry or echoing an unchanged legacy collision is allowed. B817 returns
+  identifier-to-ID sets; an exact server ID always passes even when also another server's alias. Other
+  identifiers with more than one match cause HTTPException 400 detail.error beginning "Ambiguous
+  mcp_tool_permissions key: ", sorted identifiers and sorted colliding IDs, then "Key tool permissions
+  by server_id when servers share a name or alias.". Unresolved identifiers are not rejected here.
+  Cases changed_collision_400, grandfathered_collision, exact_id_wins and unresolved_identifier cover
+  these branches with a real DB plus injected registry snapshot; route-specific error mapping stays with callers.
+
+  invalidate_cached_object_permissions takes string IDs only (including ""), deduplicates preserving
+  first order, derives B733 object_permission_id:<id> keys, and calls B878 evict_and_broadcast even for
+  an empty tuple. It does not evict parent/key/team rows. Cases cache_id_filter_order and eviction_failure
+  verify the exact call and propagation. No credential encryption, setting, paid-tier branch or HTTP
+  route is implemented here.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/object_permission_utils.py:
@@ -18,19 +54,14 @@ description: >-
   (L324-L332; 9 source lines), reject_ambiguous_mcp_tool_permission_keys (L335-L371; 36 source lines).
 
 
-  Add the object_permissions operation under B856 Management::models. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a object-permissions-* seed to B171 helper_case, which already owns this decoder.
+  B856 Management::models exposes only the pure _mcp_tool_permission_entries projection to the helper
+  oracle; test JSON/object forms, null/duplicate lists and malformed entries against the pinned function.
+  Database operations and registry-dependent ambiguity checks use native Postgres tests, not helper
+  adapters that simulate proxy_server. Seed B171's shared decoder with this operation.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Permission upsert/failure cases connect B860 to POSTGRES_TEST_URL when configured; absent configuration
+  starts testcontainers, while a failed configured connection must not skip the row and eviction assertions.
 
 
   This task owns the outside-byte boundary object_permissions::decode_object_permission(&[u8]) -> Result<TypedValue,DecodeError>
@@ -43,20 +74,14 @@ description: >-
   without recreating the workspace.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
   Sizing: 208 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  208 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 502 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  230 production, 340 behavior/Postgres tests, 50 helper adapters, 30 route/manifests/wiring, 70 decoder/fuzz
+  and 0 config lines, 720 changed lines estimated within a 750-line gate.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  Native-only deviation test in this production module: permission_json_byte_and_depth_limits.
+  Assert the bounded stored-permission decoder rejects oversized/deep JSON before allocation or writes;
+  these added resource limits are native cases, while accepted records retain oracle parity.
 scope:
   paths:
     - crates/betterlite-server/src/object_permissions.rs
@@ -96,8 +121,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L335-L371
     why: Own reject_ambiguous_mcp_tool_permission_keys; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: attach_existing, nested_upsert,
-      explicit_clear, absent_preserved, cache_eviction, db_failure, postgres_pinned_rows, postgres_failure_effects.'
+  - text: All named attachment, merge, create/update, ambiguity and eviction cases in the description pass;
+      postgres_pinned_rows and postgres_failure_effects verify stored JSON strings and caller-visible partial writes.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -114,7 +139,7 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: permission_json_byte_and_depth_limits proves the explicit decoder limit deviation with typed errors.
     proof:
       - behavior-tests
 checks:
@@ -146,21 +171,17 @@ checks:
         -- crates/betterlite-server/fuzz/corpus/object_permissions)" && cargo nextest run --locked -p
         betterlite-server --no-tests=fail -E 'test(replays_the_object_permissions_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/object-permissions/attach-existing.yaml
-  - tools/oracle/cases/helpers/object-permissions/nested-upsert.yaml
-  - tools/oracle/cases/helpers/object-permissions/explicit-clear.yaml
-  - tools/oracle/cases/helpers/object-permissions/absent-preserved.yaml
-  - tools/oracle/cases/helpers/object-permissions/cache-eviction.yaml
-  - tools/oracle/cases/helpers/object-permissions/db-failure.yaml
+  - tools/oracle/cases/helpers/object-permissions/tool-map-json-or-object.yaml
+  - tools/oracle/cases/helpers/object-permissions/null-lists-and-duplicates.yaml
+  - tools/oracle/cases/helpers/object-permissions/non-map-raw-is-empty.yaml
+  - tools/oracle/cases/helpers/object-permissions/malformed-tool-map.yaml
 deviations:
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
       smaller inherited limits.
     why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
       parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L35-L73
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L324-L332
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_helpers/object_permission_utils.py: B817 owns _dedupe_preserving_order (L240-L248),
     _mcp_server_identifier_matches (L251-L257), _get_db_mcp_servers_by_identifiers (L260-L276), _resolve_mcp_server_identifiers_to_ids
     (L279-L318), _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions
@@ -174,8 +195,9 @@ out_of_scope:
     _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879),
     _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
 pitfalls:
-  - Explicit permission clear is different from an omitted nested permission object.
+  - A null mcp_tool_permissions update is serialized as JSON null, while creation removes that null field before inserting.
+  - The update helper pops the nested input before decoding, so a parse error still mutates the caller's dictionary.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

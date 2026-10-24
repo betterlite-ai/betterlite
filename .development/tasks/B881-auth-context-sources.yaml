@@ -6,6 +6,40 @@ description: >-
   normalization does not grant permission. Secret abbreviation is only for source-compatible response
   params and never a logging license.
 
+  Discovery considers any Microsoft/Google/generic client ID that is not None, including empty string,
+  or truthy SAML metadata URL/XML. Readiness is stricter: Google needs truthy ID and secret; Microsoft
+  also tenant; generic needs ID, secret and all authorization/token/userinfo endpoints. Any complete
+  provider suffices even when another is incomplete. SAML requires metadata plus an available runtime;
+  LiteLLM catches missing onelogin.saml2.auth as false. Own a runtime-capability input installed by B063,
+  initially unavailable, rather than importing or depending on the SSO route installer. No URL is fetched
+  by readiness. All env settings default absent. MINIMUM_CUSTOM_KEY_LENGTH is int(env, default 16):
+  invalid text stops startup, zero/negative values are not clamped. Abbreviation returns sk-... below
+  that length, otherwise sk-... plus the last four characters; credentials stay secret-typed.
+
+  _get_model_from_request_context delegates to B746 with B1100's safe headers/query values, request,
+  router and team. Budget names preserve list order/duplicates, wrap a string once and turn None into [].
+  Claude normalization runs only on /messages, /v1/messages, /chat/completions, /v1/chat/completions,
+  /responses and /v1/responses, with a router and no literal-True litellm.claude_model_normalized marker.
+  The resolved model must be a string identical to body.model and either start with claude-router-
+  or case-insensitively end with [1m]. Resolve hierarchical aliases and call B007
+  claude_code_requested_group with key aliases, team_model_aliases and hierarchical model_group_alias
+  in that order. Mark the request normalized even if no source group is found, then use B1100
+  rewrite_request_model only when there is a source. Preserve both decoded and raw request body views.
+
+  Router alias rewriting requires request, router and B882's LLM route classification. Mark
+  litellm.model_group_alias_resolved before checking B746 custom/provider passthrough dispatch, string
+  model and B1100 raw JSON body availability. Get hierarchical settings and call B302 resolve_model_group_alias.
+  None/self targets do nothing. Debug-log source/target with CR/LF removed; setdefault
+  litellm.client_requested_model so an earlier client value survives, then rewrite the request.
+
+  Move the small lower-level ProxyConfig helpers out of B124's unplanned proxy-server remainder into
+  this task: _parse_router_settings_value L7646-L7671, get_hierarchical_router_settings L7673-L7679 and
+  _get_hierarchical_router_settings L7681-L7725. Parse a dictionary directly or a YAML string, attempting
+  JSON only after a YAML parse error. Only a nonempty dictionary is usable. Key router_settings wins;
+  otherwise fetch the cached team through B737 and use its settings. Any team lookup/parse exception
+  is silently dropped. Never merge key/team settings or consult global router_settings here. This
+  removes a call to B124, which depends on the auth installer. Native callers share this implementation.
+
 
   Build the production auth_context_sources module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
@@ -34,40 +68,30 @@ description: >-
   a auth-context-sources-* seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  The context-source helpers need no SQL fixture: supply the configured SSO inputs, router aliases and
+  request headers directly. B732 wiring tests prove that their resolved context reaches the installed
+  stage; the helper corpus compares values and parse failures without pretending to authenticate a JWT.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::auth_context_sources::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::auth_context_sources::tests::sso_env_absent_and_empty,
+  google_env_pair, microsoft_env_triplet, generic_env_five_fields, saml_metadata_sources,
+  minimum_key_default_override, minimum_key_invalid_startup and minimum_key_nonpositive.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  decode_router_settings(&[u8]) owns the moved YAML/JSON string boundary. Reuse B002's bounded YAML
+  parsing primitives and B192 JSON decoder, cap input at 1048576 bytes/depth 64, and feed the production
+  function from auth_context_sources fuzz target and replays_the_auth_context_sources_corpus. HTTP body
+  decoding remains B1100's. Corpus seeds cover dictionaries, empty/scalar/list inputs, invalid YAML/JSON,
+  JSON fallback and limits; parser failures become None as at the pin.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 145 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  145 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 467 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  Sizing: 145 original lines plus 50 moved helper lines before docstring removal; allow
+  230 production, 260 behavior tests, 75 adapters, 65 wiring, 55 decoder/fuzz and 60 config lines,
+  745 within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -101,8 +125,13 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-context-sources-*
     - crates/betterlite-server/src/auth/auth_context_sources.rs
     - crates/betterlite-server/src/auth/auth_context_sources/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/auth_context_sources.rs
+    - crates/betterlite-auth/fuzz/corpus/auth_context_sources/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7646-L7725
+    why: Own parsing and key-before-team hierarchical router settings below their auth callers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1431-L1451
     why: Own has_user_setup_sso; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1454-L1455
@@ -155,7 +184,15 @@ references:
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: sso_complete, sso_missing_field,
-      alias_normalization, model_budget_names.'
+      alias_normalization, model_budget_names, discovery_empty_client_id,
+      readiness_all_companions, incomplete_provider_does_not_mask_other,
+      saml_metadata_without_runtime, abbreviation_threshold_tail, budget_list_preserved,
+      claude_six_routes_only, claude_marker_skip, claude_body_identity,
+      claude_prefix_suffix_case, claude_marks_unresolved, claude_alias_order,
+      router_marker_before_skip, passthrough_not_rewritten, nonjson_not_rewritten,
+      alias_self_none_unchanged, log_crlf_stripped, client_model_setdefault,
+      settings_key_before_team, empty_key_falls_back, global_settings_not_merged,
+      team_error_silent_drop and settings_yaml_json_nonempty_object.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -179,10 +216,15 @@ dod:
     proof:
       - stage-wiring-tests
       - behavior-tests
+  - text: settings_size_depth_limits and replays_the_auth_context_sources_corpus exercise the actual settings decoder and its fuzz input boundary.
+    proof: [behavior-tests, parser-corpus]
 checks:
   optional:
     - mutants
   commands:
+    - id: parser-corpus
+      why: The new router-settings parser lacks its target or added replay inputs.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/auth_context_sources.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/auth_context_sources)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_auth_context_sources_corpus)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_context_sources::tests::/)
@@ -215,18 +257,21 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-context-sources/sso-missing-field.yaml
   - tools/oracle/cases/helpers/auth-context-sources/alias-normalization.yaml
   - tools/oracle/cases/helpers/auth-context-sources/model-budget-names.yaml
-  - tools/oracle/cases/auth/auth-context-sources/sso-complete.yaml
-  - tools/oracle/cases/auth/auth-context-sources/sso-missing-field.yaml
+  - tools/oracle/cases/helpers/auth-context-sources/sso-discovery-readiness-matrix.yaml
+  - tools/oracle/cases/helpers/auth-context-sources/hierarchical-settings.yaml
+  - tools/oracle/cases/helpers/auth-context-sources/abbreviation.yaml
   - tools/oracle/cases/auth/auth-context-sources/alias-normalization.yaml
-  - tools/oracle/cases/auth/auth-context-sources/model-budget-names.yaml
-deviations: []
+  - tools/oracle/cases/auth/auth-context-sources/router-alias-raw-body.yaml
+deviations:
+  - what: Router-settings strings over 1048576 bytes or depth 64 are ignored as invalid settings.
+    why: The external YAML/JSON boundary must be bounded; settings_size_depth_limits proves the fallback remains key-to-team.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7646-L7671
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - Proxy-server functions outside L7646-L7725 retain their existing route/task owners and B124's remaining runtime ownership; this task registers no proxy route.
   - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
     (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
-  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
-    (L668-L703), get_request_route_template (L706-L722), normalize_request_route (L726-L837).'
+  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665),
+    get_request_route_template (L706-L722), normalize_request_route (L726-L837); B882 owns get_request_route (L668-L703).'
   - 'litellm/proxy/auth/auth_utils.py: B744 owns is_invalid_virtual_key_error (L41-L58), mark_invalid_virtual_key_error
     (L61-L75), _get_request_ip_address (L78-L87), _check_valid_ip (L90-L108), pre_db_read_auth_checks
     (L562-L618), check_if_request_size_is_safe (L840-L898), check_response_size_is_safe (L901-L939), bytes_to_mb
@@ -313,8 +358,9 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Keep readiness separate from actual SSO login, which B063 owns.
+  - An empty client ID enables SSO discovery but cannot disable password fallback through the stricter readiness check.
+  - The router-alias marker is set before passthrough and body checks; retries must not get a second rewrite opportunity.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

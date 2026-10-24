@@ -1,46 +1,47 @@
 id: B769
 title: JWT login result HTML
 description: >-
-  Render the existing JWT display form for the B063 SSO route from a local static template with explicit
-  escaped token/user/team substitutions and existing proxy base/root path behavior. The upstream template
-  is MIT UI material; preserve user-visible controls while rebranding LiteLLM product text to betterlite.
-  Do not load remote script/template assets at runtime. Native-only deviation tests (not oracle equality
-  cases): html-escaped-claims. Escape HTML text and quoted attributes in their own context. For JSON embedded
-  inside script, use a serializer plus escaping of <, >, &, U+2028 and U+2029 so </script> in a claim
-  cannot end the element; HTML entities are not a substitute for JSON escaping. Keep existing DOM textContent
-  assignment. Native renderer tests must include closing-script and quoted-attribute payloads.
+  Retain and rebrand the MIT SSO debug template in betterlite-server::jwt_display. Its only
+  substitution is the script statement const ssoData = SSO_DATA; supplied by B063's SSO debug
+  callback. Accept the already filtered parsed_by_proxy, raw_claims and access_token_claims
+  records, not a bearer-token argument. B063 removes OAuth token fields before calling this
+  renderer. There are no environment variables, config reads, database writes or root-path
+  substitutions in this template. Preserve the literal /sso/debug/login back link.
 
+  Own the entire HTML/CSS/JavaScript string at jwt_display_template.py L4-L355. Keep the local
+  styles, inline SVG controls, 800px/max-width 100% container, 20px page padding, 40px card padding,
+  system font stack, colors, borders and responsive viewport behavior in a static asset.
+  template_snapshot compares this complete asset to the pinned fixture with only the documented
+  branding and script-placeholder changes. Branding text becomes betterlite in title and logo;
+  retain SSO Debug Information, Authentication Successful, Parsed by Proxy, Raw Claims (userinfo),
+  Access Token Claims, Copy and Try Another SSO Login labels and the explanatory text.
 
-  Build the production jwt_display module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  renderParsed clears the container and iterates Object.entries(parsed || {}) in source order.
+  parsed_empty emits No fields available.; parsed_null emits the literal null; parsed_object
+  uses compact JSON.stringify; parsed_scalar uses String(value). Assign keys and values through
+  textContent. renderJson uses value || {}, displays '(empty — provider returned no claims for
+  this section)' when Object.keys is empty, otherwise JSON.stringify(obj, null, 2).
+  raw_claims_section and access_claims_section exercise those paths independently. The element
+  IDs stay parsedByProxy, rawClaims and accessTokenClaims. dom_ready renders all three sections
+  on DOMContentLoaded. copy_raw_claims and copy_access_claims copy the displayed text with
+  navigator.clipboard.writeText, alert 'Copied to clipboard!' on success, and copy_failure logs
+  'Could not copy text: ' on promise rejection without changing page content. There is no token
+  copy control, navigation redirect, fetch or remote asset. static_back_link proves the fixed URL.
 
+  B063 currently uses json.dumps(indent=2, default=str).replace('</', '<\\/') before replacing
+  the exact script statement. Keep readable two-space JSON and stringification of supported
+  typed non-JSON display values, while serializing <, >, &, U+2028 and U+2029 as script-safe
+  escapes. script_terminator, script_separators and quoted_claims prove untrusted claims cannot
+  escape the script or create HTML. Do not HTML-entity-encode JSON; that changes the displayed
+  claims. Retain DOM textContent assignment, and never interpolate claims into attributes.
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 0 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  65 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 302 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_retained_mit_login_jwt_template_branding_says_betterlite_and_interpola.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
-
-
-  This task owns a local template renderer and static asset only. B063 owns the actual SSO/JWT display
-  HTTP route and calls this renderer. There is no upstream Python helper corresponding to a static HTML
-  file, so use native rendering snapshots and context-specific escaping tests against the pinned template
-  fixture rather than a fabricated helper oracle. Default/root URL configuration still loads through betterlite-config.
+  Native snapshot and renderer tests cover this static UI without a fabricated Python helper.
+  Browser behavior cases run a local DOM harness against the actual embedded script; the Rust
+  tests invoke that harness and fail on rejected promises or wrong DOM/clipboard observations.
+  Keep harness fixtures beside the renderer. No byte parser or new fuzz target is introduced.
+  Count the template's nonblank data lines, including CSS and JavaScript, rather than treating
+  it as zero logic because Python sees a string. Allow 355 asset, 45 renderer, 180 tests/harness
+  and 20 wiring lines: 600 changed lines within a 650-line budget. Preserve MIT attribution.
 scope:
   paths:
     - crates/betterlite-server/src/jwt_display.rs
@@ -49,39 +50,39 @@ scope:
     - crates/betterlite-server/Cargo.toml
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/jwt_display_template.py#L1-L355
-    why: Pinned implementation and exact ownership boundary for jwt_display.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5465
-    why: JWT settings declaration; only the fields consumed by this task are enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/jwt_display_template.py#L4-L355
+    why: Complete owned static template, including all three render sections and clipboard behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4835-L4855
+    why: B063 removes bearer fields and substitutes one script-safe JSON payload.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: display_token_fields,
-      root_path_links, empty_team, copy_control_markup.'
-    proof:
-      - behavior-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_retained_mit_login_jwt_template_branding_says_betterlite_and_interpola.'
-    proof:
-      - behavior-tests
+  - text: template_snapshot, static_back_link and branding_labels preserve all source markup and styles
+      except the named rebranding; no config-dependent links or raw-token control are invented.
+    proof: [behavior-tests]
+  - text: parsed_empty, parsed_null, parsed_object, parsed_scalar, raw_claims_section, access_claims_section,
+      dom_ready, copy_raw_claims, copy_access_claims and copy_failure exercise the actual local script.
+    proof: [behavior-tests]
+  - text: script_terminator, script_separators and quoted_claims preserve claim values while blocking
+      script/markup injection; native tests cover the escaping deviation without comparing branded HTML.
+    proof: [behavior-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^jwt_display::tests::/)
-        - test(/replays_the_/)'
+      why: The production renderer, full template snapshot or JavaScript DOM behavior differs.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^jwt_display::tests::/)'
 oracle_cases: []
 deviations:
-  - what: Retained MIT login/JWT template branding says betterlite, and interpolated identity/configuration
-      text uses context-specific HTML/attribute escaping and script-safe JSON serialization.
-    why: README Decisions retains and rebrands the MIT UI; unescaped caller text must not become executable
-      markup.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/jwt_display_template.py#L1-L355
+  - what: The debug page title and logo say betterlite; JSON also escapes <, >, &, U+2028 and U+2029.
+    why: README requires rebranding. Source already protects closing script tags; the additional
+      script-safe escapes preserve displayed claims and satisfy the secret/input boundary rules.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4849-L4853
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B063 owns SSO callback authentication, OAuth token-field removal, HTMLResponse and every HTTP route
+    in ui_sso.py; this task renders only its already filtered display payload.
 pitfalls:
-  - Script JSON needs < escaping; HTML entity escaping does not prevent a closing-script payload.
+  - The page shows decoded claim records, not a JWT bearer; adding a raw-token field would undo the caller's filtering.
+  - HTML entity escaping inside the script changes JSON data; use JSON escapes and preserve textContent rendering.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

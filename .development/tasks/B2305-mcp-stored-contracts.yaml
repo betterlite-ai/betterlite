@@ -1,0 +1,121 @@
+id: B2305
+title: MCP stored credential types and pinned tool decoding
+description: >-
+  Put the MCP primitives needed by database rows below the MCP gateway. Own types/mcp.py MCPTransport
+  (L27-L30), MCPAuth (L41-L54), MCPTransportType/MCPLegacyVersion/MCP_LEGACY_VERSIONS/MCPUpstreamProtocol
+  (L63-L66), MCPAuthType (L75-L91), MCPTokenEndpointAuthMethod (L153) and MCPCredentials (L156-L295).
+  Also own types/mcp_server/mcp_server_manager.py _validate_mcp_protocol_metadata and MCPInfo
+  (L20-L27), PinnedMCPTool, _PINNED_TOOLS and parse_pinned_tools (L71-L85). B858 and B136 consume these
+  types and validators. Neither this task nor its dependencies call the later gateway or auth service.
+
+  Transport accepts sse, http and stdio. Auth accepts null or exactly none, api_key, bearer_token,
+  basic, authorization, oauth2, aws_sigv4, token, oauth2_token_exchange, oauth2_id_jag, true_passthrough
+  and oauth_delegate. Token endpoint authentication accepts client_secret_basic or client_secret_post.
+  MCPInfo preserves arbitrary metadata but, when protocol_version is present, validates it against
+  auto, 2024-11-05, 2025-03-26, 2025-06-18 and 2025-11-25. Explicit null and 2026-07-28 fail that
+  validator even though a different source version enum contains the latter. No protocol negotiation
+  or discovery takes place here.
+
+  MCPCredentials is a partial record, not a collection of resolved OAuth defaults. Every field is
+  optional and nullable: auth_value, client_id, client_secret, scopes, aws_access_key_id,
+  aws_secret_access_key, aws_session_token, aws_region_name, aws_service_name, aws_role_name,
+  aws_session_name, audience, token_exchange_endpoint, subject_token_type,
+  id_jag_resource_token_endpoint, id_jag_resource, upstream_resource, upstream_token_header,
+  client_private_key, client_private_key_id, client_assertion_signing_alg, token_endpoint_auth_method,
+  redirect_uris and token_exchange_profile. scopes/redirect_uris are string lists; the rest are strings
+  except the token-endpoint-method literal. Preserve absent versus explicit null. Do not materialize
+  docstring defaults such as RS256, Authorization or an access-token subject type in the stored record.
+  Unknown credential keys follow the pinned TypedDict validation result; test ignored extras explicitly.
+  Keep actual credential values in secret wrappers without changing serialized field names or values.
+
+  PinnedMCPTool is immutable, forbids unknown fields and defaults description to empty string and
+  input_schema to a fresh empty object. parse_pinned_tools JSON-decodes any nonempty string, then
+  validates decoded-or-None as a map of tool names to PinnedMCPTool. Falsey raw/decoded values such as
+  null, empty string, {}, [], false and 0 all become None; whitespace-only string raises JSON decode
+  error. Nonempty malformed maps/lists fail validation. Preserve nested JSON input schemas and reject
+  unknown tool-record fields. _validate_mcp_protocol_metadata returns the original metadata shape
+  after validation, so custom metadata must not be dropped.
+
+  Build betterlite-db::mcp_stored_contracts and a pure Management::database helper operation of the
+  same name. Python invokes the pinned validators and TypeAdapters; Rust invokes production parsing.
+  The byte boundary decode_mcp_stored_contract accepts stored JSON bytes, caps input at 1048576 bytes
+  and depth 64 and is also used by the mcp_stored_contract cargo-fuzz target. B2307 owns the db fuzz
+  workspace; register a target there. Reuse B171's HelperCase parser with a new operation seed.
+  No environment variable, remote URL, credential exchange or database write belongs to this task.
+
+  Owned ranges contain 165 nonblank, noncomment lines, mostly credential field documentation. Budget
+  125 implementation, 195 behavior tests, 70 adapters, 55 fuzz and 40 wiring lines, 485 within 550.
+scope:
+  paths:
+    - crates/betterlite-db/src/mcp_stored_contracts.rs
+    - crates/betterlite-db/src/mcp_stored_contracts/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/mcp_stored_contract.rs
+    - crates/betterlite-db/fuzz/corpus/mcp_stored_contract/**
+    - tools/oracle/src/helpers/mcp_stored_contracts.rs
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/mcp_stored_contracts.py
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-stored-contracts/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-stored-contracts-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L91
+    why: Own the transport/auth literals and legacy upstream protocol aliases, excluding MCPSpecVersion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L153-L295
+    why: Own the partial stored credential record and token endpoint authentication literal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L20-L27
+    why: MCPInfo accepts custom fields while validating a present protocol_version.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L71-L85
+    why: Pinned tool defaults, forbidden extras and falsey normalization.
+dod:
+  - text: 'credential_contract cases cover each_transport, each_auth_type, nullable_auth,
+      each_token_endpoint_method, all_fields_optional, explicit_null_preserved, credentials_all_fields,
+      list_fields, unknown_credential_keys, docstring_defaults_not_materialized and secret_debug_redaction.'
+    proof: [behavior-tests, oracle, helper-python, helper-corpus]
+  - text: 'pinned_tool_contract covers default_description_schema, independent_schema_defaults,
+      falsey_raw_values, falsey_json_values, stored_json_tools, nested_schema_preserved,
+      whitespace_json_error, nonempty_list_rejected, tool_extra_field_rejected and invalid_tool_field_type.
+      protocol_metadata covers absent_version, each_legacy_version, auto_version, custom_metadata,
+      null_version_rejected and future_version_rejected.'
+    proof: [behavior-tests, oracle]
+  - text: mcp_stored_limits and the production corpus replay prove bounded decoding without credential leaks.
+    proof: [behavior-tests, parser-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: The stored MCP type/validator contract is absent or changed.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_stored_contracts::tests::/) - test(replays_the_mcp_stored_contract_corpus)'
+    - id: helper-python
+      why: The pinned MCP validator adapter is missing or fails strict checks.
+      run: test -f tools/oracle/helpers/mcp_stored_contracts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: No newly added MCP stored-contract operation reaches the shared parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-stored-contracts-*')" && grep -rlq mcp_stored_contracts tools/oracle/fuzz/corpus/helper_case/mcp-stored-contracts-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The stored MCP decoder lacks a registered fuzz target or corpus replay.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/mcp_stored_contract.rs && grep -q mcp_stored_contract crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/mcp_stored_contract)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_mcp_stored_contract_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-stored-contracts/credential-fields.yaml
+  - tools/oracle/cases/helpers/mcp-stored-contracts/pinned-tool-shapes.yaml
+  - tools/oracle/cases/helpers/mcp-stored-contracts/protocol-metadata.yaml
+deviations:
+  - what: Stored MCP JSON over 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: The shared stored-input parser requires a finite resource bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L83-L85
+out_of_scope:
+  - B136 owns every other type/function in these two MCP files, including MCPSpecVersion, MCPServer,
+    MCPOAuthMetadata, MCPOAuthIdentityBinding, header/origin helpers and transport operations.
+  - B858 owns the database MCP server row that calls these validators; B2303 owns secret-map encryption.
+pitfalls:
+  - The stored credentials record does not apply the egress defaults described in its field docstrings.
+  - MCPInfo's upstream protocol literal excludes 2026-07-28 even though MCPSpecVersion lists it.
+  - A falsey malformed-looking pinned-tools value becomes None, but whitespace JSON is an error.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

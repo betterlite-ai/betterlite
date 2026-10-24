@@ -26,6 +26,45 @@ description: >-
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.upperbound_key_generate_params=None.
 
+  finite_without_config checks max_budget,soft_budget,max_parallel_requests,tpm_limit,rpm_limit,
+  tpd_limit before the missing-config early return; NaN/Inf fail HTTP 400 detail.error. Decimal
+  and integer decoding reject nonfinite input without converting it to an unset ceiling.
+  upperbound_fill_generation fills every configured non-null attribute whose request value is None;
+  upperbound_update_omits leaves None untouched when fill_defaults=false. Numeric maximum checks
+  apply only to max_budget,max_parallel_requests,tpm_limit,rpm_limit. duration_limit and
+  budget_duration_limit parse both sides via B199 duration_in_seconds; caller '-1' is infinite.
+  equal_ceiling passes; unsupported_ceiling_field fills an absent value but does not validate a
+  supplied one. Negative/zero values retain these comparisons, without an invented fallback.
+
+  model_top_level_precedence chooses truthy model_rpm_limit/model_tpm_limit before metadata;
+  empty_top_level_falls_back uses metadata. model_totals sum existing keys' metadata maps with
+  zero for absent entries. global_model_ceiling checks RPM before TPM and a non-null global
+  ceiling before its per-model ceiling. model_ceiling_zero_ignored preserves the truthiness test
+  on individual model ceilings; model_ceiling_negative remains truthy. scalar_totals sums
+  non-null key limits including zero/negatives, checks TPM before RPM, allows equality and treats
+  scalar zero as present. Failures are HTTP 400 with allocated + requested > entity diagnostics.
+
+  team_non_guaranteed_skips never queries unless either top-level type is 'guaranteed_throughput';
+  either_guaranteed_checks_both checks both dimensions and model maps. org_type_metadata falls
+  back to metadata types, unlike team_metadata_type_ignored. team_update_excludes_self and
+  org_update_excludes_self remove matching raw sk- or hashed keys using B770's prefix hash,
+  then run model limits before aggregate limits. No alias-based exclusion is invented.
+  org_missing_budget leaves scalar ceilings None; org_metadata_models still checks model ceilings.
+  B722 supplies key queries, B723 organization-membership reads, and B770 adapters/requests.
+  There are no writes, transactions or cache invalidations in these functions.
+
+  project_missing returns 404 detail.error; project_empty_models allows any models; project_model_subset
+  permits only listed models plus all-team-models/all-proxy-models, in request order. project_budget
+  compares supplied max_budget against litellm_budget_table.max_budget only when both are non-null.
+  B879 supplies get_project_object. caller_org_requires_id is 403; caller_org_membership loads
+  organization_memberships and accepts any role in that organization. Missing user/empty memberships/
+  wrong org produce the other 403 diagnostic. The caller skips this function for proxy admins;
+  the function itself has no admin shortcut and never calls get_user_object.
+
+  Helper cases preserve HTTPException status/detail; B055/B775/B1220 select the route envelope.
+  Inject recorded reads for helper tests. Native team_query_excludes_current and org_membership_query
+  check real selectors using POSTGRES_TEST_URL or testcontainers; an unavailable DB is a failure.
+
 
   Add the key_limit_policy operation under B856 Management::keys. Python calls only the owned MIT helper
   with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
@@ -34,7 +73,8 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::key_limit_policy::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::key_limit_policy::tests::loads_settings, upperbound_absent,
+  upperbound_numeric_and_duration and invalid_upperbound_type.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -52,8 +92,8 @@ description: >-
 
 
   Sizing: 365 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  365 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 658 changed lines estimated within a 675-line gate. Only the repository fixture/corpus/lock
+  330 production after excluding docstrings, 300 behavior/Postgres tests, 65 helper adapters,
+  30 wiring and 50 config lines: 775 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -108,6 +148,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L455-L460
     why: litellm_settings.upperbound_key_generate_params default and read site.
 dod:
+  - text: Each named upperbound, model/scalar ceiling, project and membership branch above has an
+      individual case, including query shapes, omitted values and error ordering.
+    proof: [behavior-tests, oracle, helper-python]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: upperbound_key_param,
       team_rpm_ceiling, team_model_tpm, project_budget_ceiling, org_model_limits, org_assignment_denied.'
     proof:
@@ -151,6 +194,13 @@ checks:
         && grep -rlq "upperbound_key_generate_params" crates/betterlite-config/fuzz/corpus/config_yaml/key-limit-policy-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
+  - tools/oracle/cases/helpers/key-limit-policy/upperbound-fill-and-validation.yaml
+  - tools/oracle/cases/helpers/key-limit-policy/model-precedence-and-zero.yaml
+  - tools/oracle/cases/helpers/key-limit-policy/scalar-ordering.yaml
+  - tools/oracle/cases/helpers/key-limit-policy/guaranteed-type-matrix.yaml
+  - tools/oracle/cases/helpers/key-limit-policy/exclude-current-key.yaml
+  - tools/oracle/cases/helpers/key-limit-policy/project-sentinels-and-budget.yaml
+  - tools/oracle/cases/helpers/key-limit-policy/org-membership-query.yaml
   - tools/oracle/cases/helpers/key-limit-policy/upperbound-key-param.yaml
   - tools/oracle/cases/helpers/key-limit-policy/team-rpm-ceiling.yaml
   - tools/oracle/cases/helpers/key-limit-policy/team-model-tpm.yaml
@@ -159,8 +209,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/key-limit-policy/org-assignment-denied.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -252,8 +300,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A zero parent ceiling is a real limit and cannot be collapsed into absence.
+  - Scalar zero ceilings are enforced, but per-model zero ceilings are skipped by a truthiness check.
+  - One guaranteed dimension activates both checks; only organization types fall back to metadata.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -1,66 +1,94 @@
 id: B734
-title: Cross-worker auth cache invalidation
+title: Auth-object refresh and spend-reset invalidation
 description: >-
-  Implement AuthInvalidation messages, publisher/subscriber lifecycle and team/member/key/project/object
-  eviction helpers. Preserve spend-floor/timestamp fields and local eviction even when publishing fails;
-  only invalidate keys encoded by AuthCache. Validate received pubsub bytes and bind the subscriber to
-  server-owned task shutdown. Mutations publish after their transaction commits.
+  Implement auth_invalidation in betterlite-auth for the eleven auth_checks.py refresh/eviction
+  helpers listed below. B733 supplies cache partitions, serialization, key formats and management TTL;
+  B878 supplies publish_auth_cache_invalidation and evict_and_broadcast, including their no-Redis,
+  queue-full and failed-publication behavior. This task does not own pubsub messages, decoding or
+  subscriber lifecycle. Inject B125/B126 auth, usage and spend caches and a clock instead of importing
+  proxy_server globals. B859 supplies team rows, B721 access-group rows and B2314 resolved keys.
 
+  _cache_management_object writes the supplied model with its explicit model_type and B733 management
+  TTL through async_set_cache; proxy_logging_obj is unused. _cache_team_object first mutates the
+  input last_refreshed_at to the current Unix time, then invalidates the usage-cache team_id:{id}
+  entry, then writes the typed team by ID. Sharing Redis means object identity of the Redis handle,
+  including both handles being None: in that case only usage memory is cleared. Different handles
+  use usage async_delete_cache. A usage failure logs a warning and permits the write; no usage cache
+  is a silent no-op. The warning strips CR and LF from its key and says the stale object can remain
+  until TTL. A failed main cache write propagates and prevents alias processing; the refreshed
+  timestamp and any earlier eviction remain.
 
-  Build the production auth_invalidation module in betterlite-auth; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  For a truthy team_alias, delete team_alias:{alias}; never write an alias mapping during refresh
+  because aliases are not unique in Postgres. Try async_delete_cache_pre_call, fall back to direct
+  async delete only when it returns None, otherwise await its result. An ordinary alias-delete error
+  warns that a stale team may remain until TTL, then usage alias invalidation still runs. Empty/None
+  aliases skip both operations. Usage alias invalidation follows the same shared-Redis identity rule.
+  No publication occurs on this refresh path. _cache_key_object mutates the original key timestamp,
+  calls B733's copy clearing four request fields, and writes it under the supplied hashed_token
+  without hashing it again. It neither clears usage cache nor broadcasts.
 
+  Team deletion processes team_id:{id}, then the alias key only if truthy. For each, synchronously
+  delete the auth cache then asynchronously delete the usage cache when present, inside one try.
+  An auth-delete failure skips usage deletion for that key; an ordinary failure at either step logs
+  the deleted-team stale-until-TTL warning. Publish that key afterward regardless, then continue.
+  _delete_cache_key_object has the same local-auth then usage then publication order and warning
+  policy for one supplied hash. delete_cache_key_objects invokes one such operation per input
+  concurrently, preserving duplicate inputs, collects all outcomes and warns in input order for
+  every BaseException result, including a child cancellation. An empty batch does nothing. Caller
+  cancellation of the whole operation still propagates. Do not turn these best-effort evictions
+  into a transaction rollback or a management-route failure.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/auth_checks.py:
-  _cache_management_object (L2771-L2789; 18 source lines), _cache_team_object (L2792-L2846; 34 source
-  lines), _invalidate_usage_cache_entry (L2849-L2869; 21 source lines), invalidate_team_member_spend_state
-  (L2872-L2985; 104 source lines), delete_cache_team_object (L2988-L3023; 30 source lines), _cache_key_object
-  (L3026-L3044; 16 source lines), _delete_cache_key_object (L3047-L3081; 29 source lines), delete_cache_key_objects
-  (L3084-L3119; 33 source lines), _cache_access_object (L3319-L3331; 13 source lines), _delete_cache_access_object
-  (L3334-L3345; 9 source lines), delete_cached_project_object (L6286-L6299; 13 source lines).
+  _cache_access_object writes access_group_id:{id} with model_type=LiteLLM_AccessGroupTable and the
+  DEFAULT_ACCESS_GROUP_CACHE_TTL env value, int-parsed at import with default 600. Invalid/empty env
+  fails startup; zero/negative values are passed through without a source clamp. This TTL is
+  independent of general_settings.user_api_key_cache_ttl. _delete_cache_access_object deletes auth
+  synchronously, then usage asynchronously if provided: it has NO catch and NO broadcast. Its
+  first failure propagates and skips later work. delete_cached_project_object delegates one
+  project_id:{id} key to B878 evict_and_broadcast, which handles local failure/publication itself.
 
+  Move the two-line _team_membership_inflight registry declaration (auth_checks.py L398-L399) here
+  so both invalidation and B2318 lookup use the same request-owned registry without an upward call.
+  Keep the 10000-entry insertion-order bound of B125 LimitedSizeOrderedDict; removing an entry does
+  not cancel its task, and task lifetime remains B2318's server-owned tracker. A reset first pops
+  team_membership:{user_id}:{team_id}; if it held another task, wait for completion without consuming
+  or propagating that task's result. Skip waiting for the current task or a non-task/missing value.
+  This happens before ANY reset writes or membership eviction, including when new_spend is None.
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  With new_spend=None, leave the spend counter and DB-floor marker untouched and evict/broadcast
+  the two membership keys in auth-then-reservation order. With a value, including zero, first SET
+  spend:team_member:{user_id}:{team_id} in spend-cache memory with TTL 60. If Redis exists, directly
+  SET it there with TTL 60; an ordinary SET failure warns and attempts DELETE of that same Redis
+  counter. DELETE success continues, leaving the new memory value. If both fail, log another warning
+  and raise HTTPException 503 with detail.error explaining that the DB reset committed but Redis
+  still has the old counter and retry requires Redis recovery. Preserve the SET error as cause;
+  do not claim a route-specific auth_error/type/param here. At this point memory was updated, but
+  no floor marker, publication or membership eviction has happened.
 
+  On the continuing path, SET spend_db_floor:spend:team_member:{user_id}:{team_id} only in local
+  spend memory, TTL 5 (SPEND_DB_FLOOR_CACHE_TTL_SECONDS). Move this shared constant below B124 here;
+  B124's authoritative-floor reader consumes it. Publish counter SET(value,60), then floor SET(value,5),
+  then evict/broadcast both membership keys through B878. Redis absence skips only its direct write.
+  Do not delete the new floor/counter when the worker receives its own message: B878 applies SETs
+  to its additional memory caches. There is no database write or compensation in this helper; its
+  caller has already committed the reset. Ordinary cache failures only have the catches stated
+  above; cancellation is not swallowed by those Exception handlers.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_ACCESS_GROUP_CACHE_TTL=600.
-
-
-  Add the auth_invalidation operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-invalidation-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Write betterlite-config::auth_invalidation::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 320 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  320 production, 133 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 598 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Store monetary reset values in the already checked Decimal representation. The auth_invalidation
+  oracle projections invoke the management/team/key/access cache helpers with deterministic memory
+  stores and an injected clock, comparing their key/TTL/copy/timestamp effects. They never invoke
+  invalidate_team_member_spend_state, which imports proxy_server globals. Native recording ports
+  verify its asynchronous order, warnings, partial progress and failure causes.
+  B878 tests transport/publication, and management owners test each route's translation of the reset
+  503 against real Postgres through POSTGRES_TEST_URL or testcontainers. This task adds no parser.
+  The selected helpers plus registry contain 241 nonblank noncomment lines excluding docstrings;
+  add the one-line floor constant. Allow 250 implementation, 350 tests, 80 oracle adapters, 40 config
+  and 35 wiring, 755 within 800; divide refresh, eviction and member-reset files below 300 lines.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_invalidation.rs
     - crates/betterlite-auth/src/auth_invalidation/**
     - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - tools/oracle/src/helpers/auth_invalidation.rs
     - tools/oracle/src/helpers/auth_invalidation/**
@@ -75,11 +103,10 @@ scope:
     - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/auth_invalidation.rs
     - crates/betterlite-config/src/auth_invalidation/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/auth-invalidation-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L1-L225
-    why: Pinned implementation and exact ownership boundary for auth_invalidation.
+    why: B878 owns every declaration in this file; refresh/eviction only calls its publication ports.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2771-L3119
     why: Pinned implementation and exact ownership boundary for auth_invalidation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3319-L3345
@@ -106,31 +133,54 @@ references:
     why: Own _cache_access_object; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3334-L3345
     why: Own _delete_cache_access_object; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1922-L1927
-    why: DEFAULT_ACCESS_GROUP_CACHE_TTL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1922-L1922
+    why: The 600-second access-group fallback is an int-parsed env value; the read is auth_checks.py L3330.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L398-L399
+    why: Shared 10000-entry membership-load index moves below both reset and lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2771-L2771
+    why: The shared five-second floor TTL moves below B124 and reset callers.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_member_counter_eviction.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Projection cases name management_model_type_and_ttl, team_id_and_alias_keys,
+      team_timestamp_mutates_input, key_timestamp_and_request_field_copy,
+      key_hash_not_recomputed, access_group_key_and_independent_ttl,
+      management_logging_argument_unused and key_copy_retains_original_request_fields.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Team refresh cases name usage_none_noop, shared_redis_identity_memory_only,
+      both_redis_none_counts_shared, different_handles_delete_usage_redis,
+      usage_failure_warns_then_team_write, usage_warning_strips_cr_lf,
+      main_write_failure_skips_alias_after_timestamp, alias_delete_never_alias_write,
+      falsey_alias_skips_both_caches, alias_queued_delete_is_awaited,
+      alias_direct_delete_only_without_batch, alias_failure_warns_then_usage and
+      refresh_does_not_publish. Key cases name key_refresh_no_usage_eviction_or_publish.'
+    proof: [behavior-tests]
+  - text: 'Eviction cases name team_id_before_alias, local_auth_failure_skips_usage_but_publishes,
+      usage_failure_warns_then_publishes, missing_usage_cache_still_publishes,
+      key_delete_local_usage_publish_order, batch_keys_concurrent_with_duplicates,
+      batch_child_errors_warn_in_input_order, batch_empty_noop,
+      outer_cancellation_propagates, access_delete_failure_propagates_without_publish and
+      project_key_delegation and project_eviction_uses_pubsub_best_effort_port.'
+    proof: [behavior-tests]
+  - text: 'Member reset cases name inflight_pop_before_any_mutation, inflight_wait_ignores_task_result,
+      current_or_missing_task_not_awaited, registry_bound_does_not_cancel_load,
+      member_counter_floor_and_membership_keys,
+      cap_change_leaves_live_spend_and_floor, zero_reset_is_a_value,
+      reset_memory_then_redis_ttl_60, no_redis_still_updates_floor,
+      redis_set_failure_warns_then_delete, redis_delete_failure_503_after_memory_write,
+      reset_503_retains_set_cause_and_skips_remaining_steps, floor_local_only_ttl_5,
+      counter_set_then_floor_set_publication, memberships_evicted_last,
+      self_delivery_keeps_new_values and cancellation_not_warning_fallback.'
+    proof: [behavior-tests]
+  - text: 'Config loader cases name access_ttl_default_600, access_ttl_env_override,
+      access_ttl_bad_or_empty_stops_startup, access_ttl_zero_negative_not_clamped and
+      management_ttl_does_not_override_access_ttl. No new YAML key is invented for this env constant.'
+    proof: [config-tests]
 checks:
   optional:
     - mutants
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_invalidation::tests::/)
-        - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_invalidation::/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
       run: test -f tools/oracle/helpers/auth_invalidation.py && uv run --locked --project tools/oracle/litellm
@@ -145,21 +195,19 @@ checks:
       why: The actual configuration loader rejects, ignores or misresolves a new setting.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_invalidation::tests::/)
         - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-invalidation-*")"
-        && grep -rlq "DEFAULT_ACCESS_GROUP_CACHE_TTL" crates/betterlite-config/fuzz/corpus/config_yaml/auth-invalidation-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/auth-invalidation/team-member-counter-eviction.yaml
+  - tools/oracle/cases/helpers/auth-invalidation/management-write-projection.yaml
+  - tools/oracle/cases/helpers/auth-invalidation/team-refresh-projection.yaml
+  - tools/oracle/cases/helpers/auth-invalidation/key-refresh-projection.yaml
+  - tools/oracle/cases/helpers/auth-invalidation/access-group-cache-projection.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B124 owns the authoritative-floor reader and spend-cache startup; its SPEND_DB_FLOOR_CACHE_TTL_SECONDS constant moves here.
+  - B2318 owns membership load creation and completion cleanup; B2315 owns its typed result projection.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
-  - 'litellm/proxy/auth/auth_checks.py: B735 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
+  - 'litellm/proxy/auth/auth_checks.py: B2315 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
     (L173-L173), _PrismaTeamRow.dict (L177-L177), _PrismaTeamRow.model_dump (L179-L179), _PrismaVectorStoreRow.dict
     (L183-L183), _PrismaVectorStoreRow.model_dump (L185-L185), _PrismaVectorStoreRow.__iter__ (L187-L187),
     _PrismaUserRow.organization_memberships (L194-L194), _PrismaUserRow.organization_memberships (L197-L197),
@@ -177,10 +225,10 @@ out_of_scope:
     _TeamMembershipModelScope.litellm_budget_table (L363-L363), _member_allowed_models (L366-L369), _RawCacheRead.async_get_cache
     (L373-L373), _raw_cache (L376-L377), _typed_request_body (L380-L381), _JsonLoadsObj.__call__ (L385-L385),
     _typed_json_loads (L388-L389), _membership_from_shared_load (L411-L412), _log_budget_lookup_failure
-    (L415-L435), get_object_permission (L3982-L4034).'
-  - 'litellm/proxy/auth/auth_checks.py: B736 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
-    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442),
-    _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
+    (L415-L435). B735 owns get_object_permission (L3982-L4034).'
+  - 'litellm/proxy/auth/auth_checks.py: B2318 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
+    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442).
+    B736 owns _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
     (L2494-L2510), get_role_based_models (L2513-L2527), get_role_based_routes (L2530-L2542), _get_fuzzy_user_object
     (L2545-L2584), _backfill_null_user_email (L2587-L2612), get_user_object (L2616-L2760), _user_read_failure
     (L2763-L2768).'
@@ -273,11 +321,11 @@ out_of_scope:
     (L161-L164), AuthCacheInvalidationSubscriber.stop (L166-L175), AuthCacheInvalidationSubscriber._run
     (L177-L198), AuthCacheInvalidationSubscriber._consume (L200-L205), AuthCacheInvalidationSubscriber._apply_message
     (L207-L218), AuthCacheInvalidationSubscriber._close_pubsub (L221-L225).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve spend-floor/timestamp fields and local eviction even when publishing fails; only invalidate
-    keys encoded by AuthCache.
+  - A cap-only membership change must keep the live spend counter because a database reseed can undercount unflushed usage.
+  - Matching Redis handles, including two None values, trigger memory-only usage eviction during team refresh.
+  - Waiting for the alias DEL result matters even when the team SET was queued in the same request batch.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

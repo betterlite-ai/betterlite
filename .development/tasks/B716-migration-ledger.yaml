@@ -2,21 +2,57 @@ id: B716
 title: Migration locking and ledger recovery
 description: >-
   Implement MigrationLedger and MigrationLock against the existing _prisma_migrations table, including
-  session advisory locking, completion evidence, baseline bookkeeping, inert failed migrations and contention
+  transaction advisory locking, completion evidence, baseline bookkeeping, inert failed migrations and contention
   attempt accounting. Use the pinned lock ID and ledger columns; native migration outcomes substitute
   for Prisma CLI exit classes. Preserve existing IDs, migration_name, checksum and applied_steps_count;
-  never mark an incomplete DDL step applied without source-equivalent evidence. MigrationCatalog carries
-  explicit execution mode per pinned migration. Run the 20260415120000_health_check_latest_per_model_index
-  single-statement migration outside a transaction; do not use a migrator that wraps all files implicitly.
-  Keep interrupted concurrent-index creation incomplete in the ledger and let drift repair remove/rebuild
-  an invalid index.
+  never mark an incomplete DDL step applied without source-equivalent evidence. B873 alone applies SQL
+  files, owns the deploy session lock and handles the concurrent-index execution mode. This task reads
+  B873's migration_files catalog but does not deploy it.
 
 
-  B873 owns native migrate deploy; consume it here: hold Prisma advisory lock 72707369 for the entire
-  run, in addition to the coordinator transaction/session lock int.from_bytes(b"llm_mig2", "big"). Apply
-  ordered pending SQL files with their declared transaction mode and insert/update _prisma_migrations
-  rows with SHA256 of exact migration bytes. Native baseline adopts only an already-current db-push schema
-  with no ledger; an older schema cannot start. Do not create a schema-diff engine.
+  migration_lock opens a ten-second-timeout autocommit connection and tries pg_try_advisory_xact_lock
+  with int.from_bytes(b"llm_mig2", "big") inside a transaction. Hold that transaction through the yielded
+  coordinator and its final SELECT 1 check. acquire_prisma_lock tries pg_try_advisory_xact_lock(72707369)
+  on that transaction, not a session lock. Both retry with uniform 0.5-to-1.5-second jitter capped by
+  remaining monotonic deadline. Timeout errors name the relevant lock and stop startup; coordination
+  connection errors retain their cause. Log waiting/acquisition. held_migration_lock is the distinct
+  nonblocking session-level llm_mig2 lock for concurrent DDL; yield false if unavailable and unlock in
+  finally only when acquired, including a failed DDL body.
+
+  migration_environment uses DIRECT_URL only when both it and DATABASE_URL are truthy. Replace its schema
+  query entries with the first nonblank schema from DATABASE_URL, default public, preserving other direct
+  URL parameters. _prisma_schema_param is owned here and returns the first schema query value or None;
+  it selects the ledger namespace, not a Prisma CLI schema filename. Read ledger rows through B711's
+  stripped libpq URL with a ten-second connection timeout, quote schema/table identifiers, and bind values.
+  Missing/empty DATABASE_URL, absent driver at the pin, or operational/database errors return None; no row
+  returns an empty tuple. Failed logs select unfinished/non-rolled-back rows by migration_name/started_at;
+  no row or a non-string/null log becomes empty string, while unavailable lookup stays None. Recovered
+  checks require the same identity and either finished_at or rolled_back_at.
+
+  Recovery reads all non-rolled-back records, coalescing null logs to empty. With no unfinished records,
+  return whether any checksum matches the exact bytes. Otherwise require exactly one unfinished row,
+  applied_steps_count=1, whitespace-only logs and matching SHA256. Update only finished_at using a guarded
+  id/checksum/steps/unfinished/not-rolled-back/original-logs predicate; a rowcount other than one raises
+  the retry-startup error. Leave checksum, id, logs and steps untouched and log confirmed completion.
+
+  Baseline first refuses an empty/custom migration history or schema.prisma bytes unlike the packaged
+  build. Acquire the Prisma transaction lock and return unchanged if the ledger already exists. Without
+  a ledger, B701 SchemaContract compares the live catalog to the independently initialized current build;
+  mismatch or unavailable verification stops startup without reconciliation. Only a match may create the
+  ledger with varchar(36) primary id, varchar(64) checksum, varchar(255) name, timestamptz started/finished/
+  rolled-back dates, text logs and integer applied_steps_count default 0. Insert each packaged migration
+  using a UUID, checksum, empty logs, started_at=finished_at=current_timestamp and steps left at 0. Warn
+  that history was adopted and historical data backfills were neither replayed nor verified.
+
+  is_inert_migration strips block then line comments, splits on semicolons and accepts only empty pieces
+  or case-insensitive SELECT 1. Failed inert recovery refuses noninert SQL before taking the Prisma lock;
+  require exactly one unfinished, non-rolled-back row, then set rolled_back_at without requiring a current
+  checksum. A guarded update affecting other than one row raises the rerun-setup error; log success.
+  _MigrateAttemptBudget starts with MAX_MIGRATE_DEPLOY_ATTEMPTS=4 and default contention_seconds_left=600;
+  exhausted means attempts_left<=0, attempt_number=4-attempts_left+1, spend decrements only attempts, and
+  after_contention decrements only elapsed contention time and errors at zero or below. Migration names
+  parse only fourteen digits followed by underscore; others, including the eight-digit email index, map
+  to zero, as does an empty maximum. Enumerate only */migration.sql and log the discovered count.
 
 
   Build the production migration_ledger module in betterlite-db; reuse the typed dependencies listed in
@@ -40,18 +76,32 @@ description: >-
   (L390-L396; 7 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DATABASE_URL=None.
+  Also own prisma_toolchain.py _timeout_from_env (L81-L100), prisma_command_timeout (L103-L107),
+  migration_lock_timeout (L110-L111) and prisma_migrate_deploy_timeout (L121-L127), below their B051,
+  B717 and B857 callers. LITELLM_MIGRATION_LOCK_TIMEOUT defaults 600 seconds; invalid numeric
+  text, nonfinite values and values<=0 warn and fall back to 600, while positive fractional seconds work.
+  LITELLM_PRISMA_COMMAND_TIMEOUT uses the same parser with default 60. LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT,
+  when present even as an empty string, uses that parser with default 600 and does not inherit the
+  command timeout. When absent it is max(600,prisma_command_timeout()). Thus an explicit invalid deploy
+  timeout falls back to 600 even when command timeout is 900. Preserve the distinct warning text
+  'is not a number' versus 'is not a finite positive number', the env name/value and fallback seconds.
+  DATABASE_URL and DIRECT_URL default absent. These reads resolve in betterlite-config and are injected.
 
 
   Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
   otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
   The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
   against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  the exact source transaction rollback or preceding partial writes. Use independent temporary databases
+  for complete baseline histories, since baseline constraint-name guards inspect the whole database;
+  small ledger-only fixtures can use isolated schemas. Clean only test-owned objects on exit.
 
 
-  Write betterlite-config::migration_ledger::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::migration_ledger::tests::lock_timeout_default, positive_fractional_timeout,
+  invalid_timeout_warns, command_timeout_default_sixty, deploy_timeout_default_six_hundred,
+  absent_deploy_inherits_larger_command, explicit_deploy_overrides_command,
+  invalid_present_deploy_uses_six_hundred, timeout_warning_categories,
+  direct_url_schema_override, missing_url_passthrough and first_schema_value.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -68,9 +118,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 282 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  282 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 507 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  Sizing: 282 original owned source lines plus 34 timeout-helper/accessor lines and eight schema-query lines.
+  Allow 324 production, 345 behavior/Postgres tests, 30 wiring and 70 config lines, 769 within an 800-line
+  gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -142,9 +192,21 @@ references:
       ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L357-L362
     why: DATABASE_URL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L705-L713
+    why: Own _prisma_schema_param, called by ledger lookup and the other native migration services.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L81-L127
+    why: Own the shared timeout parser and command/lock/deploy accessors; bootstrap timeout remains excluded.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: native_baseline_current_only,
-      coordinator_lock_contention, failed_inert_recovery, postgres_pinned_rows, postgres_failure_effects.'
+      coordinator_lock_contention, prisma_xact_lock_contention, connection_check_before_commit,
+      lock_timeout_deadline, lock_connection_error, held_lock_unlock_on_error, held_lock_false,
+      direct_schema_preserved, public_schema_default, ledger_unavailable_none, ledger_absent_tuple,
+      failed_logs_null_empty, recovered_identity_match, completed_checksum_match, completion_one_step,
+      completion_empty_logs, completion_exact_checksum, completion_multiple_unfinished,
+      completion_guard_rowcount, baseline_rows_zero_steps, baseline_custom_history_refused,
+      baseline_existing_ledger_noop, baseline_warns_backfills, inert_comments_select_one,
+      noninert_not_rolled_back, failed_inert_recovery, inert_guard_rowcount, attempt_and_contention_budgets,
+      timestamp_fourteen_digits, postgres_pinned_rows and postgres_failure_effects.'
     proof:
       - behavior-tests
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
@@ -177,15 +239,18 @@ checks:
         && grep -rlq "DATABASE_URL" crates/betterlite-config/fuzz/corpus/config_yaml/migration-ledger-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases: []
-deviations: []
+deviations:
+  - what: Baseline currency is verified with B701's native catalog contract, without invoking prisma migrate diff.
+    why: Gateway code cannot spawn Prisma; an unverified or older schema stops startup instead of being reconciled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L113-L133
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B051 owns the other prisma_toolchain.py timeout accessors and native command policy; Node/Prisma
+    subprocess discovery and bootstrap have no native implementation under the no-subprocess rule.
   - 'litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py: B873 owns migration_files (L82-L86).'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B051 owns ProxyExtrasDBManager.setup_database
     (L1285-L1315), ProxyExtrasDBManager.build_request_log_indexes (L1318-L1330), ProxyExtrasDBManager.run_migration_job
     (L1333-L1342), ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B710 owns str_to_bool (L36-L39).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B2307 owns str_to_bool (L36-L39).'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B711 owns ProxyExtrasDBManager._libpq_tls_params
     (L733-L753), ProxyExtrasDBManager._strip_prisma_query_params (L716-L730).'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B717 owns ProxyExtrasDBManager._is_permission_error
@@ -230,25 +295,12 @@ out_of_scope:
     no caller at the pin.'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
     v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
-    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_sql_comments (L149-L154): v1 only; native
-    startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_spend_logs_pk_clauses (L157-L168): v1
-    only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::filter_partitioned_spend_logs_diff (L171-L185):
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration (L330-L344):
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_specific_migration
-    (L399-L406): v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration_best_effort
-    (L347-L353): no caller at the pin.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - The llm_mig2 coordinator lock alone does not serialize an old LiteLLM pod running prisma migrate deploy.
-  - Concurrent index DDL must execute outside a transaction and remains incomplete until success is recorded.
+  - A baseline row has applied_steps_count=0, while interrupted-step completion requires exactly 1.
+  - Whitespace-only logs qualify as completion evidence, but the guarded update still compares their original bytes.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -1,75 +1,88 @@
 id: B732
-title: Typed authentication principals and grant resolution
+title: Typed authentication principals and role normalization
 description: >-
-  Create betterlite-auth Principal, AuthContext, AuthError, role enums and secret provenance types from
-  the pinned identity records. Define BudgetAdmission as the single admission port name: admit(&AuthContext,&RequestScope)->Result<AdmissionLease,AuthError>;
-  B071 installs persistence and release. Define AuthBackend and typed auth stage inputs without loading
-  keys or resolving grants. Add the B003 server constructor hook for typed middleware stages; each auth
-  leaf installs its stage into the real server for HTTP cases, and B052 later fixes complete pipeline
-  order. The default stage set retains B003 master-key behavior.
+  Extend B2313's betterlite-auth crate with auth_identity records, normalized roles and typed
+  resolver errors. B2314 supplies the complete UserAPIKeyAuth and legacy LitellmUserRoles;
+  B720 supplies the user row consumed by the three auth_checks.py role helpers. Move the four-line
+  NetworkContext record from network.py L15-L18 here, below B743's network resolution. Principal
+  must not import its later resolver, grant loader, cache or network policy implementation.
 
+  AuthMethod has the exact values api_key, http_basic, bearer_jwt, oauth2_introspection, oidc, saml
+  and mutual_tls. PrincipalType has human and service_account. Role has platform_admin,
+  platform_viewer, org_admin, org_viewer, team_admin and team_member; TeamRole has admin/member.
+  map_role maps only proxy_admin, proxy_admin_viewer and org_admin to their corresponding
+  normalized roles; None and every other string return None, including internal_user, org_viewer
+  and team_admin. team_role maps only exact admin to ADMIN; missing, unknown and differently cased
+  strings become MEMBER. Neither function trims whitespace or case-folds. effective_user_role
+  instead accepts all seven B2314 legacy values and falls back to INTERNAL_USER on None/unknown
+  values. _get_user_role returns None for an absent user, otherwise applies that fallback.
+  _is_user_proxy_admin is true only for a present user with the exact proxy_admin value.
 
-  IdentityStore belongs to B870 and GrantResolver/team_grants to B871; consumers that call them depend
-  on those parts directly. No auth_identity fuzz target: these are already-typed principals and ports.
+  UserIdentity requires id and defaults external_id/user_name/email/display_name to None.
+  OrganizationIdentity and ProjectIdentity require id with name=None; TeamIdentity requires id,
+  name=None and role=member. EndUserIdentity requires id. CredentialRef defaults key_id/token_id
+  to None. NetworkContext defaults client_ip/host to None and via_trusted_proxy to false; it
+  validates field types without parsing IPs, normalizing hosts or inferring proxy trust.
+  Empty identity strings remain empty, and undeclared record fields are ignored as in the source.
 
+  Principal requires principal_type, subject and auth_method. issuer/user/organization/project/
+  end_user/source_key default None; audience/teams/roles/scopes each get a fresh empty list.
+  credential_ref and network get fresh default records. Preserve sequence order and duplicates.
+  The source freezes top-level assignment, not nested lists/records; native request-local ownership
+  must retain the ability to construct the same values without sharing mutable default containers.
+  source_key is available to trusted resolution but excluded from serialization and Debug/repr.
+  It is not authenticated merely because a constructor accepts it. Keep a fresh Principal per
+  request, separate identity fields from policy, and use B2313's carried snapshots in AuthContext
+  rather than adding mutable policy state to Principal.
 
-  Build the production auth_identity module in betterlite-auth; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Add distinct AuthError variants for the source IdentityResolutionError family and UserNotFoundError.
+  NoDatabaseConnectionError reports the missing database with the source virtual-keys help URL.
+  KeyNotInCacheError reports check_cache_only=True and the hashed token, whereas KeyNotFoundError
+  carries status 401, type token_not_found_in_db, param key, string code "401", empty headers and
+  the create-key guidance. PrincipalMissingSourceKeyError identifies a principal not produced by
+  IdentityStore.resolve. UserNotFoundError is a proved-absent user, with user_id and /user/new
+  guidance; it must remain distinguishable from a failed database read. Only KeyNotFoundError
+  defines an HTTP contract here; B869/B871 map the other exceptions in their actual caller contexts.
+  Keep error messages in betterlite's words and never put a presented secret in them. Pure oracle
+  error projections compare kind and available status/type/param/code, ignoring only message wording.
 
+  Define native AuthContext, RequestScope, AdmissionLease and the single BudgetAdmission port
+  admit(&AuthContext,&RequestScope)->Result<AdmissionLease,AuthError>; B071 installs persistence and
+  release. Define AuthBackend and typed stage inputs as closed enums with exhaustive dispatch.
+  Add B003 server constructor/state wiring for installed stages so later auth leaves can exercise
+  their production code through existing protected routes. Preserve B003 master-key handling when
+  no additional stages are installed. Forward a stage error once and stop downstream execution;
+  stage success carries its typed context to the next stage and route. B052 owns final stage order,
+  not another registry or duplicate route registration. Native tests drive the actual constructor
+  and protected route, not a test-only endpoint.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/roles.py:
-  map_role (L28-L32; 5 source lines), team_role (L35-L36; 2 source lines). litellm/proxy/auth/resolvers/exceptions.py:
-  NoDatabaseConnectionError.__init__ (L13-L14; 2 source lines), KeyNotInCacheError.__init__ (L18-L19;
-  2 source lines), KeyNotFoundError.__init__ (L29-L36; 8 source lines), PrincipalMissingSourceKeyError.__init__
-  (L40-L41; 2 source lines). litellm/types/proxy/auth/auth_checks.py: UserNotFoundError.__init__ (L7-L8;
-  2 source lines). litellm/proxy/auth/auth_checks.py: effective_user_role (L1298-L1302; 5 source lines),
-  _get_user_role (L1305-L1310; 6 source lines), _is_user_proxy_admin (L1340-L1347; 6 source lines).
-
-
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  B733 creates the auth fuzz workspace with its real cache decoder; B770 creates the server fuzz workspace
-  with its real key-request decoder. This typed foundation creates neither a fuzz manifest nor a dummy
-  target. Define the server middleware-stage registry and constructor used by leaf HTTP tests and final
-  B052 assembly.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 40 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  65 production, 136 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 231 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Server wiring tests live under betterlite-server::auth::auth_identity::tests: stage_is_registered and
-  failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
-  stage; the failure test asserts its public error translation and that the downstream handler was not
-  called. These tests are part of the behavior-test allowance already budgeted above.
+  The auth_identity pure helper uses the source record constructors, role functions and error
+  constructors directly. No environment/config setting, database write or outside-byte decoder is
+  added here. The 128 nonblank noncomment owned lines include model declarations and imports but
+  exclude docstrings; __init__.py only re-exports the same types. Allow 190 production, 285 behavior
+  tests, 100 oracle adapters and 120 server wiring/tests, 695 within a 750-line gate. Split records,
+  roles and errors into domain files below 300 lines; extend the existing crate/error enum.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_identity.rs
     - crates/betterlite-auth/src/auth_identity/**
     - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
     - crates/betterlite-auth/Cargo.toml
     - Cargo.toml
     - deny.toml
     - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/auth/auth_identity.rs
     - crates/betterlite-server/src/auth/auth_identity/**
+    - tools/oracle/src/helpers/auth_identity.rs
+    - tools/oracle/helpers/auth_identity.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/auth-identity/**
+    - tools/oracle/fuzz/corpus/helper_case/auth-identity-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_method.py#L1-L13
@@ -81,13 +94,15 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/exceptions.py#L1-L41
     why: Pinned implementation and exact ownership boundary for auth_identity.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/grants.py#L1-L267
-    why: Pinned implementation and exact ownership boundary for auth_identity.
+    why: B871 owns all grant records, loader protocols, outcomes and resolution; Principal imports none of them.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/store.py#L1-L191
-    why: Pinned implementation and exact ownership boundary for auth_identity.
+    why: B870 owns all IdentityStore behavior and its constructor dependencies.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/resolvers/__init__.py#L1-L33
     why: Pinned implementation and exact ownership boundary for auth_identity.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/team_grants.py#L1-L126
-    why: Pinned implementation and exact ownership boundary for auth_identity.
+    why: B871 owns all team-grant records and normalization; they are not principal fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L15-L18
+    why: The record moves below B743; its None/None/false defaults require no network-policy dependency.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/auth/auth_checks.py#L1-L8
     why: Pinned implementation and exact ownership boundary for auth_identity.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/roles.py#L28-L32
@@ -111,38 +126,57 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1340-L1347
     why: Own _is_user_proxy_admin; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: preserves_pinned_contract,
-      rejects_invalid_input.'
-    proof:
-      - behavior-tests
-  - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
-    proof:
-      - stage-wiring-tests
-      - behavior-tests
+  - text: 'Enum and role cases name all_auth_method_values, principal_type_values, normalized_role_values,
+      map_role_three_legacy_values, map_role_unknown_and_none, map_role_no_trim_or_casefold,
+      team_role_only_exact_admin, effective_role_seven_values, effective_role_invalid_is_internal,
+      absent_user_role_is_none and proxy_admin_requires_exact_present_role.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Record cases name identity_required_ids, user_identity_nullable_fields,
+      organization_and_project_name_defaults, team_name_and_member_defaults, credential_ref_null_ids,
+      network_default_fields, network_strings_not_normalized, identity_empty_strings_and_unknown_extras,
+      principal_three_required_fields, principal_nullable_identity_defaults,
+      principal_fresh_empty_sequences, principal_fresh_credential_and_network,
+      principal_sequence_order_and_duplicates, principal_top_level_freeze_is_shallow and
+      source_key_excluded_from_json_and_repr.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Error cases name no_database_has_no_http_mapping, cache_only_miss_is_distinct,
+      missing_key_401_token_not_found, missing_key_empty_headers_and_string_code,
+      missing_source_key_is_distinct and absent_user_not_database_failure. Native tests verify
+      resolver_error_redacts_presented_credentials, stage_is_registered, failure_stops_downstream,
+      success_forwards_auth_context and default_stages_keep_master_key_behavior.'
+    proof: [behavior-tests, helper-python, oracle, stage-wiring-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_identity::tests::/)
-        - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_identity::/)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_identity::tests::/)
         - test(/replays_the_/)'
-oracle_cases: []
+    - id: helper-python
+      why: The helper must import the pinned constructors and role functions.
+      run: test -f tools/oracle/helpers/auth_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: New identity seeds must reach the shared helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-identity-*")" && grep -rlq auth_identity tools/oracle/fuzz/corpus/helper_case/auth-identity-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/auth-identity/role-mappings.yaml
+  - tools/oracle/cases/helpers/auth-identity/identity-records.yaml
+  - tools/oracle/cases/helpers/auth-identity/principal-defaults-and-exclusions.yaml
+  - tools/oracle/cases/helpers/auth-identity/resolver-errors.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B743 owns every network.py function and TrustedProxyConfig; only NetworkContext moves here.
+  - B871 owns every declaration in grants.py and team_grants.py, including loader protocols and outcome records; B870 owns all store.py declarations.
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
   - 'litellm/proxy/auth/auth_checks.py: B734 owns _cache_management_object (L2771-L2789), _cache_team_object
     (L2792-L2846), _invalidate_usage_cache_entry (L2849-L2869), invalidate_team_member_spend_state (L2872-L2985),
     delete_cache_team_object (L2988-L3023), _cache_key_object (L3026-L3044), _delete_cache_key_object
     (L3047-L3081), delete_cache_key_objects (L3084-L3119), _cache_access_object (L3319-L3331), _delete_cache_access_object
     (L3334-L3345), delete_cached_project_object (L6286-L6299).'
-  - 'litellm/proxy/auth/auth_checks.py: B735 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
+  - 'litellm/proxy/auth/auth_checks.py: B2315 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
     (L173-L173), _PrismaTeamRow.dict (L177-L177), _PrismaTeamRow.model_dump (L179-L179), _PrismaVectorStoreRow.dict
     (L183-L183), _PrismaVectorStoreRow.model_dump (L185-L185), _PrismaVectorStoreRow.__iter__ (L187-L187),
     _PrismaUserRow.organization_memberships (L194-L194), _PrismaUserRow.organization_memberships (L197-L197),
@@ -160,10 +194,10 @@ out_of_scope:
     _TeamMembershipModelScope.litellm_budget_table (L363-L363), _member_allowed_models (L366-L369), _RawCacheRead.async_get_cache
     (L373-L373), _raw_cache (L376-L377), _typed_request_body (L380-L381), _JsonLoadsObj.__call__ (L385-L385),
     _typed_json_loads (L388-L389), _membership_from_shared_load (L411-L412), _log_budget_lookup_failure
-    (L415-L435), get_object_permission (L3982-L4034).'
-  - 'litellm/proxy/auth/auth_checks.py: B736 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
-    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442),
-    _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
+    (L415-L435). B735 owns get_object_permission (L3982-L4034).'
+  - 'litellm/proxy/auth/auth_checks.py: B2318 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
+    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442).
+    B736 owns _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
     (L2494-L2510), get_role_based_models (L2513-L2527), get_role_based_routes (L2530-L2542), _get_fuzzy_user_object
     (L2545-L2584), _backfill_null_user_email (L2587-L2612), get_user_object (L2616-L2760), _user_read_failure
     (L2763-L2768).'
@@ -258,11 +292,10 @@ out_of_scope:
     (L149-L191).'
   - 'litellm/proxy/auth/team_grants.py: B871 owns _decode_model_aliases (L30-L37), _json_columns (L76-L80),
     team_model_aliases (L83-L87), team_grants (L90-L126).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - 'Define BudgetAdmission as the single admission port name: admit(&AuthContext,&RequestScope)->Result<AdmissionLease,AuthError>;
-    B071 installs persistence and release.'
+  - Missing role becomes None, member or internal_user depending on which of the three helpers is called.
+  - A source_key accepted by the record constructor is neither serialized nor evidence of authentication.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

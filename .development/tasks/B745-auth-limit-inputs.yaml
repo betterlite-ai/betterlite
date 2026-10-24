@@ -1,9 +1,37 @@
 id: B745
 title: Per-model and caller rate-limit inputs
 description: >-
-  Implement RateLimitInputs and OutputTokenEstimate validation for key/team/project/model/MCP/tag metadata.
-  Preserve deployment-default inheritance and admin-only output-estimate/batch-limit fields; this task
-  supplies typed inputs to B072 and does not introduce a rate limiter.
+  Build the pure rate-limit and management-policy projections consumed by B072 and key/team routes.
+  Key model RPM/TPM precedence is truthy metadata.model_rpm_limit/model_tpm_limit, then dict-valued
+  model_max_budget entries with nonnull rpm_limit/tpm_limit, then nonnull team metadata (including
+  an empty map), then a deployment default when model_name is nonnull. Deployment defaults read
+  model_list[].litellm_params.default_api_key_rpm_limit/default_api_key_tpm_limit through B302;
+  choose the minimum converted int over all matching deployments. Missing router/deployments/values
+  yields None. Accept integers, decimals truncated toward zero, integer strings and byte strings;
+  bool behaves as int. Skip unsupported types and ValueError/TypeError silently, while overflow
+  propagates. Preserve zero/negative limits. A selected map is returned whole, not filtered to model_name.
+
+  Output estimates are default_estimated_output_tokens and default_estimated_output_tokens_per_model.
+  Validate each with PositiveInt coercion: None means absent; malformed values WARN and become None.
+  A bad element rejects the entire per-model map. A requested model checks that map first, then global;
+  no model skips map validation. Key global wins over team per-model because key metadata is resolved
+  before team metadata. Malformed map/global fields fail independently, allowing the other field or
+  team default to survive. No configured estimate returns None to B072's heuristic; no new default is invented.
+
+  Management admin checks compare resulting values, not presence. Explicit metadata replaces the
+  stored blob, including None/{} clearing it; omitted metadata preserves it. Nonnull top-level estimate
+  fields overlay that base, but top-level None does not clear it. proxy_admin bypasses the comparison;
+  every other role may resend unchanged estimates but cannot add/change/remove either field. A denied
+  key/team change is HTTPException 403 detail.error explaining reservation of requests without max_tokens.
+  The batch_enqueued_token_limit metadata check uses the same replacement/omission rule, no top-level
+  overlay, and rejects changed/removed values with 403 detail.error. Its message explains replacement
+  of RPM/TPM checks. Route owners B773/B775/B801/B804 apply their own except-block translation.
+
+  get_model_rate_limit_from_metadata reads the requested team_metadata/organization_metadata/project_metadata
+  map for model_rpm_limit/model_tpm_limit/model_itpm_limit/model_otpm_limit without merging or validation.
+  MCP RPM uses nonnull key mcp_rpm_limit before team mcp_rpm_limit; an empty map wins. Team-only MCP
+  reads only team metadata. tag_rpm_limit comes from key metadata only. These are already parsed values,
+  with no writes, secret conversion or rate-limit counter update in this task.
 
 
   Build the production auth_limit_inputs module in betterlite-auth; reuse the typed dependencies listed
@@ -36,40 +64,21 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  These are parsed-record projections, not an authentication stage. Helper cases call the owned
+  functions directly and compare returned maps, warning/drop paths and 403 detail.error. Consuming
+  management tasks register routes and test their own exception mapping. No Postgres fixture is needed.
+  B002's deployment_limits_loaded loads both default_api_key_rpm_limit and default_api_key_tpm_limit
+  under model_list[].litellm_params, proving absent None, explicit zero, integer strings and invalid
+  per-deployment values reach the source skip/overflow policy. Add config_yaml seeds for both fields.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 284 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  284 production, 151 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 565 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  Sizing: 284 nonblank, noncomment pinned source lines; allow 250 production, 300 cases/tests,
+  80 adapters, 50 config tests and 50 wiring, 730 within 800. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Server wiring tests live under betterlite-server::auth::auth_limit_inputs::tests: stage_is_registered
-  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
-  stage; the failure test asserts its public error translation and that the downstream handler was not
-  called. These tests are part of the behavior-test allowance already budgeted above.
+  Downstream composition stays with the calling limiter and management tasks; there is no route
+  registration or middleware constructor in this part.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_limit_inputs.rs
@@ -84,12 +93,12 @@ scope:
     - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auth-limit-inputs/**
     - tools/oracle/fuzz/corpus/helper_case/auth-limit-inputs-*
-    - crates/betterlite-server/src/auth.rs
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/app.rs
-    - tools/oracle/cases/auth/auth-limit-inputs/**
-    - crates/betterlite-server/src/auth/auth_limit_inputs.rs
-    - crates/betterlite-server/src/auth/auth_limit_inputs/**
+    - crates/betterlite-config/src/auth_limit_inputs.rs
+    - crates/betterlite-config/src/auth_limit_inputs/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/auth-limit-inputs-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L950-L1358
@@ -148,29 +157,35 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_model_override,
-      team_model_default, missing_limit, admin_output_estimate, non_admin_output_estimate_denied, batch_limit_admin_only,
-      invalid_number.'
+  - text: 'Limit cases: key_metadata_truthy_first, empty_key_map_falls_through,
+      budget_nested_dict_nonnull, team_empty_map_wins, deployment_minimum,
+      absent_router_or_models, integer_string_bytes_bool, decimal_truncation,
+      malformed_limit_skipped, overflow_propagates, zero_negative_kept,
+      returned_map_not_model_filtered, tenant_accessor_fields, key_mcp_empty_wins,
+      team_mcp_fallback and tag_key_only. Deployment cases use the native injected catalog;
+      loaders accept both deployment default keys in deployment_limits_loaded.'
     proof:
       - behavior-tests
+  - text: 'Estimate cases: positive_int_coercion, zero_negative_invalid_warn,
+      malformed_scalar_warn, any_bad_map_entry_drops_map, map_before_global,
+      no_model_skips_map_validation, malformed_fields_independent, key_global_before_team_map,
+      missing_estimate_none, omitted_metadata_preserves, explicit_null_metadata_clears,
+      top_level_nonnull_overlays, top_level_null_no_clear, admin_estimate_bypass,
+      nonadmin_identical_allowed, estimate_changed_403, estimate_removed_403,
+      batch_omitted_preserves, batch_identical_allowed, batch_changed_403,
+      batch_removed_403 and batch_admin_bypass. Pure helper cases assert 403 detail.error;
+      management route suites own public error-envelope comparison.'
+    proof: [behavior-tests, helper-python, oracle]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: The real server constructor invokes the production auth stage and its failures stop downstream
-      execution.
-    proof:
-      - stage-wiring-tests
-      - behavior-tests
+  - text: Both deployment default keys reach the projection through the real config loader and new seeds.
+    proof: [config-tests, config-corpus]
 checks:
-  optional: []
+  optional: [mutants]
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
@@ -186,10 +201,12 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-limit-inputs-*")"
         && grep -rlq "auth_limit_inputs" tools/oracle/fuzz/corpus/helper_case/auth-limit-inputs-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: stage-wiring-tests
-      why: The server does not register this production auth stage or discards its failure.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_limit_inputs::tests::/)
-        - test(/replays_the_/)'
+    - id: config-tests
+      why: Deployment default RPM/TPM fields are ignored by the loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auth_limit_inputs::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: No newly added deployment-limit config seed exists.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-limit-inputs-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/auth-limit-inputs/key-model-override.yaml
   - tools/oracle/cases/helpers/auth-limit-inputs/team-model-default.yaml
@@ -198,17 +215,12 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-limit-inputs/non-admin-output-estimate-denied.yaml
   - tools/oracle/cases/helpers/auth-limit-inputs/batch-limit-admin-only.yaml
   - tools/oracle/cases/helpers/auth-limit-inputs/invalid-number.yaml
-  - tools/oracle/cases/auth/auth-limit-inputs/key-model-override.yaml
-  - tools/oracle/cases/auth/auth-limit-inputs/team-model-default.yaml
-  - tools/oracle/cases/auth/auth-limit-inputs/missing-limit.yaml
-  - tools/oracle/cases/auth/auth-limit-inputs/admin-output-estimate.yaml
-  - tools/oracle/cases/auth/auth-limit-inputs/non-admin-output-estimate-denied.yaml
-  - tools/oracle/cases/auth/auth-limit-inputs/batch-limit-admin-only.yaml
-  - tools/oracle/cases/auth/auth-limit-inputs/invalid-number.yaml
+  - tools/oracle/cases/helpers/auth-limit-inputs/metadata-precedence.yaml
+  - tools/oracle/cases/helpers/auth-limit-inputs/estimate-coercion.yaml
+  - tools/oracle/cases/helpers/auth-limit-inputs/resulting-value-permissions.yaml
+  - tools/oracle/cases/helpers/auth-limit-inputs/tenant-mcp-tag-fields.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
     (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
   - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
@@ -258,8 +270,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Only administrators may supply output-token estimate and batch-limit overrides.
+  - An unchanged estimate resent by a non-admin is allowed, but replacing metadata without that field can be a forbidden removal.
+  - Empty key model-limit metadata falls through, whereas an empty team model-limit map blocks deployment inheritance.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

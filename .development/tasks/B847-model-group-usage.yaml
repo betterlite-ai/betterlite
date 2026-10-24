@@ -1,9 +1,57 @@
 id: B847
 title: Model group usage and remaining-limit metadata
 description: >-
-  Implement ModelGroupUsage and access-group catalog projections over B319/B365 limit counters, with source
-  TTL/cache invalidation and response headers. Keep group RPM/TPM/input/output counters distinct and preserve
-  missing-counter versus zero semantics.
+  Implement ModelGroupUsage and access-group projections with B844 catalog lookup, B846 metadata,
+  B2226/B360 ordered cache reads, B301 RouterCacheEnum, B019 IO/remaining-header builders, B016 response
+  preparation and model-id attachment, B304 find_deployment_metadata and B2350 routing decision
+  headers. B2350 moves the small projections below their routing callers, removing the B366 cycle.
+  Counter writes and reservation algorithms are not called here.
+
+
+  For both usage functions sample an injected UTC clock and format HH-MM. Use the backend
+  litellm_params.model, not the public group, in global_router:{id}:{model}:tpm:{HH-MM}, :rpm:,
+  :itpm: and :otpm: keys. Skip only a missing/null model id or backend model, retaining empty strings
+  and duplicate deployments. A None model list returns (None,None) without cache access; an empty list
+  still performs an empty batch. Batch all TPM then RPM (or all ITPM then OTPM), split at the first
+  key-list length and sum only integer values. Python bool counts as 0/1; strings, decimals, null and
+  containers are ignored without logging. No integer observed means None; observed zero means zero.
+  A None batch result gives (None,None); batch errors propagate. Preserve source slices for a short
+  batch response instead of assigning values to a different key group.
+
+
+  _cached_get_model_group_info uses B846 and caches None too, with DEFAULT_MAX_LRU_CACHE_SIZE default
+  64 read through B2225's config loader (constants.py L493, int at import). Invalid integer text stops
+  startup; zero/negative capacity disables caching as Python lru_cache does. No TTL exists. Use B844's
+  shared invalidation handles so equal-length price edits clear this cache. B2225's named
+  loads_default_max_lru_cache_size loader cases prove the setting; this task tests capacity effects.
+
+
+  Remaining usage starts from cached metadata. If either IO limit is present, first call the IO usage
+  function and B019's header builder: x-ratelimit-limit/remaining/reset-input-tokens and the output
+  equivalents, clamped remaining to zero and seconds to the next minute. Then, independently, read
+  ordinary counters when either tpm or rpm is present. Emit x-ratelimit-remaining-tokens,
+  x-ratelimit-limit-tokens, x-ratelimit-remaining-requests and x-ratelimit-limit-requests only for
+  configured limits, with missing usage treated as zero. Ordinary negative remaining values are not
+  clamped. An unknown group or no limits returns an empty map without counter reads.
+
+
+  set_response_headers prepares the response through B016 and returns None immediately for None.
+  Obtain the existing additional_headers, attach a missing model id from request metadata, always
+  assign x-litellm-model-group (including None), apply quality headers then update complexity headers,
+  and only for a non-null group merge remaining usage through B019. Existing rate-limit headers win
+  over the calculated values; group/quality/complexity assignments follow the source overwrite order.
+  Test parsed response objects, dicts and the stream wrapper without consuming stream events.
+
+
+  get_model_access_groups caches only calls with all three args None. Otherwise use get_model_list
+  with model_name/team_id, skip empty model_info, treat absent/null access_groups as [], and append
+  public row names once per group occurrence without deduplication. model_access_group filters exactly;
+  an empty string argument disables the no-args cache. _filter_deployments_by_model_access_groups
+  returns its original list for empty candidates, no kwargs/principal, empty union of models and
+  team_models, direct model grant, '*', 'all-proxy-models', no model groups or no group intersection.
+  Principal precedence is metadata.user_api_key_auth OR litellm_metadata.user_api_key_auth. Only an
+  intersecting access-group-only grant filters candidates by nonempty group intersection, preserving
+  order and allowing an empty result. This function does not deny unauthorized requests by itself.
 
 
   Build the production model_group_usage module in betterlite-router; reuse the typed dependencies listed
@@ -26,20 +74,10 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 231 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  231 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 477 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The seven methods contain 200 nonblank noncomment lines excluding docstrings. Allow 240 production,
+  320 tests, 110 adapters and 35 wiring lines, 705 within 750. Pure helper comparisons use ready typed
+  counter results and response records; native async tests assert exact cache request keys/order,
+  no-read fast paths, cache capacity and invalidation, without a database or new byte parser.
 scope:
   paths:
     - crates/betterlite-router/src/model_group_usage.rs
@@ -61,7 +99,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11331-L11395
     why: Pinned implementation and exact ownership boundary for model_group_usage.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12099-L12164
-    why: Pinned implementation and exact ownership boundary for model_group_usage.
+    why: get_model_access_groups starts at L12120; preceding invalidation is B844, consumed as a shared cache handle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L493-L493
+    why: DEFAULT_MAX_LRU_CACHE_SIZE is parsed with int and defaults 64; B2225 owns its loader.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12941-L12993
     why: Own Router._filter_deployments_by_model_access_groups; preserve caller-visible values and failure
       ordering.
@@ -88,6 +128,8 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
+  - text: batch_key_order, skip_missing_identity, empty_batch, short_batch, batch_error, cache_capacity, cache_none and invalidate_group_cache prove the async/cache call contracts.
+    proof: [behavior-tests]
 checks:
   optional:
     - mutants
@@ -114,6 +156,26 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-group-usage/response-headers.yaml
   - tools/oracle/cases/helpers/model-group-usage/access-group-filter.yaml
   - tools/oracle/cases/helpers/model-group-usage/invalidate-group-cache.yaml
+  - tools/oracle/cases/helpers/model-group-usage/boolean-and-invalid-counters.yaml
+  - tools/oracle/cases/helpers/model-group-usage/zero-versus-none.yaml
+  - tools/oracle/cases/helpers/model-group-usage/duplicate-deployment-sum.yaml
+  - tools/oracle/cases/helpers/model-group-usage/io-and-standard-together.yaml
+  - tools/oracle/cases/helpers/model-group-usage/ordinary-negative-remaining.yaml
+  - tools/oracle/cases/helpers/model-group-usage/io-clamp-and-reset.yaml
+  - tools/oracle/cases/helpers/model-group-usage/no-group-or-limits.yaml
+  - tools/oracle/cases/helpers/model-group-usage/null-response.yaml
+  - tools/oracle/cases/helpers/model-group-usage/null-group-header.yaml
+  - tools/oracle/cases/helpers/model-group-usage/model-id-precedence.yaml
+  - tools/oracle/cases/helpers/model-group-usage/existing-rate-headers-win.yaml
+  - tools/oracle/cases/helpers/model-group-usage/decision-header-order.yaml
+  - tools/oracle/cases/helpers/model-group-usage/access-group-duplicates.yaml
+  - tools/oracle/cases/helpers/model-group-usage/access-group-exact-filter.yaml
+  - tools/oracle/cases/helpers/model-group-usage/access-group-cache-scope.yaml
+  - tools/oracle/cases/helpers/model-group-usage/auth-metadata-precedence.yaml
+  - tools/oracle/cases/helpers/model-group-usage/no-principal-or-grants.yaml
+  - tools/oracle/cases/helpers/model-group-usage/direct-and-wildcard-bypass.yaml
+  - tools/oracle/cases/helpers/model-group-usage/no-group-overlap-bypass.yaml
+  - tools/oracle/cases/helpers/model-group-usage/group-only-empty-result.yaml
 deviations: []
 out_of_scope:
   - 'litellm/router.py: B013 owns _cost_value_as_float (L391-L397), _replay_live_router_model_cost (L707-L710),
@@ -185,7 +247,7 @@ out_of_scope:
     Router._deployment_tags (L9089-L9091), Router._is_complexity_router_deployment (L9138-L9144), Router.config_deployments
     (L9146-L9153), Router._is_adaptive_router_deployment (L9233-L9235), Router._deployment_participates_in_adaptive_routing
     (L9237-L9250), Router.deployment_is_active_for_environment (L9504-L9517), Router._backend_cost_map_keys
-    (L10024-L10029), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11507-L11513),
+    (L10024-L10029), Router.cached_model_group_info (L11328-L11329),
     Router.map_team_model (L11585-L11616), Router._declared_param_allowlist (L11946-L11950), Router._deployment_accepts_param
     (L11953-L11982), Router.resolved_litellm_models (L12080-L12097), Router._is_model_access_group_for_wildcard_route
     (L12166-L12183), Router.get_available_deployment (L14153-L14312), Router.get_available_deployment_for_pass_through
@@ -303,9 +365,7 @@ out_of_scope:
   - 'litellm/router.py: B012 owns Router._redact_prompt_text_if_needed (L14121-L14151).'
   - 'litellm/router.py: B308 owns Router.get_allowed_fails_from_policy (L14643-L14695).'
   - 'litellm/router.py: B114 owns Router._initialize_alerting (L14697-L14717).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/router.py: B844 owns Router.get_deployment (L10267-L10284), Router.get_deployment_by_model_group_name
+  - 'litellm/router.py: B844 owns Router._deployment_ids (L11506-L11513), Router.get_deployment (L10267-L10284), Router.get_deployment_by_model_group_name
     (L10301-L10321), Router._build_model_name_index (L11397-L11415), Router._build_model_id_to_deployment_index_map
     (L11417-L11442), Router.get_model_ids (L11444-L11476), Router.get_candidate_model_ids_for_route (L11478-L11504),
     Router.has_model_id (L11515-L11526), Router.resolve_model_name_from_model_id (L11528-L11583), Router.should_include_deployment
@@ -320,10 +380,10 @@ out_of_scope:
     (L10572-L10579), Router.get_router_model_info (L10664-L10670), Router.get_router_model_info (L10673-L10674),
     Router.get_router_model_info (L10676-L10800), Router.get_model_info (L10802-L10816), Router.get_model_group
     (L10818-L10828), Router.get_deployment_model_info (L10830-L10907).'
-  - 'litellm/router.py: B846 owns Router._set_model_group_info (L10909-L11169), Router.get_model_group_info
+  - 'litellm/router.py: B846 owns _cost_value_as_float (L391-L397), Router._set_model_group_info (L10909-L11169), Router.get_model_group_info
     (L11171-L11198).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
-  - 'litellm/router.py: B016 owns the remaining functions _cost_value_as_float (L391-L397), _as_retry_skipped_deployment_ids
+  - 'litellm/router.py: B016 owns the remaining functions _as_retry_skipped_deployment_ids
     (L479-L480), _silent_experiment_targets (L483-L494), _silent_experiment_kwargs_snapshot (L497-L501),
     _with_router_resolved_session_model (L504-L517), FallbackAwareAnthropicMessagesStream.__init__ (L633-L637),
     FallbackAwareAnthropicMessagesStream.has_buffered_provider_output (L639-L641), FallbackAwareAnthropicMessagesStream.chunks
@@ -399,7 +459,7 @@ out_of_scope:
     (L10248-L10265), Router.get_deployment_credentials (L10286-L10299), Router._deployment_usable_by_team
     (L10323-L10331), Router._get_model_group_deployment_usable_by_team (L10333-L10348), Router.get_credential_deployment
     (L10550-L10570), Router._get_wildcard_deployment_usable_by_team (L10581-L10597), Router.get_deployment_credentials_with_provider
-    (L10599-L10661), Router.cached_model_group_info (L11328-L11329), Router._deployment_ids (L11506-L11513),
+    (L10599-L10661), Router.cached_model_group_info (L11328-L11329),
     Router.map_team_model (L11585-L11616), Router.get_fully_blocked_model_names (L11736-L11755), Router._are_all_deployments_blocked
     (L11757-L11763), Router._is_model_fully_blocked (L11765-L11767), Router.async_get_fully_unhealthy_model_names
     (L11769-L11818), Router.get_model_list_from_routing_groups (L11889-L11912), Router._materialize_routing_group_rows
@@ -494,8 +554,9 @@ out_of_scope:
     (L14097-L14118).'
   - 'litellm/router.py: B021 owns the remaining functions Router.async_pre_routing_hook (L13796-L13980).'
 pitfalls:
-  - Missing usage counters are distinct from counters reporting zero.
+  - Ordinary TPM/RPM remaining headers can be negative while IO remaining headers clamp to zero.
+  - No overlap with access groups leaves candidates untouched; this filter is not an authorization verdict.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

@@ -1,15 +1,45 @@
 id: B800
 title: Team roles and member management permissions
 description: >-
-  Implement TeamAccess, TeamMemberPermissions and TeamAdminEditVerdict using stored organization/team
-  roles. Preserve field-level metadata/model/budget/key permissions and strongest-role precedence; permission
-  lists contain actual pinned route names. Expose this leaf service to key/team management without depending
-  on their endpoint registration.
+  Implement TeamAccess and TeamMemberPermissions below management endpoints. TEAM_ADMIN_ONLY contains
+  proxy_admin/team_admin; TEAM_OR_ORG_ADMIN additionally contains org_admin. allows checks an allowed
+  proxy admin first, then a roster admin, and only then the allowed organization role. strongest_role
+  instead checks proxy, organization, then team; a caller holding both organization and team roles
+  must retain unrestricted organization edits. Missing/empty caller ID or organization ID skips the
+  organization lookup. is_team_admin requires a nonnull matching user_id and role admin; it does not
+  match email or confer roster rights on a service account. team_access_denied is HTTP 403 with
+  You do not have access to this team; no ProxyException type or param is supplied by that helper.
 
+  OrgRoles and get_team_access are native constructor boundaries: inject the owned OrgRoles contract,
+  never call the later B790 user-management service from this leaf. Its production read implementation
+  uses B736.get_user_object with user_id_upsert=false and checks organization_memberships for exact
+  organization_id and role org_admin, preserving lookup errors. This is the PrismaOrgRoles behavior
+  consumed by the source factory; B790 can reuse this lower-level implementation. No new user row is
+  created during authorization. B737 supplies get_team_object; B882 supplies check_route_access;
+  B867 supplies KeyManagementRoutes and LiteLLMRoutes.key_management_routes.
 
-  Build the production team_access module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Explicit list permissions, even [], become a deduplicated set plus /key/info and /key/health.
+  None or a non-list falls back to exactly those baseline permissions. An unknown list element
+  fails enum conversion; it is not ignored. Compare set contents, since Python set order is unstable.
+  default_team_member_permissions returns baseline strings; get_all_available_team_member_permissions
+  returns the route group in its existing order. A missing member role returns false, admin returns
+  true without route matching, and a user role invokes B882. A denied user raises 401
+  team_member_permission_error with param equal to the requested route and code "401"; a nonmember
+  yields the same type/status/param from can_team_member_execute_key_management_endpoint. That wrapper
+  bypasses proxy admins and keys with team_id=None, otherwise forces check_db_only=true.
+
+  _get_user_in_team returns the FIRST matching nonnull user ID, or None for an absent caller. A team
+  service account with matching team_id gets role user even if its roster entry says admin; a foreign
+  service account receives no synthetic membership. user_belongs_to_keys_team returns false for a
+  personal key, otherwise loads the team from the database and checks this derived role. The separate
+  _team_member_has_permission uses only a nonempty explicit permission list plus matching roster ID;
+  it adds neither baseline routes nor a service-account exception.
+
+  Access-group assignment is a no-op for None/[] IDs and bypasses proxy/team admins. For a non-admin
+  personal key it raises HTTP 403 (despite the upstream docstring claiming bypass). A roster member
+  needs exact KEY_ACCESS_GROUP_ASSIGNMENT in the effective permissions; nonmembers have [] and fail
+  403. The personal-key error lists sorted denied IDs, while the team error names the opt-in permission.
+  This field gate never treats a wildcard route as an assignment grant. No stored secret is handled.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management/teams/access.py:
@@ -28,42 +58,21 @@ description: >-
   _team_member_has_permission (L208-L221; 14 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  TeamAdminEditVerdict and general_settings.team_admin_editable_team_fields belong entirely to B1200;
+  none of this task's functions calls that policy. This task reads no configuration key.
 
 
-  general_settings.team_admin_editable_team_fields is owned and resolved by B1200; consume its typed policy
-  rather than reading configuration again.
+  Register team_access in B856 Management::teams and seed B171 helper_case with the permission-baseline,
+  role-order and assignment-gate inputs. Compare the pinned helper's result sets and complete error
+  fields with the production policy; constructor and database-only behavior stays in native tests.
 
 
-  Add the team_access operation under B856 Management::teams. Python calls only the owned MIT helper with
-  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-access-*
-  seed to B171 helper_case, which already owns this decoder.
+  Only pure policy calls belong in the helper adapter. Native tests exercise the database-only lookup
+  selection and constructor wiring through B736/B737 with typed collaborator outcomes.
 
 
-  Write betterlite-config::team_access::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 225 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  225 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 512 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing: 225 nonblank, noncomment source lines including docstrings; allow 240 production,
+  300 policy/lookup tests, 80 helper adapters and 30 wiring lines, 650 within a 675-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/team_access.rs
@@ -78,12 +87,6 @@ scope:
     - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/team-access/**
     - tools/oracle/fuzz/corpus/helper_case/team-access-*
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/team_access.rs
-    - crates/betterlite-config/src/team_access/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/team-access-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management/teams/access.py#L1-L55
@@ -93,7 +96,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_member_permission_checks.py#L1-L241
     why: Pinned implementation and exact ownership boundary for team_access.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L1-L325
-    why: Pinned implementation and exact ownership boundary for team_access.
+    why: Context only; B1200 owns field-level edit verdicts, which this task does not call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management/users/service.py#L13-L36
+    why: Factory collaborator behavior implemented through the lower OrgRoles read contract without a B790 dependency cycle.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L287-L325
     why: KeyManagementRoutes request/response fields and defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441-L1484
@@ -146,7 +151,14 @@ references:
     why: Own _team_member_has_permission; preserve caller-visible values and failure ordering.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: proxy_admin, organization_admin,
-      team_admin, member_key_route.'
+      team_admin, member_key_route, allows_short_circuit, strongest_org_before_team,
+      missing_org_identity, org_read_no_upsert, org_read_error, null_roster_id, first_roster_match,
+      service_account_user_role, foreign_service_account, baseline_none, baseline_empty,
+      permissions_deduplicated, unknown_permission_error, nonlist_baseline, member_route_401,
+      nonmember_route_401, admin_route_bypass, personal_key_bypass, fresh_team_read,
+      personal_membership_false, explicit_permission_only, all_routes_order, default_routes,
+      empty_groups_noop, proxy_group_bypass, team_admin_group_bypass, personal_group_403,
+      member_group_opt_in, outsider_group_403, wildcard_not_opt_in and team_denied_403.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -155,14 +167,8 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
@@ -178,24 +184,19 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-access-*")"
         && grep -rlq "team_access" tools/oracle/fuzz/corpus/helper_case/team-access-* && cargo nextest
         run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^team_access::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/team-access-*")"
-        && grep -rlq "" crates/betterlite-config/fuzz/corpus/config_yaml/team-access-* && cargo nextest
-        run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/team-access/proxy-admin.yaml
   - tools/oracle/cases/helpers/team-access/organization-admin.yaml
   - tools/oracle/cases/helpers/team-access/team-admin.yaml
   - tools/oracle/cases/helpers/team-access/member-key-route.yaml
+  - tools/oracle/cases/helpers/team-access/role-order-and-short-circuits.yaml
+  - tools/oracle/cases/helpers/team-access/roster-and-service-accounts.yaml
+  - tools/oracle/cases/helpers/team-access/permission-baselines-and-invalid.yaml
+  - tools/oracle/cases/helpers/team-access/route-denial-fields.yaml
+  - tools/oracle/cases/helpers/team-access/access-group-assignment.yaml
+  - tools/oracle/cases/helpers/team-access/explicit-permission-and-route-list.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/common_utils.py: B861 owns validate_finite_spend (L13-L24), validate_budget_duration
     (L27-L41), validate_team_model_max_budget (L77-L123), require_caller_user_id_for_non_admin (L126-L150),
     _check_passthrough_routes_caller_permission (L153-L177), _check_disable_global_guardrails_caller_permission
@@ -313,9 +314,9 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - _get_caller_team_role and _get_user_in_team belong here because both team-member checks and key permission
-    checks call them.
+  - Permission [] does not remove /key/info or /key/health, but it still blocks access-group assignment.
+  - allows avoids the organization lookup for roster admins; strongest_role must perform it first.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: security

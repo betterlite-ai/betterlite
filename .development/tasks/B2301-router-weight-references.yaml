@@ -1,0 +1,102 @@
+id: B2301
+title: Validate router weight deployment references before management writes
+description: >-
+  Put the management-side router weight validator below the key, team and model routes in
+  betterlite-server::router_weight_references. Own every function and structural type in
+  management_endpoints/router_weights.py, including _router_weight_model_info,
+  _validate_router_weight_reference and validate_router_settings_weights. B023 composes this service
+  with route integrations and B008's weighted selection; it no longer owns these helpers. Do not
+  register a route here or depend on the management umbrellas that call the validator.
+
+  Reuse B008's RouterWeights contract: identifiers are strict nonempty strings with a non-whitespace
+  character, weights are finite nonnegative strict numbers and a nonempty group needs a positive weight.
+  Missing/null router_settings or weights and empty weights skip the database. A map containing only
+  empty groups also skips it. Invalid settings raise HTTPException 400 with detail
+  "Invalid router weights. Replace or clear router_settings.weights." The caller owns conversion to
+  its public error envelope. No setting or environment variable is read here.
+
+  Deduplicate all deployment IDs into one lookup through B725's model repository. Any nonempty ID set
+  requires a database even when the router has every deployment: absence raises 503 with detail
+  "Database unavailable while validating router weights". Decode stored rows before validating
+  references. model_info accepts a JSON string or an object; falsey values become an empty object,
+  and its team_id, db_model and team_public_model_name default to None. Stored-row conversion failures
+  propagate; they are outside the settings-validation catch. Database failures also propagate without
+  falling back to configured deployments. B302 supplies get_deployment for each referenced ID.
+
+  Prefer a stored deployment over the configured one. Missing references, a configured-only record
+  marked db_model=true, and a non-null team_id different from the caller's team each raise 400
+  "Unknown deployment ID in router weights: <id>". A global deployment can be referenced from a team.
+  For a team deployment the canonical group is its truthy team_public_model_name, otherwise model_name;
+  a global deployment ignores team_public_model_name. A different requested group raises 400
+  "Deployment <id> does not belong to model group <group>". Do not reveal which of the three unknown-ID
+  conditions failed. Validation never writes a row or changes router state.
+
+  Run the pure reference predicate through Management::models operation router_weight_reference in
+  B856's helpers, using typed stored/configured deployment fixtures. All database paths use native
+  Postgres tests, with POSTGRES_TEST_URL first and testcontainers otherwise; inability to start or
+  connect fails the test. B804 and the other callers prove the public HTTP error translation. Reuse
+  B008's weights decoder and B725's stored-row decoder; no second outside-byte parser is introduced.
+
+  The file contains 107 nonblank, noncomment lines. Allow 135 implementation, 210 behavior/Postgres
+  tests, 85 helper adapters and 45 wiring lines, 475 total within a 550-line gate. Keep production
+  files below 300 lines and share the predecessor's types rather than repeating its schema.
+scope:
+  paths:
+    - crates/betterlite-server/src/router_weight_references.rs
+    - crates/betterlite-server/src/router_weight_references/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/src/helpers/router_weight_references.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/helpers/router_weight_references.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/router-weight-references/**
+    - tools/oracle/fuzz/corpus/helper_case/router-weight-reference-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L12-L129
+    why: Own all structural row/router types and validation functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L7-L30
+    why: B008 supplies strict identifiers, finite nonnegative weights and positive-group validation.
+dod:
+  - text: 'Reference cases are stored_precedes_configured, missing_id, stale_db_model, other_team_hidden,
+      same_team_public_name, global_model_in_team, global_ignores_public_name, empty_public_name_falls_back
+      and wrong_group; compare the exception status and detail for the pure helper.'
+    proof: [behavior-tests, oracle, helper-python, helper-corpus]
+  - text: 'settings_validation covers null_settings, missing_weights, null_weights, empty_weights,
+      empty_groups and malformed_weights. postgres_reference_lookup covers one_deduplicated_query,
+      db_required_for_configured_id, stored_model_info_json, absent_model_info, bad_stored_json,
+      database_failure_no_fallback and no_write_on_failure.'
+    proof: [behavior-tests, postgres-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: A reference decision or settings error differs from the pinned validator.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^router_weight_references::tests::/)'
+    - id: postgres-tests
+      why: Actual stored-row precedence, lookup effects or failure behavior is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/router_weight_references::tests::postgres_reference_lookup/)'
+    - id: helper-python
+      why: The predicate adapter is missing or fails the strict helper checks.
+      run: test -f tools/oracle/helpers/router_weight_references.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: No newly added reference operation reaches the production helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/router-weight-reference-*')" && grep -rlq router_weight_reference tools/oracle/fuzz/corpus/helper_case/router-weight-reference-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/router-weight-references/stored-and-configured.yaml
+  - tools/oracle/cases/helpers/router-weight-references/team-scope.yaml
+  - tools/oracle/cases/helpers/router-weight-references/canonical-group.yaml
+deviations: []
+out_of_scope:
+  - B008 owns types/router_weights.py and weighted selection; this task consumes its validated types.
+  - B023 owns effective routing-weight application and composition, not this validator.
+  - B725 owns model row storage and B302 owns configured deployment lookup.
+pitfalls:
+  - Configured deployments do not let a nonempty weights request bypass the database requirement.
+  - Only settings validation is translated to the fixed 400; malformed stored model_info is not.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

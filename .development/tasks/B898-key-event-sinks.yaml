@@ -1,11 +1,40 @@
 id: B898
 title: Key secret-manager and legacy notification sinks
 description: >-
-  Implement key secret-manager store/rotate/rename/delete preparation and MIT legacy email fallback through
-  injected SecretManagerSink and NotificationSink. B129 and B116 install concrete transports. With no
-  litellm_enterprise package, V2 BaseEmailLogger hooks are unavailable and their MIT import fallback is
-  followed. Preserve prefix_for_stored_virtual_keys and optional tag/description handling; sink failure
-  warnings must not expose raw key values.
+  Implement secret-manager operations over B129 and legacy notification scheduling over B116.
+  All secret operations require a settings record, store_virtual_keys literally True and a
+  BaseSecretManager-compatible client; other values return without I/O. Do not gate these helpers
+  on access_mode themselves. Name secrets by appending directly when prefix ends '/', otherwise
+  insert '/'; empty prefix therefore produces /<name>. Creation passes the RAW key to async_write_secret
+  with tags/description (both default None) and per-team optional params. Rotation prefixes both names
+  and sends the new raw secret but no creation tags/description. Rename first reads the old prefixed
+  name; None warns and skips, whereas empty string is a real value and is rotated. It keeps that
+  value and uses the same optional params for read and rotate. No local encryption/hash changes the
+  secret-manager payload; B129 owns transport credentials and secure storage.
+
+  Delete keys sequentially, skipping only key_alias None with a warning containing the stored token
+  identifier. Empty alias is still a secret name. Cache optional params once per distinct team_id,
+  including None, within a delete call. A transport exception propagates and stops later deletes;
+  this helper does not swallow it or log a generic success. B784 owns its caller's event failure
+  handling. Never include raw secret values in native diagnostics or transport debug output.
+
+  Optional params return None for team_id None, absent proxy runtime, DB or key cache. B737 lookup
+  exceptions debug-log and return None. A metadata model is dumped, then only a nonempty dict
+  metadata.secret_manager_settings is shallow-copied and passed to the sink. Empty/wrong-shaped
+  metadata/settings yield None. Model-dump failures occur outside the lookup catch and propagate.
+  These team settings are not passed through encrypt_callback_vars here; preserve the existing
+  opaque credential/settings representation and do not dump it in diagnostics.
+
+  With no enterprise package, _is_email_sending_enabled skips its import and checks only whether
+  general_settings.alerting (default []) contains email. Disabled creation/rotation debug-log and
+  return. Enabled creation builds the legacy WebhookEvent: event key_created, group KEY, message
+  'API Key Created', token from response.token default '', spend/max_budget default 0.0, user_id
+  None, team_id 'Default Team' and key_alias None. Missing differs from an explicit None. It does
+  not take the new key from response.key. Schedule send_key_created_or_user_invited_email without
+  waiting for delivery. Enabled rotation debug-logs the unavailable enterprise import and sends
+  NO legacy email; v0 has no rotated-email equivalent. Event-construction/scheduling errors are
+  not caught here despite the source docstring. Use a supervised sink for the scheduled creation
+  notification and retain the caller-visible nonblocking behavior.
 
 
   Build the production key_event_sinks module in betterlite-server; reuse the typed dependencies listed
@@ -24,11 +53,12 @@ description: >-
   lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.secret_manager_client=None;
-  general_settings.alerting=[]; alerting=[].
+  Runtime secret_manager_client defaults None and is installed by B129, not a second YAML client
+  decoder. The public email binding is general_settings.alerting, default []; no top-level alerting
+  override is read by these methods.
 
 
-  litellm_settings.key_management_settings resolves the source _key_management_settings record: hosted_keys=None,
+  general_settings.key_management_settings resolves _key_management_settings: hosted_keys=None,
   store_virtual_keys=false, prefix_for_stored_virtual_keys="litellm/", access_mode="read_only"; the sink
   uses the stored-key switch and prefix rather than enabling secret writes implicitly.
 
@@ -40,26 +70,16 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::key_event_sinks::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests key_event_sinks::tests::key_management_defaults, configured_prefix_tags_description,
+  store_virtual_keys_false_null_true, legacy_alerting_nested_binding and invalid_settings_rejected
+  call the B002 loader and B129 settings schema. No invalid-value fallback is invented. Tests of
+  direct helper inputs also cover Python's membership behavior for string alerting and error for
+  null/noncontainer alerting, rather than silently substituting the absent-field default.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 290 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  290 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 580 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: the ranges contain 290 lines before docstring and unavailable enterprise-branch exclusion.
+  Allow 240 native sink logic, 300 tests, 65 oracle adapters, 30 wiring and 50 config tests,
+  685 within 750. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -118,13 +138,24 @@ references:
     why: litellm_settings.secret_manager_client default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L511-L516
     why: general_settings.alerting default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L1-L6
-    why: alerting default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6670-L6676
+    why: The actual general_settings.key_management_settings binding, reloaded after secret resolution.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: rename_secret, delete_secret_batch,
-      email_settings, secret_manager_failure, enterprise_absent_legacy_email.'
+  - text: 'Cases secret_gate_settings_switch_client, prefix_trailing_slash_empty,
+      create_raw_value_tags_description, rotate_both_names_no_creation_options,
+      rename_read_then_rotate, rename_missing_warns_empty_value_rotates,
+      delete_alias_none_vs_empty, delete_team_params_cached, delete_failure_stops_later_keys,
+      params_missing_runtime_db_cache, params_lookup_error_debug_none,
+      params_model_dump_and_nonempty_dict, params_model_dump_error_propagates,
+      no_secret_value_in_diagnostics, email_disabled_debug_skip,
+      email_membership_shape_semantics, legacy_creation_event_all_defaults,
+      legacy_creation_explicit_nulls, legacy_email_uses_token_not_key,
+      creation_schedules_without_waiting and rotation_email_unavailable_debug_skip cover the MIT path.'
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -161,7 +192,7 @@ checks:
     - id: config-corpus
       why: The task added no new configuration seed or production config replay fails.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/key-event-sinks-*")"
-        && grep -rlq "secret_manager_client" crates/betterlite-config/fuzz/corpus/config_yaml/key-event-sinks-*
+        && grep -rlq "key_management_settings" crates/betterlite-config/fuzz/corpus/config_yaml/key-event-sinks-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/key-event-sinks/rename-secret.yaml
@@ -171,16 +202,19 @@ oracle_cases:
   - tools/oracle/cases/helpers/key-event-sinks/enterprise-absent-legacy-email.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - Enterprise BaseEmailLogger imports and event branches are unavailable and not implemented.
+    B129 owns concrete secret-manager transport operations and configuration, B116 legacy email
+    delivery, B737 team lookup and B784 outer lifecycle handling. This task passes secrets to their
+    intended secure destination and adds no stored-cipher format or local database write.
   - 'litellm/proxy/hooks/key_management_event_hooks.py: B784 owns KeyManagementEventHooks.async_key_generated_hook
     (L36-L94), KeyManagementEventHooks.async_key_updated_hook (L97-L154), KeyManagementEventHooks.async_key_rotated_hook
     (L157-L224), KeyManagementEventHooks.async_key_deleted_hook (L227-L245), KeyManagementEventHooks.create_key_deleted_audit_logs
     (L248-L286).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - B129 and B116 install concrete transports.
+  - An empty secret returned by read is renamed; only None means missing.
+  - Enabling legacy email sends creation notifications but still skips every rotation notification.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

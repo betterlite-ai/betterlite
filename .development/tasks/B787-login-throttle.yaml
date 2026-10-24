@@ -8,6 +8,68 @@ description: >-
   and warning-only fallback on Redis outage. Pair limit is max(source_limit // 2, 1); an undeclared trusted_proxy_ranges
   disables cross-username source limiting with a warning; LITELLM_DISABLE_LOGIN_RATE_LIMIT defaults false.
 
+  Own the constants, two Lua scripts and _Keys/Block/LoginThrottle/LoginAttempt records as well
+  as the methods below. general_settings.max_failed_login_attempts_per_source defaults 10,
+  failed_login_window_seconds 60, failed_login_block_seconds 300, and
+  max_failed_login_attempts_per_source_overrides is absent. _positive_int uses int(str(value)):
+  absent/null keeps the default silently; booleans, fractional floats, malformed strings and
+  values below 1 warn and use the default. Integer strings with whitespace are accepted.
+  Only an override whose stripped string is exactly 0 exempts both scopes; 0.0 and false do not.
+  Cases positive_integer_settings, null_setting_silent, invalid_integer_warns and
+  exact_zero_override cover real config loading, not an invented startup-failure rule.
+
+  trusted_proxy_ranges is absent by default. A comma-separated string is split and stripped;
+  iterable entries are stringified and stripped. Invalid outer shapes warn; any invalid/blank
+  network entry warns and makes the entire topology unknown. [] explicitly means direct clients
+  and enables source limiting; empty string is one invalid entry. B743 resolve_client_ip receives
+  use_forwarded_for=bool(valid ranges) and their CIDRs. Missing resolution uses literal unknown
+  and disables only source scope. Cases topology_absent_vs_empty_list,
+  topology_blank_or_malformed_entry, topology_wrong_shape, trusted_forwarded_source and
+  missing_source_pair_only pin the distinction. The source-off warning function is memoized once;
+  the per-worker warning is memoized per num_workers string and is invoked by startup/B899,
+  not from_request itself. warning_cache_keys proves both warning frequencies.
+
+  Parse addresses with IPv4-mapped IPv6 normalized to IPv4. CIDRs use strict=false, so host bits
+  are accepted; malformed override ranges warn and skip, invalid override mappings warn and use
+  default, invalid client addresses use default. Only matching ranges evaluate override values.
+  Precedence is longest prefix, then zero exemption, then larger limit for equivalent networks.
+  Pair allowance is max(floor(source/2),1) even when cross-user source counting is off. Bucket
+  IPv6 by /64, IPv4 by normalized address, invalid input by its literal string. Cases
+  mapped_ipv6_is_ipv4, host_bits_normalized, override_bad_mapping, override_unmatched_value_ignored,
+  equivalent_range_ties and odd_limit_floor cover these branches.
+
+  Keys are login_fail:{<group>}:user:<sha256(casefold(username).utf8)>,
+  login_fail:{<group>}:block:user:<hash>, login_fail:{<group>}:source and
+  login_fail:{<group>}:block:source, all in one Redis cluster slot. Do not trim usernames before
+  Unicode casefold/hash. Cases unicode_pair_hash, username_spaces_distinct and cluster_slot_keys
+  pin every literal. Resolve LITELLM_DISABLE_LOGIN_RATE_LIMIT once per process via B002's secret
+  boolean setting (trimmed case-insensitive true/false, other strings null); only true disables.
+  disabled_attempt_no_effects and disabled_setting_cached verify no reads/counts/clears in the
+  LoginAttempt API, including exemptions. Direct record_failure is not itself the enable gate.
+
+  attempt checks blocks before credentials, combining local and Redis TTLs by per-scope maximum.
+  Source scope wins when enabled, even if its TTL is shorter than the pair's. Local expiry is
+  ceil(expiry-now), clamped to zero; Redis TTL <=0 is unblocked. Refusal warns and raises 429
+  auth_error,param username,code 429 with Retry-After as a decimal string and a retry-later message.
+  Cases local_shared_maximum, source_precedes_longer_pair, ttl_rounding_and_expiry and
+  blocked_attempt_error_shape compare timing, warning and complete exception fields.
+
+  Failure accounting increments pair first; block only when count > limit. An already blocked
+  pair or the failure that first blocks it never increments source. The Lua script sets a count
+  expiry only when TTL<0; local fallback increments through B125 and refreshes that count's TTL.
+  Block TTL is fixed, not extended by blocked attempts. Cases limit_plus_one_blocks,
+  triggering_pair_failure_not_charged_to_source, redis_fixed_vs_local_sliding_window and
+  blocked_failure_does_not_extend pin these differences. failed logs a new block but does not
+  raise 429; the NEXT attempt does. succeeded deletes only pair counter in Redis then local,
+  retaining pair block, source block and source count; success_preserves_blocks_and_source covers it.
+
+  Catch only RedisError, RedisCircuitBreakerOpenError, OSError and asyncio.TimeoutError during
+  TTL reads, failure scripts and pair-counter deletion, warning each time and using local state.
+  Do not swallow malformed Lua return tuples or invalid local expiry values: validation errors
+  propagate. Cases redis_failure_classes_fall_back, redis_success_does_not_mirror_local,
+  redis_clear_failure_still_clears_local and malformed_store_reply_propagates cover each operation.
+  Test actual B126 Lua execution plus B125's bounded local eviction (20000 counters,10000 blocks).
+
 
   Build the production login_throttle module in betterlite-server; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
@@ -33,7 +95,8 @@ description: >-
   (L433-L445; 13 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): LITELLM_DISABLE_LOGIN_RATE_LIMIT=False.
+  The settings and warning behavior above are consumed by the production config loader; do not
+  add a request-time environment reader. B899 owns login HTTP integration and its 429 response.
 
 
   Add the login_throttle operation under B856 Management::models. Python calls only the owned MIT helper
@@ -43,11 +106,10 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::login_throttle::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  betterlite-config::login_throttle tests load all five general_settings keys and the disable env
+  value, including topology normalization, override ordering and the named warning/default branches.
+  Seed the existing config_yaml corpus with these values. Reuse B743 IP parsing and B002 config
+  decoding; malformed parsed Lua/local-store replies are typed collaborator errors, not a new byte parser.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -60,9 +122,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 258 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  258 production, 157 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 560 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  Sizing: the 258 function lines omit owned Lua/data declarations; reserve 335 production including
+  those declarations, 315 behavior/Redis tests, 65 helper adapters, 30 wiring and 50 config lines,
+  795 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -86,6 +148,10 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/login-throttle-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L42-L107
+    why: Own defaults, setting names, Lua scripts, bounded stores and the cached disable-setting read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1733-L1737
+    why: Cache prefix, unknown source, capacities and unblocked tuple used by this task.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L1-L445
     why: Pinned implementation and exact ownership boundary for login_throttle.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L69-L69
@@ -155,9 +221,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L107-L112
     why: LITELLM_DISABLE_LOGIN_RATE_LIMIT default and read site.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pair_limit, source_limit,
-      blocked_pair_does_not_charge_source, ipv6_group, cidr_precedence, redis_warning_local_fallback,
-      success_clears_pair, undeclared_topology_source_off, zero_override_exempts_all.'
+  - text: Every named throttle/config case above passes, including real Redis script execution,
+      fixed versus sliding windows, warning frequencies and exact 429 fields.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -208,14 +273,20 @@ oracle_cases:
   - tools/oracle/cases/helpers/login-throttle/success-clears-pair.yaml
   - tools/oracle/cases/helpers/login-throttle/undeclared-topology-source-off.yaml
   - tools/oracle/cases/helpers/login-throttle/zero-override-exempts-all.yaml
+  - tools/oracle/cases/helpers/login-throttle/settings-shapes-and-warnings.yaml
+  - tools/oracle/cases/helpers/login-throttle/key-literals-and-unicode.yaml
+  - tools/oracle/cases/helpers/login-throttle/ttl-precedence-and-rounding.yaml
+  - tools/oracle/cases/helpers/login-throttle/redis-and-local-window-difference.yaml
+  - tools/oracle/cases/helpers/login-throttle/malformed-store-reply.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B743 owns request client-IP resolution and trusted-forwarding parsing, B125 bounded local
+    cache operations, B126 Redis execution, B002 resolved settings and B899 login HTTP routes.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A zero source override exempts both source and user-pair throttling.
+  - Local fallback refreshes count expiry on every failure while the Redis Lua window is fixed.
+  - A successful sign-in clears the pair counter but cannot clear an existing block.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

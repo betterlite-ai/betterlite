@@ -1,10 +1,34 @@
 id: B744
 title: Caller-controlled request field safety
 description: >-
-  Implement pre-DB request checks in source order: request size, RequestBodySafety, client IP allowlist,
-  then proxy allowed_routes. Own invalid-virtual-key error provenance markers and _get_request_ip_address
-  for auth diagnostics. Honor the source use_x_forwarded_for switch and configured size limits; no downloading
-  is introduced.
+  Run pre-DB checks in this order: request size, B884 is_request_body_safe with request_data.model or
+  empty string, exact IP membership, then exact route membership. The first rejection prevents all
+  later checks and database reads. allowed_ips=None permits without resolving the client IP; []
+  denies everyone. use_x_forwarded_for must be exactly true to use the entire x-forwarded-for header,
+  including commas/whitespace/empty string, without parsing CIDRs or choosing the first hop. Otherwise
+  use request.client.host or empty string. An IP miss is HTTP 403 with its forbidden-IP detail.
+  If allowed_routes is present, test exact membership (no group/wildcard expansion); a miss logs
+  ERROR and raises HTTP 403. LiteLLM logs its license ERROR but still enforces this list; betterlite
+  omits only that entitlement diagnostic. B757 translates both denials to auth_error, param string
+  None, code string 403. B884's own body-safety failures retain their types/statuses.
+
+  Request size is disabled when max_request_size_mb is None. Source without premium warns and skips;
+  betterlite enables the MIT check without a license. Compare bytes divided by 1048576 to the limit
+  with a strict greater-than test. Prefer a nonempty content-length integer header over reading the
+  body; absent/empty header uses actual body bytes. Equality passes, zero/negative limits are not
+  clamped, and no body is read for a usable header. Invalid integer conversion propagates in source;
+  B003/B009 own rejection of malformed HTTP framing before this stage. A size failure is ProxyException
+  400 bad_request_error, param content-length and code 400. The native response-size policy uses
+  serialized response bytes as the explicit deviation below; source uses sys.getsizeof(response),
+  which is shallow Python object memory rather than wire length. No response-size path is dead code:
+  common_request_processing.py L2970 calls it.
+
+  Invalid-key classification accepts only HTTPException or ProxyException, gives a nonnull code
+  precedence over status_code, compares its string form to '401', and requires the internal marker
+  to be exactly True. Never classify by message text. Marking returns the same error when disabled
+  or not 401; otherwise build a distinct ProxyException preserving message/type/param/code, copy
+  headers, stringify a nonnull openai_code, preserve provider_specific_fields and set the marker.
+  Caller-owned exceptions and their header map must remain unmodified.
 
 
   Build the production auth_request_policy module in betterlite-auth; reuse the typed dependencies listed
@@ -20,10 +44,9 @@ description: >-
   5 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.allowed_ips=None;
-  general_settings.use_x_forwarded_for=False; general_settings.max_request_size_mb=None; general_settings.max_response_size_mb=None;
-  general_settings.allowed_routes=required when this branch is enabled; allowed_ips=None; use_x_forwarded_for=False;
-  max_request_size_mb=None; max_response_size_mb=None.
+  Load only general_settings.allowed_ips=None, use_x_forwarded_for=False,
+  max_request_size_mb=None, max_response_size_mb=None and absent allowed_routes. These settings have
+  no dedicated environment names and are not also accepted at the YAML root.
 
 
   general_settings.allowed_ips=None, allowed_routes absent, use_x_forwarded_for=false; max_request_size_mb=None
@@ -38,47 +61,31 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Use booted POST /v1/chat/completions for pre-DB rejection, forwarded-IP and size checks, comparing
+  the full source error envelope and proving no key read or provider call follows a rejection.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Pure IP/provenance helpers use in-memory request fixtures. No database fixture is needed to prove
+  this stage precedes database access; use a key-read collaborator that fails if invoked.
 
 
-  Write betterlite-config::auth_request_policy::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests policy_defaults, exact_ip_and_route_lists, forwarded_header_toggle and
+  fractional_zero_negative_limits load B002 and invoke production policy. Do not assert a fictitious
+  invalid-value fallback. The helper oracle covers IP/marker/byte arithmetic projections only;
+  checks reading proxy_server globals run as HTTP cases. No database fixture is needed for pre-DB rejection.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  B003 owns request bytes and B002 owns settings decoding. Native byte-size accounting and license
+  removal have explicit tests below; neither should silently alter equal IP/provenance cases.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 179 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  179 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 501 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  Sizing: 179 source lines; allow 180 production, 270 tests, 75 adapters, 65 wiring and 65 config
+  lines, 655 within 725. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
-  native_request_supplied_upstream_api_base_base_url_and_url_valued_fallback_de. Exercise the precise
-  changed setting/output branch and assert its configured status/error/side effects; do not add these
-  differing results to oracle equality cases.
+  Native tests size_checks_without_license, no_route_license_diagnostic and response_wire_byte_limit
+  prove the differences; the equality corpus asserts MIT warnings and skips instead of forcing premium_user.
 
 
   Server wiring tests live under betterlite-server::auth::auth_request_policy::tests: stage_is_registered
@@ -145,15 +152,24 @@ references:
     why: general_settings.max_response_size_mb default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L607-L612
     why: general_settings.allowed_routes default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1-L6
-    why: max_response_size_mb default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: body_size_boundary,
-      response_size_boundary, allowed_ips_denied_403, allowed_routes_denied_403.'
+  - text: 'Policy cases name size_before_body_safety, body_before_ip, ip_before_routes,
+      allowed_ips_none_skips_ip, empty_ip_list_denies, forwarded_header_entire_value,
+      forwarded_empty_value, forwarded_toggle_exact_true, client_host_fallback,
+      no_client_empty_ip, routes_absent_vs_empty, exact_route_no_wildcards and route_miss_logs.
+      HTTP cases compare IP/route 403 auth_error and confirm no database read.'
     proof:
       - behavior-tests
+  - text: 'Size and marker cases name no_size_limit, mb_is_1048576, header_prevents_body_read,
+      empty_header_reads_body, equal_size_allowed, positive_size_zero_limit,
+      negative_limit_not_clamped, source_invalid_length_error,
+      only_supported_error_classes, code_precedes_status, string_401_matches,
+      marker_exact_true, message_cannot_mark_error, unmarked_same_error,
+      non401_same_error, marked_copy_headers and marked_openai_code_string.
+      MIT HTTP cases assert the request/response license warnings; native cases assert enabled limits.'
+    proof: [behavior-tests, oracle, helper-python]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -170,8 +186,8 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
-      native_request_supplied_upstream_api_base_base_url_and_url_valued_fallback_de.'
+  - text: 'Native behavior tests size_checks_without_license, no_route_license_diagnostic and
+      response_wire_byte_limit prove the declared license/response-size differences.'
     proof:
       - behavior-tests
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
@@ -185,7 +201,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_request_policy::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/^(auth::)?auth_request_policy::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -215,23 +231,22 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-request-policy/response-size-boundary.yaml
   - tools/oracle/cases/helpers/auth-request-policy/allowed-ips-denied-403.yaml
   - tools/oracle/cases/helpers/auth-request-policy/allowed-routes-denied-403.yaml
+  - tools/oracle/cases/helpers/auth-request-policy/invalid-key-marker.yaml
+  - tools/oracle/cases/helpers/auth-request-policy/ip-header-values.yaml
   - tools/oracle/cases/auth/auth-request-policy/body-size-boundary.yaml
   - tools/oracle/cases/auth/auth-request-policy/response-size-boundary.yaml
   - tools/oracle/cases/auth/auth-request-policy/allowed-ips-denied-403.yaml
   - tools/oracle/cases/auth/auth-request-policy/allowed-routes-denied-403.yaml
+  - tools/oracle/cases/auth/auth-request-policy/check-order.yaml
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L41-L618
-  - what: Request-supplied upstream api_base/base_url and URL-valued fallback destinations are rejected
-      with a typed 400 even when client-side destination overrides were enabled in LiteLLM.
-    why: The bounded-inputs rule allows upstream destinations from operator configuration only; B009 owns
-      the shared URL boundary.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L477-L539
+  - what: Configured size limits run without a license and can return 400 bad_request_error, param content-length; allowed_routes keeps its 403 policy without the license ERROR log.
+    why: README Decisions enables MIT premium_user branches; size_checks_without_license and no_route_license_diagnostic cover both effects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L605-L618
+  - what: max_response_size_mb measures serialized UTF-8 response bytes and returns 400 bad_request_error, param content-length, when exceeded.
+    why: Rust has no meaningful Python sys.getsizeof response-object footprint; response_wire_byte_limit makes this observable unit explicit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L919-L937
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B884 owns credential and URL body policy, including its deviations; this task only invokes that policy in order.
   - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
     (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
   - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
@@ -283,6 +298,6 @@ pitfalls:
   - allowed_ips and allowed_routes denials are 403, while banned body fields become 401 auth_error.
   - The legacy use_x_forwarded_for behavior is distinct from trusted OAuth proxy authentication.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: security

@@ -1,10 +1,37 @@
 id: B739
 title: End-user identity and default budgets
 description: >-
-  Implement EndUserLookup and DefaultEndUserBudget with typed user-ID/header mappings, restricted registry,
-  key-specific default budget and request identity validation. Keep bounded registry overflow as the source
-  fallback-to-per-ID path with a warning, not a deny-all replacement. Money stays Decimal and current
-  time is injected.
+  Implement end-user lookup and default-budget selection. B880 owns request identity/header validation
+  and B1218 owns the restricted registry. Read key metadata end_user_budget_id only when it is a nonempty
+  string; whitespace is accepted. An explicit budget_id, including an empty string, overrides
+  litellm_settings.max_end_user_budget_id (default None, no dedicated env binding). Missing DB or an
+  unset resolved ID returns None before cache access. Query B725 BudgetRepository through B2315's
+  bounded budget adapter after checking default_end_user_budget:<id>. Missing rows WARN with CR/LF
+  stripped from the ID; query, validation and cache-write errors log ERROR and return None. Cache-read
+  errors escape because that read is outside the try block. Cache TTL comes from B733
+  get_management_object_ttl, not the obsolete '60 seconds' comment.
+
+  Team-member defaults use team_member_default_budget:<id>. Missing DB returns None; a query failure
+  logs an exception and returns None, and a missing row WARNs. Unlike end-user defaults, validation
+  and cache-write errors propagate. Resolve the key's budget first, then the proxy default when
+  the key has no budget or its fetch returns None. Applying a default keeps an end user's own
+  nonnull budget_id plus resolved relation unchanged; a dangling own ID can receive a default.
+  Change only litellm_budget_table on a copy and log DEBUG; never persist or overwrite budget_id.
+
+  get_end_user_object rejects absent DB with 'No db connected' even for a None ID. None ID then
+  returns None; an empty ID is a real lookup. Use B733's end-user cache key and B1218's unrestricted
+  registry fast path, passing token_end_user_max_budget and key_end_user_budget_id. On DB reads,
+  include litellm_budget_table and object_permission, apply only the proxy default, cache that row,
+  then apply the requesting key's default on a copy. Cached rows also resolve defaults per request.
+  Every exception within the DB-fetch/apply/cache block returns None silently; initial cache reads,
+  cached-row default application and registry failures are outside that catch and propagate.
+
+  _check_end_user_budget skips B882 info routes and absent budget relations/max_budget. Otherwise
+  call B2321's current-spend service with spend:end_user:<id>, fallback spend or zero, max_budget
+  and fallback_authoritative=true. Reject strictly greater spend, including positive spend against
+  zero budget, with BudgetExceededError carrying current_cost, max_budget, entity_type=end_user
+  and entity_id; equality is permitted. B757 maps that error to HTTP. No database writes occur here.
+  Repository tests use POSTGRES_TEST_URL with testcontainers fallback.
 
 
   Build the production auth_end_users module in betterlite-auth; reuse the typed dependencies listed in
@@ -19,8 +46,7 @@ description: >-
   (L1644-L1683; 34 source lines), get_end_user_object (L1876-L1974; 83 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  End-user spend values retain B726's stored representation and B732's checked numeric boundary.
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.max_end_user_budget_id=None.
@@ -33,40 +59,25 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Exercise end-user lookup and budget denial on POST /v1/chat/completions through B732 registration;
+  compare the precise B757 envelope and assert that denied requests never reach the mock provider.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B860 end-user rows run on POSTGRES_TEST_URL with testcontainers fallback, including absent budget
+  relations and conflicting cached versus authoritative spend.
 
 
-  Write betterlite-config::auth_end_users::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests max_end_user_default_unset and max_end_user_id_loaded use B002's production loader
+  with None, empty and nonempty string values and assert the resulting lookup selection. This is a
+  budget-row identifier, not an integer setting with an invalid-value fallback. Seed config_yaml
+  with litellm_settings.max_end_user_budget_id.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  End-user records arrive through existing repository decoders; no new request-byte parser is needed.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 281 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  281 production, 136 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 597 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 281 nonblank, noncomment pinned source lines; allow 250 production, 300 behavior/Postgres
+  tests, 80 adapters, 60 wiring and 50 config lines, 740 within 800. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -104,10 +115,6 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1438-L1683
     why: Pinned implementation and exact ownership boundary for auth_end_users.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1691-L2083
-    why: Pinned implementation and exact ownership boundary for auth_end_users.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1511-L1678
-    why: Pinned implementation and exact ownership boundary for auth_end_users.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1438-L1443
     why: Own get_key_end_user_budget_id; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1446-L1508
@@ -123,14 +130,32 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1876-L1974
     why: Own get_end_user_object; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L470-L475
-    why: litellm_settings.max_end_user_budget_id default and read site.
+    why: max_end_user_budget_id declaration; actual selection is auth_checks.py L1472 and L1589-L1597.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_default_budget,
-      team_default_budget.'
+  - text: 'Default-budget tests and helper cases: metadata_string_only, whitespace_id_kept,
+      explicit_empty_id_overrides, no_db_or_id_skips_cache, default_cache_hit, default_missing_warn,
+      warning_id_strips_crlf, default_query_error_none, default_decode_error_none,
+      default_cache_write_error_none, default_cache_read_error_propagates, member_query_error_none,
+      member_missing_warn, member_decode_error_propagates, member_cache_write_error_propagates,
+      management_ttl_consumed, key_before_proxy_default and missing_key_budget_uses_proxy.'
     proof:
       - behavior-tests
+  - text: 'Lookup cases: own_resolved_budget_wins, dangling_budget_uses_default,
+      default_copy_preserves_id, db_required_before_none_id, empty_id_queries,
+      unrestricted_registry_skips_row, budget_forces_registry_lookup,
+      relation_includes, proxy_default_cached_before_key_default,
+      two_keys_do_not_share_defaults, cached_default_resolved_again,
+      db_block_failure_returns_none and prequery_failure_propagates.
+      Each named helper case asserts ordered cache effects and unchanged database rows.'
+    proof: [behavior-tests, oracle, helper-python]
+  - text: 'Budget cases: info_route_skips_budget, absent_budget_skips_spend,
+      authoritative_end_user_counter, equal_budget_allowed, zero_budget_rejects_positive,
+      over_budget_fields and spend_failure_propagates. HTTP over-budget compares the default 422,
+      budget_exceeded, null param and string code 422 through the real auth stage; B757 owns
+      litellm_settings.budget_exceeded_status_code overrides.'
+    proof: [behavior-tests, stage-wiring-tests, oracle]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -158,7 +183,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_end_users::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/^(auth::)?auth_end_users::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -186,12 +211,14 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/auth-end-users/key-default-budget.yaml
   - tools/oracle/cases/helpers/auth-end-users/team-default-budget.yaml
+  - tools/oracle/cases/helpers/auth-end-users/fetch-failure-boundaries.yaml
+  - tools/oracle/cases/helpers/auth-end-users/per-key-default-isolation.yaml
+  - tools/oracle/cases/helpers/auth-end-users/lookup-cache-effects.yaml
   - tools/oracle/cases/auth/auth-end-users/key-default-budget.yaml
   - tools/oracle/cases/auth/auth-end-users/team-default-budget.yaml
+  - tools/oracle/cases/auth/auth-end-users/over-budget.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -355,8 +382,9 @@ out_of_scope:
     commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Registry overflow falls back to per-ID lookup rather than becoming an allow-all or deny-all sentinel.
+  - A default end-user cache-write failure returns None, but the equivalent team-member write failure escapes.
+  - A cache hit can receive a key-specific budget only on a copy; caching that copy leaks one key's policy to another.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

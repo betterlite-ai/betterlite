@@ -1,300 +1,129 @@
 id: B054
-title: Python custom authentication and validation integration
+title: Python authentication hooks and post-custom checks
 description: >-
-  Connect B165 Python callable loading to general_settings.custom_auth and install litellm_jwtauth.custom_validate
-  for B053 authenticate_jwt. The MIT custom-auth result must validate as UserAPIKeyAuth; a string result
-  fails with 401. litellm_settings.enable_post_custom_auth_checks=false controls the shared post-custom
-  checks and warning-once path. Preserve source exception causes; execute Python through the bounded bridge
-  with a concrete 30-second deadline mapped to 504 timeout_error.
+  Install B165 Python loading into B052's custom backend port for general_settings.custom_auth and
+  B869's optional litellm_jwtauth.custom_validate port. The normal MIT custom callable is awaited with
+  request and api_key; its result must validate as B732 UserAPIKeyAuth, not a string bearer. Preserve
+  source validation exceptions through B757. Installed hooks have a native 30-second deadline with
+  504 timeout_error; startup rejects configured but unloaded callables. No example callable is enabled
+  by default. B053/B875 own JWT/backend dispatch, not a new general_settings validation switch here.
 
+  Own auth_utils.py custom_auth_common_checks_warning L1361-L1375, warn_once_if_custom_auth_skips_common_checks
+  L1381-L1397, log_once_if_budget_reservation_disabled L1400-L1415 and their boolean emission flags.
+  The custom warning exists only when custom auth is configured and common checks are falsey; it
+  names unenforced DB team/project budgets, model allowlists and per-model limits, says returned-token
+  limits still apply, and tells operators to set general_settings.custom_auth_run_common_checks=true
+  with the source custom-auth docs URL. Only an actual WARNING emission sets the process-wide flag.
+  Reservation INFO likewise emits once only when disabled, explaining concurrent read-time overshoot
+  and restoring disable_budget_reservation=False. No configuration read is hidden inside these helpers.
 
-  Build the production custom_auth module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Own user_api_key_auth.py _run_post_custom_auth_checks L3769-L3935. The caller's separate
+  litellm_settings.enable_post_custom_auth_checks flag defaults false; enabling it does not enable
+  general_settings.custom_auth_run_common_checks (also false). First B889 loads a nonnull end_user_id
+  and applies its budget. When a row exists and common checks are falsey, B739 enforces the end-user
+  hard budget immediately, before expiry and zero-price detection. Expiry accepts datetime or ISO text,
+  assumes UTC for naive values, and rejects strictly before now, allowing equality. Return401 expired_key
+  with both timestamps and B881's abbreviated token param, or empty param for falsey token.
 
+  Only truthy common-checks calls B889 key/fallback access. Resolve current model(s) through B881;
+  B750 zero-price recognition needs a router and nonnull model. Non-skipped budgets with nonempty dict
+  key model budgets, model list and nonnull token call B753 fallback checks in order; unlike the ordinary
+  key path there is no database prerequisite here. Recompute models after rewrites. Always call B753
+  user budget lookup and assign its result to user_model_max_budget, even for free/unenforceable models;
+  this overwrites a custom value with null on failed/absent lookup. Enforce user model budgets only when
+  not skipped and models exist. End-user model budgets additionally need a nonempty dict and nonnull
+  end_user_id; use B755's limiter port and preserve its exception behavior. Finally a nonnull project ID
+  loads B879 and updates project_metadata/alias only for a returned row. Return the resulting token.
+  This helper does not call centralized common_checks or reserve budgets; B1221/B1225 do that later.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/auth_utils.py:
-  custom_auth_common_checks_warning (L1361-L1375; 15 source lines), warn_once_if_custom_auth_skips_common_checks
-  (L1381-L1397; 17 source lines), log_once_if_budget_reservation_disabled (L1400-L1415; 16 source lines).
-  litellm/proxy/auth/user_api_key_auth.py: _run_post_custom_auth_checks (L3769-L3935; 132 source lines).
-
-
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.custom_auth_run_common_checks=False;
-  custom_auth_run_common_checks=False.
-
-
-  general_settings.custom_auth=None; litellm_jwtauth.custom_validate=None; litellm_settings.enable_post_custom_auth_checks=false.
-  Custom validation is installed into B053, not a separate general_settings switch.
-
-
-  Add the custom_auth operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a custom-auth-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::custom_auth::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 180 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  180 production, 151 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 511 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_custom_python_auth_validation_calls_time_out_after_30_seconds_with_htt.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  Implement custom_auth in betterlite-server with files below300 lines. B856 Management::models
+  custom_auth adapters invoke only owned MIT helpers with injected collaborators and production Rust;
+  use B171 helper_case seeds. B001 HTTP cases exercise the real backend with B860 Postgres fixtures
+  using POSTGRES_TEST_URL or testcontainers. B002 loader tests callable_settings_default_none,
+  post_and_common_flags_independent_defaults_false, invalid_bool_rejected and configured_hook_must_load
+  use actual nested settings and config_yaml seeds. Reuse B165 decoding/deadline infrastructure; no
+  new parser. Allow 210 production, 260 tests, 80 adapters, 90 wiring and 70 config lines, 710 within750.
 scope:
   paths:
     - crates/betterlite-server/src/custom_auth.rs
     - crates/betterlite-server/src/custom_auth/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/custom_auth.rs
-    - tools/oracle/src/helpers/custom_auth/**
-    - tools/oracle/helpers/custom_auth.py
-    - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
-    - tools/oracle/cases/helpers/custom-auth/**
-    - tools/oracle/fuzz/corpus/helper_case/custom-auth-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
-    - tools/oracle/cases/auth/custom-auth/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
     - crates/betterlite-config/src/custom_auth.rs
     - crates/betterlite-config/src/custom_auth/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*
+    - tools/oracle/src/helpers/custom_auth.rs
+    - tools/oracle/src/helpers/custom_auth/**
+    - tools/oracle/helpers/custom_auth.py
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/custom-auth/**
+    - tools/oracle/cases/auth/custom-auth/**
+    - tools/oracle/fuzz/corpus/helper_case/custom-auth-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/custom_auth_auto.py#L1-L27
-    why: Pinned implementation and exact ownership boundary for custom_auth.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/custom_validate.py#L1-L5
-    why: Pinned implementation and exact ownership boundary for custom_auth.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1361-L1415
-    why: Pinned implementation and exact ownership boundary for custom_auth.
+    why: Warning/INFO messages, process flags and actual emission conditions.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3769-L3935
-    why: Own _run_post_custom_auth_checks; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1361-L1375
-    why: Own custom_auth_common_checks_warning; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1381-L1397
-    why: Own warn_once_if_custom_auth_skips_common_checks; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1400-L1415
-    why: Own log_once_if_budget_reservation_disabled; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3821-L3826
-    why: general_settings.custom_auth_run_common_checks default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1-L6
-    why: custom_auth_run_common_checks default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
-    why: Auth exceptions become public HTTP type, param and code.
+    why: Owned post-custom sequence and actual common-checks setting reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1568-L1583
+    why: Custom callable validation and separate post-check enable flag.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: python_timeout_504,
-      example_not_default, custom_structured_principal, custom_validation_exception, post_checks_enabled,
-      post_checks_skipped_warning, string_result_invalid_401.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_custom_python_auth_validation_calls_time_out_after_30_seconds_with_htt.'
-    proof:
-      - behavior-tests
+  - text: 'Named cases: structured_hook_result_and_string401, hook_exception_causes,
+      hook_absent_not_example, warning_conditions_exact_message_and_once_flag,
+      no_warning_does_not_set_flag, reservation_info_disabled_and_once,
+      post_and_common_flags_four_combinations, end_user_hard_before_expiry_even_zero_cost,
+      expiry_iso_datetime_naive_equal_and_masked_or_empty_param,
+      common_flag_controls_access_only, key_model_budget_without_database,
+      fallback_recomputed_for_later_checks, free_model_still_attaches_user_budget,
+      failed_user_lookup_overwrites_custom_budget_null, user_then_end_user_model_checks,
+      project_metadata_refresh_missing_row_unchanged, no_common_gate_or_reservation_here,
+      native_python_auth_deadline_30_seconds_returns_504_timeout_error.'
+    proof: [behavior-tests, oracle]
+  - text: Actual config-loader tests, helper adapters and new shared decoder seeds are exercised.
+    proof: [config-tests, config-corpus, helper-python, helper-case-corpus]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^custom_auth::tests::/)
-        - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/custom_auth.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/custom-auth-*")"
-        && grep -rlq "custom_auth" tools/oracle/fuzz/corpus/helper_case/custom-auth-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Hook integration or post-custom ordering differs from the owned code.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^custom_auth::tests::/) - test(/replays_the_/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^custom_auth::tests::/)
-        - test(/replays_the_/)'
+      why: Independent hook settings are ignored or conflated.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^custom_auth::tests::/) - test(/replays_the_/)'
     - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*")"
-        && grep -rlq "custom_auth_run_common_checks" crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      why: Configuration boundary seed is absent or fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/custom-auth-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The independent MIT adapter is absent or fails strict checks.
+      run: test -f tools/oracle/helpers/custom_auth.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new shared helper seed exists or replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/custom-auth-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/custom-auth/custom-structured-principal.yaml
-  - tools/oracle/cases/helpers/custom-auth/custom-validation-exception.yaml
-  - tools/oracle/cases/helpers/custom-auth/post-checks-enabled.yaml
-  - tools/oracle/cases/helpers/custom-auth/post-checks-skipped-warning.yaml
-  - tools/oracle/cases/helpers/custom-auth/string-result-invalid-401.yaml
-  - tools/oracle/cases/auth/custom-auth/custom-structured-principal.yaml
-  - tools/oracle/cases/auth/custom-auth/custom-validation-exception.yaml
-  - tools/oracle/cases/auth/custom-auth/post-checks-enabled.yaml
-  - tools/oracle/cases/auth/custom-auth/post-checks-skipped-warning.yaml
-  - tools/oracle/cases/auth/custom-auth/string-result-invalid-401.yaml
+  - tools/oracle/cases/helpers/custom-auth/warning-and-reservation-log-flags.yaml
+  - tools/oracle/cases/helpers/custom-auth/post-check-order-and-field-updates.yaml
+  - tools/oracle/cases/auth/custom-auth/structured-principal-and-invalid-string.yaml
+  - tools/oracle/cases/auth/custom-auth/post-and-common-flags.yaml
+  - tools/oracle/cases/auth/custom-auth/expiry-and-end-user-budget.yaml
 deviations:
-  - what: Custom Python auth/validation calls time out after 30 seconds with HTTP 504 timeout_error.
-    why: LiteLLM sets no local deadline; the bounded-waits rule requires one.
+  - what: Custom Python auth/validation calls time out after 30 seconds with 504 timeout_error.
+    why: Source sets no local deadline; native_python_auth_deadline_30_seconds_returns_504_timeout_error proves bounded waits.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1568-L1579
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
-    (L668-L703), get_request_route_template (L706-L722), normalize_request_route (L726-L837).'
-  - 'litellm/proxy/auth/auth_utils.py: B744 owns is_invalid_virtual_key_error (L41-L58), mark_invalid_virtual_key_error
-    (L61-L75), _get_request_ip_address (L78-L87), _check_valid_ip (L90-L108), pre_db_read_auth_checks
-    (L562-L618), check_if_request_size_is_safe (L840-L898), check_response_size_is_safe (L901-L939), bytes_to_mb
-    (L942-L946).'
-  - 'litellm/proxy/auth/auth_utils.py: B745 owns _get_deployment_default_limit (L950-L975), _get_deployment_default_rpm_limit
-    (L978-L979), _get_deployment_default_tpm_limit (L982-L983), get_key_own_model_rate_limit (L986-L1003),
-    get_key_model_rpm_limit (L1006-L1035), get_key_model_tpm_limit (L1038-L1067), _validated_output_token_estimate
-    (L1080-L1092), _validated_output_token_estimates_per_model (L1095-L1107), _estimated_output_tokens_from_metadata
-    (L1110-L1130), get_estimated_output_tokens (L1133-L1151), OutputTokenEstimateRequest.metadata (L1161-L1161),
-    OutputTokenEstimateRequest.default_estimated_output_tokens (L1164-L1164), OutputTokenEstimateRequest.default_estimated_output_tokens_per_model
-    (L1167-L1167), OutputTokenEstimateRequest.model_fields_set (L1170-L1170), _requested_output_token_estimates
-    (L1173-L1194), enforce_output_token_estimates_are_admin_only (L1197-L1228), BatchEnqueuedTokenLimitRequest.metadata
-    (L1235-L1235), BatchEnqueuedTokenLimitRequest.model_fields_set (L1238-L1238), enforce_batch_enqueued_token_limit_is_admin_only
-    (L1241-L1268), get_model_rate_limit_from_metadata (L1271-L1278), get_key_mcp_rpm_limit (L1297-L1320),
-    get_team_mcp_rpm_limit (L1323-L1328), get_key_tag_rpm_limit (L1331-L1342).'
-  - 'litellm/proxy/auth/auth_utils.py: B746 owns _append_model_candidates (L1731-L1743), _dedupe_model_candidates
-    (L1746-L1751), _get_case_insensitive_mapping_value (L1754-L1763), _route_matches_any_marker (L1766-L1768),
-    _route_uses_model_routing_sources (L1771-L1772), _extract_models_from_managed_resource_id (L1775-L1842),
-    _resolve_model_id_with_router (L1845-L1852), get_cache_prediction_deployments (L1855-L1864), _cache_prediction_model_candidates
-    (L1867-L1877), _extract_model_candidates_from_request (L1880-L1943), _format_model_candidates (L1946-L1953),
-    request_dispatched_to_pass_through_endpoint (L1956-L1974), request_dispatched_to_provider_pass_through
-    (L1977-L1979), get_model_from_request (L1982-L2061), _router_model_from_azure_route (L2064-L2068),
-    _model_from_bedrock_route (L2071-L2083).'
-  - 'litellm/proxy/auth/auth_utils.py: B880 owns get_customer_user_header_from_mapping (L1511-L1530),
-    _get_customer_id_from_standard_headers (L1533-L1557), _coerce_user_id_to_str (L1560-L1592), get_end_user_id_from_request_body
-    (L1595-L1678).'
-  - 'litellm/proxy/auth/auth_utils.py: B881 owns has_user_setup_sso (L1431-L1451), _is_google_ready (L1454-L1455),
-    _is_microsoft_ready (L1458-L1463), _is_generic_oauth_ready (L1466-L1473), _is_saml_ready (L1476-L1490),
-    is_sso_provider_fully_configured (L1493-L1508), abbreviate_api_key (L2086-L2089).'
-  - 'litellm/proxy/auth/auth_utils.py: B884 owns check_regex_or_str_match (L159-L165), _is_param_allowed
-    (L168-L189), _allow_model_level_clientside_configurable_parameters (L192-L220), _build_banned_observability_params
-    (L281-L303), _check_banned_params (L380-L420), _iter_fallback_field_values (L430-L435), _iter_fallback_targets
-    (L438-L455), iter_request_fallback_targets (L458-L460), _reject_url_valued_fallback_target (L463-L474),
-    is_request_body_safe (L477-L539), _coerce_metadata_to_dict (L542-L559).'
-  - 'litellm/proxy/auth/auth_utils.py::check_complete_credentials: no caller at the pin; removed implicit
-    caller-credential bypass.'
-  - 'litellm/proxy/auth/auth_utils.py::get_team_model_rpm_limit: no production caller at the pinned commit;
-    repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::get_team_model_tpm_limit: no production caller at the pinned commit;
-    repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::get_project_model_rpm_limit: no production caller at the pinned
-    commit; repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::get_project_model_tpm_limit: no production caller at the pinned
-    commit; repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/auth_utils.py::is_pass_through_provider_route: no production caller at the pinned
-    commit; repository-wide identifier search finds only this definition.'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
-    (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
-    (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
-    (L648-L707), user_api_key_auth_websocket (L644-L645).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B735 owns _identity_cache_keys (L3364-L3376), _prefetch_referenced_auth_objects
-    (L3379-L3392).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B738 owns _refresh_session_token_grants (L1409-L1452), _resolve_object_permission_for_unresolvable_team
-    (L1455-L1472).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B751 owns _get_temp_budget_increase (L3615-L3623), _update_key_budget_with_temp_budget_increase
-    (L3626-L3634).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B753 owns _KeyModelBudgetLimiter.is_key_within_model_budget
-    (L307-L307), _KeyModelBudgetLimiter.get_fallback_model_within_budget (L309-L309), _UserModelBudgetLimiter.is_user_within_model_budget
-    (L313-L315), _TeamModelBudgetLimiter.is_team_within_model_budget (L319-L325), _TokenTeamModels.team_models
-    (L330-L330), _RawCacheRead.async_get_cache (L334-L334), _raw_cache (L337-L341), _token_team_models
-    (L344-L345), _read_user_model_max_budget (L348-L374), _check_user_model_budget (L377-L395), _check_team_model_budget
-    (L398-L414), _check_key_model_budget_with_fallback (L417-L488), _apply_budget_limits_to_end_user_params
-    (L613-L641), update_valid_token_with_end_user_params (L710-L726), _fetch_global_spend_with_event_coordination
-    (L733-L757), get_global_proxy_spend (L760-L790).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B755 owns validate_resolved_virtual_key (L2211-L2622).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B756 owns _normalize_public_auth_route (L160-L163), _route_requires_auth_despite_public
-    (L166-L171), _get_bearer_token_or_received_api_key (L491-L511), _routing_selector_matches_claim (L514-L552),
-    _matches_routing_override (L555-L565), _should_route_jwt_to_oauth2_override (L568-L582), _get_bearer_token
-    (L585-L610), get_rbac_role (L793-L798), get_api_key (L801-L858), check_api_key_for_custom_headers_or_pass_through_endpoints
-    (L861-L905), get_api_key_from_custom_header (L3580-L3612), is_no_auth_dev_mode (L2747-L2751).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B757 owns _ensure_litellm_received_at_on_request_state (L1310-L1327),
-    _ensure_parent_otel_span_on_request_state (L1330-L1359), _read_request_body_deferring_parse_failure
-    (L1362-L1381), _record_unparsable_body_failure (L1384-L1406).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B766 owns _auto_register_jwt_mapping (L942-L1081), _lookup_jwt_mapping_token_hash
-    (L1084-L1118), _resolve_jwt_to_virtual_key (L1121-L1307).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B855 owns _resolve_request_principal (L3224-L3245), _authorize_authenticated_request
-    (L3248-L3355), _spend_counter_redis_cache (L3358-L3361), _seed_request_destinations (L3395-L3429).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B875 owns _user_api_key_auth_builder.backend_dispatch (L1603-L1856).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B876 owns _user_api_key_auth_builder.cached_session (L1897-L2076).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B881 owns _get_model_from_request_context (L206-L221), _normalize_claude_model
-    (L230-L255), _resolve_router_settings_model_group_alias (L258-L293), _get_model_names_for_budget_checks
-    (L296-L303).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B888 owns _safe_fetch (L2625-L2651), _team_obj_from_token
-    (L2654-L2673), _token_can_vouch_for_team (L2676-L2703), _inherit_org_identity (L2706-L2744).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B889 owns _return_user_api_key_auth_obj (L3532-L3577), _lookup_end_user_and_apply_budget
-    (L3637-L3696), _enforce_key_and_fallback_model_access (L3699-L3756), _fallback_target_model_name (L3759-L3766).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B1221 owns _run_centralized_common_checks (L2755-L3110).'
-  - 'litellm/proxy/auth/user_api_key_auth.py: B1225 owns _noop_none (L3113-L3116), _apply_key_end_user_default_budget_to_token
-    (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
-  - 'litellm/proxy/custom_auth_auto.py::user_api_key_auth: no caller at the pin; uncalled custom-auth
-    example.'
-  - 'litellm/proxy/custom_validate.py::my_custom_validate: no caller at the pin; uncalled custom-auth
-    example.'
-  - 'litellm/proxy/custom_auth_auto.py::user_api_key_auth (L12-L27): no caller at the pin; uncalled custom-auth
-    example.'
-  - 'litellm/proxy/custom_validate.py::my_custom_validate (L4-L5): no caller at the pin; uncalled custom-auth
-    example.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B052 owns preflight dispatch; B053/B875 JWT/custom backend selection; B165 callable transport/loading.
+  - B1221 owns centralized common checks and B1225 budget reservation handoff.
 pitfalls:
-  - The string-key custom auth success branch requires enterprise_custom_auth and is absent from this
-    oracle environment.
+  - Zero-price detection occurs after the immediate end-user hard-budget check on the no-common-checks path.
+  - The two custom-check switches are independent and control different stages.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

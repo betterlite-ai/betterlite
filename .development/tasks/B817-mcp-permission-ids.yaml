@@ -1,14 +1,44 @@
 id: B817
 title: Canonical MCP server identifiers in grants
 description: >-
-  Implement McpGrantIds over injected registered MCP server snapshots and stored permission rows. Resolve
-  IDs/names/aliases consistently, reject ambiguous tool permission keys, remove stale identifiers according
-  to source behavior and preserve stable deduplication. This is permission plumbing, not an MCP runtime.
+  Implement MCP identifier resolution without rewriting stored aliases into local IDs. The pure matcher
+  accepts an exact server_id, alias, server_name or name; stable dedupe retains first occurrence. DB
+  lookup returns [] with no client or no identifiers, otherwise performs one OR query on server_id,
+  alias and server_name (not name) through B726 MCPServerRepository. Initialize every requested identifier
+  to an empty set, accumulate all matching rows with truthy server_id, then union B136 registry matches
+  using server.server_id or the registry key. A registry key matches even if no server attribute does.
+  Empty IDs are skipped. A DB error propagates before consulting the registry; successful DB matches do
+  not suppress config matches despite the source's "authoritative" comment. Native resolver_db_registry_union,
+  resolver_empty_and_missing_db, registry_key_fallback and db_error_before_registry cover these branches.
 
+  Dropping stale mcp_servers mutates only a list-valued field, preserving original identifiers that
+  resolve anywhere and the literal no-mcp-servers sentinel, then deduplicating in input order. It must
+  not persist resolved IDs, because shared-DB regions resolve aliases differently. For a dict-valued
+  mcp_tool_permissions retain only resolving identifiers and deduplicate each list of tools; non-list
+  tools become []. Other raw shapes are unchanged. An empty/null/non-dict outer permission object is
+  untouched. The combined helper drops both fields, and flatten returns the union of all ID sets.
+  Pure cases identity_attribute_match, stable_dedupe, retain_alias_and_no_mcp_servers,
+  stale_tool_keys_and_non_list_tools, untouched_wrong_shapes and flatten_union exercise these transforms.
 
-  Build the production mcp_permission_ids module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Team allowed-server resolution defaults prisma_client=null. If direct mcp_servers includes the
+  all-proxy-mcpservers literal, immediately return B136 registry KEYS, not the objects' server_id attributes,
+  and do not consult groups/tool grants. Otherwise union direct IDs, B137
+  MCPRequestHandler._get_mcp_servers_from_access_groups results and tool-permission keys; parse a stored
+  JSON tool map before extracting keys. B137 uses requires_fresh_policy=false here, so a group lookup
+  exception warns and contributes []; malformed JSON or any decoded non-map result raises instead.
+  Resolve the union and then add each unresolved ORIGINAL identifier back to the result. This is the
+  opposite of stale-key cleanup. Native all_proxy_uses_registry_keys, group_failure_warns_and_drops,
+  team_union_retains_unresolved and stored_tool_json_errors preserve those distinctions. The shared
+  byte decoder decode_mcp_tool_grants_json accepts stored JSON text and rejects malformed/non-map forms,
+  including the strings "null", "[]", "false" and "0"; only falsey raw values normalize to {} before
+  decoding. Its fuzz target exercises the same production path.
+
+  _get_allow_all_keys_server_ids returns a set of B136's allow_all_keys IDs; _get_all_mcp_server_ids
+  returns a set of registry keys. _existing_object_permission_mcp_servers returns [] for falsey ID,
+  missing DB/row or null servers, otherwise returns the stored list unchanged with duplicates. Use
+  B725 ObjectPermissionRepository, with no cache or write. Cases allow_all_keys_snapshot and
+  existing_grants_falsey_missing_and_duplicates cover those projections. B816 owns collision rejection;
+  this resolver intentionally returns multiple matches. No local license/config/environment switch exists.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/object_permission_utils.py:
@@ -21,27 +51,21 @@ description: >-
   (L475-L481; 6 source lines), _existing_object_permission_mcp_servers (L484-L495; 12 source lines).
 
 
-  Add the mcp_permission_ids operation under B856 Management::models. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a mcp-permission-ids-* seed to B171 helper_case, which already owns this decoder.
+  The B856 helper operation calls only matching, dedupe, stale-field cleanup and flatten functions with
+  supplied typed snapshots. Database/registry/group resolver tests are native; real Postgres fixtures
+  use POSTGRES_TEST_URL or testcontainers when absent, failing on connection errors. B171 owns the
+  existing helper seed parser. Test log/drop effects of the B137 dependency without invoking FastAPI
+  handlers from Python helpers.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  The stored JSON boundary is capped at 1048576 bytes and depth 64, with typed limit errors and the native
+  mcp_tool_json_limits case outside oracle equality. Register mcp_tool_grants in B770's server fuzz workspace
+  and replay valid/falsey/malformed/deep inputs in replays_the_mcp_tool_grants_corpus. No HTTP schema is added.
 
 
   Sizing: 164 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  164 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 410 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  180 production, 300 behavior/Postgres tests, 60 helper adapters, 30 route/manifests/wiring, 60 decoder/fuzz
+  and 0 config lines, 630 changed lines estimated within a 650-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/mcp_permission_ids.rs
@@ -56,6 +80,9 @@ scope:
     - tools/oracle/helpers/management/models.py
     - tools/oracle/cases/helpers/mcp-permission-ids/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-permission-ids-*
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/mcp_tool_grants.rs
+    - crates/betterlite-server/fuzz/corpus/mcp_tool_grants/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L240-L495
@@ -87,8 +114,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L484-L495
     why: Own _existing_object_permission_mcp_servers; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: server_id, server_name,
-      ambiguous_alias, stale_server_drop, stale_tool_permission, allow_all_keys_server, stable_order.'
+  - text: Every named resolver, cleanup, group fallback and existing-row case in the description passes;
+      aliases remain stored and the team read path retains unresolved identifiers.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -97,6 +124,8 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
+  - text: mcp_tool_json_limits and the production fuzz corpus prove bounded stored-JSON decoding.
+    proof: [behavior-tests, parser-corpus]
 checks:
   optional: []
   commands:
@@ -114,18 +143,24 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-permission-ids-*")"
         && grep -rlq "mcp_permission_ids" tools/oracle/fuzz/corpus/helper_case/mcp-permission-ids-* &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The stored tool-map decoder target or its new replay corpus is missing or broken.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/mcp_tool_grants.rs && grep -q mcp_tool_grants
+        crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-server/fuzz/corpus/mcp_tool_grants)" && cargo nextest run --locked -p
+        betterlite-server --no-tests=fail -E 'test(replays_the_mcp_tool_grants_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/mcp-permission-ids/server-id.yaml
-  - tools/oracle/cases/helpers/mcp-permission-ids/server-name.yaml
-  - tools/oracle/cases/helpers/mcp-permission-ids/ambiguous-alias.yaml
-  - tools/oracle/cases/helpers/mcp-permission-ids/stale-server-drop.yaml
-  - tools/oracle/cases/helpers/mcp-permission-ids/stale-tool-permission.yaml
-  - tools/oracle/cases/helpers/mcp-permission-ids/allow-all-keys-server.yaml
-  - tools/oracle/cases/helpers/mcp-permission-ids/stable-order.yaml
-deviations: []
+  - tools/oracle/cases/helpers/mcp-permission-ids/identity-attribute-match.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/stable-dedupe.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/retain-alias-and-no-mcp-servers.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/stale-tool-keys-and-non-list-tools.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/untouched-wrong-shapes.yaml
+  - tools/oracle/cases/helpers/mcp-permission-ids/flatten-union.yaml
+deviations:
+  - what: Stored MCP tool JSON over 1048576 bytes or depth 64 fails with a typed limit error before resolution.
+    why: Bound this actual json.loads boundary; mcp_tool_json_limits proves the limits separately from parity cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L450-L453
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_helpers/object_permission_utils.py: B816 owns attach_object_permission_to_dict
     (L35-L73), prepare_object_permission_upsert (L82-L129), handle_update_object_permission_common (L132-L183),
     invalidate_cached_object_permissions (L186-L199), _set_object_permission (L202-L237), _mcp_tool_permission_entries
@@ -136,10 +171,11 @@ out_of_scope:
     (L641-L651), validate_key_mcp_servers_against_team (L654-L794), _validate_requested_toolsets (L797-L839),
     _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879),
     _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B136 owns registry population and allow_all_keys policy; B137 owns MCP access-group lookup and its warning fallback.
 pitfalls:
-  - An ambiguous MCP alias cannot silently resolve to the first server.
+  - Stale-field cleanup drops unresolved aliases, but team allowed-server reads deliberately retain them.
+  - all-proxy-mcpservers short-circuits to registry keys even when a registry object's server_id differs.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

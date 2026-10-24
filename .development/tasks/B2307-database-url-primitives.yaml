@@ -1,0 +1,160 @@
+id: B2307
+title: Database URL query policy and boolean parsing
+description: >-
+  Extract the URL and flag primitives used by password setup, token refresh, migrations and the CLI
+  into betterlite-db::database_url_policy. Own db_url_settings.py's idle_lifetime_params,
+  add_missing_query_params, reader_shareable_params, connection_params_from_url,
+  token_refresh_params_from_url, unsupported_db_scheme and unsupported_db_scheme_message; own
+  proxy_cli.py's connection-pool defaults, _build_db_connection_url_params, DatabaseTimeoutSettings,
+  _pg_options_with_timeouts, _url_query_value, _with_query_value and append_query_params. Also move
+  token_auth.py::token_auth_flag_enabled and extras/utils.py::str_to_bool here. These helpers must
+  sit below B710, B711, B712 and B717; none calls a startup or token-minting service.
+
+  add_missing_query_params preserves a URL byte-for-byte when nothing is added. Otherwise parse query
+  pairs with blank values retained, keep duplicates and their order, and append only keys absent from
+  the original query, form-encoding the result. Even a blank pinned value wins. idle_lifetime_params
+  returns max_idle_connection_lifetime=60 only for None; zero and negative configured values survive.
+  Reader sharing is exactly connection_limit, pool_timeout, connect_timeout, socket_timeout,
+  max_idle_connection_lifetime and pgbouncer. Reading that subset from a URL drops blank values and
+  takes the last duplicate; token refresh additionally keeps sslmode, sslcert and sslaccept, but not
+  sslrootcert, schema or options. Neither path forwards search_path through options.
+
+  The CLI pool defaults are connection_limit=10 and pool_timeout=60. Building parameters always emits
+  connection_limit, omits optional pool/connect/socket timeouts only for None, and emits the string
+  pgbouncer=true only when disabling prepared statements. A truthy extra_params mapping updates last,
+  overriding even these named settings; an empty mapping changes nothing. append_query_params differs
+  from the missing-only helper: existing blank query values are dropped, supplied keys overwrite
+  existing lists, and doseq preserves multiple values. Empty or non-string URL returns the empty string
+  and warns "append_query_params received empty or non-string URL, returning empty string". Retain
+  that warning, but apply the credential-redaction deviation below to the upstream raw-URL debug log.
+
+  _url_query_value returns the first nonblank value or the empty string for missing/non-string input.
+  _with_query_value removes every old occurrence of the selected key and appends one replacement,
+  dropping other blank pairs as parse_qsl does. Statement and lock timeouts default None and validate
+  as optional floats. Emit int(seconds*1000), truncating toward zero, as '-c statement_timeout=N'
+  then '-c lock_timeout=N', after existing options. Preserve configured zero and negative values;
+  nonnumeric input fails validation and nonfinite values fail integer conversion rather than falling
+  back. Do not append a setting already spelled '-c name=', '-cname=' or '--name=' in existing options.
+  Do not trim or normalize the operator's options. Applying these options only to writer/reader,
+  and keeping DIRECT_URL free of added statement/lock timeouts, belongs to B051's composition.
+
+  Supported schemes are postgres and postgresql, case-insensitively. Other schemes return the parsed
+  lower-case scheme, or '<missing scheme>' when absent; never substitute the complete credential URL.
+  Preserve unsupported_db_scheme_message's exact env-var-specific text, PostgreSQL guidance and
+  https://docs.litellm.ai/docs/proxy/virtual_keys link. A value like user:pass@host/db parses as scheme
+  user, despite the source docstring's claim that every malformed DSN lacks a scheme. URL parse errors
+  remain errors and do not become a permissive password fallback.
+
+  token_auth_flag_enabled passes booleans through, maps None to false and strips/lowercases strings.
+  True spellings are 1,on,t,true,y,yes; false spellings are empty,0,f,false,n,no,off. Any other spelling
+  raises ValueError naming the supplied env var, repr(value), and the sorted on/off choices, excluding
+  the empty false spelling from the message. Extras str_to_bool is deliberately different: None is
+  false, lower-case comparison accepts true,1,t,y,yes only, with no stripping and no 'on'; everything
+  else silently returns false. Do not substitute the secret-manager boolean parser for either helper.
+
+  Register pure database_url_policy helper cases through B856's database namespace; the Python adapter
+  calls these actual MIT functions with supplied values. It does not call a CLI entry point or copy
+  URL logic. Compare exact values, exceptions and warning order; redact credentials in diagnostics on
+  both sides without ignoring error text. Create the database cargo-fuzz workspace here and expose
+  decode_database_url(&[u8]) -> Result<DbEndpoint,DbError> for the production URL boundary. Exercise
+  UTF-8 errors, malformed brackets/ports, duplicate and blank queries, percent escapes and oversized
+  inputs. B710 and later database parsers extend this workspace rather than creating another manifest.
+  This decoder caps URL bytes at 1048576, has no JSON-depth policy, and performs no network access.
+
+  There are 188 nonblank noncomment helper/declaration lines before shared constants and the four-line
+  extras boolean helper, including Python docstrings. Allow 240 production, 300 behavior tests,
+  80 oracle adapter, 60 decoder/fuzz and 30 wiring lines, 710 within 800. Subdivide policy, query and
+  flag modules so each Rust source stays below 300 lines. Config acceptance is tested by consuming tasks.
+scope:
+  paths:
+    - crates/betterlite-db/src/database_url_policy.rs
+    - crates/betterlite-db/src/database_url_policy/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/.gitignore
+    - crates/betterlite-db/fuzz/fuzz_targets/database_urls.rs
+    - crates/betterlite-db/fuzz/corpus/database_urls/**
+    - tools/oracle/src/helpers/database_url_policy.rs
+    - tools/oracle/helpers/database_url_policy.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/database-url-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/database-url-policy-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L84-L136
+    why: Exact shared parameter allowlist, idle default and missing-only query append.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L257-L309
+    why: Reader/refresh extraction, scheme checking and the operator-facing message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L60-L181
+    why: Pool defaults, extra-param overrides, timeouts and CLI query replacement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/token_auth.py#L36-L67
+    why: Strict token/prepared-statement flag parser and exact failure message.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L36-L39
+    why: The separate permissive extras boolean parser does not strip or accept on.
+dod:
+  - text: 'Query helpers preserve their distinct policies; named cases: missing_only_identity,
+      blank_pinned_value, duplicate_query_order, idle_none_zero_negative, reader_exact_allowlist,
+      reader_last_duplicate_no_blanks, refresh_tls_allowlist, pool_optional_omission,
+      extra_params_override, append_overwrites_lists, append_empty_warns, first_query_value,
+      replace_all_query_values, options_seconds_to_millis, options_existing_spellings,
+      options_zero_negative, invalid_timeout_no_fallback, nonfinite_timeout_fails.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Flag and scheme behavior is exact; named cases: postgres_scheme_aliases,
+      unsupported_scheme_message, malformed_dsn_scheme, token_boolean_spellings,
+      token_invalid_flag_message, extras_boolean_spellings, extras_whitespace_and_on_false.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Production byte parsing and deviations are exercised by malformed_url_bytes,
+      native_url_size_limit and native_url_debug_redaction; the real decoder replays new seeds.'
+    proof: [behavior-tests, parser-corpus, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Missing query, flag, timeout or credential-redaction behavior must fail independently of corpus replay.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_url_policy::tests::/) - test(replays_the_database_urls_corpus)'
+    - id: helper-python
+      why: The adapter must import the real helpers and satisfy strict Python checks.
+      run: test -f tools/oracle/helpers/database_url_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new pure operation must be recognized by the existing HelperCase decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-url-policy-*")" && grep -rlq database_url_policy tools/oracle/fuzz/corpus/helper_case/database-url-policy-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The new database URL decoder must be used by its fuzz target and replay added seeds.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/database_urls.rs && grep -q database_urls crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/database_urls)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_database_urls_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/database-url-policy/missing-and-overwriting-query.yaml
+  - tools/oracle/cases/helpers/database-url-policy/reader-and-refresh-allowlists.yaml
+  - tools/oracle/cases/helpers/database-url-policy/pool-and-idle-defaults.yaml
+  - tools/oracle/cases/helpers/database-url-policy/timeout-options.yaml
+  - tools/oracle/cases/helpers/database-url-policy/scheme-errors.yaml
+  - tools/oracle/cases/helpers/database-url-policy/strict-and-permissive-flags.yaml
+deviations:
+  - what: Database URL input larger than 1048576 bytes fails decoding before a connection is attempted.
+    why: Bound the native URL byte boundary; the pinned urllib helpers impose no byte cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L122-L136
+  - what: append_query_params diagnostics redact URL credentials and secret query values instead of logging the raw URL and parameter map.
+    why: Database credentials must not enter operator logs; query results and warnings remain unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L166-L181
+out_of_scope:
+  - B710 owns DatabaseURLSettings fields, from_env, tls_params, password assembly and scheme-validation callers;
+    B712 owns token_auth, token branches, IAMEndpoint and the remaining token_auth.py functions.
+  - B711 owns translate_libpq_ssl_params; its native TLS implementation replaces the Prisma-only
+    _VerifiedChainSource, _verified_chain_der, _server_trust_anchor, pin_bundle_root and _replace_file.
+    B051 composes DatabaseURLSettings.apply_to_env without mutating the process environment.
+  - B121 owns the remaining proxy_cli.py functions except B717's resolve_v2_migration_resolver;
+    B051 consumes this task's lowered helpers for database startup. No lower URL helper calls B121.
+  - B716, B717, B857 and B051 own extras/utils.py's ledger, recovery, drift and startup functions;
+    B711 owns its _strip_prisma_query_params and _libpq_tls_params. Its v1-only functions remain
+    excluded by B717's native-v2 deviation, and _mark_migration_applied and
+    _roll_back_migration_best_effort have no caller at the pin.
+pitfalls:
+  - add_missing_query_params retains blank pinned values, while connection_params_from_url drops them.
+  - The three boolean parsers in token_auth, extras utils and secret_managers accept different strings.
+  - Token refresh inherits translated sslcert but deliberately discards schema and options.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

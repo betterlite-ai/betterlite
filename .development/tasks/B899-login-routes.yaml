@@ -3,11 +3,42 @@ title: Password login HTTP routes and cookies
 description: >-
   Own POST /login, /v2/login, /v3/login and /v3/login/exchange over an injected PasswordAuthenticator
   implemented by B788. /login reads username/password form fields, returns 303 and token cookie, and maps
-  throttle failures to HTML 429 with Retry-After. /v2/login reads JSON and returns 200 JSON redirect_url/token
+  throttle failures to HTML 429. /v2/login reads JSON and returns 200 JSON redirect_url/token
   plus cookie. /v3/login requires control_plane_url, returns an opaque single-use code and expires_in=60
-  with no token cookie; exchange validates/consumes the code and sets the token cookie. Inject the B063
-  return-to resumer and cookie policy; until installed preserve the ordinary same-origin login flow and
-  reject unsupported cross-origin configuration by name.
+  with no token cookie; exchange validates/consumes the code and sets the token cookie. Use B2300's
+  concrete return-to resumer and cookie setter for same-origin and configured control-plane destinations.
+  These four routes are public: no missing-bearer or unrelated-virtual-key authorization requirement.
+
+  Form and JSON username/password values use Python str coercion; absent and JSON null become the literal
+  None, not an extractor's missing-field error. Authenticate through B788 using B787's LoginThrottle,
+  then create the UI token and encode its session JWT. The form route catches only authentication
+  ProxyException code 429: HTML says Too many sign-in attempts and includes Retry-After text, default 30,
+  but forwards exc.headers unchanged. It does not add a Retry-After header when the exception lacks one.
+  Other authentication exceptions propagate, and failures after authentication are outside that catch.
+
+  B124.get_custom_url prefers PROXY_BASE_URL when present, joins the active request root from its root-path
+  middleware without duplication, then these routes strip trailing slashes and append /ui?login=success.
+  /login first tries a truthy litellm_cp_return_to cookie through B2300. A resumed response is returned
+  unchanged; an exception logs that the stale cookie was ignored and falls back to the dashboard. The
+  fallback 303 sets token and clears a truthy return cookie. /v2/login returns token and redirect_url in
+  JSON and sets token; it does not process the return cookie. token has Path=/, SameSite=lax, no HttpOnly,
+  no explicit lifetime, and Secure only when B743's trust-aware HTTPS check says so, through B2300.
+
+  /v3/login checks truthiness of control_plane_url before parsing credentials. Missing/empty yields 404
+  not_found_error, param control_plane_url. Mint token_urlsafe(32); store login_code:<code> containing token
+  and redirect_url for exactly 60 seconds in Redis if configured, otherwise the process's user_api_key_cache.
+  Redis errors are not a local fallback. Return only code/expires_in=60, without a token cookie.
+  Exchange has the same disabled check before JSON decoding, then rejects a falsey code with 400 auth_error
+  param code. Missing, expired, used, empty or non-dict cached values give 401 auth_error param code.
+  Read then delete the code before accessing its token/redirect_url fields and setting the cookie;
+  these are separate cache operations, not atomic GETDEL. A malformed nonempty cached dictionary is
+  consumed before its missing-field 500. Preserve this order and the concurrent redemption window.
+
+  /v2 and /v3 keep ProxyException unchanged, convert HTTPException to auth_error with its status/detail
+  and param (default string None), and convert other errors to 500 auth_error param None. Exchange keeps
+  ProxyException but maps every other exception, including HTTPException, to 500 auth_error param None.
+  All HTTP error cases compare status/type/param/code and ignore only message wording. Use native failure
+  injection for cache and encoder failures; authentication uses the real B788 implementation.
 
 
   Build the production login_routes module in betterlite-server; reuse the typed dependencies listed in
@@ -23,27 +54,24 @@ description: >-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.control_plane_url=None.
 
 
-  general_settings.control_plane_url=None; PROXY_BASE_URL and SERVER_ROOT_PATH default absent. /v3/login
-  is unavailable without control_plane_url and codes expire in 60 seconds.
+  B2300 owns general_settings.control_plane_url=None acceptance; B124 owns PROXY_BASE_URL (default None),
+  SERVER_ROOT_PATH (default empty string) and SERVER_ROOT_PATHS selection in get_custom_url. Route config
+  tests must load these settings through their owners and verify the final redirect rather than replacing
+  the URL builder with a test stub.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /login -> login; POST /v2/login ->
-  login_v2; POST /v3/login -> login_v3; POST /v3/login/exchange -> login_v3_exchange. For each route send
-  a typed successful request, an invalid or missing target, and a caller lacking that route permission
-  through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes
-  instead prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
+  Mount POST /login, /v2/login, /v3/login and /v3/login/exchange once, hidden from OpenAPI as at the pin.
+  HTTP fixtures cover credentials, redirects, content-type, Location and every Set-Cookie attribute;
+  none of these handlers reads litellm-changed-by or uses handle_exception_on_proxy.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Seed login users and password hashes for B788; requests deliberately omit Authorization. No enterprise
+  package is installed. Redis-backed code exchange and local-only exchange use separate fixture workers.
 
 
-  Write betterlite-config::login_routes::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::login_routes::tests::login_url_defaults, proxy_base_override,
+  request_root_not_duplicated and empty_control_plane_disables_v3.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -66,19 +94,19 @@ description: >-
 
 
   Sizing: 234 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  234 production, 151 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 545 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  234 production, 310 behavior tests, 65 route/manifests/wiring, 60 decoder/fuzz and 65 config lines,
+  734 changed lines estimated within a 775-line gate after moving shared return/cookie work into B2300.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: login_body_limits.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 
 
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
+  Register the public login paths without the protected-route authentication middleware or a management
+  effects decorator. B056 composes this router later without registering its paths a second time.
 
 
   Depend directly on B788 and register its concrete PasswordAuthenticator and SessionIssuer when these
@@ -115,11 +143,19 @@ references:
     why: Own login_v3_exchange; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L17078-L17083
     why: general_settings.control_plane_url default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8310-L8356
+    why: B124's redirect base/root construction and the actual env defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2800-L2862
+    why: B2300's shared resumer, 60-second cache handoff and JavaScript-readable session cookie.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: form_login_303, json_v2_login_200,
-      throttled_html_429, v3_disabled_404, v3_code_60s, exchange_cookie, stale_return_to_fallback.'
+      throttled_html_429, throttle_default_text_only, missing_form_fields_literal_none, json_scalar_coercion,
+      bad_credentials_passthrough, v2_http_error_status, v2_unexpected_500, v3_unexpected_500,
+      v3_disabled_404, v3_code_60s, v3_no_token_cookie, exchange_cookie, exchange_missing_code,
+      exchange_unknown_code, exchange_used_code, exchange_expired_code, exchange_bad_cached_type,
+      exchange_delete_before_fields, exchange_get_delete_race, exchange_http_error_500,
+      redis_failure_no_fallback, local_code_other_worker, secure_cookie_attributes,
+      stale_return_to_fallback, relative_return_to, cross_origin_return_to and public_login_paths.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -137,7 +173,7 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: login_body_limits exercises the explicit byte/depth rejection before credentials reach the authenticator.
     proof:
       - behavior-tests
 checks:
@@ -164,18 +200,6 @@ checks:
         -- crates/betterlite-server/fuzz/corpus/login_routes)" && cargo nextest run --locked -p betterlite-server
         --no-tests=fail -E 'test(replays_the_login_routes_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/login-routes/post--login-success.yaml
-  - tools/oracle/cases/management/login-routes/post--login-invalid-target.yaml
-  - tools/oracle/cases/management/login-routes/post--login-unauthorized-caller.yaml
-  - tools/oracle/cases/management/login-routes/post--v2-login-success.yaml
-  - tools/oracle/cases/management/login-routes/post--v2-login-invalid-target.yaml
-  - tools/oracle/cases/management/login-routes/post--v2-login-unauthorized-caller.yaml
-  - tools/oracle/cases/management/login-routes/post--v3-login-success.yaml
-  - tools/oracle/cases/management/login-routes/post--v3-login-invalid-target.yaml
-  - tools/oracle/cases/management/login-routes/post--v3-login-unauthorized-caller.yaml
-  - tools/oracle/cases/management/login-routes/post--v3-login-exchange-success.yaml
-  - tools/oracle/cases/management/login-routes/post--v3-login-exchange-invalid-target.yaml
-  - tools/oracle/cases/management/login-routes/post--v3-login-exchange-unauthorized-caller.yaml
   - tools/oracle/cases/management/login-routes/form-login-303.yaml
   - tools/oracle/cases/management/login-routes/json-v2-login-200.yaml
   - tools/oracle/cases/management/login-routes/throttled-html-429.yaml
@@ -183,6 +207,16 @@ oracle_cases:
   - tools/oracle/cases/management/login-routes/v3-code-60s.yaml
   - tools/oracle/cases/management/login-routes/exchange-cookie.yaml
   - tools/oracle/cases/management/login-routes/stale-return-to-fallback.yaml
+  - tools/oracle/cases/management/login-routes/missing-form-fields.yaml
+  - tools/oracle/cases/management/login-routes/json-field-coercion.yaml
+  - tools/oracle/cases/management/login-routes/malformed-json-500.yaml
+  - tools/oracle/cases/management/login-routes/exchange-missing-code.yaml
+  - tools/oracle/cases/management/login-routes/exchange-invalid-code.yaml
+  - tools/oracle/cases/management/login-routes/exchange-reused-code.yaml
+  - tools/oracle/cases/management/login-routes/exchange-expired-code.yaml
+  - tools/oracle/cases/management/login-routes/https-cookie.yaml
+  - tools/oracle/cases/management/login-routes/relative-return-to.yaml
+  - tools/oracle/cases/management/login-routes/control-plane-return-to.yaml
 deviations:
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
       smaller inherited limits.
@@ -190,8 +224,8 @@ deviations:
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L16913-L17003
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2300 owns the shared return-destination validators, resumer and cookie setter in ui_sso.py; B063 owns other SSO code.
+  - B788 owns credential verification, UI token contents and JWT signing; B787 owns throttle storage and limits.
   - 'litellm/proxy/proxy_server.py: B060 owns model_deprecations (L16290-L16317), _get_model_group_info
     (L16320-L16351), model_group_info (L16359-L16581).'
   - 'litellm/proxy/proxy_server.py: B848 owns _check_if_model_is_user_added (L14161-L14187), _check_if_model_is_team_model
@@ -379,9 +413,10 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
-  - /login reads username/password form fields, returns 303 and token cookie, and maps throttle failures
-    to HTML 429 with Retry-After.
+  - Without Redis, a login code stored on one worker cannot be redeemed on another worker.
+  - The code exchange reads and then deletes; do not promise atomic single-use redemption under concurrency.
+  - Retry-After's default 30 changes the HTML text only, because the handler forwards the original headers.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

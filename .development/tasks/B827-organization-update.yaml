@@ -1,69 +1,83 @@
 id: B827
-title: Organization update and deletion routes
+title: Legacy organization update and sequential deletion
 description: >-
-  Implement legacy /organization/update, /v2/organization/{organization_id} and delete routes using OrganizationPatch.
-  Preserve nested budget/object permissions, key deletion and transaction behavior; update entitlements
-  only after commit and do not drop members on unrelated patches.
+  Implement organization_update for PATCH /organization/update (decorator L693-L698, function
+  L699-L808), handle_update_object_permission L811-L835, DELETE /organization/delete (decorator
+  L1000-L1005, function L1006-L1057) and _delete_organization_keys L1060-L1079 in organization_endpoints.py.
+  Compose B2342's v2 registration exactly once. B826 supplies router wiring, scope checks and shared
+  write contracts; B124 supplies legacy/response records and jsonify_object. B052 handles authentication.
+  Neither owned route has management_endpoint_wrapper or handle_exception_on_proxy, and neither
+  wraps its work in a transaction. Preserve the difference from B2342's transactional PATCH.
 
+  Both routes first reject missing DB with 500 and B826's complete CommonProxyErrors.db_not_connected_error
+  string in detail.error. Legacy update then requires caller.user_id is not null, else 400
+  "Cannot associate a user_id to this action. Check `/key/info` to validate if 'user_id' is set.". Empty
+  string passes this initial check. Use B003's existing JSON body reader, pass the parsed value through
+  B826.handle_nested_budget_structure_in_organization_update_request, then construct B124's
+  LiteLLM_OrganizationTableUpdate. JSON parsing/shape/model failures occur inside the handler and have
+  no local 422 translation; retain B003's unhandled-error boundary rather than pretending this is the
+  v2 typed extractor. Ordinary unhandled failures become JSON 500 with error.message="Internal server
+  error", type="internal_server_error", and no param/code. Cases legacy_database_before_body,
+  legacy_actor_required and legacy_bad_body_boundary compare those complete raw HTTP outcomes.
 
-  Build the production organization_update module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Legacy max_budget and soft_budget, in that order, reject negative or nonfinite values with 400
+  detail.error="<field> must be a non-negative finite number. Received: <value>". Zero passes. Fill
+  data.updated_by from caller.user_id only when null, preserving an explicit caller-supplied actor.
+  Null organization_id gives 400 "organization_id is required"; empty string reaches the lookup.
+  Then B826._verify_org_access checks admin-view or exact org-admin membership, before B723's row
+  lookup. Missing row raises ValueError("Organization not found for organization_id=<id>") and is
+  not the v2 route's HTTP 404. Cases legacy_numeric_budget_errors, legacy_actor_override,
+  legacy_id_presence, legacy_scope_before_lookup and legacy_missing_row_error fix these distinctions.
 
+  Build exclude-none update fields. If metadata is present, shallow-copy existing metadata or {},
+  then call B157._update_dictionary: ignore top-level null updates; convert numeric strings through
+  its integer/float rules; shallow-merge one nested object level, retaining nested nulls; otherwise
+  replace the value. Numeric-looking strings inside lists or nested objects are not recursively
+  converted. Empty metadata does not clear old keys. Apply B124.jsonify_object. If a nonnull permission
+  was supplied, owned handle_update_object_permission calls B816.handle_update_object_permission_common
+  with current permission ID and DB; add returned ID only if nonnull, returning the same mutable payload
+  after the common helper's removal of object_permission. Cases legacy_metadata_merge_depth,
+  legacy_metadata_numeric_strings, legacy_null_does_not_clear and legacy_permission_wrapper_result
+  cover these payload effects, including explicit empty grants.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/organization_endpoints.py:
-  update_organization (L699-L808; 85 source lines), handle_update_object_permission (L811-L835; 19 source
-  lines), update_organization_v2 (L844-L997; 141 source lines), delete_organization (L1006-L1057; 42 source
-  lines), _delete_organization_keys (L1060-L1079; 20 source lines).
+  Select budget fields from the FULL data dump only when explicitly in model_fields_set and in
+  B826._BUDGET_SETTABLE_FIELDS. If nonempty and the existing budget_id is truthy, invoke
+  B829.update_budget with that ID and caller; otherwise skip. Remove every LiteLLM_BudgetTable field,
+  INCLUDING budget_id, from the organization update, so legacy cannot relink its budget. Finally
+  update the organization with members, teams and litellm_budget_table included and return the row.
+  Permission upsert happens before budget update, which happens before organization update: earlier
+  changes survive later failures. Cases legacy_explicit_budget_fields, legacy_no_budget_skips_write,
+  legacy_budget_id_not_relinked, legacy_permission_survives_budget_failure and
+  legacy_budget_survives_org_failure inspect these writes. There is no final org cache invalidation;
+  any permission/budget effects remain exactly those of their called helpers.
 
+  DELETE requires exact proxy_admin after the DB check, otherwise 401 detail.error="Only proxy admins
+  can delete organizations". Its required organization_ids list preserves input order and duplicates;
+  [] returns 200 []. For EACH ID, delete all teams by organization_id using B724, delete all memberships
+  through B726, call _delete_organization_keys, then delete the organization through B723 with members,
+  teams and budget included. If that last delete returns None, raise 404 "Organization=<id> not found";
+  a thrown repository missing-record exception is not caught and converted into that branch. Append
+  each returned row and return the list. Budget/permission rows and users are not explicitly deleted,
+  and team-delete route archives/audits/hooks are not called. Cases delete_role_matrix, delete_empty_list,
+  delete_ordered_rows, delete_duplicate_id, delete_none_vs_repository_error and delete_retains_shared_rows
+  use the existing schema's actual foreign-key effects without inventing extra cleanup.
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  _delete_organization_keys first reads tokens with organization_id (already hashed), obtains
+  B738.get_jwt_key_mapping_cache_keys_for_tokens BEFORE deletion, deletes those token rows via B722,
+  then calls B738.delete_cache_key_objects with those hashes and optional logger, and finally
+  B878.evict_and_broadcast for the saved JWT mapping keys. Empty token sets still follow the sequence;
+  no rehashing, encryption or archive helper is involved. Cases org_key_cache_sequence,
+  org_key_empty_set, org_key_failure_stops_later_steps and later_org_failure_preserves_prior_deletions
+  inject failures after each boundary. Membership/team deletions and previously processed organizations
+  stay deleted on later errors; no catch logs-and-continues across the ID list.
 
-
-  Register these actual HTTP routes and aliases exactly once: PATCH /organization/update -> update_organization;
-  PATCH /v2/organization/{organization_id} -> update_organization_v2; DELETE /organization/delete -> delete_organization.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 307 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  307 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 526 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
+  Authenticated requests inherit B826's no-license deviation: test every named branch through native
+  HTTP and Postgres, and reserve B001 equality cases for authentication failures before MIT's license
+  guard. B860 tests use POSTGRES_TEST_URL when present or testcontainers when absent, failing rather
+  than skipping unavailable DBs. Body decoding remains the existing B003 boundary; no additional byte
+  parser or setting is introduced here. The retained functions own 166 nonblank/noncomment lines, or
+  178 including route decorators; estimate 195 production, 320 tests and 65 registration lines, 580
+  within 600. Keep the legacy patch, deletion and tests in domain submodules under the 300-line limit.
 scope:
   paths:
     - crates/betterlite-server/src/organization_update.rs
@@ -74,102 +88,46 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/organization-update/**
-    - crates/betterlite-server/src/organization_update/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L666-L1079
-    why: Pinned implementation and exact ownership boundary for organization_update.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2432-L2444
-    why: NewOrganizationRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2451-L2452
-    why: DeleteOrganizationRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3634-L3655
-    why: OrganizationUpdateRequestV2 request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L699-L808
-    why: Own update_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L811-L835
-    why: Own handle_update_object_permission; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L844-L997
-    why: Own update_organization_v2; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1006-L1057
-    why: Own delete_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1060-L1079
-    why: Own _delete_organization_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L693-L835
+    why: Legacy route reads its own body, writes permission/budget separately and has no local catch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1000-L1079
+    why: Organization deletion decorator, repeated deletes and JWT cache capture before token deletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3136-L3168
+    why: B157 metadata merge skips top-level nulls and converts only immediate numeric strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3607-L3631
+    why: Legacy patch model moves management fields to metadata before handler field selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2049-L2081
+    why: Legacy parse/model errors and missing-row ValueError reach the shared unhandled-exception response.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: legacy_update, v2_null_clear,
-      nested_budget_update, object_permission_upsert, delete_org_keys, rollback, postgres_pinned_rows,
-      postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: All named legacy and deletion HTTP cases establish local status/details, body-validation
+      behavior and response shape, with only authentication failures compared against MIT equality.
+    proof: [behavior-tests, oracle]
+  - text: Named row, metadata, key-cache and fault cases preserve each partial write, token-hash handling
+      and absence of extra team/key route hooks; B2342 owns the sole v2 registration.
+    proof: [behavior-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^organization_update::tests::/)
-        - test(/replays_the_/)'
-    - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/organization_update::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/organization_update::tests::postgres_failure_effects$/)'
+      why: Legacy organization/deletion tests are absent or incorrectly promise rollback or cache refresh.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
+        'test(/^organization_update::tests::/) - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/organization-update/patch--organization-update-success.yaml
-  - tools/oracle/cases/management/organization-update/patch--organization-update-invalid-target.yaml
-  - tools/oracle/cases/management/organization-update/patch--organization-update-unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-update/patch--v2-organization-organization-id-success.yaml
-  - tools/oracle/cases/management/organization-update/patch--v2-organization-organization-id-invalid-target.yaml
-  - tools/oracle/cases/management/organization-update/patch--v2-organization-organization-id-unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-update/delete--organization-delete-success.yaml
-  - tools/oracle/cases/management/organization-update/delete--organization-delete-invalid-target.yaml
-  - tools/oracle/cases/management/organization-update/delete--organization-delete-unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-update/legacy-update.yaml
-  - tools/oracle/cases/management/organization-update/v2-null-clear.yaml
-  - tools/oracle/cases/management/organization-update/nested-budget-update.yaml
-  - tools/oracle/cases/management/organization-update/object-permission-upsert.yaml
-  - tools/oracle/cases/management/organization-update/delete-org-keys.yaml
-  - tools/oracle/cases/management/organization-update/rollback.yaml
+  - tools/oracle/cases/management/organization-update/legacy-authentication-before-license.yaml
+  - tools/oracle/cases/management/organization-update/delete-authentication-before-license.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B058 owns get_organization_daily_activity
-    (L565-L613), resolve_organization_daily_activity_scope (L621-L663).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B826 owns _enterprise_license_required
-    (L96-L108), _ObjectPermissionRow.object_permission_id (L116-L116), _UserTableClient.find_unique (L120-L120),
-    _BudgetTableClient.create (L124-L124), _ObjectPermissionTableClient.create (L128-L128), _OrganizationTableClient.create
-    (L132-L134), _OrganizationTableClient.find_unique (L136-L138), _OrganizationTableClient.find_many
-    (L140-L144), _OrganizationTableClient.update (L146-L151), _OrganizationTableClient.delete (L153-L155),
-    _OrganizationMembershipTableClient.create (L159-L159), _OrganizationMembershipTableClient.find_unique
-    (L161-L163), _OrganizationMembershipTableClient.find_many (L165-L167), _OrganizationMembershipTableClient.update
-    (L169-L171), _OrganizationMembershipTableClient.delete (L173-L173), _OrganizationMembershipTableClient.delete_many
-    (L175-L175), _TeamTableClient.delete_many (L179-L179), _VerificationTokenTableClient.find_many (L183-L183),
-    _VerificationTokenTableClient.delete_many (L185-L185), _ObjectPermissionTxClient.upsert (L193-L195),
-    _BudgetTxClient.update (L199-L199), _TransactionTables.litellm_objectpermissiontable (L204-L204),
-    _TransactionTables.litellm_budgettable (L207-L207), _TransactionTables.litellm_organizationtable (L210-L210),
-    _TransactionManager.__aenter__ (L214-L214), _TransactionManager.__aexit__ (L216-L221), _table (L225-L225),
-    _table (L229-L229), _table (L233-L233), _table (L237-L237), _table (L241-L241), _table (L245-L245),
-    _table (L249-L249), _table (L252-L262), _verify_org_access (L265-L306), build_budget_write_data (L317-L333),
-    handle_nested_budget_structure_in_organization_update_request (L336-L357), new_organization (L366-L557),
-    _set_object_permission (L666-L690).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B828 owns organization_member_add (L1281-L1397),
-    find_member_if_email (L1400-L1420), organization_member_update (L1430-L1572), organization_member_delete
-    (L1580-L1621), add_member_to_organization (L1624-L1706).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B1212 owns list_organization (L1088-L1185),
-    info_organization (L1194-L1232), deprecated_info_organization (L1240-L1271).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B826 owns organization_endpoints.py L96-L357, creation L366-L557 and _set_object_permission
+    L666-L690, including the inherited router license deviation; B2342 owns update_organization_v2 L844-L997.
+  - B058 owns daily activity L565-L663; B1212 owns list/info/deprecated-info L1088-L1271; B828 owns
+    member add/find/update/delete and add_member_to_organization L1281-L1706.
+  - B157 owns _update_dictionary and _convert_stringified_numbers in litellm/utils.py L3136-L3168.
 pitfalls:
-  - Organization patch omissions must not clear memberships or nested object permissions.
+  - A supplied updated_by survives legacy update, while v2 always uses the authenticated caller.
+  - Deletion can remove teams, members and keys before discovering that the organization itself is absent.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

@@ -1,9 +1,45 @@
 id: B897
 title: Key SQL filters and paging query plans
 description: >-
-  Build bound key-list search/status/expiry/sort predicates and paged SQL over a preauthorized KeyListScope.
-  Preserve UI-session exclusion, status time boundaries and stable count/page projection. SQL identifiers
-  come from a closed sort enum; values are parameters.
+  Build predicates and query keys after B781 authorizes visibility. Every query excludes
+  team_id litellm-dashboard but includes NULL team_id. Visibility ORs the own-user condition,
+  optional created_by, admin-team keys and member-only service accounts. The own-user condition
+  combines truthy string user_id (exact or insensitive substring), exclude_team_id and organization_id;
+  those last two are NOT global filters on other OR arms. include_created_by_keys plus truthy
+  user_id grants unscoped creator visibility when member_team_ids is None, personal creator keys
+  for [], and current-team or personal creator keys for a nonempty list. Admin teams grant all
+  keys; other member teams grant only user_id NULL keys. No arms leaves just UI-session exclusion.
+
+  Globally AND key_alias (exact or insensitive substring), key_hash exact, search (exact token OR
+  insensitive alias substring), team_id, project_id, access_group_id hasSome, agent_id, expiry and
+  status. Empty strings skip filters. expires active means null or >= now; expired means nonnull
+  < now; other values are ignored here. Status revoked means blocked True; active/expired require
+  blocked None/False plus expiry. deleted chooses the archive table without an added status
+  predicate; other statuses add nothing. Own the declarations at L6465-L6473, including blocked
+  and expires defaults None. Status derivation gives revoked priority, assumes UTC for naive
+  expiry and treats equality as active. Bind query values and reproduce the pinned Prisma contains
+  operator; compare percent, underscore and backslash inputs against actual Postgres fixtures before
+  choosing the SQL translation. This is not a prefix-search predicate.
+
+  Sort columns are spend, max_budget, created_at, updated_at, token and key_alias. None sort_by
+  returns None without validating order; invalid column/order raises HTTP 400 detail.error naming
+  the permitted values. Order lowercases to asc/desc. Default sort is created_at desc then token
+  desc; explicit sort has no extra tie-breaker. Defaults are return_full_object False,
+  include_created_by_keys False, sort_order desc, substring flags False, other optional inputs
+  None. Page/size are required by the caller; skip=(page-1)*size and total_pages is ceiling division,
+  without local clamping or validation.
+
+  Fetch page then count with the same predicates, without a snapshot transaction. Live rows include
+  object_permission and litellm_budget_table; deleted rows do not. expand containing user gathers
+  unique truthy owner/creator ids, fetches users once if nonempty, attaches full owner data and
+  creator user_id/user_email/user_alias, and leaves missing users absent. Unknown expansions do
+  nothing. Dump rows via model_dump then dict fallback. Every live row calls B816's permission
+  attachment, even for token-only output. Full-object True or expand user returns B2314 auth rows
+  or B720 deleted rows retaining deletion fields; otherwise return token strings. No derived status
+  is inserted by this loop. Own KeyListResponseObject at _types.py L4884-L4888: keys and nullable
+  total_count/current_page/total_pages. Queries propagate failures; debug diagnostics expose filters,
+  skip/take, fetched count and total count. Postgres tests use POSTGRES_TEST_URL or testcontainers;
+  only pure predicate/status/sort helpers enter oracle equality.
 
 
   Build the production key_query_plan module in betterlite-server; reuse the typed dependencies listed
@@ -26,19 +62,8 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 329 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  329 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 569 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  Sizing: 329 lines before docstring exclusion plus the local declarations; allow 310 production/SQL,
+  350 behavior/Postgres tests, 65 pure adapters and 30 wiring, 755 within 800. Only fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -56,6 +81,10 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/key-query-plan-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6465-L6473
+    why: Status literals and blocked/expiry defaults are shared with the list route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4884-L4888
+    why: Own the small result projection below its query and route consumers.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6476-L6483
     why: Own _derive_key_status; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6843-L6872
@@ -76,10 +105,24 @@ references:
     why: Own _get_condition_to_filter_out_ui_session_tokens; preserve caller-visible values and failure
       ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: status_expired, blocked_versus_active,
-      sort_column_denied, ui_session_excluded, alias_prefix.'
+  - text: 'Cases ui_team_null_or_not_dashboard, own_admin_member_visibility,
+      own_arm_org_and_excluded_team_not_global, creator_none_empty_current_teams,
+      member_service_accounts_only, no_visibility_arm, all_global_filters_intersect,
+      exact_token_or_alias_substring_search, empty_filters_skip, expiry_before_equal_after,
+      blocked_null_false_true, revoked_precedes_expiry, naive_expiry_utc,
+      unknown_expiry_status_ignored_here, sort_six_columns_casefolded_order,
+      sort_missing_skips_invalid_order, sort_errors_400, default_tiebreaker_only,
+      page_then_count_not_snapshot, deleted_table_no_live_relations, expand_owner_and_creator,
+      expand_missing_users_and_unknown_names, token_only_still_attaches_permission,
+      dump_fallback, full_live_vs_archived_rows, empty_page_zero_pages,
+      query_failures_propagate, postgres_visibility_matrix and postgres_contains_metacharacters
+      cover the complete plan.'
     proof:
       - behavior-tests
+      - postgres-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -89,6 +132,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: postgres-tests
+      why: NULL visibility, archive projection and page/count sequencing require real rows.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_query_plan::tests::postgres::/)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_query_plan::tests::/)
@@ -108,11 +154,13 @@ oracle_cases:
   - tools/oracle/cases/helpers/key-query-plan/blocked-versus-active.yaml
   - tools/oracle/cases/helpers/key-query-plan/sort-column-denied.yaml
   - tools/oracle/cases/helpers/key-query-plan/ui-session-excluded.yaml
-  - tools/oracle/cases/helpers/key-query-plan/alias-prefix.yaml
+  - tools/oracle/cases/helpers/key-query-plan/alias-substring-and-token-search.yaml
+  - tools/oracle/cases/helpers/key-query-plan/visibility-predicate-arms.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B781 authorizes scope, B782 validates HTTP query parameters and maps errors, B722/B726 provide
+    live/archive repositories, B770/B723 user lookup and B816 permission attachment. This task
+    reads stored token hashes and never decrypts credentials. B124 retains other _types.py declarations.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -206,8 +254,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve UI-session exclusion, status time boundaries and stable count/page projection.
+  - organization_id and exclude_team_id constrain only the own-key arm; team_id is a global filter.
+  - Explicit sorting loses the token tie-breaker, and count may observe a later database state.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

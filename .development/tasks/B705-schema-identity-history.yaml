@@ -5,15 +5,66 @@ description: >-
   with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
   earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
   the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
-  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
-  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
-  regression cases, not the recovery algorithm.
+  facts against an independently applied copy of upstream SQL. The access_model_ids column is deliberately
+  dropped by 20260213170952_access_group_change_to_model_name; its values are lost, and the new
+  access_model_names defaults to an empty text array. Preserve other surviving columns without inventing
+  a data conversion. This task owns data plus migration regression cases, not the recovery algorithm.
 
 
   This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
   service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
-  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
+  the prior checkpoint and compare catalog facts and preserved rows. B873 owns deploy ledger checksums
   and restart-skips-applied tests, so this data task never depends on the deploy runner.
+
+  deleted_history_defaults checks both archive tables' TEXT id primary keys, required team_id/token,
+  nullable identity/audit fields, INTEGER model_id/rotation_count/max_parallel_requests, BIGINT tpm_limit
+  and rpm_limit, DOUBLE PRECISION spend/max_budget, TIMESTAMP(3) dates and JSONB objects. Deleted teams
+  require members_with_roles, metadata, model_spend and model_max_budget default {}, spend=0, blocked=false
+  and deleted_at=CURRENT_TIMESTAMP; admins, members and models have no default, while
+  team_member_permissions defaults []. Deleted keys require aliases, config, permissions, metadata,
+  model_spend and model_max_budget default {}, spend=0, soft_budget_cooldown=false and deleted_at=now;
+  blocked is nullable, rotation_count defaults 0, auto_rotate defaults false, and allowed_cache_controls
+  and allowed_routes default []. Record every column's type, nullability, default and ordinal in the
+  independently obtained catalog fixture, including expires, budget_reset_at, last_rotation_at,
+  key_rotation_at, created_at/updated_at and the deletion actor fields. Check the five deleted-team
+  indexes and seven deleted-key indexes by definition, not just their names.
+
+  skills_storage checks source='custom', nullable BYTEA file_content and file_name/file_type, optional
+  display_title/description/instructions/latest_version, nullable metadata default {}, and required
+  created_at/updated_at default CURRENT_TIMESTAMP. mcp_metadata_defaults checks nullable TEXT
+  authorization_url/registration_url/token_url and required false defaults for allow_all_keys and
+  available_on_public_internet. router_settings_defaults checks nullable JSONB {} on live/deleted teams
+  and keys. team_guardrail_defaults checks required false allow_team_guardrail_config on both team tables;
+  team_soft_budget_nullable checks nullable DOUBLE PRECISION soft_budget on both, with no default.
+
+  daily_endpoint_indexes checks each of DailyAgentSpend, DailyEndUserSpend, DailyOrganizationSpend,
+  DailyTagSpend, DailyTeamSpend and DailyUserSpend: drop the old unique index first, add nullable TEXT
+  endpoint, add an endpoint index, and recreate uniqueness over the entity id, date, api_key, model,
+  custom_llm_provider, mcp_namespaced_tool_name and endpoint. The Prisma-truncated index names are reused;
+  compare pg_index columns and uniqueness, including PostgreSQL's distinct-null semantics.
+  lower_email_expression checks LOWER(user_email) in the nonunique UserTable index.
+
+  policy_storage checks policies=[] on live/deleted keys and teams and on users; PolicyTable has required
+  policy_id primary key and unique policy_name, nullable inherit/description/condition (condition defaults
+  {}), guardrails_add/guardrails_remove default [], required creation/update timestamps default now, and
+  optional actors. PolicyAttachmentTable has required attachment_id primary key and policy_name, nullable
+  scope, teams/keys/models default [], required timestamps default now, and optional actors; the later
+  tags column defaults [] and PolicyTable.pipeline is nullable JSONB without a default.
+  vector_store_ownership adds nullable team_id/user_id and indexes to the plural ManagedVectorStoresTable.
+  managed_vector_store_catalog separately checks the singular ManagedVectorStoreTable: required id primary
+  key, unique and indexed unified_resource_id, required JSONB model_mappings, nullable JSONB resource_object,
+  flat_model_resource_ids default [], nullable storage_backend/storage_url/actors, created_at default now,
+  and required updated_at without a default.
+
+  deprecated_token_catalog checks required id/token/active_token_id/revoke_at, created_at default now,
+  unique token and both token+revoke_at and revoke_at indexes. key_lookup_indexes checks user_id+team_id,
+  team_id and budget_reset_at+expires. access_group_history checks access_group_ids=[] on live/deleted
+  keys/teams, required access_group_id primary key and unique access_group_name, nullable description,
+  access_mcp_server_ids/access_agent_ids/assigned_team_ids/assigned_key_ids default [], required timestamps
+  default now and nullable actors, before and after the destructive model-column change. guardrail_owner
+  checks nullable team_id. end_user_permission_fk checks nullable object_permission_id and its named
+  foreign key with ON DELETE SET NULL and ON UPDATE CASCADE. key_history_additions checks nullable
+  TIMESTAMP(3) last_active on live/deleted keys and nullable TEXT project_id on deleted keys.
 
 
   Build the production schema_identity_history module in betterlite-db; reuse the typed dependencies listed
@@ -24,24 +75,17 @@ description: >-
   Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
   otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
   The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  against independently initialized pinned fixtures. Use B860's separate temporary databases for the
+  native and pinned migration histories: the end-user foreign-key guard searches pg_constraint by
+  conname without schema qualification, so two schemas in one database can suppress one another's
+  constraint creation. Clean both databases on every exit; an unusable explicit POSTGRES_TEST_URL
+  fails instead of switching to a container. These SQL files add no config or request parser, and
+  their assertions concern actual catalog/data effects rather than a generic simulated rollback.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 341 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  341 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 516 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  Sizing: 247 nonblank, noncomment SQL lines; retaining exact bytes also retains comments and blank lines,
+  so the 25 SQL files cost 431 changed lines. Allow 280 behavior/Postgres test lines and 30 catalog wiring
+  lines, 741 changed lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -128,11 +172,17 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260219105005_add_project_id_to_deleted_keys/migration.sql#L1-L3
     why: Pinned implementation and exact ownership boundary for schema_identity_history.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
-      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'pinned_sql_checksums verifies all 25 original byte sequences; cohort_catalog_facts uses named
+      rstest cases deleted_history_defaults, skills_storage, mcp_metadata_defaults, router_settings_defaults,
+      team_guardrail_defaults, team_soft_budget_nullable, daily_endpoint_indexes, lower_email_expression,
+      policy_storage, vector_store_ownership, managed_vector_store_catalog, deprecated_token_catalog,
+      key_lookup_indexes, access_group_history, guardrail_owner, end_user_permission_fk and key_history_additions.'
     proof:
       - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+  - text: 'postgres_pinned_rows compares catalog snapshots with independently applied upstream SQL;
+      cohort_preserves_rows verifies the access_model_ids loss, empty access_model_names, other surviving
+      data, inserted defaults, endpoint-aware uniqueness and both foreign-key actions. Reapplying these
+      guarded DDL statements succeeds without changing their schema facts.'
     proof:
       - postgres-tests
 checks:
@@ -143,20 +193,21 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_identity_history::tests::/)
         - test(/replays_the_/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
+      why: SQL catalog, default and destructive-ALTER assertions are absent or differ from Postgres.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_identity_history::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_identity_history::tests::postgres_failure_effects$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_identity_history::tests::cohort_preserves_rows$/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B873 deploys the catalog and owns ledger updates; B716 handles recovery and B717 classifies historical migrations.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
-  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
-    candidate itself.
+  - 20260108_add_user_email_lower_idx has eight timestamp digits, so B716's fourteen-digit parser returns
+    zero; do not rename it to make chronological parsing succeed.
+  - ManagedVectorStoresTable and ManagedVectorStoreTable are distinct tables in this cohort.
+  - The end-user foreign-key guard checks conname without a namespace filter, so independent fixtures
+    must not accidentally suppress the constraint by sharing another schema's same-named constraint.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

@@ -1,9 +1,35 @@
 id: B889
 title: Virtual-key end-user and fallback context
 description: >-
-  Build response AuthContext and resolve end-user budgets/fallback targets for an already resolved virtual
-  key. Keep request-local identity additions out of cached rows. The selected model/fallback policy consumes
-  authenticated principal data and the source temporary-budget values.
+  Finish the AuthContext of an already resolved key. _return_user_api_key_auth_obj first schedules
+  B012's AUTH service success hook with route, start/end UTC times, timestamp duration and parent
+  span, even if subsequent validation fails. Resolve role as explicit truthy role, B732's user role,
+  then internal_user. Merge api_key/span/role first and valid_token_dict second, so the dict can
+  override those initial values. A present user then overwrites user_tpm_limit, user_rpm_limit,
+  user_email, user_spend, user_max_budget and user_model_max_budget. A proxy-admin user finally
+  forces proxy_admin over both earlier role sources. Validate through B2314's UserAPIKeyAuth;
+  no cache write occurs here. Supervise the service notification through the logging sink.
+
+  End-user enrichment calls B739 with the token end_user_id/max_budget and metadata-selected
+  budget id, plus route/span. A found row supplies allowed_model_region and B753's budget-field
+  projection, then B753 updates the token. Only a missing row with a nonnull key default or global
+  litellm.max_end_user_budget_id attempts resolve_default_end_user_budget. Empty-string defaults
+  count as nonnull here. A found default updates the token and fills end_user_max_budget only if
+  still None, preserving zero. Use empty string as the budget helper's end-user id when absent.
+  Catch every exception except BudgetExceededError: debug-log and return the token and whatever
+  end_user_object was already assigned, retaining any earlier mutation. BudgetExceededError escapes
+  as the caller's 429 budget_exceeded/null-param/code-429 response; ordinary HTTP/Proxy errors from
+  these collaborators are swallowed too. This is intentionally different from B888's safe_fetch.
+
+  Model enforcement always runs B881's Claude normalization then router alias resolution. A config
+  unequal to {} logs config.model_list (default []) and skips both primary and fallback checks;
+  a list models containing all-team-models also skips them. Otherwise obtain the model via B881,
+  check it with B886 if nonnull, collect B884's fallback targets, accept string targets or dicts
+  with string model (including empty strings), and ignore other shapes. Deduplicate fallback names
+  in first-seen order, then for each call B886 before B749.is_valid_fallback_model with user_model
+  None. The latter performs its source routing probe; do not replace it with a registry lookup or
+  check it before authorization. A failing primary or fallback stops all later checks. Preserve
+  B886's 403 model errors and B749's routing error through the outer auth projector.
 
 
   Build the production key_context module in betterlite-auth; reuse the typed dependencies listed in the
@@ -17,10 +43,6 @@ description: >-
   (L3759-L3766; 8 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.max_end_user_budget_id=None.
 
 
@@ -31,40 +53,20 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Install context assembly before the existing inference handler and assert the downstream caller
+  fields, hook order and fallback denials. Any persisted enrichment fixture uses B860's isolated
+  Postgres schemas through POSTGRES_TEST_URL or testcontainers, not a canned successful lookup.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  B739 owns loading the shared default-budget setting. Add config-loader integration cases
+  key_context::tests::global_budget_id_defaults_none, configured_global_budget_id_reaches_lookup
+  and empty_global_budget_id_is_not_none; use the real B002 loader and existing config_yaml corpus.
+  There is no local environment override or invalid-value fallback in these owned ranges.
 
 
-  Write betterlite-config::key_context::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 165 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  165 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 484 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  Sizing: 165 nonblank, noncomment lines before excluding docstrings; allow 180 production,
+  270 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring and 35 config tests,
+  615 changed lines within a 650-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -109,14 +111,25 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3759-L3766
     why: Own _fallback_target_model_name; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L470-L475
-    why: litellm_settings.max_end_user_budget_id default and read site.
+    why: max_end_user_budget_id defaults to None; the actual nonnull read is user_api_key_auth.py L3673.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: request_user_not_cached,
-      fallback_model_denied, temporary_budget.'
+  - text: 'Context cases success_hook_precedes_validation, role_merge_order,
+      user_fields_override_token_dict, admin_user_final_override, request_context_no_cache_write,
+      end_user_lookup_arguments, found_user_region_and_budget, missing_row_default_only,
+      default_preserves_zero, absent_id_passes_empty_to_budget, budget_error_escapes,
+      other_errors_debug_drop and partial_enrichment_survives_error.'
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: 'Model cases normalize_then_alias_even_when_skipped, nonempty_config_skips_all_models,
+      all_team_models_skips, primary_none_still_checks_fallbacks, primary_denial_stops,
+      fallback_string_or_model_dict, fallback_nonstring_ignored, fallback_empty_string_retained,
+      fallback_dedup_order, fallback_authorize_before_probe and probe_failure_stops_later_targets.'
+    proof: [behavior-tests, oracle, helper-python, helper-case-corpus]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -172,14 +185,17 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/key-context/request-user-not-cached.yaml
   - tools/oracle/cases/helpers/key-context/fallback-model-denied.yaml
-  - tools/oracle/cases/helpers/key-context/temporary-budget.yaml
+  - tools/oracle/cases/helpers/key-context/end-user-defaults-and-errors.yaml
+  - tools/oracle/cases/helpers/key-context/role-merge-order.yaml
+  - tools/oracle/cases/helpers/key-context/fallback-order-and-skips.yaml
   - tools/oracle/cases/auth/key-context/request-user-not-cached.yaml
   - tools/oracle/cases/auth/key-context/fallback-model-denied.yaml
-  - tools/oracle/cases/auth/key-context/temporary-budget.yaml
+  - tools/oracle/cases/auth/key-context/end-user-budget-exceeded.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - Temporary key-budget arithmetic remains B751; it is not called by these four functions.
+    B012 owns service logging; B739 and B753 own budget lookup/projection, B2314 owns final token
+    validation. Database cases use B860 with POSTGRES_TEST_URL or testcontainers fallback.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -224,8 +240,10 @@ out_of_scope:
     (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Keep request-local identity additions out of cached rows.
+  - valid_token_dict can override the initially selected role, but a proxy-admin user overrides it again.
+  - End-user lookup swallows HTTPException and ProxyException while propagating BudgetExceededError.
+  - config != {} bypasses primary and fallback checks after normalization even when model_list is empty.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

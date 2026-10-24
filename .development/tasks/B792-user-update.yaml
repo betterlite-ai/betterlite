@@ -1,9 +1,77 @@
 id: B792
 title: Update users and invalidate live entitlements
 description: >-
-  Implement /user/update with UserPatch fields, password policy and session revocation, role/ownership
-  authorization, spend-counter invalidation and audit event projection. Preserve omitted-versus-cleared
-  object permission, source update behavior and post-commit cache invalidation.
+  Implement authenticated POST /user/update with B865 effects and an injected update service reusable
+  by login and bulk routes. Defaults litellm_changed_by=null,password_prevalidated=false,hibp_client=null
+  apply to the service; the route passes neither changed-by nor a header. B124 owns request validation:
+  both selectors null fails with 422 before the handler, but empty strings reach the helper and raise
+  ValueError 'Either user_id or user_email must be provided'. Missing DB raises 'Not connected to DB!'
+  first. Then B892 caller-permission validation, exclude_unset dump, patch preparation and B790 password
+  validation/hash run BEFORE loading the existing row or checking user authorization. Cases
+  selectors_absent_vs_empty, database_first, permission_before_password and password_before_target_authz.
+
+  Patch preparation retains max_budget and budget_duration only if explicitly sent, including null.
+  Explicit model_max_budget validates dict[str,float|B2214 BudgetConfig], treats null as {}, and stores
+  the ORIGINAL value rather than coerced validation output. ValidationError becomes HTTPException
+  400 with validation text. Other fields drop null,[],{} and management metadata fields, but preserve
+  false,0 and empty string. Explicit duration validates through B861, then sets reset_at via B2317
+  or null. An explicitly requested internal_user role fills ONLY omitted max_budget/duration from
+  non-null litellm settings, setting reset_at for default duration without the explicit-field validator.
+  Cases patch_omitted_null_empty, patch_false_zero_empty_string, model_budget_null_clear,
+  model_budget_invalid_400, model_budget_validation_not_coercion, duration_clear_and_reset,
+  internal_role_defaults and explicit_null_suppresses_defaults cover these branches. Own the adapter
+  declaration at L116 and cache-field set at L118; B795 owns the batch-size constant at L117.
+
+  Find first row by truthy user_id, otherwise exact case-sensitive user_email. Any non-null requested
+  role requires exact proxy_admin, even an unchanged role (403 'Only proxy admins can modify user roles.').
+  Existing users permit proxy_admin or exact self only; other callers get 403 detail.error explaining
+  only PROXY_ADMIN can update others. Missing users permit only proxy_admin; others get 404 detail.error
+  'User not found. Only PROXY_ADMIN can create users via /user/update; use /user/new instead.'.
+  Self non-admin writes reject the FIRST explicitly sent/prepared field in max_budget,model_max_budget,
+  soft_budget,spend,object_permission, including null/empty/no-op, with 403 naming that field and
+  'Contact your proxy admin.'. Cases role_change_admin_only, self_allowed_fields, other_user_denied,
+  silent_create_admin_only, self_protected_fields and protected_field_error_order cover every guard.
+
+  Next call B894 prepare_metadata_fields with existing metadata-or-{}: retain its reserved-field
+  and warn-and-continue rules, and its encrypt_callback_vars call BEFORE persisting callback variables.
+  Then B861 rejects nonfinite spend before any write. B816 upserts a nonempty object_permission and
+  removes it from the user payload, linking its returned non-null ID. Explicit null or a model whose
+  exclude_unset/exclude_none dump is empty clears the link; omission preserves it. An explicit list
+  such as mcp_servers=[] is not an empty model dump and uses the upsert branch. Cases callback_vars_encrypted,
+  metadata_reserved_failure, spend_nonfinite_before_write, permission_omit_clear_empty_list and
+  permission_upsert_before_user_write prove these differences, including orphaned permission rows on
+  a later user-write failure. No transaction joins these operations.
+
+  A truthy ID calls B124 update_data(table_name=user). Otherwise fetch ALL exact-email matches and
+  update only the first list row; a missing/nonlist result inserts a UUID user with the requested
+  email. Authorization used an earlier find_first, so preserve the second query and its race window.
+  Cases id_update_precedence, email_first_match_only, email_missing_insert and email_race_second_read
+  inspect actual rows. An absent write response raises HTTPException 400 detail.error 'Failed to update user'.
+
+  For a non-null response, revoke ALL target UI sessions through B789 if a password was prepared,
+  with no kept token; its swallowed revocation failure does not undo the write. Then reread updated
+  user for an asynchronously scheduled B797 audit with action=updated, changed_by=explicit-or-caller,
+  before/after JSON excluding nulls. No DB skips audit; missing reread skips it; any reread/scheduling
+  exception warns and continues, including the bare-model email-insert response indexing failure.
+  Then invalidate spend:user:{id} through B124 when prepared spend is non-null; invalidate/broadcast
+  user ID through B878 only for prepared max_budget/model_max_budget or explicitly supplied metadata.
+  Other fields alone do not trigger this broadcast. These failures can surface AFTER persistence.
+  Cases password_revokes_all_after_write, password_revoke_failure_success, audit_missing_and_warning,
+  email_insert_audit_warning, spend_zero_invalidates, budget_metadata_broadcast_predicate and
+  failure_write_order prove the sequence without promising rollback.
+
+  If object_permission_id was written, deduplicate outgoing then incoming string permission IDs,
+  delete B733 object-permission cache keys, then user-to-permission link and bare user ID if non-null.
+  Each deletion catches every exception, warns and continues independently. Cases
+  entitlement_both_ids_and_link, entitlement_dedup_and_null_user and entitlement_failure_continues
+  check keys and order. Strip password via B790 before returning: its bare-model limitation remains.
+  Cases response_password_shapes and missing_response_400 pin the final projection.
+
+  The route's OWN except maps HTTPException to auth_error, original status, detail as message and
+  param attribute default string 'None'; existing ProxyException passes through; ordinary exceptions
+  become 400 auth_error with message 'Authentication Error, '+str(error) and param default 'None'.
+  It does not use handle_exception_on_proxy. Cases http_error_auth_mapping, proxy_error_passthrough
+  and ordinary_error_400 compare status,type,message,param,code through the real route.
 
 
   Build the production user_update module in betterlite-server; reuse the typed dependencies listed in
@@ -27,13 +95,9 @@ description: >-
   litellm_settings.internal_user_budget_duration=None.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /user/update -> user_update. For each
-  route send a typed successful request, an invalid or missing target, and a caller lacking that route
-  permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  B001 HTTP cases use the running gateways, comparing whole responses and persisted/cached effects.
+  Native fault injection covers audit scheduling and independent cache failures unreachable by ordinary
+  HTTP fixtures. No adapter calls the FastAPI handler, and no new route alias is introduced.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -50,11 +114,10 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::user_update::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests internal_role_defaults, explicit_null_suppresses_defaults and default_duration_errors
+  call B002, consume both settings (default null) and verify prepared fields/reset times. Invalid
+  configured duration propagates from B2317; it is not replaced with a fallback. Password settings
+  belong to B786/B790 and callback encryption to B894/B2304, without duplicate parsers here.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -67,9 +130,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 379 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  379 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 648 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
+  Sizing: 379 source lines before removing long route/helper docstrings, plus two declarations;
+  allow 290 production, 380 behavior/Postgres tests, 65 wiring and 50 config lines, 785 changed
+  lines within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -117,18 +180,22 @@ references:
     why: Own _update_single_user_helper; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1651-L1663
     why: Own can_user_call_user_update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1672-L1753
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1666-L1753
     why: Own user_update; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L462-L467
-    why: litellm_settings.max_internal_user_budget default and read site.
+    why: max_internal_user_budget null default; actual consumption is L1326-L1329.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L466-L471
-    why: litellm_settings.internal_user_budget_duration default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+    why: internal_user_budget_duration null default; actual consumption is L1332-L1340.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1324-L1341
+    why: Actual default-budget setting reads and reset-time calculation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2325-L2373
+    why: B894 metadata preparation encrypts callback variables before the user write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L116-L118
+    why: Own model-budget adapter and invalidation field set; B795 owns batch size.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: self_allowed_fields,
-      role_escalation_denied, object_permission_clear, password_change_revokes, spend_counter_invalidation,
-      failure_write_order, postgres_pinned_rows, postgres_failure_effects.'
+  - text: Every named description case proves its precise branch; postgres_pinned_rows and
+      postgres_failure_effects cover encrypted callback variables, permission-first writes,
+      email insertion and post-write failure effects.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -166,19 +233,23 @@ checks:
         && grep -rlq "max_internal_user_budget" crates/betterlite-config/fuzz/corpus/config_yaml/user-update-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/user-update/post--user-update-success.yaml
-  - tools/oracle/cases/management/user-update/post--user-update-invalid-target.yaml
-  - tools/oracle/cases/management/user-update/post--user-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/user-update/selectors-absent-vs-empty.yaml
   - tools/oracle/cases/management/user-update/self-allowed-fields.yaml
-  - tools/oracle/cases/management/user-update/role-escalation-denied.yaml
-  - tools/oracle/cases/management/user-update/object-permission-clear.yaml
-  - tools/oracle/cases/management/user-update/password-change-revokes.yaml
-  - tools/oracle/cases/management/user-update/spend-counter-invalidation.yaml
+  - tools/oracle/cases/management/user-update/role-change-admin-only.yaml
+  - tools/oracle/cases/management/user-update/silent-create-admin-only.yaml
+  - tools/oracle/cases/management/user-update/self-protected-fields.yaml
+  - tools/oracle/cases/management/user-update/permission-omit-clear-empty-list.yaml
+  - tools/oracle/cases/management/user-update/callback-vars-encrypted.yaml
+  - tools/oracle/cases/management/user-update/password-revokes-all-after-write.yaml
+  - tools/oracle/cases/management/user-update/email-first-match-only.yaml
+  - tools/oracle/cases/management/user-update/http-error-auth-mapping.yaml
+  - tools/oracle/cases/management/user-update/ordinary-error-400.yaml
   - tools/oracle/cases/management/user-update/failure-write-order.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B124 owns request byte decoding, PrismaClient convenience operations and spend-counter invalidation;
+    B2214 owns BudgetConfig; B894 owns metadata encryption; B797 owns the user-audit sink;
+    B789 owns session revocation; B2334 owns query decoding formerly grouped under B790.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -186,8 +257,7 @@ out_of_scope:
     _hash_password_in_dict (L184-L203), _strip_password_from_response (L206-L213), _update_internal_new_user_params
     (L216-L249), _check_duplicate_user_field (L252-L291), _check_duplicate_user_email (L294-L304), _check_duplicate_user_id
     (L307-L316), _add_user_to_organizations (L319-L351), _add_user_to_team (L354-L410), _fetch_user_team_ids
-    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720), _is_valid_user_id
-    (L723-L732), get_user_id_from_request (L735-L753), _normalize_user_info_user_id (L756-L760).'
+    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B791 owns _enforce_user_info_access
     (L763-L790), _UserInfoDataClient.get_data (L795-L795), _UserInfoDataClient.get_data (L798-L804), _UserInfoDataClient.get_data
     (L807-L813), _get_user_info_keys (L816-L824), _get_user_info_teams (L827-L876), _redact_scim_enterprise_metadata
@@ -212,6 +282,6 @@ out_of_scope:
 pitfalls:
   - Self-edit permission does not permit user_role escalation.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -1,9 +1,28 @@
 id: B1219
 title: Key team and end-user budget reassignment checks
 description: >-
-  Resolve an existing key and authorize team/end-user-budget reassignment before updates. Preserve old/new
-  team scope, missing budget ID errors and caller ownership; these helpers return typed checked records,
-  not a mutation.
+  Resolve keys without mutation. Missing DB is HTTPException 500 detail.error=Database not connected.
+  A non-null token, even empty, takes precedence over alias: hash through B124 _hash_token_if_needed,
+  read B722 VerificationTokenRepository with object_permission included, and return 404 not_found_error
+  param key if absent. Without token, missing alias gives 400 bad_request_error param key; query an alias
+  with take=2, returning 404 not_found_error param key_alias for zero rows or 400 bad_request_error
+  param key_alias for multiple rows. The alias query does not request the object_permission relation.
+
+  End-user budget changes treat None or equality with (existing_id or empty string) as no-op. Otherwise
+  only PROXY_ADMIN may change it (403 detail.error). Empty string clears without DB lookup; nonempty
+  values use B894 _require_prisma_client and B725 BudgetRepository.find_by_id, with 400 detail.error
+  if absent. Preserve helper exceptions; callers choose their HTTP envelopes.
+
+  Moving a key validates each stored key model with B886 can_team_access_model, skipping only
+  all-team-models. Then enforce TPM and RPM before membership and initiating-caller permissions.
+  The RPM check is nested under key.tpm_limit is not None; truthy team TPM/RPM and truthy key RPM
+  determine comparisons, so zero team ceilings are skipped and missing key TPM skips RPM entirely.
+  Rate excess is 403 string detail. B800 _get_user_in_team resolves the KEY OWNER; non-null owner
+  absent from the destination is 403. Finally B800 TEAM_ADMIN_ONLY may authorize the initiator, or
+  does_team_member_have_permissions_for_endpoint may authorize using the KEY OWNER's member role
+  and /key/update permission. Missing owner is permitted until that final check. Do not substitute
+  the initiator's role for the owner's. Failures are 403 string detail naming the relevant limit or
+  membership; messages must not echo key tokens. Reads use POSTGRES_TEST_URL or testcontainers.
 
 
   Build the production key_reassignment module in betterlite-server; reuse the typed dependencies listed
@@ -20,11 +39,9 @@ description: >-
   column type; retain source storage types.
 
 
-  Add the key_reassignment operation under B856 Management::keys. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-reassignment-*
-  seed to B171 helper_case, which already owns this decoder.
+  These asynchronous helpers perform lookups and invoke authorization services. Exercise them in native
+  integration tests with real B722/B725 repositories and B800/B886 policy services, using POSTGRES_TEST_URL
+  or testcontainers. The calling key routes own HTTP oracle coverage; no table-fake helper oracle is added.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -38,8 +55,8 @@ description: >-
 
 
   Sizing: 129 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  129 production, 136 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 360 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  129 production, 290 behavior/Postgres tests, 0 helper adapters, 30 wiring, 0 decoder/fuzz
+  and 0 config lines, 449 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -47,14 +64,6 @@ scope:
     - crates/betterlite-server/src/key_reassignment/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
-    - tools/oracle/src/helpers/key_reassignment.rs
-    - tools/oracle/src/helpers/key_reassignment/**
-    - tools/oracle/helpers/key_reassignment.py
-    - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/keys.rs
-    - tools/oracle/helpers/management/keys.py
-    - tools/oracle/cases/helpers/key-reassignment/**
-    - tools/oracle/fuzz/corpus/helper_case/key-reassignment-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2614-L2682
@@ -64,16 +73,17 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4003-L4066
     why: Own validate_key_team_change; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: team_change_denial,
-      end_user_budget_unknown.'
+  - text: >-
+      Cases key_no_database_500, token_precedes_alias, token_relation_loaded, key_missing_404,
+      identity_absent_400, alias_missing_404, alias_ambiguous_400, alias_single_no_relation,
+      unchanged_budget_noop, empty_existing_budget_noop, nonadmin_budget_change_403,
+      admin_budget_clear_no_query, end_user_budget_unknown, all_team_models_skipped,
+      team_model_denial_first, tpm_excess_403, rpm_excess_403, absent_tpm_skips_rpm,
+      zero_team_rates_skipped, owner_membership_required, null_owner_final_policy,
+      initiator_admin_allowed, owner_role_endpoint_permission and rate_denial_does_not_echo_token
+      cover all branches and error shapes.
     proof:
       - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
 checks:
   optional: []
   commands:
@@ -81,23 +91,12 @@ checks:
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_reassignment::tests::/)
         - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/key_reassignment.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-reassignment-*")"
-        && grep -rlq "key_reassignment" tools/oracle/fuzz/corpus/helper_case/key-reassignment-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-oracle_cases:
-  - tools/oracle/cases/helpers/key-reassignment/team-change-denial.yaml
-  - tools/oracle/cases/helpers/key-reassignment/end-user-budget-unknown.yaml
-deviations: []
+oracle_cases: []
+deviations:
+  - what: TPM/RPM reassignment denials retain status 403 but omit the key token from their message.
+    why: LiteLLM interpolates key.token into these failures; rate_denial_does_not_echo_token enforces the repository credential-redaction rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4030-L4042
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -193,9 +192,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve old/new team scope, missing budget ID errors and caller ownership; these helpers return typed
-    checked records, not a mutation..
+  - The RPM ceiling is not checked when the key's TPM is None; flattening the conditions changes existing behavior.
+  - The endpoint-permission fallback checks the key owner's team role, which need not be the initiating caller's role.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 475
   max_new_expects: 0
 review_level: security

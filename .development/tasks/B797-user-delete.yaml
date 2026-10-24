@@ -6,12 +6,46 @@ description: >-
   team-roster rewrites inside that loop, then delete keys, invitation links, organization memberships,
   team memberships and users. A later target failure can leave earlier writes behind. V2 invitation email
   imports are unavailable without litellm_enterprise, so warn and use the MIT V1 fallback. Invitation
-  expiration remains seven days.
+  expiration remains seven days. Missing database is HTTP 500 No db connected and a null user_ids
+  is HTTP 400 No user id passed in. Empty user_ids succeeds with zero deletions. Proxy admins can
+  delete any user; others need a nonempty set of org-admin memberships, and every target must have
+  at least one organization with ALL its organizations inside that set. Missing users are 404;
+  missing admin scope, unassigned targets and mixed-organization targets are 403. Do not infer
+  authorization from organization IDs supplied alongside the request. This handler has no except
+  block: B003 maps its HTTPException and database failures, and B865 preserves handler errors.
 
+  For each validated target, when B065 audit logging is enabled, schedule a deleted USER_TABLE_NAME
+  audit row with UUID, UTC timestamp, updated_values="{}", before_value excluding nulls, caller API
+  key and B065.get_audit_log_changed_by (authorized litellm-changed-by, caller ID, then proxy name).
+  Load teams from user.teams and run B1207._cleanup_members_with_roles; write only changed rosters.
+  After the loop, fetch all target keys and JWT mapping cache keys, delete keys, schedule B784 key
+  audits only for a nonempty selection, run B734.delete_cache_key_objects, then B878.evict_and_broadcast
+  on JWT mappings. Delete invitations matching user_id OR created_by OR updated_by, organization
+  memberships, team memberships and finally user rows; evict user IDs only after that last write.
+  Return the database delete count. None of this is a batch transaction or archived-key deletion.
 
-  Build the production user_delete module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  create_invitation_for_user uses B723's InvitationLinkRepository: missing DB is 400, otherwise one
+  UTC instant supplies created_at/updated_at, expires_at adds seven days, and created_by/updated_by
+  choose caller user_id or proxy admin name. A foreign-key error containing Foreign key constraint
+  failed on the field becomes 400 with /user/new guidance; other insert errors are 500. Do not add
+  a user preflight lookup or rewrite these errors through handle_exception_on_proxy.
+
+  The created hook sends email before its audit try block. Build the internal_user_created USER
+  WebhookEvent with Welcome to LiteLLM Proxy, token, spend=response.spend or 0, max_budget, user_id,
+  user_email, team_id and key_alias. Only send_invite_email is True attempts delivery. Without the
+  enterprise package, warn Defaulting to using Legacy Email Hooks and return false from the V2
+  probe; enterprise logger enumeration/delivery is unreachable and is not implemented. The V1
+  fallback requires email in general_settings.alerting (default []), otherwise raises ValueError
+  with setup guidance BEFORE audit scheduling. B116 supplies the actual email sink; schedule its
+  send_key_created_or_user_invited_email, never log the token. In the audit try, missing database,
+  missing response.user_id or missing user row warns Unable to create audit log for user on /user/new
+  and returns successfully. Otherwise schedule create_internal_user_audit_log with action created,
+  before_value=None and the stored row excluding nulls. That helper first checks B065's enabled flag
+  and writes the supplied action/before/after using the same changed-by selection.
+
+  B065 owns litellm.store_audit_logs=None and LITELLM_STORE_AUDIT_LOGS=None resolution (explicit setting,
+  then environment, then premium_user); use its policy here and test enabled/disabled branches.
+  B790 supplies internal-user table accessors; B723/B724/B726 supply the concrete repositories.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
@@ -23,51 +57,27 @@ description: >-
   (L189-L232; 41 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.alerting=[];
-  alerting=[].
+  Resolve general_settings.alerting through B002 and pass its typed list to the email fallback.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /user/delete -> delete_user. For each
-  route send a typed successful request, an invalid or missing target, and a caller lacking that route
-  permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Register only POST /user/delete here. B001 HTTP cases compare count/status, content-type and
+  B003's error type/param/code against the booted MIT server, ignoring message wording. Native
+  Postgres tests exercise invitation and hook effects without calling later /user/new or invitation
+  handlers through a helper adapter. Use POSTGRES_TEST_URL when present, otherwise testcontainers;
+  failed configured connections fail tests. Check surviving rows after each injected failure.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Config tests alerting_default_empty, email_alerting_loaded and alerting_env_resolution load actual
+  YAML through B002, then exercise the email decision. There is no integer-setting fallback here.
+  Add alerting seeds to the existing config_yaml corpus; B002 retains decoder/fuzz ownership.
 
 
-  Write betterlite-config::user_delete::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Sizing: 366 nonblank, noncomment lines before excluding the unreachable enterprise-only delivery
+  body; allow 340 production, 340 behavior/Postgres tests, 65 route wiring and 50 config lines,
+  795 within an 800-line gate.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 366 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  366 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 635 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
-  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  Wire user_delete behind B052 bearer authentication and the source's B865 management decorator.
 scope:
   paths:
     - crates/betterlite-server/src/user_delete.rs
@@ -86,7 +96,7 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/user-delete-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2397-L2604
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2391-L2604
     why: Own delete_user; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/user_invitation.py#L1-L49
     why: Pinned implementation and exact ownership boundary for user_delete.
@@ -121,14 +131,19 @@ references:
       failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L176-L181
     why: general_settings.alerting default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1-L6
-    why: alerting default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L65
+    why: B065 supplies audit enablement and authorized changed-by selection.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: delete_user, delete_forbidden,
       invitation_seven_days, invitation_missing_user, v1_email_payload, enterprise_absent_v1_fallback,
-      earlier_roster_write_survives, audit_scheduled_before_later_error.'
+      earlier_roster_write_survives, audit_scheduled_before_later_error, no_database, null_user_ids,
+      empty_user_ids, missing_target, org_admin_all_memberships, target_without_org,
+      target_outside_org, supplied_org_no_bypass, empty_caller_scope, unchanged_roster,
+      invitation_actor_fallback, invitation_database_error, invitation_insert_failure,
+      invitation_related_actors, deletion_effect_order, deletion_failure_prefix,
+      empty_keys_skip_audit, audit_disabled, changed_by_authorized, email_false_no_probe,
+      email_none_no_probe, email_missing_config, email_before_audit, event_defaults,
+      audit_missing_db_warns, audit_missing_id_warns, audit_missing_row_warns, created_audit_values.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -159,21 +174,19 @@ checks:
         && grep -rlq "alerting" crates/betterlite-config/fuzz/corpus/config_yaml/user-delete-* && cargo
         nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/management/user-delete/post--user-delete-success.yaml
-  - tools/oracle/cases/management/user-delete/post--user-delete-invalid-target.yaml
-  - tools/oracle/cases/management/user-delete/post--user-delete-unauthorized-caller.yaml
   - tools/oracle/cases/management/user-delete/delete-user.yaml
   - tools/oracle/cases/management/user-delete/delete-forbidden.yaml
-  - tools/oracle/cases/management/user-delete/invitation-seven-days.yaml
-  - tools/oracle/cases/management/user-delete/invitation-missing-user.yaml
-  - tools/oracle/cases/management/user-delete/v1-email-payload.yaml
-  - tools/oracle/cases/management/user-delete/enterprise-absent-v1-fallback.yaml
   - tools/oracle/cases/management/user-delete/earlier-roster-write-survives.yaml
   - tools/oracle/cases/management/user-delete/audit-scheduled-before-later-error.yaml
+  - tools/oracle/cases/management/user-delete/missing-database-target.yaml
+  - tools/oracle/cases/management/user-delete/null-empty-targets.yaml
+  - tools/oracle/cases/management/user-delete/org-scope-matrix.yaml
+  - tools/oracle/cases/management/user-delete/deletion-order.yaml
+  - tools/oracle/cases/management/user-delete/audit-policy-header.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - user_management_event_hooks.py L137-L161 requires enterprise BaseEmailLogger and is unreachable
+    without that package; the owned MIT branch stops at its warning and false result.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -213,6 +226,6 @@ pitfalls:
     comment about a second loop.
   - BulkUserDeletion belongs to management_v1 users and would change /user/delete partial effects.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

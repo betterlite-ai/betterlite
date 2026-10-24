@@ -1,0 +1,112 @@
+id: B2362
+title: Key and user write primitives below management services
+description: >-
+  Move the key/user branches of PrismaClient.insert_data and update_data from the later B124 proxy
+  utility remainder into betterlite-db::key_user_writes. Own insert_data's key/user dispatch
+  L5276-L5345 and shared failure handler L5407-L5423; update_data's signature/key/user dispatch
+  L5425-L5494 and shared failure handler L5646-L5662. Keep other table branches with B124.
+  Also own on_backoff L4174-L4176, both jsonify_object forms L4179-L4189 and L4623-L4633,
+  PrismaClient.hash_token L4617-L4621, hash_token L7119-L7125 and _hash_token_if_needed L7188-L7197.
+  These are concrete SQL services over B722/B723, not permissive ports waiting for B124.
+
+  hash_token is lowercase SHA256 of UTF-8 regardless of prefix; hash_if_needed hashes only sk-.
+  JSON conversion copies the input and encodes top-level dict values to strings, leaving lists,
+  strings and null unchanged. A dict serialization failure becomes failed-to-serialize-json rather
+  than aborting; nested values are not independently rewritten. Native typed rows use B192's JSON
+  representation and expose a checked encode result, never a Python-object compatibility layer.
+  No operation encrypts metadata: callers must already have run encrypt_callback_vars.
+
+  Key insertion hashes even an already hex-looking token, removes budget_limits only when None,
+  and performs upsert by hash with an empty conflict update, returning the budget relation. JSON
+  string null is retained and differs from SQL NULL. User insertion similarly does nothing on
+  user_id conflict. Translate only the named organization foreign-key failure into HTTP 400
+  detail.error saying the organization does not exist and referring to /organization/new; other
+  failures keep their original type. Preserve insertion info logs and redact raw token from debug
+  payloads by substituting its hash.
+
+  Key update is selected whenever token is nonnull, including an empty string, hashes only sk-,
+  overrides data.token with that lookup token, stamps B770 settings_updated_at and includes
+  object_permission. Return token plus the dumped row or {} if no row; support the source
+  model_dump-to-dict fallback at the row adapter. User update uses explicit user_id or data.user_id,
+  inserts data on absence, and on conflict uses explicit update_key_values, else the custom query
+  map, else data. Explicit {} means no update. The source condition lets a supplied user_id select
+  this branch even for query_type update_many; reproduce that dispatch for callers using this API.
+  No operation wraps another operation in a transaction.
+
+  Retry any Exception up to three attempts and ten elapsed seconds, exponential backoff with the
+  source full jitter and attempt-number debug notice. Each failed attempt emits a failure-handler
+  event with exception, duration, traceback and call_type insert_data or update_data before retry.
+  Inject clock/jitter and a supervised failure sink; transport failures do not alter the original
+  exception. Use B860 Postgres via POSTGRES_TEST_URL or testcontainers. Count the selected source
+  branches, declarations and common handlers as 203 nonblank/noncomment lines; allow 230
+  implementation, 300 tests, 65 pure hash/JSON adapters and 30 wiring, 625 within 700. The write
+  cases use real Postgres, not helper calls into the proxy server. Only pure hash/JSON operations
+  register under B856 database. This consumes typed inputs and adds no new byte decoder.
+scope:
+  paths:
+    - crates/betterlite-db/src/key_user_writes.rs
+    - crates/betterlite-db/src/key_user_writes/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - tools/oracle/src/helpers/key_user_writes.rs
+    - tools/oracle/helpers/key_user_writes.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/key-user-writes/**
+    - tools/oracle/fuzz/corpus/helper_case/key-user-writes-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5276-L5345
+    why: Key/user upserts and their distinct conflict and FK behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5407-L5494
+    why: Insert failure effects, retry decorator and key/user update dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5646-L5662
+    why: Update failure notification before rethrow and retry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4174-L4189
+    why: Backoff notice and dict-only JSON conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4617-L4633
+    why: Class hashing and JSON projection share the free-function behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7188-L7197
+    why: Only sk- triggers conditional hashing; other strings are treated as stored ids.
+dod:
+  - text: 'Pure cases hash_utf8_lower_hex, insert_always_hashes, conditional_hash_prefix,
+      json_dict_only_copy and json_encode_failure_marker compare the actual source helpers.
+      Postgres cases key_conflict_no_update, key_null_window_omitted, key_json_null_retained,
+      key_budget_relation, user_conflict_no_update, user_organization_fk_400,
+      key_update_stamp_permission_and_return, empty_token_is_present,
+      user_update_map_precedence, explicit_empty_update_map, user_id_dispatch_precedence,
+      retry_three_or_ten_seconds, retry_events_and_jitter and earlier_write_survives_next_failure
+      assert real rows and ordered effects. A typed impossible-to-encode value may be tested at the
+      serializer seam; arbitrary Python objects are outside the native row contract.'
+    proof: [behavior-tests, postgres-tests, helper-python, helper-case-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Hashing, JSON shape and retry policy must have separate behavioral coverage.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^key_user_writes::tests::/) - test(/replays_the_/)'
+    - id: postgres-tests
+      why: The actual insert/update statements must retain conflict and partial-write behavior.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^key_user_writes::tests::postgres::/)'
+    - id: helper-python
+      why: Hash/JSON fixtures invoke the pinned helpers rather than a copied implementation.
+      run: test -f tools/oracle/helpers/key_user_writes.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The database operation tag must be reachable through HelperCase.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/key-user-writes-*)" && grep -rlq key_user_writes tools/oracle/fuzz/corpus/helper_case/key-user-writes-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-user-writes/hash-and-prefix.yaml
+  - tools/oracle/cases/helpers/key-user-writes/json-shapes.yaml
+deviations: []
+out_of_scope:
+  - B124 retains every other proxy/utils.py function and all non-key/user branches of these two
+    dispatchers. B770 owns settings_updated_at; B722/B723 own row decoding and repository handles.
+    B893 owns generation order and B894 owns the explicit soft-budget transaction.
+pitfalls:
+  - Insert always hashes; update only hashes strings beginning sk-.
+  - Reusing a token in insert is a no-op even when new fields differ.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

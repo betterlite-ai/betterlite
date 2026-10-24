@@ -1,10 +1,58 @@
 id: B862
 title: Membership budget merge-patch persistence
 description: >-
-  Implement MemberBudgetPatch with explicit absent, null and set states and transactional membership writes.
-  Preserve clone-on-write of shared team-default budgets, temporary-only override inheritance, carried
-  budget_reset_at, and disconnection when no meaningful limit remains. Empty allowed_models and None do
-  not count as limits. Callers supply the existing writer transaction.
+  Implement the distinct membership patch, member creation and general-entity budget helpers. The
+  patch mapper reads exclude_unset and maps max_budget_in_team to max_budget, plus tpm_limit, rpm_limit,
+  budget_duration, allowed_models, temp_budget_increase and temp_budget_expiry unchanged. Explicit
+  null is retained, absent fields omitted, top-level tuples become lists without recursive conversion.
+  Meaningful limit fields are max_budget, soft_budget, max_parallel_requests, tpm_limit, rpm_limit,
+  model_max_budget, budget_duration, allowed_models, temp_budget_increase and temp_budget_expiry.
+  Only None and an empty LIST are unset: zero, false, '', {}, and a tuple are meaningful at this helper.
+
+  _upsert_budget_and_membership uses the caller's existing tx and never starts/commits its own. Empty
+  patch does nothing. A sent budget_duration computes B2317 reset time, or clears reset_at for null,
+  before DB access. existing_budget_id is shared only when non-null and equal to team default or in
+  supplied shared_budget_ids. temp_only means the resulting write-data keys are a subset of the two
+  temp fields; a duration adds reset_at and is never temp-only. For a private existing budget read the
+  row (missing becomes {}), merge the patch, disconnect membership if no meaningful limits remain,
+  otherwise update that budget with updated_by=caller.user_id or ''. A missing row with meaningful
+  values attempts UPDATE and propagates its failure; it is not silently created. Disconnect neither
+  deletes nor changes the old budget row.
+
+  For a shared/default row or no existing budget, read the source ONLY when shared and not temp-only.
+  Create data has audit actors caller.user_id or '', copies only set meaningful-limit fields, then
+  applies patch. Carry source budget_reset_at when duration was not sent; do not restart an inherited
+  window on unrelated edits. Omit a null reset_at from CREATE. With no meaningful limit, disconnect
+  only for an existing id and non-temp-only patch; otherwise return without writes. With a limit,
+  CREATE budget including team_membership, then UPSERT membership on (user_id,team_id), connecting the
+  new budget in both create and update arms. A tx failure rolls back only under the caller's transaction;
+  never mutate the shared row or promise a new transaction around unrelated callers.
+
+  Member creation resolves an optional BudgetWriteTx, otherwise B725 BudgetRepository. Move the
+  two-line _budget_table (management_helpers/utils.py L116-L117) and its minimal _PrismaBudgetRecord/
+  _PrismaBudgetTable contract (L58-L71) here, below B1227 add_new_member; no reverse dependency on
+  B1227. B1227's larger MemberWriteTx structurally supplies this budget port. Explicit limit means
+  max_budget_in_team IS NOT NONE OR allowed_models IS NOT NONE, so zero and [] create private rows.
+  Without explicit limits, a non-null default id and no duration reads it and returns it only if found.
+  With a duration and default id, clone that default or return None if missing. No default/limits/
+  duration returns None; otherwise CREATE with the provided non-null limit fields and, for a non-null
+  duration, a newly computed reset_at. Audit names here use caller.user_id OR litellm_proxy_admin_name.
+
+  Clone only max_budget, soft_budget, max_parallel_requests, tpm_limit, rpm_limit, model_max_budget,
+  budget_duration and allowed_models, skipping None and empty lists (not {} or zero). A non-null
+  duration override replaces the inherited one. Compute reset_at only for a truthy resulting duration,
+  starting at clone time; never carry the default's reset timestamp in this creation helper. It differs
+  deliberately from clone-on-update above. Read then create through the same supplied tx connection.
+
+  handle_budget_for_entity extracts all B720 BudgetTable fields from model_dump(exclude_none=True)
+  or the supplied mapping; budget_duration_cleared defaults False and reinserts duration=null only
+  with an existing id. With no existing id, explicit data.budget_id wins without lookup, else nonempty
+  budget data is validated as BudgetTable, serialized by B124 jsonify_object, and CREATED directly
+  through B725 with caller/admin audit actors. This path does not call /budget/new's guards. Empty
+  data returns None. With an existing id, nonempty budget fields first call B829 update_budget on the
+  OLD id, then return a different explicit data.budget_id if present, else keep the old id. A caller's
+  later relink can fail after that budget update; this helper has no transaction or link write. Preserve
+  model-vs-mapping null handling and validation errors, not a fictitious atomic replace-budget action.
 
 
   Build the production member_budget_patch module in betterlite-server; reuse the typed dependencies listed
@@ -24,11 +72,11 @@ description: >-
   column type; retain source storage types.
 
 
-  Add the member_budget_patch operation under B856 Management::models. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a member-budget-patch-* seed to B171 helper_case, which already owns this decoder.
+  Register only member_budget_patch, _prisma_value and meaningful-limit predicates as pure B856
+  Management::models operations. Persistence uses native Postgres tests with POSTGRES_TEST_URL, else
+  B860 testcontainers. Execute source SQL effects against independently seeded rows and inject faults
+  between CREATE/UPSERT and budget-update/relink. Named transaction_reused proves no extra connection
+  checkout when a caller holds locks. Route owners test B829's HTTP mapping; no helper calls a route.
 
 
   Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
@@ -49,10 +97,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 281 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  281 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 530 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The original eight functions contain 226 nonblank noncomment lines excluding docstrings; the lowered
+  helper adds two lines plus its small port declarations. Allow 260 production, 370 tests, 70 adapters
+  and 35 wiring lines, 735 within 800. Typed inputs use B859 decoding; this adds no parser.
 scope:
   paths:
     - crates/betterlite-server/src/member_budget_patch.rs
@@ -70,6 +117,10 @@ scope:
     - crates/betterlite-server/src/member_budget_patch/fixtures/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L58-L71
+    why: Lower the budget row/table contracts below the member writer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L116-L117
+    why: The shared budget-table selector belongs below B1227, which calls this task.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L488-L489
     why: Own _prisma_value; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L492-L501
@@ -87,6 +138,15 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L336-L390
     why: Own _resolve_member_budget_id; preserve caller-visible values and failure ordering.
 dod:
+  - text: 'Postgres cases empty_patch_no_reads, duration_reset_before_read, private_update_actor,
+      missing_private_update_fails, disconnect_keeps_budget, shared_row_never_updated,
+      shared_id_set_clone, temp_only_skips_source, temp_clear_keeps_shared_link,
+      patch_carries_reset_window, duration_clear_omits_create_reset, create_then_membership_upsert,
+      transaction_reused, create_then_upsert_failure_rolls_back, explicit_empty_models_creates,
+      missing_default_returns_none, clone_restarts_window, clone_skips_empty_lists,
+      explicit_entity_budget_wins, entity_direct_create_skips_route_guards,
+      entity_update_old_before_relink and duration_cleared_only_for_existing prove the write contract.'
+    proof: [behavior-tests, postgres-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: absent_keeps, null_clears,
       shared_default_clone, temporary_only_inherits, carried_window, no_limits_disconnect, postgres_pinned_rows,
       postgres_failure_effects.'
@@ -125,14 +185,13 @@ checks:
 oracle_cases:
   - tools/oracle/cases/helpers/member-budget-patch/absent-keeps.yaml
   - tools/oracle/cases/helpers/member-budget-patch/null-clears.yaml
-  - tools/oracle/cases/helpers/member-budget-patch/shared-default-clone.yaml
-  - tools/oracle/cases/helpers/member-budget-patch/temporary-only-inherits.yaml
-  - tools/oracle/cases/helpers/member-budget-patch/carried-window.yaml
-  - tools/oracle/cases/helpers/member-budget-patch/no-limits-disconnect.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/exact-field-map.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/tuple-conversion-shallow.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/none-and-empty-list-unset.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/zero-false-empty-dict-set.yaml
+  - tools/oracle/cases/helpers/member-budget-patch/meaningful-field-registry.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/common_utils.py: B800 owns _team_member_has_permission (L208-L221).'
   - 'litellm/proxy/management_endpoints/common_utils.py: B861 owns validate_finite_spend (L13-L24), validate_budget_duration
     (L27-L41), validate_team_model_max_budget (L77-L123), require_caller_user_id_for_non_admin (L126-L150),
@@ -147,12 +206,11 @@ out_of_scope:
   - 'litellm/proxy/management_helpers/utils.py: B865 owns _delete_user_id_from_cache (L503-L514), _delete_api_key_from_cache
     (L517-L528), _delete_team_id_from_cache (L531-L542), _delete_customer_id_from_cache (L545-L556), management_endpoint_wrapper
     (L755-L823).'
-  - 'litellm/proxy/management_helpers/utils.py: B1227 owns _user_table (L112-L113), _budget_table (L116-L117),
+  - 'litellm/proxy/management_helpers/utils.py: B1227 owns _user_table (L112-L113),
     _team_membership_table (L120-L121), _find_users_by_email (L124-L134), _upsert_user_row (L137-L150),
     _create_user_row (L153-L158), get_new_internal_user_defaults (L161-L177), _append_team_id_if_absent
     (L393-L408), add_new_member (L411-L500), _PrismaRecord.model_dump (L47-L47), _PrismaUserRecord.model_dump
-    (L55-L55), _PrismaBudgetRecord.model_dump (L63-L63), _PrismaBudgetTable.create (L69-L69), _PrismaBudgetTable.find_unique
-    (L71-L71), _PrismaUserTable.update_many (L77-L77), _PrismaUserTable.upsert (L79-L81), _PrismaUserTable.find_many
+    (L55-L55), _PrismaUserTable.update_many (L77-L77), _PrismaUserTable.upsert (L79-L81), _PrismaUserTable.find_many
     (L83-L83), _PrismaTeamMembershipTable.upsert (L89-L91), MemberWriteTx.litellm_usertable (L102-L103),
     MemberWriteTx.litellm_budgettable (L105-L106), MemberWriteTx.litellm_teammembership (L108-L109).'
   - 'litellm/proxy/management_helpers/utils.py: B1228 owns _object_mapping (L609-L611), _object_list (L614-L616),
@@ -162,9 +220,10 @@ out_of_scope:
     implement the injected alert and OTel transports.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve clone-on-write of shared team-default budgets, temporary-only override inheritance, carried
-    budget_reset_at, and disconnection when no meaningful limit remains.
+  - Clone-on-update carries an unchanged reset window; clone-on-member-creation starts a fresh one.
+  - allowed_models=[] is an explicit creation limit but not a meaningful remaining limit during patching.
+  - General-entity relinking updates the old budget before returning the new id.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

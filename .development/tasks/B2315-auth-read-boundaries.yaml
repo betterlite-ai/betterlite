@@ -1,0 +1,132 @@
+id: B2315
+title: Auth repository read deadlines and structural projections
+description: >-
+  Implement betterlite-auth::auth_read for the structural repository adapters at auth_checks.py
+  L161-L392, _membership_from_shared_load L411-L412 and _log_budget_lookup_failure L415-L435.
+  Move these below B735 and all other auth lookup consumers. Reuse B700 row/repository contracts,
+  B715 bounded_db_lookup and B859 membership records instead of reproducing Python Protocol classes,
+  cast-only functions or a second database client. Retain the distinctions between bounded reads,
+  unbounded writes and unwrapped registry reads; they change failure latency and error classification.
+
+  _DeadlineBoundedTable wraps find_unique, find_first and find_many in B715's lookup deadline with
+  the supplied lookup name. Forward where/include/take exactly as supplied, distinguishing omitted
+  fields from explicit None and retaining empty mappings and zero take. Return the same row/None or
+  sequence, with order and duplicates unchanged. B715 owns deadline duration, cancellation, error
+  cause and diagnostics; this boundary must neither retry nor substitute a missing row on a failed
+  read. update forwards where/data and create forwards data/include without this read deadline.
+  Their own repository timeouts remain in effect; do not cancel a committed write because the auth
+  read deadline elapsed. Native tests use recording repositories and B715's controllable clock.
+
+  _dictable_table and _model_dump_table accept the caller's lookup label. Fixed labels are
+  jwt_key_mapping, team, vector_store, user and object_permission for their corresponding adapters.
+  The tag, end_user and model_access_group_budget adapters return the underlying table without
+  adding a deadline; their registry/batch callers apply their own bound where specified. Calling
+  _dictable_table with label end_user is nevertheless bounded: adapter choice, not entity name,
+  determines the behavior. Represent this selection with a closed enum and exhaustive dispatch.
+  Trivial construction/identity functions become native type selection or inlined expressions,
+  not a family of prohibited one-line wrappers.
+
+  Preserve the structural row views through B700 projections: dict/model_dump mappings, ordered
+  key/value iteration for vector-store/user consumers, the user_id and nullable organization
+  memberships sequence, JWT mapping token/jwt_issuer/jwt_claim_name/jwt_claim_value, nullable
+  vector_stores, tag_name, end-user user_id, and model-access-group access_group_name/spend plus its
+  nullable budget/max_budget relation. This task does not parse these row fields again. Membership
+  model scope reads the nullable budget relation and its allowed_models; absent budget, None or
+  empty allowed_models produces an empty sequence, while a nonempty sequence preserves order,
+  duplicates and empty string members. _membership_from_shared_load accepts only an already typed
+  LiteLLM_TeamMembership, including a subtype; a dict with matching fields or another row becomes
+  None without coercion or logging.
+
+  _raw_cache, _typed_request_body and _typed_json_loads are identity/type-narrowing operations:
+  they do not copy, validate, sanitize, decode bytes or catch errors. The _safe_json_loads_obj
+  binding is the same B192 safe_json_loads function; actual invocation remains B888's guardrail
+  parser. Keep caller ownership of that byte boundary and avoid inventing a decoder/fuzz target
+  here. Protocol-only properties are typed projections, not runtime access-control checks.
+
+  Budget lookup logging suppresses only an empty message with the exact source class name
+  Exception. An empty ValueError or a nonempty generic Exception still logs ERROR, despite the
+  source docstring saying warning. Include entity and the fact that the cache was not populated
+  and each request will reach the database. Case-insensitive substrings column, schema,
+  does not exist, prisma or migrate add a schema-repair hint; any one match suffices, and there
+  is no SQLSTATE check. Native hints name betterlite-db-admin migrate rather than recommending
+  an unavailable Prisma executable. Keep causes typed and redact credential/payload values in
+  diagnostics. This helper only logs; it does not clear, populate or retry any cache/database call.
+
+  The auth_read helper operation projects the actual source membership-view and log-classification
+  functions with synthetic typed rows/exceptions. Compare empty/model distinctions, severity,
+  hint presence and effects; diagnostic wording is betterlite's own. Deadline forwarding tests
+  exercise the native production adapter and B715, with no database fixture or fake HTTP route.
+  The selected source has 154 nonblank noncomment lines excluding docstrings, mostly protocol
+  declarations. Allow 115 production, 230 tests, 85 adapters and 35 wiring, 465 within 550.
+scope:
+  paths:
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
+    - crates/betterlite-auth/src/auth_read.rs
+    - crates/betterlite-auth/src/auth_read/**
+    - tools/oracle/src/helpers/auth_read.rs
+    - tools/oracle/helpers/auth_read.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/auth-read/**
+    - tools/oracle/fuzz/corpus/helper_case/auth-read-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L161-L301
+    why: Structural table/row views, exact forwarding and the read-only deadline boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L304-L392
+    why: Permission/tag/end-user/group projections, member model scope and identity-only narrowing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L411-L435
+    why: Typed membership acceptance and ERROR logging with five schema-hint substrings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L65-L90
+    why: B715 supplies the shared bounded lookup rather than a second timeout implementation.
+dod:
+  - text: 'Read-boundary cases name unique_first_many_use_deadline, explicit_lookup_label_forwarded,
+      fixed_lookup_labels, kwargs_omission_vs_null, empty_filters_and_zero_take_kept,
+      returned_rows_order_and_duplicates, deadline_error_not_missing_row,
+      repository_error_cause_kept, read_cancel_propagates, writes_do_not_use_read_deadline,
+      tag_end_user_group_adapters_unwrapped and dictable_end_user_still_bounded.'
+    proof: [behavior-tests]
+  - text: 'Projection cases name structural_row_fields_retained, nullable_user_memberships_retained,
+      absent_budget_models_empty, null_or_empty_allowed_models_empty,
+      member_models_order_duplicates_and_empty_strings, typed_membership_passes,
+      matching_dict_not_shared_membership and narrowing_does_not_copy_or_validate.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Diagnostic cases name empty_exact_exception_suppressed, empty_subclass_still_error,
+      nonempty_generic_exception_error, budget_failure_not_warning,
+      each_schema_hint_substring_casefold, unrelated_error_no_hint and
+      logging_does_not_mutate_or_retry. Native cases name hint_uses_native_migration_command
+      and lookup_diagnostics_redact_credentials.'
+    proof: [behavior-tests, helper-python, oracle]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Both deadline selection and structural projection must be tested through the production boundary.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_read::/)'
+    - id: helper-python
+      why: The source helper must classify actual source exceptions and rows.
+      run: test -f tools/oracle/helpers/auth_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added auth-read seeds must reach the existing helper envelope parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-read-*")" && grep -rlq auth_read tools/oracle/fuzz/corpus/helper_case/auth-read-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/auth-read/member-model-scope.yaml
+  - tools/oracle/cases/helpers/auth-read/shared-membership-type.yaml
+  - tools/oracle/cases/helpers/auth-read/budget-failure-log-policy.yaml
+deviations:
+  - what: Schema-failure logs recommend betterlite-db-admin migrate and redact credential values instead of printing arbitrary exception payloads.
+    why: betterlite uses native migrations and keeps secrets out of diagnostics; error severity and hint-trigger conditions remain compatible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L415-L435
+out_of_scope:
+  - B735 retains auth-object SQL/cache prefetch and get_object_permission; all other auth_checks.py functions keep their named leaf owners.
+  - B734 owns the shared membership-load registry at L398-L399; B736 owns last_db_access_time and db_cache_expiry; B2318 owns membership cache-miss state.
+  - B715 owns bounded_db_lookup and its settings; B192 owns safe_json_loads bytes and B888 owns the guardrail call site.
+pitfalls:
+  - The end-user registry adapter is unwrapped even though an end-user lookup through _dictable_table is bounded.
+  - A dictionary shaped like a membership is deliberately rejected by the shared-load projection.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

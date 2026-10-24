@@ -8,9 +8,43 @@ description: >-
   source once-only warning when both are absent, including unmatched-issuer fallback. Per-issuer audience
   remains required unless disable_audience_validation is explicitly true. Do not add an issuer-specific
   algorithm configuration key. OIDC userinfo uses only configured endpoints and maps a validated response
-  into the same verified-identity type. Strip all caller-supplied _litellm_* internal claim keys from
+  into the same verified-identity type. Strip exactly B760's seven LITELLM_INTERNAL_CLAIMS keys from
   verified payloads before trusted normalized claims are added. decode_signed_jwt(&[u8]) is the bounded
   compact/JWK/claim decoder exercised by the fuzz target.
+
+
+  Preserve other _litellm_* names. With issuer configs present, B760 unverified claims select the first
+  exact config for a nonempty string iss; otherwise use the global path. A truthy jwks_url wins;
+  otherwise strip issuer trailing slashes and append /.well-known/openid-configuration for B761.
+  Managed-token trust requires a string issuer and, for the first matching config, truthy audience
+  with disable_audience_validation=false. Without a match require exact JWT_ISSUER and truthy
+  JWT_AUDIENCE. Empty env strings differ from absence: only absence disables checks, and only both
+  absent emit the class-wide warning once, including unmatched-issuer fallback.
+
+
+  Explicit decode options, even {}, bypass option construction. Per-issuer audience=None requires
+  disable_audience_validation=true; that flag with a nonnull audience still checks audience. Missing
+  issuer disables issuer validation. Dict keys retain only kty/kid/n/e/x/y/crv before PyJWK conversion;
+  alg/use/x5c are not passed. String keys must be PEM X.509 certificates, not raw PEM public keys.
+  Preserve signature, exp/nbf/iat and audience/issuer checks with the zero leeway owned by B760.
+  Parse and DEBUG-log the unverified header before issuer selection/key fetch. Fetch failures occur
+  outside signature wrapping. Expired signatures become 401 expired_key, Token Expired, null param;
+  other verification errors become Validation fails: <error> then B757 auth_error 401. Null public
+  key raises Invalid JWT Submitted. Issuer transport outages use B761's auth_provider_unavailable 503.
+
+
+  Global verified payloads strip exactly seven internal claims. Issuer normalization strips them,
+  stamps _litellm_jwt_issuer, then maps user_id/email/team_id/team_ids/org_id/end_user_id in order.
+  Null source settings skip; B213 nested lookup maps missing/null/empty-string values to absent but
+  retains false, zero, empty arrays and objects. Every mapping reads the original payload, not earlier
+  normalized fields. Userinfo is a separate HTTP identity path, not JWT signature verification:
+  require a truthy configured endpoint before cache lookup. Use oidc_userinfo_<sha256 token hex>;
+  nonnull hits, including {}, DEBUG-log and return. Misses issue one GET with Authorization: Bearer
+  <token> and Accept: application/json; no JWKS retry/stale logic applies. Require status 200, decode
+  through B761, log success, then cache with oidc_userinfo_cache_ttl=300 by default before returning.
+  Network/status/JSON/cache-write errors ERROR-log and rethrow Failed to fetch OIDC UserInfo: <error>;
+  cache-read errors are outside this wrapper. Status messages include response text. Native logging
+  omits raw decoded userinfo as a privacy deviation. close closes the HTTP handler. No database writes.
 
 
   Build the production jwt_verification module in betterlite-auth; reuse the typed dependencies listed
@@ -41,7 +75,9 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::jwt_verification::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::jwt_verification::tests::global_scope_absent_vs_empty,
+  issuer_audience_required_unless_explicitly_disabled, userinfo_default_300_and_endpoint_none,
+  issuer_mapping_defaults_and_validation and no_issuer_algorithm_setting.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -58,18 +94,17 @@ description: >-
   without recreating the workspace.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
+  Signed JWT fixtures use synthetic issuer keys and an intercepted userinfo endpoint. Compare MIT
+  claim/verification outcomes while checking userinfo-log redaction and bounded decoding natively.
 
 
-  Sizing: 266 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  266 production, 180 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 636 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
+  Sizing: 266 production, 280 table-driven tests, 75 helper adapters, 50 wiring, 65 decoder/fuzz and
+  60 config lines, 796 within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: signed_token_byte_depth_limits_return_401,
+  userinfo_logs_exclude_response_values.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 
@@ -158,9 +193,20 @@ references:
     why: JWT_AUDIENCE default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1086-L1091
     why: JWT_ISSUER default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1118-L1139
     why: litellm_jwtauth.issuers default and read site.
 dod:
+  - text: 'Additional cases: first_exact_issuer_or_global_fallback, explicit_jwks_or_trimmed_discovery,
+      managed_trust_first_match_requires_scoped_audience, empty_env_is_not_absent,
+      explicit_empty_options_bypasses_builder, disable_flag_does_not_disable_present_audience,
+      jwk_allowed_field_projection, raw_pem_rejected_x509_accepted, expiry_error_fields_and_validation_prefix,
+      fetch_errors_not_signature_wrapped, null_public_key_error, exactly_seven_internal_claims_removed,
+      issuer_mapping_missing_empty_false_zero_collections, mappings_read_original_payload,
+      userinfo_endpoint_before_cache, userinfo_hashed_key_empty_hit_and_headers,
+      userinfo_no_retry_status_json_write_error_wrapper, userinfo_cache_read_error_unwrapped,
+      userinfo_cache_before_return_and_ttl, close_http_handler.'
+    proof:
+      - behavior-tests
   - text: 'Implement the owned behavior and ordered failure effects; named tests: valid_signature, wrong_signature,
       algorithm_confusion, wrong_audience, wrong_issuer, expired_token, issuer_claim_map, userinfo_failure,
       unscoped_warning_once, unmatched_issuer_fallback, pem_certificate, rs256, rs384, rs512, ps256, ps384,
@@ -183,7 +229,8 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: 'Native signed_token_byte_depth_limits_return_401 and userinfo_logs_exclude_response_values
+      prove bounded decoding and sanitized logging outside the equality corpus.'
     proof:
       - behavior-tests
   - text: The real HTTP exception mapper preserves invalid-token and unavailable-key failures before identity
@@ -256,14 +303,17 @@ oracle_cases:
   - tools/oracle/cases/auth/jwt-verification/wrong-audience-401.yaml
   - tools/oracle/cases/auth/jwt-verification/algorithm-confusion-401.yaml
 deviations:
+  - what: Userinfo DEBUG logs omit the decoded identity document; cache/fetch outcome logs remain.
+    why: Avoid logging arbitrary personal or credential fields; userinfo_logs_exclude_response_values proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1053-L1055
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
       smaller inherited limits.
     why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1009-L1066
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B760 owns internal claims and unverified parsing; B761 owns key fetch and response JSON decoding.
+    Userinfo caches a document under a digest, not a persisted bearer credential.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -318,6 +368,6 @@ pitfalls:
   - A valid JWT signature does not make caller-injected _litellm_* claims trusted internal normalization
     markers.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

@@ -1,9 +1,36 @@
 id: B848
 title: Authorize deployment visibility for model info
 description: >-
-  Implement ModelInfoScope for direct grants, team models, access groups and caller BYOK team visibility.
-  Reuse AuthorizedModels and TeamAccess before searching or paging database deployments. Keep explicit
-  team_id query authorization and access-group model-to-deployment expansion.
+  Implement ModelInfoScope's two distinct listing policies. non_admin_all_models first requires a
+  database (HTTP 500 detail.error CommonProxyErrors.db_not_connected_error), reads each non-null
+  deployment id through B725 ModelRepository and keeps created_by equal to the caller user_id.
+  With a truthy user_id, read B723 UserRepository, mapping read exceptions to HTTP 400 detail.error
+  'User not found'; a missing row is not an error. Add router team deployments whose non-null team_id
+  is in user_row.teams, then B841 deduplicates by deployment id. Do not apply direct key grants here.
+
+  The other policy populates access annotations. An admin-view caller gets all teams ('*') and all
+  non-team deployment ids. Otherwise, a non-null user_id triggers a user-row read and validation;
+  absent users get no teams and no direct access, and read/validation failures propagate. User direct
+  grants expand literal names AND access-group members with B847's map and B844's catalog lookup.
+  Empty grants or 'all-proxy-models' expand all non-team ids. Named grants can resolve team rows because
+  this lookup has no team_id. Preserve duplicate ids and user-grant order. key_models defaults to ();
+  an empty/unrestricted key leaves the user grant unchanged, otherwise intersect with its expanded ids.
+
+  TeamRepository queries every team for '*', otherwise team_id in user_teams, then validates rows.
+  Empty/null team.models or 'all-proxy-models' considers every router row with a non-null id. Preserve
+  the source's team_model_id in team_object.team_id substring comparison in this helper; it is not
+  an equality check. Restricted teams use B759 get_team_models with public names and access groups,
+  then B844 lookup(name, team_id). Merge deployment_id to sets of team ids. Restricted teams with
+  access_group_ids additionally batch-fetch their union once through B726 AccessGroupRepository;
+  missing groups/null access_model_names contribute nothing. Resolve the union of group names per
+  team and merge non-null ids. Unrestricted teams skip that query. DB errors propagate; no writes occur.
+
+  Populate access_via_team_ids only on non-null model ids eligible for that annotation: global rows
+  always qualify; team rows require their exact team_id among mapped team ids. Leave preexisting
+  annotations untouched on ineligible/missing-id rows. Set direct_access on every non-null id to
+  membership in the direct-id set, then retain rows with truthy direct_access OR access_via_team_ids.
+  Do not sort the set-derived team-id lists; oracle comparisons normalize only those set-valued lists.
+  Explicit query team_id and caller BYOK row filtering are B1216 and are not called by these helpers.
 
 
   Build the production model_info_scope module in betterlite-server; reuse the typed dependencies listed
@@ -21,11 +48,11 @@ description: >-
   (L14522-L14537; 16 source lines).
 
 
-  Add the model_info_scope operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a model-info-scope-*
-  seed to B171 helper_case, which already owns this decoder.
+  Add model_info_scope under B856 Management::models for the pure grant/team/filter helpers with
+  injected immutable catalog records. Python calls those functions, never a route. Test async repository
+  composition natively against Postgres through POSTGRES_TEST_URL, falling back to B860 testcontainers;
+  failure to start or connect fails the check. B850/B851 exercise the assembled policy over HTTP.
+  Compare exact errors and ordered reads; there are no local warnings to invent. Add a helper_case seed.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -38,10 +65,8 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 308 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  308 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 542 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The eleven functions contain 247 nonblank noncomment lines excluding docstrings. Allow 270
+  production, 300 tests, 100 adapters and 30 wiring lines, 700 within 750. No new decoder or setting.
 scope:
   paths:
     - crates/betterlite-server/src/model_info_scope.rs
@@ -59,11 +84,11 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14161-L14537
-    why: Pinned implementation and exact ownership boundary for model_info_scope.
+    why: Creator, team, direct-grant and annotation policies owned here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14613-L14661
-    why: Pinned implementation and exact ownership boundary for model_info_scope.
+    why: B1216 owns these BYOK helpers; this task does not invoke them.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15068-L15292
-    why: Pinned implementation and exact ownership boundary for model_info_scope.
+    why: B1216 owns explicit query-team authorization and filtering, outside this task.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14161-L14187
     why: Own _check_if_model_is_user_added; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14190-L14205
@@ -87,8 +112,11 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14522-L14537
     why: Own get_all_team_and_direct_access_models; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: direct_key_grant, team_grant,
-      access_group_grant.'
+  - text: admin_annotations, missing_user_annotations, missing_id_preserves_fields, ineligible_annotation_preserved and exact_team_annotation_gate cover populate-then-filter behavior.
+    proof: [behavior-tests]
+  - text: 'Postgres cases creator_reads_by_id, no_database, user_read_error_400, missing_user,
+      team_batch_query, access_group_batch_query, missing_access_group, unrestricted_skips_groups,
+      row_validation_failure and annotation_read_failure prove read order and failure propagation.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -118,6 +146,15 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-info-scope/direct-key-grant.yaml
   - tools/oracle/cases/helpers/model-info-scope/team-grant.yaml
   - tools/oracle/cases/helpers/model-info-scope/access-group-grant.yaml
+  - tools/oracle/cases/helpers/model-info-scope/unrestricted-excludes-team.yaml
+  - tools/oracle/cases/helpers/model-info-scope/name-and-group-union.yaml
+  - tools/oracle/cases/helpers/model-info-scope/key-intersection-keeps-duplicates.yaml
+  - tools/oracle/cases/helpers/model-info-scope/named-grant-unscoped-lookup.yaml
+  - tools/oracle/cases/helpers/model-info-scope/team-id-substring.yaml
+  - tools/oracle/cases/helpers/model-info-scope/restricted-team-alias-wildcard.yaml
+  - tools/oracle/cases/helpers/model-info-scope/missing-id-skipped.yaml
+  - tools/oracle/cases/helpers/model-info-scope/truthy-access-annotations.yaml
+  - tools/oracle/cases/helpers/model-info-scope/empty-and-all-proxy-grants.yaml
 deviations: []
 out_of_scope:
   - 'litellm/proxy/proxy_server.py: B124 owns showwarning (L195-L198), generate_feedback_box (L236-L260),
@@ -474,8 +511,10 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
-  - Explicit team_id model filtering first proves the caller can see that team.
+  - Creator visibility and direct-grant visibility are separate policies; replacing one with the other changes model-info results.
+  - The substring team-id test occurs only during unrestricted expansion; annotation eligibility later uses exact membership.
+  - Missing users and failed user reads differ, and only non_admin_all_models maps a failed read to 400.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

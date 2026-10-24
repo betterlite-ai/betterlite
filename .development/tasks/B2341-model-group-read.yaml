@@ -1,0 +1,83 @@
+id: B2341
+title: Read model access groups with joined budgets
+description: >-
+  Implement GET /access_group/list and GET /access_group/{access_group}/info as the read portion split
+  from B824. Own list_access_groups L720-L762 and get_access_group_info L770-L821 in
+  model_access_group_management_endpoints.py, with decorators starting L715 and L765. B824 composes
+  these routes and must not register them again. Both use B052 user_api_key_auth; neither adds a local
+  admin guard or management_endpoint_wrapper. Exercise the real middleware role policy, including
+  missing bearer, rather than inventing a helper authorization branch.
+
+  Missing database is HTTPException 500 detail.error="Database not connected." before either try.
+  List obtains B823's deployment-tag map, then all budget rows in a single query, joins by access_group
+  name and sorts groups lexicographically. Return {access_groups:[...]}, including an empty list; budget
+  rows without any tagged deployment are invisible. B823 supplies spend=0.0 and budget=null when no
+  group-budget row exists, and preserves spend with null budget for a missing linked budget. List catches
+  EVERY exception from its try, including HTTPException, logs it and raises 500 detail.error="Failed to
+  list access groups: <exception>". Cases list_sorted_and_empty, budget_only_group_hidden,
+  joined_budget_states and list_wraps_inner_http_exception cover that behavior.
+
+  Info reads the full group map first. An exact absent name raises 404 detail.error="Access group '<name>'
+  not found" without querying a budget; a found name performs one joined budget lookup and returns
+  AccessGroupInfo. HTTPException passes through unchanged; other exceptions are logged and converted
+  to 500 detail.error="Failed to get access group info: <exception>". Cases info_exact_name_missing,
+  info_joined_budget and info_exception_mapping distinguish this catch from the list catch. Neither
+  handler calls handle_exception_on_proxy, reloads deployments, touches cache or writes rows.
+
+  Reuse B832 request/response records and B003 JSON/error serialization. B001 runs HTTP parity cases
+  against the booted pinned proxy, comparing status, type/param/code, null values and content-type.
+  Native error-injection tests prove both catches and missing-database ordering. B860 fixtures use
+  POSTGRES_TEST_URL if configured, otherwise testcontainers; an unusable configured URL fails. There
+  are no owned config reads, license checks, credentials or byte parsers. Build model_group_read with
+  files below 300 lines. The owned functions have 78 nonblank, noncomment lines including docstrings;
+  budget 100 implementation, 230 tests and 60 route wiring lines, 390 within a 400-line gate.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_group_read.rs
+    - crates/betterlite-server/src/model_group_read/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/cases/management/model-group-read/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L715-L821
+    why: Both read-route decorators, ordered lookups and distinct exception handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/model_management_endpoints.py#L86-L96
+    why: B832 AccessGroupInfo and ListAccessGroupsResponse fields.
+dod:
+  - text: All named list/info cases match through HTTP, including alphabetical order, budget-only groups
+      being hidden, exact 404 details and middleware authorization.
+    proof: [behavior-tests, oracle]
+  - text: list_wraps_inner_http_exception, info_exception_mapping and database_before_queries exercise
+      the different catches without adding writes or reloads.
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Read projection, query ordering or error-mapping tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
+        'test(/^model_group_read::tests::/) - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/model-group-read/list-sorted-and-empty.yaml
+  - tools/oracle/cases/management/model-group-read/budget-only-group-hidden.yaml
+  - tools/oracle/cases/management/model-group-read/joined-budget-states.yaml
+  - tools/oracle/cases/management/model-group-read/info-exact-name-missing.yaml
+  - tools/oracle/cases/management/model-group-read/info-joined-budget.yaml
+  - tools/oracle/cases/management/model-group-read/middleware-role-policy.yaml
+  - tools/oracle/cases/management/model-group-read/database-before-queries.yaml
+deviations: []
+out_of_scope:
+  - B823 owns model_access_group_management_endpoints.py declarations and data helpers L65-L566;
+    B824 owns create L574-L712, update L829-L975 and delete L983-L1085.
+  - B825 owns the three budget handlers L1093-L1244; B832 owns the API record definitions.
+pitfalls:
+  - A budget row alone never creates a visible model access group.
+  - List wraps an inner HTTPException as 500, whereas info rethrows it.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

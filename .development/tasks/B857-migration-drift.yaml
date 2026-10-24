@@ -168,7 +168,7 @@ out_of_scope:
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B051 owns ProxyExtrasDBManager.setup_database
     (L1285-L1315), ProxyExtrasDBManager.build_request_log_indexes (L1318-L1330), ProxyExtrasDBManager.run_migration_job
     (L1333-L1342), ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B710 owns str_to_bool (L36-L39).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B2307 owns str_to_bool (L36-L39).'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B711 owns ProxyExtrasDBManager._libpq_tls_params
     (L733-L753), ProxyExtrasDBManager._strip_prisma_query_params (L716-L730).'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B716 owns _MigrateAttemptBudget.exhausted (L108-L109),
@@ -213,8 +213,8 @@ out_of_scope:
     no caller at the pin.'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
     v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
-    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
+  - B716 owns utils.py::_prisma_schema_param, used here for lens-rename, partition and invalid-index
+    queries in the requested database schema; the public fallback remains at each call site.
   - 'litellm/proxy/db/check_migration.py::extract_sql_commands: v1 only; native startup always uses the
     v2 resolver.'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift
