@@ -19,7 +19,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/cache-cost-routing/**
-  - tools/oracle/src/router_probes/cache-cost-routing/**
+  - tools/oracle/src/router_probes/cache_cost_routing/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/cache_cost_routing.py
   - tools/oracle/litellm/probes/registry.py
@@ -29,15 +29,16 @@ references:
   why: Cache choice integration and decision stamp.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/README.md#L74-L108
   why: Supported surface and prediction restrictions.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L1-L120
-  why: B075 owns the prediction helper; locate choose_cached_model and use its contract.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/cache_aware_routing.py#L318-L343
+  why: B075 prediction API and bounded failure recovery.
 dod:
 - text: Every listed case compares the production result and relevant state transitions against the pinned
     LiteLLM implementation.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the cache_cost_routing prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
