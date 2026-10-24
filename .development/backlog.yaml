@@ -1925,7 +1925,7 @@ tasks:
     title: OpenAI-family error mapping
     status: todo
     depends_on: [B184, B187]
-    file: null
+    file: tasks/B185-openai-errors.yaml
     covers:
       - "litellm/litellm_core_utils/exception_mapping_utils.py"
   - id: B186
