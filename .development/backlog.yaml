@@ -263,6 +263,7 @@ tasks:
     - B019
     - B327
     - B328
+    - B329
     file: null
     covers:
     - router_plugins.json
@@ -2216,3 +2217,14 @@ tasks:
     covers:
     - litellm/router_strategy/complexity_router/{__init__,config,complexity_router}.py
     - litellm/router_strategy/complexity_router/README.md
+
+  - id: B329
+    milestone: M2 routing
+    title: Custom complexity tiers and bounded dimensions
+    status: todo
+    depends_on:
+    - B328
+    - B010
+    file: tasks/B329-complexity-config.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/config.py
