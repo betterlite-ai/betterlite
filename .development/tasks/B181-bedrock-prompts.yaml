@@ -8,7 +8,8 @@ description: >-
   provider state. Use B180 only for shared Anthropic-family block transformations where the behavior actually matches.
   Add bedrock_prompt oracle operations for the processor and its smaller helpers using local media fixtures; parse
   any provider-native tool passthrough through a bounded typed adapter with the prompt_bedrock fuzz target. Budget
-  400 transforms/types, 80 wiring and 280 tests.
+  400 transforms/types, 80 wiring and 280 tests. Seed B171's shared helper_case corpus with every added operation
+  and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -22,6 +23,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/bedrock-prompt/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3389-L3616
@@ -43,6 +45,9 @@ dod:
 - text: Malformed native blocks and over-limit inputs fail through the parser exercised by the corpus.
   proof:
   - prompt-bedrock-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -60,6 +65,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/bedrock-prompt/converse-text.yaml
 - tools/oracle/cases/helpers/bedrock-prompt/role-continuation.yaml
