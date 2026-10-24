@@ -1,6 +1,5 @@
 ---
 source: crates/betterlite-config/tests/config_tests/mod.rs
-assertion_line: 103
 expression: result
 ---
 Ok(
