@@ -1,0 +1,15 @@
+id: B4307
+milestone: M8 platform
+title: Describe cache settings and return redacted effective values
+status: todo
+depends_on: [B002, B003, B726, B1600, B4306]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
+  - "litellm/types/management_endpoints/cache_settings_endpoints.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

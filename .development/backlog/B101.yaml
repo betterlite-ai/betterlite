@@ -2,9 +2,16 @@ id: B101
 milestone: M5 api families
 title: Provider passthrough calls in the SDK layer
 status: todo
-depends_on: [B010, B014, B2203]
+depends_on: [B3570, B3571, B3572, B3573, B3574, B173, B174, B176, B198, B247, B249, B2203, B2402]
 file: null
 covers:
-  - "litellm/passthrough/**"
-  - "litellm/llms/base_llm/passthrough/**"
-  - "litellm/llms/pass_through/**"
+  - "litellm/passthrough/main.py"
+  - "litellm/passthrough/__init__.py"
+  - "litellm/passthrough/README.md"
+  - "litellm/llms/pass_through/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

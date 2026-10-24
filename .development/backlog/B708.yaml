@@ -42,3 +42,9 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260919000000_add_autorouter_user_session_rollup/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260920041500_add_policy_attachment_is_default/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260921000000_add_password_reset_columns/migration.sql"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

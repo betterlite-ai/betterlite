@@ -1,0 +1,14 @@
+id: B3486
+milestone: M5 api families
+title: Execute GenAI calls through chat compatibility
+status: todo
+depends_on: [B3484, B3485, B014]
+file: null
+covers:
+  - "litellm/google_genai/adapters/handler.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

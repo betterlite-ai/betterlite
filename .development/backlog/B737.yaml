@@ -6,3 +6,9 @@ depends_on: [B171, B724, B726, B732, B733, B734, B735, B736, B856, B2315]
 file: tasks/B737-auth-team-lookup.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

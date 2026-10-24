@@ -2,11 +2,13 @@ id: B111
 milestone: M7 observability
 title: Prometheus metrics
 status: todo
-depends_on: [B012]
+depends_on: [B3870, B3871, B3872, B3873, B3874, B3875, B3876, B3877, B3878, B3879, B3880, B3881, B3882, B3883, B3884, B3885, B3886, B3887, B3888, B3889, B3890, B3891, B189, B212, B253, B254, B732, B1106, B1715, B1716, B002]
 file: null
 covers:
-  - "litellm/integrations/{prometheus,prometheus_services,prometheus_metrics_endpoint}.py"
-  - "litellm/integrations/prometheus_helpers/**"
-  - "litellm/types/integrations/prometheus.py"
-  - "litellm/proxy/{prometheus_cleanup,prometheus_metrics_server}.py"
-  - "litellm/proxy/middleware/{prometheus_auth_middleware,billable_request_metrics_middleware}.py"
+  - "litellm/integrations/prometheus.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

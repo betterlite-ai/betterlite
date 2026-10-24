@@ -6,3 +6,9 @@ depends_on: [B531, B518, B173, B171]
 file: tasks/B542-azure-fine-tuning.yaml
 covers:
   - "litellm/llms/azure/fine_tuning/handler.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

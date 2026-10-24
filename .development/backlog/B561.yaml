@@ -6,3 +6,9 @@ depends_on: [B559, B005, B196, B171, B173, B2202]
 file: tasks/B561-foundry-agent-results.yaml
 covers:
   - "litellm/llms/azure_ai/agents/handler.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

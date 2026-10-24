@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/base_llm/base_model_iterator.py"
   - "litellm/llms/base_llm/batches/transformation.py"
   - "litellm/types/utils.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

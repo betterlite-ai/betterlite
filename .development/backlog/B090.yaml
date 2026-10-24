@@ -9,3 +9,9 @@ covers:
   - "litellm/vector_stores/__init__.py"
   - "litellm/vector_store_files/__init__.py"
   - "litellm/proxy/vector_store_files_endpoints/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

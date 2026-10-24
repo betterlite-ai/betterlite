@@ -7,3 +7,9 @@ file: tasks/B1502-hosted-skill-store.yaml
 covers:
   - "litellm/llms/litellm_proxy/skills/handler.py"
   - "litellm/llms/litellm_proxy/skills/constants.py"
+parent: B044
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

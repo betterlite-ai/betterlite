@@ -6,3 +6,9 @@ depends_on: [B900, B1031, B1024, B1087, B1100, B1103, B1139, B732, B855, B756, B
 file: tasks/B1032-file-upload-route.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

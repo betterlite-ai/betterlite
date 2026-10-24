@@ -147,3 +147,40 @@ pub(crate) fn problems(coverage: &Coverage) -> Vec<String> {
     }
     problems
 }
+
+pub(crate) fn path_owners(
+    folder: &Path,
+    litellm: &Litellm,
+    backlog: &Backlog,
+) -> Result<Vec<String>, GateError> {
+    let (_, paths) = read_inventory(folder)?;
+    let mut patterns: Vec<String> = litellm
+        .excluded
+        .iter()
+        .map(|exclusion| exclusion.glob.clone())
+        .collect();
+    let mut owners: Vec<&str> = vec!["excluded"; patterns.len()];
+    for entry in &backlog.tasks {
+        for glob in &entry.covers {
+            patterns.push(glob.clone());
+            owners.push(entry.id.as_str());
+        }
+    }
+    let set = glob_set(&patterns)?;
+    let mut lines = Vec::new();
+    for path in paths {
+        let mut names = BTreeSet::new();
+        for index in set.matches(&path) {
+            if let Some(owner) = owners.get(index) {
+                names.insert(*owner);
+            }
+        }
+        let joined = if names.is_empty() {
+            "uncovered".to_owned()
+        } else {
+            names.into_iter().collect::<Vec<_>>().join(",")
+        };
+        lines.push(format!("{path} {joined}"));
+    }
+    Ok(lines)
+}

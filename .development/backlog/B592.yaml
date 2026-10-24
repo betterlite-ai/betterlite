@@ -6,3 +6,9 @@ depends_on: [B590, B682, B171]
 file: tasks/B592-bedrock-assume-role.yaml
 covers:
   - "litellm/llms/bedrock/base_aws_llm.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

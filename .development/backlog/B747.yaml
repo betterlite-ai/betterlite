@@ -7,3 +7,9 @@ file: tasks/B747-auth-model-patterns.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
   - "litellm/proxy/auth/model_access_denied.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

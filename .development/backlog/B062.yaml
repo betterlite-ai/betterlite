@@ -6,3 +6,9 @@ depends_on: [B003, B052, B722, B724, B725, B732, B860, B1603, B1604, B1605, B160
 file: tasks/B062-tag-tool-management.yaml
 covers:
   - "litellm/proxy/management_endpoints/tool_management_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

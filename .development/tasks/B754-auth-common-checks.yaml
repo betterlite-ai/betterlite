@@ -40,7 +40,7 @@ description: >-
   spend:user:<id> with row spend or zero fallback and the ceiling. Schedule user_budget with spend,
   ceiling, user_id, user_email and USER event group even below the ceiling. Then finite ceilings deny
   at equality with BudgetExceededError, entity user and message ExceededBudget: User=<id> over budget.
-  Spend=<spend>, Budget=<budget>. Nonfinite ceilings still read and alert. B116 owns delivery.
+  Spend=<spend>, Budget=<budget>. Nonfinite ceilings still read and alert. B4025 owns budget alert delivery.
 
 
   After the batch run B750 required-user and global-budget checks, B888 guardrails, B1229 organization

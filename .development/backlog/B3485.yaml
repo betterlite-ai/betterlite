@@ -1,0 +1,14 @@
+id: B3485
+milestone: M5 api families
+title: Translate chat replies and tool deltas to GenAI
+status: todo
+depends_on: [B3484]
+file: null
+covers:
+  - "litellm/google_genai/adapters/transformation.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

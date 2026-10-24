@@ -8,3 +8,9 @@ covers:
   - "litellm/litellm_core_utils/logging_worker.py"
   - "litellm/integrations/*_mock_client.py"
   - "litellm/integrations/{additional_logging_utils,mock_client_factory,test_httpx}.py"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

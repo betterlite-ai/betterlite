@@ -9,3 +9,9 @@ covers:
   - "litellm/cost_calculator.py"
   - "litellm/llms/openai/image_generation/cost_calculator.py"
   - "litellm/llms/azure_ai/image_generation/cost_calculator.py"
+parent: B068
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

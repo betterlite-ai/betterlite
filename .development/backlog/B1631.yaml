@@ -6,3 +6,9 @@ depends_on: [B171, B1625, B1630]
 file: tasks/B1631-saml-oracle-signer.yaml
 covers:
   - "litellm/proxy/management_endpoints/sso/saml_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

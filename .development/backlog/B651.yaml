@@ -6,3 +6,9 @@ depends_on: [B650, B649, B594, B632, B693, B198, B249, B171, B159, B173, B595, B
 file: tasks/B651-bedrock-services-batch-call.yaml
 covers:
   - "litellm/llms/bedrock/batches/handler.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

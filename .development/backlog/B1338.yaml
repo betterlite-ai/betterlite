@@ -6,3 +6,9 @@ depends_on: [B1302, B1305, B1306, B038, B010, B171]
 file: tasks/B1338-vertex-model-garden.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_model_garden/main.py"
+parent: B032
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B540-azure-completion.yaml
 covers:
   - "litellm/llms/azure/completion/handler.py"
   - "litellm/llms/azure/completion/transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

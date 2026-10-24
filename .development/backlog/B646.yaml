@@ -7,3 +7,9 @@ file: tasks/B646-bedrock-services-file-content.yaml
 covers:
   - "litellm/llms/bedrock/files/transformation.py"
   - "litellm/llms/bedrock/files/handler.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,16 @@
+id: B4772
+milestone: M9 agents and mcp
+title: Managed identity binding and inference policy primitives
+status: todo
+depends_on: [B4770, B732, B882, B1102]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/identity.py"
+  - "litellm/proxy/agent_endpoints/managed_identity.py"
+  - "litellm/proxy/agent_endpoints/auth/managed_authorization.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

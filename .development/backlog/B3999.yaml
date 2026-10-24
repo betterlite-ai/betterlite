@@ -1,0 +1,14 @@
+id: B3999
+milestone: M7 observability
+title: Publish standard and legacy spend logs to Google PubSub
+status: todo
+depends_on: [B002, B256, B173, B1303, B1304, B1716]
+file: null
+covers:
+  - "litellm/integrations/gcs_pubsub/**"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

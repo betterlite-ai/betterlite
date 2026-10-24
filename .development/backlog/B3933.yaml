@@ -1,0 +1,15 @@
+id: B3933
+milestone: M7 observability
+title: Datadog log delivery and health checks
+status: todo
+depends_on: [B3930, B3931, B3932, B002, B173, B192, B256]
+file: null
+covers:
+  - "litellm/integrations/datadog/datadog.py"
+  - "litellm/integrations/datadog/datadog_mock_client.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

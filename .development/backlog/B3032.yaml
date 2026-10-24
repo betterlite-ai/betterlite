@@ -1,0 +1,14 @@
+id: B3032
+milestone: M4 keys, spend and management
+title: Rate-limit window storage and Redis grouping
+status: todo
+depends_on: [B393, B3031]
+file: null
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
+parent: B072
+split_from: B072
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

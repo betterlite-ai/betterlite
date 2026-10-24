@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/azure/azure.py"
   - "litellm/llms/azure/text_to_speech/transformation.py"
   - "litellm/llms/azure/audio_transcription/transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

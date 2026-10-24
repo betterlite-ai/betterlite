@@ -6,3 +6,9 @@ depends_on: [B136, B171, B948, B950, B982, B1087, B949, B002]
 file: tasks/B988-messages-mcp.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/messages/mcp_handler.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

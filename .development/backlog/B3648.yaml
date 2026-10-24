@@ -1,0 +1,15 @@
+id: B3648
+milestone: M5 api families
+title: TinyFish run policy and billing records
+status: todo
+depends_on: [B002, B190]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py"
+  - "litellm/types/passthrough_endpoints/tinyfish.py"
+parent: B103
+split_from: B103
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

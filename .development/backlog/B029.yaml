@@ -6,3 +6,9 @@ depends_on: [B678, B679, B631, B632, B639, B641, B642, B171]
 file: tasks/B029-bedrock-other-other-endpoints.yaml
 covers:
   - "litellm/llms/bedrock/image_edit/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

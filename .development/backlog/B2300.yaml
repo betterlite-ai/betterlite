@@ -6,3 +6,9 @@ depends_on: [B002, B003, B009, B126, B171, B733, B743, B770, B856]
 file: tasks/B2300-login-return.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

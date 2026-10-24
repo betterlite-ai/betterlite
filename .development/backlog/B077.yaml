@@ -2,8 +2,16 @@ id: B077
 milestone: M4 keys, spend and management
 title: Public endpoints and the model hub
 status: todo
-depends_on: [B060]
+depends_on: [B001, B002, B003, B193, B194, B3180, B3181, B3182, B3183, B3184, B3185, B3186, B3187, B3188, B3189, B3190, B3191, B3192, B3193, B3194]
 file: null
 covers:
-  - "litellm/proxy/public_endpoints/**"
-  - "litellm/types/proxy/public_endpoints/**"
+  - "litellm/proxy/public_endpoints/__init__.py"
+  - "litellm/proxy/public_endpoints/public_v1/__init__.py"
+  - "litellm/proxy/public_endpoints/public_endpoints.py"
+  - "litellm/types/proxy/public_endpoints/public_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

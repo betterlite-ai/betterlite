@@ -6,3 +6,9 @@ depends_on: [B1122, B171]
 file: tasks/B1545-riva-transcription-records.yaml
 covers:
   - "litellm/llms/nvidia_riva/{common_utils.py,audio_transcription/transformation.py}"
+parent: B047
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

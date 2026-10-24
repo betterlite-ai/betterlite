@@ -1,0 +1,15 @@
+id: B4784
+milestone: M9 agents and mcp
+title: List and inspect agents with spend, keys and model visibility
+status: todo
+depends_on: [B4770, B4775, B4776, B4780, B4783, B726, B732, B864]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/endpoints.py"
+  - "litellm/proxy/agent_endpoints/model_list_helpers.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

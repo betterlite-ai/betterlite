@@ -7,3 +7,9 @@ file: tasks/B575-anthropic-tools.yaml
 covers:
   - "litellm/llms/anthropic/chat/transformation.py"
   - "litellm/types/llms/anthropic.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B591, B595, B599, B608, B609, B2205, B2203, B101, B005, B004, B682,
 file: tasks/B658-bedrock-services-passthrough.yaml
 covers:
   - "litellm/llms/bedrock/passthrough/transformation.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

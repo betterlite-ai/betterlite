@@ -2,11 +2,14 @@ id: B091
 milestone: M5 api families
 title: Search API
 status: todo
-depends_on: [B010, B014]
+depends_on: [B3270, B3271, B3272, B3273, B3274, B3275, B732, B737, B749]
 file: null
 covers:
-  - "litellm/search/**"
-  - "litellm/llms/base_llm/search/**"
-  - "litellm/proxy/search_endpoints/**"
-  - "litellm/types/search.py"
-  - "litellm/router_utils/search_api_router.py"
+  - "litellm/proxy/search_endpoints/endpoints.py"
+  - "litellm/search/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

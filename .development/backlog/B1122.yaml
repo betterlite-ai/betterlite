@@ -6,3 +6,9 @@ depends_on: [B010, B2202, B171]
 file: tasks/B1122-transcription-contract.yaml
 covers:
   - "litellm/llms/base_llm/audio_transcription/transformation.py"
+parent: B083
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

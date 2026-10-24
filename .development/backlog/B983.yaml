@@ -6,3 +6,9 @@ depends_on: [B171, B183, B902, B958, B1087, B906, B966]
 file: tasks/B983-messages-responses-input.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/responses_adapters/transformation.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

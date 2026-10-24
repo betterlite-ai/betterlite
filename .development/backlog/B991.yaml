@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py"
   - "litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py"
   - "litellm/types/proxy/claude_code_endpoints.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/auth/rds_iam_token.py"
   - "litellm/proxy/db/db_url_settings.py"
   - "litellm/proxy/db/pgbouncer.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B3372
+milestone: M5 api families
+title: Container file route registration and JSON requests
+status: todo
+depends_on: [B3360, B3362, B3368, B3371, B014, B2400, B732, B855, B756, B003]
+file: null
+covers:
+  - "litellm/proxy/container_endpoints/handler_factory.py"
+parent: B094
+split_from: B094
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

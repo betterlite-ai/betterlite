@@ -6,3 +6,9 @@ depends_on: [B002, B126, B171, B192, B204, B710, B1690, B1706, B1733, B1734]
 file: tasks/B1737-redis-spend-drain.yaml
 covers:
   - "litellm/proxy/db/db_transaction_queue/redis_update_buffer.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

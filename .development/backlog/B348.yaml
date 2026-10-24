@@ -7,3 +7,9 @@ file: tasks/B348-router-settings.yaml
 covers:
   - "litellm/proxy/management_endpoints/router_settings_endpoints.py"
   - "litellm/types/management_endpoints/router_settings_endpoints.py"
+parent: B023
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

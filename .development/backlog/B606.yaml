@@ -6,3 +6,9 @@ depends_on: [B218, B598, B005, B171, B220]
 file: tasks/B606-bedrock-converse-content.yaml
 covers:
   - "litellm/llms/bedrock/chat/converse_transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

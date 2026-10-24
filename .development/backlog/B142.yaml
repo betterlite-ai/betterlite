@@ -2,8 +2,15 @@ id: B142
 milestone: M9 agents and mcp
 title: A2A protocol client, server and agent providers
 status: todo
-depends_on: [B141]
+depends_on: [B003, B173, B732, B4800, B4801, B4802, B4803, B4804, B4805, B4806, B4807, B4808, B4809, B4810, B4811, B4812, B4813, B4814]
 file: null
 covers:
-  - "litellm/a2a_protocol/**"
-  - "litellm/proxy/a2a/**"
+  - "litellm/proxy/a2a/discovery.py"
+  - "litellm/proxy/a2a/endpoints.py"
+  - "litellm/proxy/a2a/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

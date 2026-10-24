@@ -6,3 +6,9 @@ depends_on: [B006, B171]
 file: tasks/B628-bedrock-other-nova-embeddings.yaml
 covers:
   - "litellm/llms/bedrock/embed/amazon_nova_transformation.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

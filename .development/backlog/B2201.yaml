@@ -6,3 +6,9 @@ depends_on: [B205, B206, B002, B171, B2202]
 file: tasks/B2201-anthropic-option-primitives.yaml
 covers:
   - "litellm/llms/anthropic/chat/transformation.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

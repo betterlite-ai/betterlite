@@ -22,7 +22,7 @@ description: >-
 
 
   Compare the pure redaction helpers under B856 Management::models using B171 helper_case. Native tests
-  exercise alert/span orchestration with B110/B116 transports and B1100's production request parsing;
+  exercise alert/span orchestration with B110 span and B4030 alert transports and B1100's production request parsing;
   helper adapters must not invoke handlers or emulate asynchronous transport behavior.
 
 
@@ -48,7 +48,7 @@ description: >-
   delete_user/internal_user_deleted. Missing proxy logger or slack_alerting_instance and unknown functions
   skip alerts. VirtualKeyEvent uses caller user_id/user_role or literal Unknown, key_alias unchanged and
   request_kwargs unchanged. The displayed event_name replaces underscores with spaces and title-cases;
-  alert_type retains the enum value. Await B116's sender and propagate its error to B865, which owns the
+  alert_type retains the enum value. Await B4030's send_virtual_key_event_slack and propagate its error to B865, which owns the
   wrapper's suppression/logging policy. This function performs no extra credential redaction on alert kwargs.
 
 
@@ -61,7 +61,7 @@ description: >-
   recurse into unrelated nested credentials or change the response returned to the route caller.
   ManagementEndpointLoggingPayload preserves route, request_data, start_time, end_time and exception;
   send the success or failure hook exactly once with parent_otel_span, even when that span is None.
-  Body-parser and hook failures escape this function; only response conversion has a local catch. B110/B116
+  Body-parser and hook failures escape this function; only response conversion has a local catch. B110/B4030
   own transport formatting and final log redaction; B865 owns invocation order relative to cache eviction.
 scope:
   paths:
@@ -138,7 +138,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/management-payload/nonrecursive-malformed-env-slots.yaml
 deviations: []
 out_of_scope:
-  - B110 owns is_otel_v2_enabled and OTel hooks; B116 owns alert transport and AlertType values.
+  - B110 owns is_otel_v2_enabled and OTel hooks; B4030 owns send_virtual_key_event_slack and B4020 owns the AlertType values.
   - B1100 owns request body decoding; B741 owns route normalization. No new parser is introduced here.
   - 'litellm/proxy/management_helpers/utils.py: B862 owns handle_budget_for_entity (L180-L264), _clone_team_default_budget_for_member
     (L283-L333), _resolve_member_budget_id (L336-L390).'

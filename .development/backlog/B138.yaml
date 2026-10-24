@@ -2,9 +2,14 @@ id: B138
 milestone: M9 agents and mcp
 title: MCP tool registry, tool search and OpenAPI to MCP
 status: todo
-depends_on: [B136]
+depends_on: [B4680, B4681, B4682, B4683, B4684, B4685, B4686, B189, B732]
 file: null
 covers:
-  - "litellm/proxy/_experimental/mcp_server/{tool_registry,tool_search,semantic_tool_filter,tool_catalog_guard,openapi_to_mcp_generator,toolset_db}.py"
+  - "litellm/proxy/_experimental/mcp_server/semantic_tool_filter.py"
   - "litellm/proxy/hooks/mcp_semantic_filter/**"
-  - "litellm/types/mcp_server/{tool_registry,mcp_toolset}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

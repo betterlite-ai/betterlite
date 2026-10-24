@@ -1,0 +1,16 @@
+id: B4175
+milestone: M8 platform
+title: CLI diagnostic commands and startup input helpers
+status: todo
+depends_on: [B002, B710]
+file: null
+covers:
+  - "litellm/proxy/proxy_cli.py"
+  - "litellm/proxy/common_utils/banner.py"
+  - "litellm/proxy/common_utils/debug_utils.py"
+parent: B121
+split_from: B121
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B4004
+milestone: M7 observability
+title: Queue redacted Zerobus logs and refresh connection settings
+status: todo
+depends_on: [B4003, B002, B256, B173, B188, B190]
+file: null
+covers:
+  - "litellm/integrations/zerobus/{__init__,logger}.py"
+parent: B115
+split_from: B115
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,16 @@
+id: B4808
+milestone: M9 agents and mcp
+title: Watsonx Orchestrate runs, polling and stream fallback
+status: todo
+depends_on: [B173, B4803, B4807]
+file: null
+covers:
+  - "litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py"
+  - "litellm/a2a_protocol/providers/watsonx_orchestrate/config.py"
+  - "litellm/a2a_protocol/providers/watsonx_orchestrate/__init__.py"
+parent: B142
+split_from: B142
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

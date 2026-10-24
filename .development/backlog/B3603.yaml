@@ -1,0 +1,15 @@
+id: B3603
+milestone: M5 api families
+title: Pass-through caller credential filtering
+status: todo
+depends_on: [B002, B756, B760, B1100]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/common_utils.py"
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

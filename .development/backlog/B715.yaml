@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/db/exception_handler.py"
   - "litellm/proxy/db/db_lookup_gate.py"
   - "litellm/proxy/db/log_db_metrics.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

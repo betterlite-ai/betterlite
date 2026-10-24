@@ -6,3 +6,9 @@ depends_on: [B091, B682, B171]
 file: tasks/B2212-agentcore-search-reply.yaml
 covers:
   - "litellm/llms/bedrock/search/transformation.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

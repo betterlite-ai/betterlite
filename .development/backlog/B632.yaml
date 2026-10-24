@@ -6,3 +6,9 @@ depends_on: [B591, B693, B595, B173, B171, B249]
 file: tasks/B632-bedrock-other-embedding-jobs.yaml
 covers:
   - "litellm/llms/bedrock/embed/embedding.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

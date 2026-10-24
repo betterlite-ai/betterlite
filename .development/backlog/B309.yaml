@@ -6,3 +6,9 @@ depends_on: [B013, B011, B301, B399, B002]
 file: tasks/B309-fallback-plans.yaml
 covers:
   - "litellm/router_utils/fallback_event_handlers.py"
+parent: B018
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

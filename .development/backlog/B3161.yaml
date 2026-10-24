@@ -1,0 +1,14 @@
+id: B3161
+milestone: M4 keys, spend and management
+title: Connect ROI GitHub discovery and gateway estimation
+status: todo
+depends_on: [B003, B004, B173, B732, B3150, B3152, B3154, B3155, B3158]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/roi_calculator_endpoints.py"
+parent: B076
+split_from: B076
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

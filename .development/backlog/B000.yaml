@@ -5,3 +5,9 @@ status: done
 depends_on: []
 file: tasks/B000-workspace.yaml
 covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 8

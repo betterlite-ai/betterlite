@@ -1,0 +1,14 @@
+id: B3637
+milestone: M5 api families
+title: OpenAI passthrough response and stream logging
+status: todo
+depends_on: [B3630, B3635, B3636, B3650, B068, B190, B508, B668, B004]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py"
+parent: B103
+split_from: B103
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

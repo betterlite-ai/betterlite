@@ -6,3 +6,9 @@ depends_on: [B1058, B1331, B1384, B171]
 file: tasks/B1390-studio-file-search.yaml
 covers:
   - "litellm/llms/gemini/vector_stores/**"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

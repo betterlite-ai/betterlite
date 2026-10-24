@@ -1,0 +1,14 @@
+id: B4782
+milestone: M9 agents and mcp
+title: Fetch and cache Databricks agent OAuth tokens
+status: todo
+depends_on: [B002, B173, B2226]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/databricks_oauth.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

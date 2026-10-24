@@ -6,3 +6,9 @@ depends_on: [B001, B003, B732, B737, B747, B856, B860, B879, B887]
 file: tasks/B886-entity-model-access.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

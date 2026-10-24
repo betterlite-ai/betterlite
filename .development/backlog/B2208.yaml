@@ -6,3 +6,9 @@ depends_on: [B002, B171]
 file: tasks/B2208-cloud-storage.yaml
 covers:
   - "litellm/litellm_core_utils/cloud_storage_security.py"
+parent: B115
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

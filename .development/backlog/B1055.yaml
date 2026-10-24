@@ -6,3 +6,9 @@ depends_on: [B010, B011, B174, B176, B519, B686, B2487, B2401]
 file: tasks/B1055-assistant-records.yaml
 covers:
   - "litellm/assistants/main.py"
+parent: B089
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

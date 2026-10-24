@@ -6,3 +6,9 @@ depends_on: [B002, B012, B126, B171, B191, B700, B860]
 file: tasks/B1690-spend-queue-and-pod-lock.yaml
 covers:
   - "litellm/proxy/db/db_transaction_queue/{base_update_queue,pod_lock_manager}.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

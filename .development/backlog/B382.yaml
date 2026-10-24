@@ -6,3 +6,9 @@ depends_on: [B360, B301]
 file: tasks/B382-routing-read-batch.yaml
 covers:
   - "litellm/router_utils/routing_read_batch.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

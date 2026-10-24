@@ -7,3 +7,9 @@ file: tasks/B1601-credential-routes.yaml
 covers:
   - "litellm/proxy/credential_endpoints/**"
   - "litellm/litellm_core_utils/credential_accessor.py"
+parent: B061
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

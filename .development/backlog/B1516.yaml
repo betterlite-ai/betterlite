@@ -7,3 +7,9 @@ file: tasks/B1516-copilot-embedding-messages.yaml
 covers:
   - "litellm/llms/github_copilot/embedding/**"
   - "litellm/llms/github_copilot/messages/**"
+parent: B045
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

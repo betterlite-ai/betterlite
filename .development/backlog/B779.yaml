@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - "litellm/proxy/common_utils/key_rotation_manager.py"
   - "litellm/proxy/proxy_server.py"
+parent: B055
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

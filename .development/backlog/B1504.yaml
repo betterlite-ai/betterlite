@@ -7,3 +7,9 @@ file: tasks/B1504-skill-content.yaml
 covers:
   - "litellm/llms/litellm_proxy/skills/prompt_injection.py"
   - "litellm/llms/litellm_proxy/skills/code_execution.py"
+parent: B044
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

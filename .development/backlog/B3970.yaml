@@ -1,0 +1,14 @@
+id: B3970
+milestone: M7 observability
+title: MLflow spans and streamed event lifecycle
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/integrations/mlflow.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

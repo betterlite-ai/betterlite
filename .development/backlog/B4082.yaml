@@ -1,0 +1,14 @@
+id: B4082
+milestone: M7 observability
+title: Normalize shadow requests and verify guardrail snapshots
+status: todo
+depends_on: [B4081, B2204, B908, B964, B967, B1117]
+file: null
+covers:
+  - "litellm/integrations/shadow_eval_logger.py"
+parent: B118
+split_from: B118
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

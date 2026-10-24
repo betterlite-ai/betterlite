@@ -6,3 +6,9 @@ depends_on: [B368, B367, B006, B301, B401, B002]
 file: tasks/B302-deployment-catalog.yaml
 covers:
   - "litellm/router.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

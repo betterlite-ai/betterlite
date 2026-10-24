@@ -1,0 +1,14 @@
+id: B3937
+milestone: M7 observability
+title: Datadog LLM span kinds, errors and token metrics
+status: todo
+depends_on: [B3935, B3936, B196, B1693]
+file: null
+covers:
+  - "litellm/integrations/datadog/datadog_llm_obs.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -11,3 +11,9 @@ covers:
   - "litellm/utils.py"
   - "litellm/llms/base_llm/responses/transformation.py"
   - "litellm/llms/base_llm/image_edit/transformation.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

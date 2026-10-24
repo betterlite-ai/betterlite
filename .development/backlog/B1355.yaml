@@ -7,3 +7,9 @@ file: tasks/B1355-vertex-gemini-transcription.yaml
 covers:
   - "litellm/llms/vertex_ai/audio_transcription/gemini_transcribe_transformation.py"
   - "litellm/types/llms/vertex_ai_gemini_transcription.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

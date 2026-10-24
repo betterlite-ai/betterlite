@@ -7,3 +7,9 @@ file: tasks/B324-deployment-affinity.yaml
 covers:
   - "litellm/router_utils/pre_call_checks/deployment_affinity_check.py"
   - "litellm/caching/affinity_cache.py"
+parent: B020
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

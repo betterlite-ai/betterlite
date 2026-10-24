@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/collector.py"
   - "litellm/proxy/logging_endpoints/**"
   - "litellm/types/proxy/callback_logs_endpoints.py"
+parent: B069
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

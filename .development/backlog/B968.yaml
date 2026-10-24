@@ -11,3 +11,9 @@ covers:
   - "litellm/llms/anthropic/pass_through/context_management/errors.py"
   - "litellm/llms/anthropic/pass_through/context_management/placeholders.py"
   - "litellm/llms/anthropic/pass_through/context_management/result.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

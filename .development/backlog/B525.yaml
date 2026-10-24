@@ -6,3 +6,9 @@ depends_on: [B500, B173, B171, B672, B1120, B206, B668, B129, B2202]
 file: tasks/B525-openai-videos.yaml
 covers:
   - "litellm/llms/openai/videos/transformation.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

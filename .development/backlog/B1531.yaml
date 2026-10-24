@@ -6,3 +6,9 @@ depends_on: [B002, B193, B068, B997, B171, B1525]
 file: tasks/B1531-fal-image-pricing.yaml
 covers:
   - "litellm/llms/fal_ai/cost_calculator.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

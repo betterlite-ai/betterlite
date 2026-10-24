@@ -7,3 +7,9 @@ file: tasks/B2231-bedrock-config-selection.yaml
 covers:
   - "litellm/llms/bedrock/common_utils.py"
   - "litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

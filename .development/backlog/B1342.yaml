@@ -6,3 +6,9 @@ depends_on: [B1306, B006, B002, B171]
 file: tasks/B1342-vertex-text-embeddings.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_embeddings/{transformation,bge,types}.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

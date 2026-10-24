@@ -6,3 +6,9 @@ depends_on: [B002, B009, B171, B173, B724, B804, B860, B1608, B1614]
 file: tasks/B1621-microsoft-group-sync.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

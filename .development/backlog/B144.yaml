@@ -19,3 +19,9 @@ covers:
   - "ui/litellm-dashboard/src/{contexts,lib,utils}/**"
   - "ui/litellm-dashboard/src/hooks/{use-safe-layout-effect,useSyntaxTheme,useSyntaxTheme.test,useUrlTab,useUrlTab.test,useVisitedTabs,useWorker}.*"
   - "litellm/proxy/{cached_logo.jpg,logo.png,logo_dark.png,logo_monogram.png,logo_monogram_dark.png}"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

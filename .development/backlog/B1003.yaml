@@ -9,3 +9,9 @@ covers:
   - "litellm/endpoints/speech/speech_to_completion_bridge/transformation.py"
   - "litellm/llms/base_llm/text_to_speech/transformation.py"
   - "litellm/litellm_core_utils/audio_utils/utils.py"
+parent: B083
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

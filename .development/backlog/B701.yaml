@@ -8,3 +8,9 @@ covers:
   - "schema.prisma"
   - "litellm/proxy/schema.prisma"
   - "litellm-proxy-extras/litellm_proxy_extras/schema.prisma"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

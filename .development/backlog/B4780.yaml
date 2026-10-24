@@ -1,0 +1,14 @@
+id: B4780
+milestone: M9 agents and mcp
+title: Enforce agent invocation grants and delegated human access
+status: todo
+depends_on: [B4770, B4772, B4773, B4776, B4778, B4779, B732]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/auth/agent_permission_handler.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B002, B004, B249, B503, B668, B1425, B171]
 file: tasks/B1433-host-model-identity.yaml
 covers:
   - "litellm/llms/{clarifai,compactifai,datarobot}/**"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

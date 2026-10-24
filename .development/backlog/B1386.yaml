@@ -6,3 +6,9 @@ depends_on: [B1301, B1302, B1305, B218, B196, B171]
 file: tasks/B1386-vertex-agent-engine-records.yaml
 covers:
   - "litellm/llms/vertex_ai/agent_engine/transformation.py"
+parent: B034
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

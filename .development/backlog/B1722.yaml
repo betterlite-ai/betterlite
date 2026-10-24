@@ -7,3 +7,9 @@ file: tasks/B1722-spend-diagnostics.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_management_endpoints.py"
   - "litellm/proxy/_types.py"
+parent: B069
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

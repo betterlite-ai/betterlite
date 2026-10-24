@@ -1,0 +1,15 @@
+id: B3510
+milestone: M5 api families
+title: Decisions wire records and shared intermediate representation
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/types/decisions.py"
+  - "litellm/llms/base_llm/decisions/transformation.py"
+parent: B099
+split_from: B099
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -2,10 +2,14 @@ id: B121
 milestone: M8 platform
 title: Proxy CLI flags, startup, workers and bug reports
 status: todo
-depends_on: [B003, B2307]
+depends_on: [B003, B051, B710, B711, B712, B717, B857, B4170, B4171, B4172, B4173, B4174, B4175, B4176, B4177]
 file: null
 covers:
-  - "litellm/proxy/{proxy_cli,bug_report_config}.py"
+  - "litellm/proxy/proxy_cli.py"
   - "litellm/proxy/start.sh"
-  - "litellm/proxy/common_utils/{banner,proxy_state,scheduled_job_stagger,debug_utils}.py"
-  - "litellm/litellm_core_utils/bug_report.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,16 @@
+id: B3543
+milestone: M5 api families
+title: Compression interception settings and request cache
+status: todo
+depends_on: [B3542, B002, B189, B198]
+file: null
+covers:
+  - "litellm/integrations/compression_interception/__init__.py"
+  - "litellm/integrations/compression_interception/handler.py"
+  - "litellm/types/integrations/compression_interception.py"
+parent: B100
+split_from: B100
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

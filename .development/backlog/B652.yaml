@@ -7,3 +7,9 @@ file: tasks/B652-bedrock-services-invoke-agent.yaml
 covers:
   - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
   - "litellm/types/llms/bedrock_invoke_agents.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B4325
+milestone: M8 platform
+title: Reuse Redis clients and bind Cluster reads and pubsub
+status: todo
+depends_on: [B4323]
+file: null
+covers:
+  - "litellm/caching/{redis_cache,redis_cluster_cache}.py"
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/auth/budget_throttle.py"
   - "litellm/proxy/spend_tracking/budget_reservation.py"
   - "litellm/proxy/spend_tracking/carried_budget_state.py"
+parent: B071
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

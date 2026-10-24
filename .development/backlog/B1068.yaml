@@ -6,3 +6,9 @@ depends_on: [B004, B1065, B1066, B1100, B1067, B732, B003]
 file: tasks/B1068-vector-store-routes.yaml
 covers:
   - "litellm/proxy/vector_store_endpoints/endpoints.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

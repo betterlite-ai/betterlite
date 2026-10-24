@@ -6,3 +6,9 @@ depends_on: [B171]
 file: tasks/B2229-catalog-generalizations.yaml
 covers:
   - "litellm/litellm_core_utils/fallback_generalizations.py"
+parent: B018
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

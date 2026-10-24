@@ -7,3 +7,9 @@ file: tasks/B2312-daily-activity-contracts.yaml
 covers:
   - "litellm/types/repositories/daily_activity.py"
   - "litellm/repositories/daily_activity_sql.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

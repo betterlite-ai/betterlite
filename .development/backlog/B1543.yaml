@@ -6,3 +6,9 @@ depends_on: [B002, B1542, B1122, B1001, B171]
 file: tasks/B1543-deepgram-transcription.yaml
 covers:
   - "litellm/llms/deepgram/audio_transcription/**"
+parent: B047
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

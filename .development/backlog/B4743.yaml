@@ -1,0 +1,14 @@
+id: B4743
+milestone: M9 agents and mcp
+title: MCP HTTP failure propagation and bounded cleanup
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/experimental_mcp_client/client.py"
+parent: B140
+split_from: B140
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

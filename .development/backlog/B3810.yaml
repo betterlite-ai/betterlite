@@ -1,0 +1,15 @@
+id: B3810
+milestone: M6 guardrails
+title: Compile tool permission rules and expose validated configuration
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/tool_permission.py"
+parent: B109
+split_from: B109
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B4471
+milestone: M8 platform
+title: Gateway and backend application route filtering
+status: todo
+depends_on: [B4470, B003, B710, B711, B712]
+file: null
+covers:
+  - "gateway/main.py"
+  - "backend/main.py"
+parent: B131
+split_from: B131
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

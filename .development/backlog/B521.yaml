@@ -6,3 +6,9 @@ depends_on: [B005, B173, B171, B519]
 file: tasks/B521-openai-thread-runs.yaml
 covers:
   - "litellm/llms/openai/openai.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

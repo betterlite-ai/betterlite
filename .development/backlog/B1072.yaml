@@ -6,3 +6,9 @@ depends_on: [B010, B011, B012, B174, B1071, B1111, B527, B002, B2480, B2401]
 file: tasks/B1072-vector-file-create.yaml
 covers:
   - "litellm/vector_store_files/main.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

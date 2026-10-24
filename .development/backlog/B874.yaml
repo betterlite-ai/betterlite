@@ -7,3 +7,9 @@ file: tasks/B874-database-repair.yaml
 covers:
   - "db_scripts/migrate_keys.py"
   - "db_scripts/update_unassigned_teams.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

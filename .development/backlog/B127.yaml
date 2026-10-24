@@ -2,7 +2,13 @@ id: B127
 milestone: M8 platform
 title: Object storage caches
 status: todo
-depends_on: [B125]
+depends_on: [B4350, B4351, B002, B173]
 file: null
 covers:
-  - "litellm/caching/{s3_cache,gcs_cache,azure_blob_cache}.py"
+  - "litellm/caching/gcs_cache.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

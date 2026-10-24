@@ -1,0 +1,15 @@
+id: B4574
+milestone: M8 platform
+title: CLI credential renewal and storage coordination
+status: todo
+depends_on: [B4573]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/pkce_login.py"
+  - "litellm/proxy/client/cli/commands/auth.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

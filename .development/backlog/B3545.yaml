@@ -1,0 +1,15 @@
+id: B3545
+milestone: M5 api families
+title: Native compaction capability and summary dispatch
+status: todo
+depends_on: [B2225]
+file: null
+covers:
+  - "litellm/llms/compaction.py"
+  - "litellm/llms/anthropic/compaction.py"
+parent: B100
+split_from: B100
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

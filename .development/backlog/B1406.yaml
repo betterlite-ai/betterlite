@@ -6,3 +6,9 @@ depends_on: [B1402, B1035, B173, B171]
 file: tasks/B1406-xai-batches.yaml
 covers:
   - "litellm/llms/xai/batches/**"
+parent: B036
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

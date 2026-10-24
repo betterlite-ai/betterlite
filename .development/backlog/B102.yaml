@@ -2,10 +2,18 @@ id: B102
 milestone: M5 api families
 title: Pass-through endpoint framework and its config API
 status: todo
-depends_on: [B052, B009, B2302]
+depends_on: [B3600, B3601, B3602, B3603, B3604, B3605, B3606, B3607, B3608, B3609, B3610, B3611, B3612, B3613, B3614, B3615, B3616, B3617, B3618, B3619, B3620, B3621, B3622, B3623, B3624, B3625, B3626, B3627, B3628, B3629, B002, B052, B198]
 file: null
 covers:
-  - "litellm/proxy/pass_through_endpoints/*.*"
-  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py"
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+  - "litellm/proxy/pass_through_endpoints/architecture.md"
+  - "litellm/proxy/pass_through_endpoints/managed_id_codec.py"
+  - "litellm/proxy/pass_through_endpoints/managed_id_rewriter.py"
   - "litellm/proxy/config_management_endpoints/**"
-  - "litellm/types/passthrough_endpoints/{pass_through_endpoints,managed_id_rewriter}.py"
+  - "litellm/types/passthrough_endpoints/managed_id_rewriter.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B177, B171]
 file: tasks/B219-message-fields.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/common_utils.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

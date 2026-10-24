@@ -1,0 +1,14 @@
+id: B4301
+milestone: M8 platform
+title: Record cache-hit context and dispatch success callbacks
+status: todo
+depends_on: [B191, B247, B250, B4296]
+file: null
+covers:
+  - "litellm/caching/caching_handler.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

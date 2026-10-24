@@ -7,3 +7,9 @@ file: tasks/B816-object-permissions.yaml
 covers:
   - "litellm/types/object_permission.py"
   - "litellm/proxy/management_helpers/object_permission_utils.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

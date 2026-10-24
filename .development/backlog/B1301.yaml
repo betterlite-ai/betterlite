@@ -6,3 +6,9 @@ depends_on: [B002, B009, B171, B1300]
 file: tasks/B1301-vertex-credential-sources.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_llm_base.py"
+parent: B031
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

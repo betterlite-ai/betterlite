@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/azure_ai/anthropic/count_tokens/handler.py"
   - "litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py"
   - "litellm/llms/azure_ai/anthropic/count_tokens/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

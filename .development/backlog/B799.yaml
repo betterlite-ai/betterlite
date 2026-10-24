@@ -7,3 +7,9 @@ file: tasks/B799-login-form.yaml
 covers:
   - "litellm/proxy/common_utils/html_forms/ui_login.py"
   - "litellm/proxy/common_utils/html_forms/default_credentials_hint.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

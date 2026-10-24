@@ -6,3 +6,9 @@ depends_on: [B1345, B1346, B1302, B1305, B1307, B1128, B997, B171]
 file: tasks/B1348-vertex-imagen-edit.yaml
 covers:
   - "litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

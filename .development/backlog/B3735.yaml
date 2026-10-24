@@ -1,0 +1,14 @@
+id: B3735
+milestone: M6 guardrails
+title: Model Armor buffered stream enforcement
+status: todo
+depends_on: [B3732, B3733, B206, B2227]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

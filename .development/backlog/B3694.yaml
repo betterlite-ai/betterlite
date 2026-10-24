@@ -1,0 +1,14 @@
+id: B3694
+milestone: M6 guardrails
+title: Content category keyword and phrase matching
+status: todo
+depends_on: [B3690, B3692, B3693]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py"
+parent: B105
+split_from: B105
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

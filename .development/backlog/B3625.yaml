@@ -1,0 +1,14 @@
+id: B3625
+milestone: M5 api families
+title: Pass-through Azure Speech and Transcribe routes
+status: todo
+depends_on: [B3600, B3602, B3615, B3618, B002, B052, B198, B594, B595, B1018, B1100]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+parent: B102
+split_from: B102
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

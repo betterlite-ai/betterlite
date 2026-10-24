@@ -6,3 +6,9 @@ depends_on: [B1371, B006, B171]
 file: tasks/B1374-vertex-batch-row-correlation.yaml
 covers:
   - "litellm/llms/vertex_ai/files/transformation.py"
+parent: B034
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

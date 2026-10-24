@@ -7,3 +7,9 @@ file: tasks/B549-foundry-credentials.yaml
 covers:
   - "litellm/llms/azure_ai/common_utils.py"
   - "litellm/types/llms/azure_ai.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

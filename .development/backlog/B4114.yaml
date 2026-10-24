@@ -1,0 +1,14 @@
+id: B4114
+milestone: M7 observability
+title: Search tool selection authorization and parent attribution
+status: todo
+depends_on: [B732, B737, B749, B1106]
+file: null
+covers:
+  - "litellm/integrations/websearch_interception/handler.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

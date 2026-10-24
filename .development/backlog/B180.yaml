@@ -6,3 +6,9 @@ depends_on: [B178, B179, B183, B222, B223, B224, B225, B226]
 file: tasks/B180-anthropic-prompts.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

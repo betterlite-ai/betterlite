@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/vertex_ai/cost_calculator.py"
   - "litellm/llms/vertex_ai/gemini/cost_calculator.py"
   - "litellm/llms/gemini/cost_calculator.py"
+parent: B031
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

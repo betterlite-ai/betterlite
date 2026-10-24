@@ -2,8 +2,14 @@ id: B137
 milestone: M9 agents and mcp
 title: MCP auth, OAuth flows, BYOK and outbound credentials
 status: todo
-depends_on: [B136]
+depends_on: [B4650, B4651, B4652, B4653, B4654, B4655, B4656, B4657, B4658, B4659, B4660, B4661, B4662, B4663, B4664, B4665, B4666, B4667, B4668, B4669, B4670, B4671, B4672, B4673, B4674, B4675, B4676, B4677, B4678, B4679, B732, B741, B743, B756]
 file: null
 covers:
-  - "litellm/proxy/_experimental/mcp_server/{auth,outbound_credentials}/**"
-  - "litellm/proxy/_experimental/mcp_server/{bridge_token_flow,byok_credential_cache,byok_oauth_endpoints,gateway_dcr_flow,idp_token_exchange,oauth2_flow_backfill,oauth2_token_cache,oauth_identity_binding,oauth_issuer_stamp_backfill,oauth_utils,proxy_api_credentials,ui_session_utils}.py"
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{__init__,resolver}.py"
+  - "litellm/proxy/_experimental/mcp_server/auth/{litellm_auth_handler,user_api_key_auth_mcp}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

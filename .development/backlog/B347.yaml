@@ -6,3 +6,9 @@ depends_on: [B301, B361]
 file: tasks/B347-adaptive-concurrency.yaml
 covers:
   - "litellm/integrations/adaptive_concurrency.py"
+parent: B022
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

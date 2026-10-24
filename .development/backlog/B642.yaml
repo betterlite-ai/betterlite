@@ -6,3 +6,9 @@ depends_on: [B1001, B590, B594, B595, B173, B171]
 file: tasks/B642-bedrock-other-transcription.yaml
 covers:
   - "litellm/llms/bedrock/audio_transcription/__init__.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

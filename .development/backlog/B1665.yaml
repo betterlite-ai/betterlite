@@ -7,3 +7,9 @@ file: tasks/B1665-management-envelopes.yaml
 covers:
   - "litellm/types/proxy/management_endpoints/management_v1.py"
   - "litellm/proxy/management_endpoints/management_v1/common.py"
+parent: B067
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

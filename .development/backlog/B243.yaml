@@ -6,3 +6,9 @@ depends_on: [B244, B171]
 file: tasks/B243-sentry-scrubbing.yaml
 covers:
   - "litellm/litellm_core_utils/sentry_scrubbing.py"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

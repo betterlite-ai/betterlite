@@ -6,3 +6,9 @@ depends_on: [B700, B708, B714, B860, B1690, B1696, B1697, B1698]
 file: tasks/B1699-baseline-accounting-store.yaml
 covers:
   - "litellm/proxy/db/baseline_accounting.py"
+parent: B068
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

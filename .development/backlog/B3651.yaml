@@ -1,0 +1,16 @@
+id: B3651
+milestone: M5 api families
+title: Cursor TypeSafe and Comprehend Medical logging
+status: todo
+depends_on: [B190, B193]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/cursor_passthrough_logging_handler.py"
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/typesafe_passthrough_logging_handler.py"
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/comprehend_medical_passthrough_logging_handler.py"
+parent: B103
+split_from: B103
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

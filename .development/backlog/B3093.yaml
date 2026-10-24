@@ -1,0 +1,14 @@
+id: B3093
+milestone: M4 keys, spend and management
+title: Project grouping sets and entity rollups into daily analytics
+status: todo
+depends_on: [B729, B3090, B3092]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/common_daily_activity.py"
+parent: B074
+split_from: B074
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

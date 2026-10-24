@@ -6,3 +6,9 @@ depends_on: [B171, B1100, B1101, B1019, B002, B732]
 file: tasks/B1021-file-upload-options.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/common_utils.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

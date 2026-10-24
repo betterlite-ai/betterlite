@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
   - "litellm/proxy/management_helpers/user_invitation.py"
   - "litellm/proxy/hooks/user_management_event_hooks.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

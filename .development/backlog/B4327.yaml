@@ -1,0 +1,14 @@
+id: B4327
+milestone: M8 platform
+title: Write Redis cache values, sets and buffered pipelines
+status: todo
+depends_on: [B393, B4324, B4325]
+file: null
+covers:
+  - "litellm/caching/redis_cache.py"
+parent: B126
+split_from: B126
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

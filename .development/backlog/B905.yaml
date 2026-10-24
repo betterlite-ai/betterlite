@@ -6,3 +6,9 @@ depends_on: [B171, B175, B206, B213, B903, B002, B668, B1114, B1138, B2202, B137
 file: tasks/B905-responses-parameters.yaml
 covers:
   - "litellm/responses/utils.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

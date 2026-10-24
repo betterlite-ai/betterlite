@@ -1,0 +1,14 @@
+id: B3858
+milestone: M7 observability
+title: Legacy OTel service and management callbacks
+status: todo
+depends_on: [B198, B206, B253, B3844, B3847, B3848, B3854, B3859]
+file: null
+covers:
+  - "litellm/integrations/opentelemetry.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

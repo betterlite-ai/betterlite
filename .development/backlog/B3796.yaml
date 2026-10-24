@@ -1,0 +1,14 @@
+id: B3796
+milestone: M6 guardrails
+title: Straiker v3 provider envelopes and sessions
+status: todo
+depends_on: [B3795, B207, B966]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

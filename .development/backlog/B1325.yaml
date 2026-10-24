@@ -6,3 +6,9 @@ depends_on: [B1310, B1311, B1312, B1305, B193, B171]
 file: tasks/B1325-studio-chat-input.yaml
 covers:
   - "litellm/llms/gemini/chat/transformation.py"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

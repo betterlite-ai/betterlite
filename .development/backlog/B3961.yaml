@@ -1,0 +1,14 @@
+id: B3961
+milestone: M7 observability
+title: Athina Greenscale and PromptLayer event delivery
+status: todo
+depends_on: [B002, B173]
+file: null
+covers:
+  - "litellm/integrations/{athina,greenscale,prompt_layer}.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

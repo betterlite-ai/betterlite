@@ -10,3 +10,9 @@ covers:
   - "litellm/repositories/prisma_protocols.py"
   - "litellm/repositories/chunked_in.py"
   - "litellm/models/base.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

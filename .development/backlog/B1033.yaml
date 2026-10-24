@@ -7,3 +7,9 @@ file: tasks/B1033-file-content-route.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
   - "litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

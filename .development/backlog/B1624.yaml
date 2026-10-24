@@ -6,3 +6,9 @@ depends_on: [B002, B124, B137, B165, B171, B788, B860, B893, B1223, B1608, B1609
 file: tasks/B1624-sso-browser-session.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

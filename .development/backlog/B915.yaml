@@ -7,3 +7,9 @@ file: tasks/B915-responses-session-history.yaml
 covers:
   - "litellm/responses/litellm_completion_transformation/session_handler.py"
   - "litellm/responses/litellm_completion_transformation/transformation.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

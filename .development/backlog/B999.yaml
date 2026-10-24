@@ -6,3 +6,9 @@ depends_on: [B010, B174, B176, B157, B1120, B997, B512, B044, B2451, B011, B012,
 file: tasks/B999-image-edit-call.yaml
 covers:
   - "litellm/images/main.py"
+parent: B082
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

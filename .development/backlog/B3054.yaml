@@ -1,0 +1,14 @@
+id: B3054
+milestone: M4 keys, spend and management
+title: Per-session maximum iteration limits
+status: todo
+depends_on: [B002, B732, B3030]
+file: null
+covers:
+  - "litellm/proxy/hooks/max_iterations_limiter.py"
+parent: B072
+split_from: B072
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

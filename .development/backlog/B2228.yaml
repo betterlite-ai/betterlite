@@ -7,3 +7,9 @@ file: tasks/B2228-owned-parameter-names.yaml
 covers:
   - "litellm/types/litellm_params.py"
   - "litellm/types/utils.py"
+parent: B167
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

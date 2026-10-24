@@ -1,0 +1,14 @@
+id: B3062
+milestone: M4 keys, spend and management
+title: Deliver FOCUS exports to S3 and GCS
+status: todo
+depends_on: [B002, B173, B1303, B1304, B2208, B3061]
+file: null
+covers:
+  - "litellm/integrations/focus/destinations/{s3_destination,gcs_destination}.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

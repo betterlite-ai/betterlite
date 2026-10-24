@@ -5,3 +5,9 @@ status: todo
 depends_on: [B010, B202, B203, B014, B011, B009, B204]
 file: tasks/B015-moderations.yaml
 covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

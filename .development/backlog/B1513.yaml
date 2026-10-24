@@ -6,3 +6,9 @@ depends_on: [B1512, B173, B187, B171]
 file: tasks/B1513-copilot-api-key.yaml
 covers:
   - "litellm/llms/github_copilot/authenticator.py"
+parent: B045
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
