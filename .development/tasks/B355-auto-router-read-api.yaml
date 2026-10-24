@@ -1,0 +1,88 @@
+id: B355
+title: Benchmark and per-key session read APIs
+description: Expose GET /auto_router/benchmarks and GET /auto_router/session through B052 authentication
+  and the repositories from B344. Build typed Decimal aggregate responses from rollups, never scan raw
+  spend logs, and keep canonical-user and key ownership filters in the repository query. Reuse B051 data-access
+  primitives; if their repository module lives outside these scoped crates, the architect must name that
+  path before dispatch. Use the existing Rust crate boundaries from B004 and B008; integrate through the
+  server when the provider dispatcher or callbacks live in another core crate. This task's source slices
+  are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the matching
+  adapters to B301's component runner where state is not observable over HTTP; adapters call production
+  logic and never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons,
+  and separate seeded distribution tests for random choices. Add a cargo-fuzz target auto_router_read_query
+  under crates/betterlite-server/fuzz and a normal replays_the_auto_router_read_query_corpus test using
+  the production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures
+  and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/auto-router-read-api/**
+  - tools/oracle/src/router_probes/auto-router-read-api/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/auto_router_read_api.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L618-L959
+  why: UTC windows, rollup aggregates, idle configured routers and per-key session reads.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L173-L309
+  why: Benchmark and session response types.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(auto_router_read_api)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/auto_router_read_query.rs && test -n "$(ls
+      -A crates/betterlite-server/fuzz/corpus/auto_router_read_query)" && cargo nextest run --locked -p
+      betterlite-server --no-tests=fail -E 'test(replays_the_auto_router_read_query_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/auto-router-read-api/default-thirty-day-window.yaml
+- tools/oracle/cases/routing/auto-router-read-api/inclusive-overlap-boundary.yaml
+- tools/oracle/cases/routing/auto-router-read-api/reverse-date-range-400.yaml
+- tools/oracle/cases/routing/auto-router-read-api/admin-viewer-versus-member.yaml
+- tools/oracle/cases/routing/auto-router-read-api/idle-router-zero-row.yaml
+- tools/oracle/cases/routing/auto-router-read-api/telemetry-denominator.yaml
+- tools/oracle/cases/routing/auto-router-read-api/partial-baseline-cohort.yaml
+- tools/oracle/cases/routing/auto-router-read-api/canonical-user-filter.yaml
+- tools/oracle/cases/routing/auto-router-read-api/session-key-isolation.yaml
+- tools/oracle/cases/routing/auto-router-read-api/bounded-session-lookup.yaml
+- tools/oracle/cases/routing/auto-router-read-api/pending-rollup-404.yaml
+deviations: []
+out_of_scope:
+- Dashboard rendering or full spend-log export.
+pitfalls:
+- A matching session ID under a different key is never visible.
+- The source uses float aggregate fields; transport money as Decimal without changing the existing database
+  schema.
+- Unknown legacy attribution must not leak into a canonical-user view.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -284,6 +284,7 @@ tasks:
     - B352
     - B353
     - B354
+    - B355
     file: null
     covers:
     - router_plugins.json
@@ -2562,3 +2563,16 @@ tasks:
     file: tasks/B354-complexity-adaptive-placement.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+
+  - id: B355
+    milestone: M2 routing
+    title: Benchmark and per-key session read APIs
+    status: todo
+    depends_on:
+    - B344
+    - B343
+    - B052
+    file: tasks/B355-auto-router-read-api.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
