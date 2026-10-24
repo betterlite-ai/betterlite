@@ -9,7 +9,8 @@ description: >-
   existing JSON Schema library, with file/HTTP reference resolution disabled and finite input/depth/work limits.
   Schemas stay in the named provider passthrough field; errors retain concrete sources and B184 classification.
   Add rule_decision, mock_result and schema_validation helper cases, and response_schema fuzz target/replay. Budget
-  300 rule/mock/schema adapter lines, 100 wiring and 330 tests.
+  300 rule/mock/schema adapter lines, 100 wiring and 330 tests. Seed B171's shared helper_case corpus with every
+  added operation and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -28,6 +29,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/call-rules/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/rules.py#L4-L59
@@ -52,6 +54,9 @@ dod:
   proof:
   - call-rules-tests
   - response-schema-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -69,6 +74,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/call-rules/pre-allow-deny.yaml
 - tools/oracle/cases/helpers/call-rules/post-decision-dict.yaml
