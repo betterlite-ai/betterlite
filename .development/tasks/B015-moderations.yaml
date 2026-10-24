@@ -7,9 +7,18 @@ description: >-
   use the B010 provider boundary, B009 transport and B011 error mapper. Support general_settings.moderation_model
   and the source's model-selection precedence through config, without hard-coding a provider model when omission
   is meaningful. All outbound destinations/credentials remain operator supplied; model-less requests can use only
-  a configured OpenAI default, never request-supplied api_base. Add HTTP cases for omitted/explicit model, input
-  shapes, category fields, aliases and upstream errors, and moderation request/response fuzz targets with replay.
-  Budget 270 wire/provider lines, 140 route/config integration and 330 tests.
+  a configured OpenAI default, never request-supplied api_base. Add HTTP cases for configured-default/explicit model,
+  input shapes, category fields, aliases and upstream errors, and moderation request/response fuzz targets with
+  replay.  general_settings.moderation_model overrides the body model (CLI model has higher precedence). When both
+  body model and moderation_model are absent, this plan requires an operator-configured OpenAI default; without
+  it return HTTP 400, type invalid_request_error, param model, code moderation_model_required before network I/O.
+  Test that case locally, since LiteLLM would use OPENAI_API_KEY and the SDK default public base, outside the HTTP
+  mock. Reuse B204 exact decimal parsing with workspace serde_json arbitrary_precision; a finite score not exactly
+  representable by Decimal (including below 1e-28) returns a typed provider-response parse error mapped to HTTP
+  502, type bad_gateway, param category_scores, code decimal_out_of_range. Never round such a score to zero. Add
+  the moderation variant to B014 exhaustive dispatch. Write the behavior rstest functions b015_moderation_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names.
 scope:
   paths:
   - Cargo.toml
@@ -18,17 +27,20 @@ scope:
   - crates/betterlite-server/**
   - crates/betterlite-config/**
   - tools/oracle/cases/moderations/**
+  - crates/betterlite-core/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12398-L12490
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12398-L12490
   why: Moderation routes, model resolution and shared headers.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L58
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L58
   why: Endpoint-specific model default precedence.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7767-L7875
   why: Moderation provider dispatch and optional model forwarding.
 dod:
-- text: Moderation input/model defaults, response categories/scores, aliases and upstream errors match listed HTTP
-    cases.
+- text: >-
+    Moderation input/model defaults, response categories/scores, aliases and upstream errors match listed HTTP cases.
   proof:
   - oracle
 - text: Auth, request/body limits, configured destination policy and deadlines are exercised against the real server.
@@ -42,34 +54,43 @@ dod:
 - text: Previously completed text completion and streaming paths still pass their oracle cases.
   proof:
   - oracle
+- text: >-
+    Model-less/no-default requests return the documented 400; out-of-range provider scores return the documented
+    502 without rounding, while configured moderation_model overrides the body.
+  proof:
+  - moderation-tests
 checks:
   optional:
   - mutants
   commands:
   - id: moderation-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server -p betterlite-config --no-tests=fail
-      -E 'test(/moderation/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-openai -p betterlite-server -p betterlite-config --no-tests=fail
+      -E 'test(/::b015_moderation_tests_behavior($|::)/) - test(/replays_the_/)'
   - id: moderation-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-openai/fuzz/fuzz_targets/moderation_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/moderation_request)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/moderation_request)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/moderation_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/moderation_request)"
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_moderation_request_corpus)'
   - id: moderation-response-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-openai/fuzz/fuzz_targets/moderation_response.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/moderation_response)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/moderation_response)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/moderation_response.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/moderation_response)"
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_moderation_response_corpus)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'moderation_model' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
+      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
 - tools/oracle/cases/moderations/string-input.yaml
 - tools/oracle/cases/moderations/array-input.yaml
 - tools/oracle/cases/moderations/multimodal-input.yaml
-- tools/oracle/cases/moderations/model-omitted.yaml
 - tools/oracle/cases/moderations/configured-default.yaml
 - tools/oracle/cases/moderations/explicit-model.yaml
 - tools/oracle/cases/moderations/categories-scores.yaml
@@ -79,7 +100,15 @@ oracle_cases:
 - tools/oracle/cases/moderations/upstream-429.yaml
 - tools/oracle/cases/completions/string-prompt.yaml
 - tools/oracle/cases/completions/stream-basic.yaml
-deviations: []
+deviations:
+- what: >-
+    A model-less moderation request without an operator-configured default returns 400 invalid_request_error, param
+    model, code moderation_model_required.
+  why: Keep outbound destinations operator supplied; LiteLLM uses OPENAI_API_KEY and the SDK default base.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7800-L7830
+- what: An unrepresentable moderation score returns 502 bad_gateway, param category_scores, code decimal_out_of_range.
+  why: Exact Decimal values have bounded scale and magnitude; silently rounding is forbidden.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7830-L7875
 out_of_scope:
 - Moderation policy/guardrails and alternative moderation providers belong to their later tasks.
 - This part adds no Python SDK API and no cost accounting.
