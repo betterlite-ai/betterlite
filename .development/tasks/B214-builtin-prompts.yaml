@@ -1,0 +1,102 @@
+id: B214
+title: Built-in text prompt families
+description: >-
+  Create betterlite-prompts and implement default_pt, map_system_message_pt, Alpaca, Llama2, Ollama, Mistral, Falcon,
+  MPT, WizardCoder, Phind, DeepSeek, Claude text/2.1, Granite and Titan renderers in src/builtin.rs and family modules.
+  Own factory.py lines 62-63, 99-373, 614-712 and 3156-3179; preserve whitespace and role delimiters exactly. Ollama
+  inline-image handling consumes supplied data only; no new URL-fetch behavior before the open B177/B183 decisions.
+  Inject model/roles and return owned bounded strings. Budget 300 renderers, 90 adapters, 300 tests and 60 wiring
+  (750 total). Write the behavior rstest functions b214_behavior_tests_behavior in adjacent tests.rs files, with
+  a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
+  operations builtin_prompts in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/builtin.rs
+  - crates/betterlite-prompts/src/builtin/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/builtin-prompts/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L62-L373
+  why: Default, system mapper and text families.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L614-L712
+  why: DeepSeek, Claude and Granite.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3156-L3179
+  why: Titan.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b214_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'builtin_prompts' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/builtin-prompts/default.yaml
+- tools/oracle/cases/helpers/builtin-prompts/system-map.yaml
+- tools/oracle/cases/helpers/builtin-prompts/alpaca.yaml
+- tools/oracle/cases/helpers/builtin-prompts/llama2.yaml
+- tools/oracle/cases/helpers/builtin-prompts/ollama.yaml
+- tools/oracle/cases/helpers/builtin-prompts/mistral.yaml
+- tools/oracle/cases/helpers/builtin-prompts/falcon-instruct.yaml
+- tools/oracle/cases/helpers/builtin-prompts/falcon-chat.yaml
+- tools/oracle/cases/helpers/builtin-prompts/mpt.yaml
+- tools/oracle/cases/helpers/builtin-prompts/wizardcoder.yaml
+- tools/oracle/cases/helpers/builtin-prompts/phind.yaml
+- tools/oracle/cases/helpers/builtin-prompts/deepseek.yaml
+- tools/oracle/cases/helpers/builtin-prompts/claude.yaml
+- tools/oracle/cases/helpers/builtin-prompts/claude-2-1.yaml
+- tools/oracle/cases/helpers/builtin-prompts/granite.yaml
+- tools/oracle/cases/helpers/builtin-prompts/titan.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B177 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

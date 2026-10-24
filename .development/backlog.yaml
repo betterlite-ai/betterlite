@@ -1922,10 +1922,12 @@ tasks:
     milestone: M1 openai data plane
     title: Text prompt templates and local Jinja rendering
     status: todo
-    depends_on: [B174]
+    depends_on:
+    - B214
+    - B215
     file: tasks/B177-prompt-templates.yaml
     covers:
-      - "litellm/litellm_core_utils/prompt_templates/{factory,huggingface_template_handler}.py"
+    - litellm/litellm_core_utils/prompt_templates/factory.py
   - id: B178
     milestone: M1 openai data plane
     title: Tool argument parsing and schema transforms
@@ -2235,3 +2237,24 @@ tasks:
     file: tasks/B213-dot-paths.yaml
     covers:
     - litellm/litellm_core_utils/dot_notation_indexing.py
+  - id: B214
+    milestone: M1 openai data plane
+    title: Built-in text prompt families
+    status: todo
+    depends_on:
+    - B004
+    - B171
+    file: tasks/B214-builtin-prompts.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B215
+    milestone: M1 openai data plane
+    title: Bounded local Jinja prompt rendering
+    status: todo
+    depends_on:
+    - B214
+    - B171
+    file: tasks/B215-jinja-prompts.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+    - litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py
