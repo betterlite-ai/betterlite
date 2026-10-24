@@ -2219,10 +2219,14 @@ tasks:
     milestone: M1 openai data plane
     title: OpenAI text completions
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B014
+    - B193
     file: tasks/B202-text-completions.yaml
     covers:
-      - "litellm/llms/openai/completion/**"
+    - litellm/llms/openai/completion/**
   - id: B203
     milestone: M1 openai data plane
     title: Streaming text completions and completion bridge
