@@ -1,0 +1,99 @@
+id: B196
+title: Text, message and tool token counting
+description: >-
+  Build text/message/tool token accounting on B195's engines in betterlite-tokenizer/count. Port the pinned model
+  normalization, encoding choice, legacy message constants, tool/function argument counting, tool-schema formatting,
+  completion priming and tool_choice adjustments as pure typed operations. Implement disable_token_counter and explicit
+  custom-tokenizer selection through injected settings. Include the pinned long-input sampling/extrapolation algorithm,
+  measuring Unicode scalar counts rather than UTF-8 byte counts and using checked integer/rational arithmetic with
+  Python's ties-to-even rounding. Add token_count helper cases for threshold boundaries and known/unknown model
+  mappings; avoid declaring all counts exact because LiteLLM itself samples large inputs. Extend a token_request
+  fuzz target for the typed helper input while reusing B004's chat parser at the HTTP boundary. Budget 330 accounting/formatting
+  lines, 80 wiring and 320 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-tokenizer/Cargo.toml
+  - crates/betterlite-tokenizer/src/lib.rs
+  - crates/betterlite-tokenizer/src/error.rs
+  - crates/betterlite-tokenizer/src/count.rs
+  - crates/betterlite-tokenizer/src/count/**
+  - crates/betterlite-tokenizer/src/tools.rs
+  - crates/betterlite-tokenizer/src/tools/**
+  - crates/betterlite-tokenizer/src/selection.rs
+  - crates/betterlite-tokenizer/src/selection/**
+  - crates/betterlite-tokenizer/fuzz/**
+  - crates/betterlite-config/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/token-count/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L374-L690
+  why: Request validation, message overhead, tool choice, extrapolation and encoding choice.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L954-L1051
+  why: Function definition text used in counting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L2376-L2470
+  why: Model/custom tokenizer selection.
+dod:
+- text: All listed text, message, tool and long-input count cases match Python exactly as integers.
+  proof:
+  - oracle
+- text: Unicode sample boundaries, checked arithmetic and disabled counting are tested; oversized requests fail
+    before expensive tokenization.
+  proof:
+  - token-count-tests
+- text: The token request and extended config parser corpora replay through the production entry points.
+  proof:
+  - token-request-corpus
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: token-count-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/token_count/)'
+  - id: token-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-tokenizer/fuzz/fuzz_targets/token_request.rs && test -n "$(ls -A crates/betterlite-tokenizer/fuzz/corpus/token_request)"
+      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(replays_the_token_request_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/token-count/text.yaml
+- tools/oracle/cases/helpers/token-count/text-list-joined.yaml
+- tools/oracle/cases/helpers/token-count/text-and-messages-error.yaml
+- tools/oracle/cases/helpers/token-count/empty-messages.yaml
+- tools/oracle/cases/helpers/token-count/legacy-name-overhead.yaml
+- tools/oracle/cases/helpers/token-count/azure-name.yaml
+- tools/oracle/cases/helpers/token-count/unknown-model.yaml
+- tools/oracle/cases/helpers/token-count/response-count.yaml
+- tools/oracle/cases/helpers/token-count/function-tool-arguments.yaml
+- tools/oracle/cases/helpers/token-count/tool-schema.yaml
+- tools/oracle/cases/helpers/token-count/tool-choice.yaml
+- tools/oracle/cases/helpers/token-count/threshold-unicode.yaml
+- tools/oracle/cases/helpers/token-count/sample-ties-even.yaml
+- tools/oracle/cases/helpers/token-count/disabled.yaml
+deviations: []
+out_of_scope:
+- Image/document accounting and maximum-output adjustment are B197.
+- Monetary cost calculation is B068.
+pitfalls:
+- Rust byte length is not Python string length.
+- A named tool_choice contributes a different overhead from none or auto.
+- Keep default normalization parity separate from whether a future provider offers an exact native token-count endpoint.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
