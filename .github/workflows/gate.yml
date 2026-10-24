@@ -97,31 +97,31 @@ jobs:
         run: cargo gate validate
 
       - name: Test and lint the gate
+        if: github.event_name == 'merge_group'
         run: |
           cargo fmt --check --manifest-path .development/gate/Cargo.toml
           cargo clippy --locked --all-targets --manifest-path .development/gate/Cargo.toml -- -D warnings
           cargo test --locked --manifest-path .development/gate/Cargo.toml
 
       - name: Install the pinned tools
-        if: steps.find.outputs.task != ''
+        if: github.event_name == 'merge_group'
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
 
       - name: Install the tools without prebuilt binaries
-        if: steps.find.outputs.task != ''
+        if: github.event_name == 'merge_group'
         run: cargo install --locked cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
 
-      - name: Run the task's checks
-        if: steps.find.outputs.task != '' && github.event_name == 'pull_request'
+      - name: Run the task's checks on the merged result
+        if: steps.find.outputs.task != '' && github.event_name == 'merge_group'
         env:
           GATE_BASE: ${{ steps.find.outputs.base }}
           TASK: ${{ steps.find.outputs.task }}
         run: cargo gate run "$TASK"
 
-      - name: Run the checks that hold for the merged result
-        if: steps.find.outputs.task != '' && github.event_name == 'merge_group'
+      - name: Run the base checks on the merged result
+        if: steps.find.outputs.task == '' && github.event_name == 'merge_group'
         env:
           GATE_BASE: ${{ steps.find.outputs.base }}
-          TASK: ${{ steps.find.outputs.task }}
-        run: cargo gate run "$TASK" --only fmt --only clippy --only tests --only doctests --only deny --only shear --only hooks
+        run: cargo gate run B000 --only fmt --only clippy --only tests --only doctests --only deny --only shear --only hooks --only similarity --only file-size --only workflows
