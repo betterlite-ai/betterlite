@@ -1,0 +1,89 @@
+id: B357
+title: Shadow evaluation listings and aggregate results
+description: Add GET /auto_router/shadow_eval and GET /auto_router/shadow_eval/{job_id} using B356's response
+  types and B118's append-only attempt/funnel data. Put parameterized grouped queries behind B051's repository
+  boundary, derive current state without mutating jobs, and keep the newest-job limit bounded. Use Decimal
+  spend and ratio rounding and expose only authorized aggregate data. Use the existing Rust crate boundaries
+  from B004 and B008; integrate through the server when the provider dispatcher or callbacks live in another
+  core crate. This task's source slices are the linked ranges, not a port of their Python classes. Add
+  the listed oracle cases and the matching adapters to B301's component runner where state is not observable
+  over HTTP; adapters call production logic and never reproduce it. Use deterministic candidate sets or
+  supplied random samples for comparisons, and separate seeded distribution tests for random choices.
+  Add a cargo-fuzz target shadow_eval_query under crates/betterlite-server/fuzz and a normal replays_the_shadow_eval_query_corpus
+  test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
+  fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/shadow-eval-results/**
+  - tools/oracle/src/router_probes/shadow-eval-results/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/shadow_eval_results.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1176-L1578
+  why: Attempt/funnel aggregation, grouping and target labels.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L1802-L1895
+  why: Filtered listing and detail retrieval.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L516-L752
+  why: Slices, outcomes, target statuses and job responses.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(shadow_eval_results)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_eval_query.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/shadow_eval_query)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_shadow_eval_query_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/shadow-eval-results/newest-first-limited.yaml
+- tools/oracle/cases/routing/shadow-eval-results/target-filter-requires-pair.yaml
+- tools/oracle/cases/routing/shadow-eval-results/group-contains-all-target-legs.yaml
+- tools/oracle/cases/routing/shadow-eval-results/admin-viewer-only.yaml
+- tools/oracle/cases/routing/shadow-eval-results/detail-missing-404.yaml
+- tools/oracle/cases/routing/shadow-eval-results/budget-and-time-derived-status.yaml
+- tools/oracle/cases/routing/shadow-eval-results/tier-model-target-slices.yaml
+- tools/oracle/cases/routing/shadow-eval-results/tie-and-error-denominators.yaml
+- tools/oracle/cases/routing/shadow-eval-results/latest-error.yaml
+- tools/oracle/cases/routing/shadow-eval-results/missing-funnel-null-coverage.yaml
+- tools/oracle/cases/routing/shadow-eval-results/zero-funnel-full-coverage.yaml
+- tools/oracle/cases/routing/shadow-eval-results/deleted-target-labels.yaml
+- tools/oracle/cases/routing/shadow-eval-results/six-decimal-judge-spend.yaml
+deviations: []
+out_of_scope:
+- Mutating jobs, adding new outcomes or collecting new raw request content.
+pitfalls:
+- Limit jobs rather than target rows or one multi-target job will be truncated.
+- Do not leak key hashes or aggregated traffic to team members through a role-check shortcut.
+- The source's max_turns valve and indexed job IDs bound aggregation; do not issue unbounded global scans.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
