@@ -1,103 +1,182 @@
 id: B332
 title: Capability forecasts and calibrated routing thresholds
-description: Implement the capability classifier over B331's bounded call engine with the pinned prompt
-  and strict forecast schema. Parse bare, fenced and prose-wrapped JSON, validate rule/boundary consistency,
-  and compute threshold and optional calibrated probability before selecting a configured efficient/capable
-  tier. Use a maintained Decimal math implementation for logit/sigmoid; the architect must approve the
-  precision and numeric comparison contract before dispatch. Add exact model-selection boundary cases
-  and independently compare diagnostic probabilities within an explicitly justified precision rule. Use
-  the existing Rust crate boundaries from B004 and B008; integrate through the server when the provider
-  dispatcher or callbacks live in another core crate. This task's source slices are the linked ranges,
-  not a port of their Python classes. Add the listed oracle cases and the matching adapters to B301's
-  component runner where state is not observable over HTTP; adapters call production logic and never reproduce
-  it. Use deterministic candidate sets or supplied random samples for comparisons, and separate seeded
-  distribution tests for random choices. Extend the existing config_yaml fuzz target and committed corpus
-  for every newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target
-  cap_reply under crates/betterlite-router/fuzz and a normal replays_the_cap_reply_corpus test using the
-  production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures and
-  oracle cases are budget-excluded by checks.yaml.
+description: 'Compose B394 CapabilityForecast parsing/calibration with B331 calls and B330 context. Implement
+  capability_llm dispatch, efficient/capable tier validation, prompt-policy conflicts and capable-tier
+  failure outcomes. Retain redaction and caller cost attribution; exact selection is checked even when
+  diagnostic probabilities have a declared tolerance. Configuration boundary keys introduced or consumed
+  here: capability_classifier_config. Pinned declaration defaults: capability_classifier_config=None.
+  Resolve env values once in betterlite-config, never in router code. Implement the owned native service
+  in crates/betterlite-router/src/capability_classifier.rs. Add ProbeOperation::B332 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B332 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/config.py:
+  ComplexityRouterConfig._validate_capability_classifier_config (L1636-L1646), ComplexityRouterConfig._validate_capability_classifier_tiers
+  (L1660-L1681), ComplexityRouterConfig._validate_capability_classifier_prompt_policy (L1684-L1704). Implement
+  these behaviors through the typed Rust services above; synchronous facades and structural accessors
+  reuse the same primitive instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/capability-classifier/**
+  - crates/betterlite-router/src/capability_classifier.rs
+  - crates/betterlite-router/src/capability_classifier/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/capability_classifier.rs
+  - crates/betterlite-server/src/routing/capability_classifier/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/capability_classifier.rs
   - tools/oracle/src/router_probes/capability_classifier/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/capability_classifier.py
   - tools/oracle/litellm/probes/registry.py
-  - Cargo.toml
-  - deny.toml
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/capability_classifier.py
+  - tools/oracle/cases/routing/capability-classifier/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/capability_classifier.rs
+  - crates/betterlite-config/src/capability_classifier/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b332-*
+  - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L17-L227
-  why: Prompt, forecast validation, epsilon threshold and JSON extraction.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L605-L675
-  why: Calibration and capability config.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2046-L2104
-  why: Fail-closed capable-tier outcome.
+  why: Implementation boundary verified against the pinned checkout.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2502-L2569
-  why: Structured call and calibration path.
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1636-L1646
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1660-L1704
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1092-L1111
+  why: Previously uncovered helper owned by this task.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1114-L1148
+  why: Previously uncovered helper owned by this task.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Write tests named b332_behaviors and b332_boundaries under capability_classifier::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b332-behaviors
+  - b332-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the capability_classifier prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b332-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b332-invalid.yaml;
+    the valid seed contains capability_classifier_config. The cargo-fuzz target config_yaml and normal
+    replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
+    relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
-    replays.
-  proof:
-  - parser-corpus
-- text: All mutants in changed router, config or wire code are caught.
+  - b332-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(capability_classifier)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-  - id: parser-corpus
-    why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/cap_reply.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/cap_reply)"
-      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_cap_reply_corpus)'
+  - id: b332-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b332_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b332-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b332_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/capability_classifier.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/capability_classifier.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b332-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b332-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b332-" && grep -Fq 'capability_classifier_config' crates/betterlite-config/fuzz/corpus/config_yaml/b332-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-- tools/oracle/cases/routing/capability-classifier/supported-threshold.yaml
-- tools/oracle/cases/routing/capability-classifier/uncertain-and-unmatched-step.yaml
-- tools/oracle/cases/routing/capability-classifier/unsupported-two-steps.yaml
-- tools/oracle/cases/routing/capability-classifier/inclusive-epsilon-boundary.yaml
-- tools/oracle/cases/routing/capability-classifier/invalid-rule-boundary.yaml
-- tools/oracle/cases/routing/capability-classifier/fenced-prose-json.yaml
-- tools/oracle/cases/routing/capability-classifier/calibration-clips-endpoints.yaml
 - tools/oracle/cases/routing/capability-classifier/malformed-fails-capable.yaml
 - tools/oracle/cases/routing/capability-classifier/redact-crux-retain-derived-signals.yaml
 deviations: []
 out_of_scope:
 - LLM-v2's two-solver forecast and profile presets.
 - Training or fitting calibration parameters.
+- B394 owns capability forecast parsing and calibration; consume its tested public interface.
+- 'litellm/router_strategy/complexity_router/capability_classifier.py: B394 owns: CapabilityClassifierVerdict._validate_rule_boundary_pair
+  (L125-L134), CapabilityClassifierVerdict.routing_threshold (L136-L138), CapabilityClassifierVerdict.meets_routing_threshold
+  (L140-L142), CapabilityClassifierForecast.meets_routing_threshold (L151-L152), capability_classifier_response_format
+  (L183-L191), capability_classifier_system_prompt (L194-L202), _complete_json_object_at (L208-L213),
+  extract_classifier_json (L216-L222), parse_capability_classifier_verdict (L225-L227).'
+- 'litellm/router_strategy/complexity_router/config.py: B328 owns: tier_severity_order (L87-L88).'
+- 'litellm/router_strategy/complexity_router/config.py: B329 owns: ComplexityRouterConfig._normalize_escalation_keywords
+  (L1572-L1575), ComplexityRouterConfig._coerce_plan_mode_min_tier (L1579-L1584), ComplexityRouterConfig._normalize_plan_mode_patterns
+  (L1588-L1594), ComplexityRouterConfig._normalize_housekeeping_patterns (L1598-L1603), ComplexityRouterConfig._validate_plan_mode_min_tier
+  (L1606-L1620), ComplexityRouterConfig._coerce_heuristic_first_max_tier (L1765-L1770), ComplexityRouterConfig._validate_heuristic_first_max_tier
+  (L1773-L1804), ComplexityRouterConfig._validate_hybrid_boundary_margin (L1807-L1821), ComplexityRouterConfig._reject_blank_optional_text
+  (L1825-L1831), ComplexityRouterConfig._normalize_classification_prompt_field (L1835-L1836), ComplexityRouterConfig._normalize_classification_examples_field
+  (L1840-L1841), ComplexityRouterConfig._validate_keyword_rule_tiers (L2037-L2049), ComplexityRouterConfig._validate_adaptive_pools
+  (L2052-L2062), ComplexityRouterConfig._validate_semantic_matching (L2065-L2072), ComplexityRouterConfig._validate_plugins_adaptive_combo
+  (L2107-L2113), ComplexityRouterConfig._validate_stall_escalation (L2116-L2132), ComplexityRouterConfig._validate_tier_param_placement
+  (L2135-L2154).'
+- 'litellm/router_strategy/complexity_router/config.py: B331 owns: ClassifierLLMConfig._reject_blank_system_prompt
+  (L582-L587), ClassifierLLMConfig._reject_rubric_with_system_prompt (L590-L602), ComplexityRouterConfig._validate_classifier_config
+  (L1623-L1633).'
+- 'litellm/router_strategy/complexity_router/config.py: B333 owns: JevClassifierConfig._reject_blank_instructions
+  (L697-L700), JevClassifierConfig._reject_blank_api_key (L704-L707), JevClassifierConfig._keep_the_environment_key_on_the_environment_base
+  (L710-L722), ComplexityRouterConfig._validate_jev_classifier_config (L1649-L1657).'
+- 'litellm/router_strategy/complexity_router/config.py: B336 owns: ComplexityRouterConfig._normalize_context_compaction
+  (L1342-L1343).'
+- 'litellm/router_strategy/complexity_router/config.py: B353 owns: ComplexityRouterConfig._validate_llm_v2
+  (L1707-L1740).'
+- 'litellm/router_strategy/complexity_router/config.py: B359 owns: KeywordTierRule._coerce_tier (L113-L118),
+  KeywordTierRule._normalize_keywords (L121-L130).'
+- 'litellm/router_strategy/complexity_router/config.py: B373 owns: _atom_steps (L742-L745), _repeat_cost
+  (L748-L755), _node_cost (L758-L777), _sequence_cost (L780-L795), custom_pattern_work (L798-L805), CustomDimension._validate_matchers
+  (L825-L835), CustomDimension.pattern_work (L837-L841), ComplexityRouterConfig._validate_custom_dimensions
+  (L1743-L1761).'
+- 'litellm/router_strategy/complexity_router/config.py: B374 owns: TierDefinition._normalize (L190-L215),
+  ComplexityTierModel._freeze_litellm_params (L252-L253), ComplexityTierModel._serialize_litellm_params
+  (L256-L257), _normalize_tier_entries (L260-L273), ComplexityRouterConfig._coerce_tier_values (L1508-L1519),
+  ComplexityRouterConfig._normalize_tier_model_configs (L1523-L1568), ComplexityRouterConfig.has_custom_tiers
+  (L1844-L1846), ComplexityRouterConfig.uses_llm_classifier (L1849-L1854), ComplexityRouterConfig.active_tier_severity_order
+  (L1856-L1858), ComplexityRouterConfig.tier_names (L1860-L1864), ComplexityRouterConfig.classifier_wire_labels
+  (L1866-L1870), ComplexityRouterConfig.resolve_classified_tier (L1872-L1877), ComplexityRouterConfig._built_in_opening_conflicts
+  (L1879-L1906), ComplexityRouterConfig._tier_definition_conflicts (L1908-L1954), ComplexityRouterConfig._validate_non_reasoning_tier
+  (L1957-L1984), ComplexityRouterConfig._validate_tier_definitions (L1987-L2034), ComplexityRouterConfig._validate_tier_labels
+  (L2075-L2104), ComplexityRouterConfig.tier_label (L2156-L2158), ComplexityRouterConfig.labeled_tiers
+  (L2160-L2162), ComplexityRouterConfig.tier_for_label (L2164-L2171).'
+- 'litellm/router_strategy/complexity_router/config.py: B375 owns: _normalize_operator_section (L144-L158),
+  normalize_classification_prompt (L161-L163), normalize_classification_examples (L166-L168).'
+- 'litellm/router_strategy/complexity_router/config.py: B384 owns: ReminderMarkerPair._normalize (L230-L239).'
+- 'litellm/router_strategy/complexity_router/config.py: B394 owns: CapabilityCalibrationConfig.calibrate
+  (L612-L615), CapabilityClassifierConfig._normalize_tier (L664-L668), CapabilityClassifierConfig._validate_threshold_range
+  (L671-L674).'
 pitfalls:
 - A malformed forecast fails toward the capable tier rather than the heuristic default.
 - No tolerance may hide a different selected tier.
 - The pinned prompt is MIT material in this checkout; no proprietary classifier source is needed.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: security
 budget:
   max_changed_lines: 800
