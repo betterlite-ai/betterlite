@@ -1,0 +1,14 @@
+id: B4294
+milestone: M8 platform
+title: Reserve and share dual-cache batch reads
+status: todo
+depends_on: [B2226, B390, B360, B393, B4290, B4293]
+file: null
+covers:
+  - "litellm/caching/dual_cache.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

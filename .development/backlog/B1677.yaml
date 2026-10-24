@@ -8,3 +8,9 @@ covers:
   - "litellm/cost_calculator.py"
   - "litellm/llms/azure_ai/cost_calculator.py"
   - "litellm/llms/azure_ai/azure_model_router/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

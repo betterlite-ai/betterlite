@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B052, B065, B124, B724, B725, B732, B745, B800, B
 file: tasks/B804-team-create.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

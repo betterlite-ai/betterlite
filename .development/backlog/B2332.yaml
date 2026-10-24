@@ -6,3 +6,9 @@ depends_on: [B003, B171, B714, B726, B856, B860, B2303, B2305]
 file: tasks/B2332-mcp-credential-rotation.yaml
 covers:
   - "litellm/proxy/_experimental/mcp_server/db.py"
+parent: B139
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

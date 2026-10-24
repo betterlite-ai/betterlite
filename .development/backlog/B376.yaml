@@ -6,3 +6,9 @@ depends_on: [B010, B388, B301]
 file: tasks/B376-feedback-signals.yaml
 covers:
   - "litellm/router_strategy/adaptive_router/signals.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

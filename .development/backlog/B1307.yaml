@@ -7,3 +7,9 @@ file: tasks/B1307-vertex-schema-shaping.yaml
 covers:
   - "litellm/llms/vertex_ai/common_utils.py"
   - "litellm/types/llms/vertex_ai.py"
+parent: B031
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

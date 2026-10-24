@@ -6,3 +6,9 @@ depends_on: [B003, B732, B171, B1087, B1100, B1102, B1104, B1105, B1106, B1107, 
 file: tasks/B1103-request-setup.yaml
 covers:
   - "litellm/proxy/litellm_pre_call_utils.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

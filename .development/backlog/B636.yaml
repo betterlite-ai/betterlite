@@ -6,3 +6,9 @@ depends_on: [B635, B004, B171, B068]
 file: tasks/B636-bedrock-other-canvas-results.yaml
 covers:
   - "litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

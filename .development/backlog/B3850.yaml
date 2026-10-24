@@ -1,0 +1,18 @@
+id: B3850
+milestone: M7 observability
+title: OTel Arize Phoenix Weave and Levo presets
+status: todo
+depends_on: [B002, B3842]
+file: null
+covers:
+  - "litellm/integrations/otel/presets/{base,utils,arize,phoenix,levo,weave,langtrace}.py"
+  - "litellm/integrations/arize/{arize,arize_phoenix}.py"
+  - "litellm/integrations/levo/levo.py"
+  - "litellm/integrations/weave/weave_otel.py"
+  - "litellm/types/integrations/{arize,arize_phoenix,weave_otel}.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

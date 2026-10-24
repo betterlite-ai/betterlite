@@ -1,0 +1,14 @@
+id: B3974
+milestone: M7 observability
+title: Opik callback delivery and native client selection
+status: todo
+depends_on: [B3973, B173, B256]
+file: null
+covers:
+  - "litellm/integrations/opik/opik.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B653-bedrock-services-agentcore-request.yaml
 covers:
   - "litellm/llms/bedrock/chat/agentcore/transformation.py"
   - "litellm/types/llms/bedrock_agentcore.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

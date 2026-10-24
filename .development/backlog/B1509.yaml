@@ -6,3 +6,9 @@ depends_on: [B1507, B1508, B173, B171, B187]
 file: tasks/B1509-chatgpt-device-login.yaml
 covers:
   - "litellm/llms/chatgpt/authenticator.py"
+parent: B045
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B4675
+milestone: M9 agents and mcp
+title: MCP gateway consent and native client authorization
+status: todo
+depends_on: [B4654, B4655, B4658, B4674, B1612]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/gateway_dcr_flow.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

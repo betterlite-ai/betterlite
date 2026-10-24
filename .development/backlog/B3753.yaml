@@ -1,0 +1,16 @@
+id: B3753
+milestone: M6 guardrails
+title: Aporia moderation and Guardrails AI validation
+status: todo
+depends_on: [B219]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/aporia_ai/aporia_ai.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/guardrails_ai/guardrails_ai.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/{aporia_ai,guardrails_ai}.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

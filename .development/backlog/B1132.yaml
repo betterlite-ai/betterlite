@@ -6,3 +6,9 @@ depends_on: [B002, B171, B1087]
 file: tasks/B1132-claude-gateway-policy.yaml
 covers:
   - "litellm/proxy/anthropic_endpoints/gateway_endpoints.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

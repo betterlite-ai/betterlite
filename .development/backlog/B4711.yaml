@@ -1,0 +1,15 @@
+id: B4711
+milestone: M9 agents and mcp
+title: MCP table access, identifier locks and server reads
+status: todo
+depends_on: [B4710, B726, B714, B858]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/db.py"
+  - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

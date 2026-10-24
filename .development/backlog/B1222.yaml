@@ -6,3 +6,9 @@ depends_on: [B001, B003, B007, B052, B732, B793, B794, B860, B865, B1665]
 file: tasks/B1222-bulk-user-routes.yaml
 covers:
   - "litellm/proxy/management_endpoints/management_v1/users.py"
+parent: B067
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

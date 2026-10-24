@@ -6,3 +6,9 @@ depends_on: [B055, B057, B058, B060]
 file: null
 covers:
   - "terraform/provider/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B003, B052, B065, B124, B126, B725, B860, B1652, B1690]
 file: tasks/B1653-coordination-redis-routes.yaml
 covers:
   - "litellm/proxy/management_endpoints/coordination_redis_endpoints.py"
+parent: B066
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B171, B1087]
 file: tasks/B1002-audio-subtitles.yaml
 covers:
   - "litellm/litellm_core_utils/audio_utils/subtitle_utils.py"
+parent: B083
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

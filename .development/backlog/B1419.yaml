@@ -7,3 +7,9 @@ file: tasks/B1419-cohere-rerank.yaml
 covers:
   - "litellm/llms/cohere/rerank/**"
   - "litellm/llms/cohere/rerank_v2/**"
+parent: B037
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

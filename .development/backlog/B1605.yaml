@@ -7,3 +7,9 @@ file: tasks/B1605-tool-records.yaml
 covers:
   - "litellm/types/tool_management.py"
   - "litellm/proxy/db/tool_registry_writer.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

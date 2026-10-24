@@ -6,3 +6,9 @@ depends_on: [B004, B005, B173, B186, B249, B171]
 file: tasks/B1435-bytez-chat.yaml
 covers:
   - "litellm/llms/bytez/**"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

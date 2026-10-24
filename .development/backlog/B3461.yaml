@@ -1,0 +1,15 @@
+id: B3461
+milestone: M5 api families
+title: RAG retrieval, reranking and query billing
+status: todo
+depends_on: [B1064, B1014, B1686, B198, B185, B186]
+file: null
+covers:
+  - "litellm/rag/main.py"
+  - "litellm/rag/rag_query.py"
+parent: B097
+split_from: B097
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B381-shadow-result-aggregation.yaml
 covers:
   - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
   - "litellm/types/management_endpoints/auto_router_endpoints.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

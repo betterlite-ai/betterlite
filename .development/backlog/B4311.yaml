@@ -1,0 +1,14 @@
+id: B4311
+milestone: M8 platform
+title: Adapt experimental cache factories to native storage
+status: todo
+depends_on: [B4290, B4299]
+file: null
+covers:
+  - "litellm/_v2/**"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

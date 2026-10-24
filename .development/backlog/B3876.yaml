@@ -1,0 +1,15 @@
+id: B3876
+milestone: M7 observability
+title: Prometheus bounded series and counter emission
+status: todo
+depends_on: [B3870, B3873, B3874, B002]
+file: null
+covers:
+  - "litellm/integrations/prometheus.py"
+  - "litellm/integrations/prometheus_helpers/bounded_prometheus_series_tracker.py"
+parent: B111
+split_from: B111
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

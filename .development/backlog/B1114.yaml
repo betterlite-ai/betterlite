@@ -6,3 +6,9 @@ depends_on: [B010, B171, B902, B1138, B1113, B2202]
 file: tasks/B1114-responses-provider-contract.yaml
 covers:
   - "litellm/llms/base_llm/responses/transformation.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

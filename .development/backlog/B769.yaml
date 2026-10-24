@@ -6,3 +6,9 @@ depends_on: [B003]
 file: tasks/B769-jwt-display.yaml
 covers:
   - "litellm/proxy/common_utils/html_forms/jwt_display_template.py"
+parent: B053
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

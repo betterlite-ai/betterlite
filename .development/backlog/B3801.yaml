@@ -1,0 +1,14 @@
+id: B3801
+milestone: M6 guardrails
+title: Custom guardrail primitive library
+status: todo
+depends_on: [B173]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

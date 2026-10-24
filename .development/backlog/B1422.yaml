@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/jina_ai/embedding/**"
   - "litellm/llms/infinity/common_utils.py"
   - "litellm/llms/infinity/embedding/**"
+parent: B037
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

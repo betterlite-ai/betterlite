@@ -7,3 +7,9 @@ file: tasks/B358-tier-artifact-predictor.yaml
 covers:
   - "litellm/router_strategy/complexity_router/tier_predictor.py"
   - "litellm/router_strategy/complexity_router/artifacts/**"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

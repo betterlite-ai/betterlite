@@ -13,3 +13,9 @@ covers:
   - "litellm/proxy/management_endpoints/team_admin_field_permissions.py"
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"
   - "litellm/proxy/management_endpoints/common_utils.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

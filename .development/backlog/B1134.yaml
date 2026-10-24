@@ -7,3 +7,9 @@ file: tasks/B1134-messages-dispatch.yaml
 covers:
   - "litellm/messages/dispatch.py"
   - "litellm/anthropic_interface/messages/__init__.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

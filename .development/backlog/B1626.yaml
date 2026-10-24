@@ -7,3 +7,9 @@ file: tasks/B1626-saml-callback.yaml
 covers:
   - "litellm/proxy/management_endpoints/sso/saml_sso.py"
   - "litellm/proxy/management_endpoints/ui_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

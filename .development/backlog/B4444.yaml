@@ -1,0 +1,15 @@
+id: B4444
+milestone: M8 platform
+title: Coordinate shared health checks and report Redis status
+status: todo
+depends_on: [B002, B052, B192, B4443]
+file: null
+covers:
+  - "litellm/proxy/health_check_utils/**"
+  - "litellm/proxy/health_endpoints/_health_endpoints.py"
+parent: B130
+split_from: B130
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

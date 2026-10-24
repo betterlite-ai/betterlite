@@ -1,0 +1,16 @@
+id: B3360
+milestone: M5 api families
+title: Container contracts and endpoint catalog
+status: todo
+depends_on: [B522, B547]
+file: null
+covers:
+  - "litellm/types/containers/**"
+  - "litellm/llms/base_llm/containers/**"
+  - "litellm/containers/endpoints.json"
+parent: B094
+split_from: B094
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

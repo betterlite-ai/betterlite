@@ -6,3 +6,9 @@ depends_on: [B002, B173, B171, B129, B2202]
 file: tasks/B567-anthropic-credentials.yaml
 covers:
   - "litellm/llms/anthropic/common_utils.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

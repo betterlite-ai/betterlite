@@ -19,7 +19,7 @@ description: >-
 
   Soft checks use token.spend, not the cross-pod reader; a truthy soft_budget and spend>=soft_budget
   DEBUG-log and schedule soft_budget without denial. Its CallInfo additionally carries team_alias.
-  All alert tasks are owned by B116's sink and are not awaited on the request path; capture scheduling
+  All alert tasks are owned by B4025's budget_alerts sink and are not awaited on the request path; capture scheduling
   order in tests and drain tasks at shutdown. No database write occurs in these checks.
 
   Email parsing accepts a list of trimmed nonempty strings, or a comma-separated string; tuple/other

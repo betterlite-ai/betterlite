@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/base_llm/completion/**"
   - "litellm/llms/openai/completion/handler.py"
   - "litellm/llms/openai/completion/transformation.py"
+parent: B015
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/base_llm/image_variations/transformation.py"
   - "litellm/types/images/main.py"
   - "litellm/images/utils.py"
+parent: B082
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

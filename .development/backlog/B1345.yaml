@@ -7,3 +7,9 @@ file: tasks/B1345-vertex-gemini-images.yaml
 covers:
   - "litellm/llms/vertex_ai/image_generation/{vertex_gemini_transformation,vertex_imagen_transformation}.py"
   - "litellm/llms/vertex_ai/image_edit/{vertex_gemini_transformation,vertex_imagen_transformation}.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

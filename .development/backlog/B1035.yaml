@@ -10,3 +10,9 @@ covers:
   - "litellm/proxy/batches_endpoints/common_utils.py"
   - "litellm/types/llms/openai.py"
   - "litellm/types/utils.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

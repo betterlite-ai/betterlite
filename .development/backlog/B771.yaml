@@ -6,3 +6,9 @@ depends_on: [B002, B003, B120, B171, B246, B724, B732, B770, B800, B856, B2314]
 file: tasks/B771-key-access.yaml
 covers:
   - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+parent: B055
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

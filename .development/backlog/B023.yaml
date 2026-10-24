@@ -6,3 +6,9 @@ depends_on: [B008, B302, B051, B052, B055, B057, B060, B066, B301, B361, B002, B
 file: tasks/B023-router-weights.yaml
 covers:
   - "litellm/proxy/management_endpoints/router_weights.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

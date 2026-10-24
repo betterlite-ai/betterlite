@@ -6,3 +6,9 @@ depends_on: [B002, B111, B171, B198, B700, B860]
 file: tasks/B1739-spend-partitions.yaml
 covers:
   - "litellm/proxy/db/db_transaction_queue/{spend_logs_partition_manager,spend_log_cleanup_metrics}.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

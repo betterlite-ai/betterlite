@@ -1,0 +1,14 @@
+id: B4145
+milestone: M8 platform
+title: Persist reload schedules and track per-pod revisions
+status: todo
+depends_on: [B725, B192]
+file: null
+covers:
+  - "litellm/proxy/common_utils/periodic_reload_schedule.py"
+parent: B120
+split_from: B120
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

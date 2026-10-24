@@ -6,3 +6,9 @@ depends_on: [B014, B171, B961, B962, B963, B974, B979, B985, B1087, B1118, B570,
 file: tasks/B982-messages-native-call.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/messages/handler.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

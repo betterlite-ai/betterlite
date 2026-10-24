@@ -7,3 +7,9 @@ file: tasks/B1416-cohere-chat-v2.yaml
 covers:
   - "litellm/llms/cohere/chat/v2_transformation.py"
   - "litellm/types/llms/cohere.py"
+parent: B037
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

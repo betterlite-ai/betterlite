@@ -6,3 +6,9 @@ depends_on: [B171, B700, B714, B856, B859, B860, B2307]
 file: tasks/B724-team-repository.yaml
 covers:
   - "litellm/repositories/team_repository.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

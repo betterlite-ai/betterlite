@@ -1,0 +1,15 @@
+id: B4421
+milestone: M8 platform
+title: Dispatch hosted secret reads and KMS decryption
+status: todo
+depends_on: [B002, B4410, B4414, B4417, B4418, B4419, B4420]
+file: null
+covers:
+  - "litellm/secret_managers/secret_manager_handler.py"
+  - "litellm/secret_managers/dispatch.py"
+parent: B129
+split_from: B129
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

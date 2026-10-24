@@ -1,0 +1,15 @@
+id: B4716
+milestone: M9 agents and mcp
+title: MCP payload validation and connector conversion
+status: todo
+depends_on: [B4711, B1617]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
+  - "litellm/proxy/management_endpoints/mcp_connector_import.py"
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

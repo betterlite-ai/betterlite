@@ -1,0 +1,14 @@
+id: B4651
+milestone: M9 agents and mcp
+title: MCP bridge access and refresh envelopes
+status: todo
+depends_on: [B1600]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/envelope.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

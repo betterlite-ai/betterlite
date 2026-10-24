@@ -6,3 +6,9 @@ depends_on: [B001, B003, B052, B124, B732, B734, B737, B800, B801, B859, B860, B
 file: tasks/B809-team-member-resets.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

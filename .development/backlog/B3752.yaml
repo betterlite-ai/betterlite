@@ -1,0 +1,16 @@
+id: B3752
+milestone: M6 guardrails
+title: Alice evaluation and Conduct decision helpers
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/alice/**"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/alice.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

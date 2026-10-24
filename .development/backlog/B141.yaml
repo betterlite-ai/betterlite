@@ -2,10 +2,13 @@ id: B141
 milestone: M9 agents and mcp
 title: Agents API, agent registry and agent identity
 status: todo
-depends_on: [B052, B2313]
+depends_on: [B4770, B4771, B4772, B4773, B4774, B4775, B4776, B4777, B4778, B4779, B4780, B4781, B4782, B4783, B4784, B4785, B4786, B4787, B4788, B4789, B732]
 file: null
 covers:
-  - "litellm/proxy/agent_endpoints/**"
-  - "litellm/types/agents.py"
-  - "litellm/types/proxy/agent_identity.py"
-  - "litellm/llms/base_llm/agents/**"
+  - "litellm/proxy/agent_endpoints/a2a_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

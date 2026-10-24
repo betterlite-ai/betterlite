@@ -37,3 +37,9 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260401000000_add_team_member_model_scope/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260414140000_add_mcp_server_instructions/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20260415120000_health_check_latest_per_model_index/migration.sql"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

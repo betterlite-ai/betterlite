@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/anthropic/common_utils.py"
   - "litellm/types/llms/anthropic_tool_search.py"
   - "litellm/integrations/websearch_interception/tools.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

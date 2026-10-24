@@ -19,3 +19,9 @@ covers:
   - "litellm/messages/__init__.py"
   - "litellm/proxy/anthropic_endpoints/claude_code_endpoints/__init__.py"
   - "litellm/proxy/anthropic_endpoints/gateway_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

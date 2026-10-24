@@ -1,0 +1,14 @@
+id: B3977
+milestone: M7 observability
+title: Rubrik sampled logs and unsampled block records
+status: todo
+depends_on: [B3975, B3976, B2204, B212, B1106]
+file: null
+covers:
+  - "litellm/integrations/rubrik.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

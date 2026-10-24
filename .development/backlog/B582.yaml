@@ -6,3 +6,9 @@ depends_on: [B581, B578, B902, B005, B567, B171]
 file: tasks/B582-anthropic-stream-events.yaml
 covers:
   - "litellm/llms/anthropic/chat/handler.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

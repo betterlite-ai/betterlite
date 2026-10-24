@@ -7,3 +7,9 @@ file: tasks/B871-identity-grants.yaml
 covers:
   - "litellm/proxy/auth/resolvers/grants.py"
   - "litellm/proxy/auth/team_grants.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

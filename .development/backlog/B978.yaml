@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"
   - "litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py"
   - "litellm/llms/anthropic/common_utils.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

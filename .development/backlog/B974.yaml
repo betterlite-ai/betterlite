@@ -6,3 +6,9 @@ depends_on: [B014, B171, B958, B967, B973, B962, B2433, B2401]
 file: tasks/B974-messages-chat-call.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/adapters/handler.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

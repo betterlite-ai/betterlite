@@ -7,3 +7,9 @@ file: tasks/B560-foundry-agent-runs.yaml
 covers:
   - "litellm/llms/azure_ai/agents/handler.py"
   - "litellm/llms/azure_ai/agents/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

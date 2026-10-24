@@ -2,9 +2,14 @@ id: B076
 milestone: M4 keys, spend and management
 title: Workflows and the ROI calculator
 status: todo
-depends_on: [B074]
+depends_on: [B3150, B3151, B3152, B3153, B3154, B3155, B3156, B3157, B3158, B3159, B3160, B3161, B003, B725, B732]
 file: null
 covers:
-  - "litellm/proxy/management_endpoints/{workflow_management_endpoints,roi_calculator_endpoints}.py"
-  - "litellm/proxy/{workflows,roi_calculator}/**"
-  - "litellm/types/roi_calculator.py"
+  - "litellm/proxy/management_endpoints/roi_calculator_endpoints.py"
+  - "litellm/proxy/roi_calculator/{__init__,sample}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

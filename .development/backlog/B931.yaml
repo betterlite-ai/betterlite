@@ -7,3 +7,9 @@ file: tasks/B931-responses-provider-selection.yaml
 covers:
   - "litellm/responses/main.py"
   - "litellm/llms/openai_like/responses/transformation.py"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

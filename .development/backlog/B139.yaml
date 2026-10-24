@@ -2,8 +2,13 @@ id: B139
 milestone: M9 agents and mcp
 title: MCP server management API and storage
 status: todo
-depends_on: [B136, B051]
+depends_on: [B4710, B4711, B4712, B4713, B4714, B4715, B4716, B4717, B4718, B4719, B4720, B4721, B4722, B4723, B4724, B4725, B4726, B4727, B4728, B4729, B4730, B726, B743, B732]
 file: null
 covers:
-  - "litellm/proxy/_experimental/mcp_server/{db,rest_endpoints}.py"
-  - "litellm/proxy/management_endpoints/{mcp_management_endpoints,mcp_connector_import}.py"
+  - "litellm/proxy/management_endpoints/mcp_management_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

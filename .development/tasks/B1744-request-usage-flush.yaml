@@ -23,15 +23,15 @@ description: >-
   B1690 capacity; preserve the explicit baseline-full fallback separately.
   Extract proxy/utils.py::_total_queued_spend_transactions, update_spend_logs_job and
   _run_spend_logs_job here. Census log/tool/model/turn/baseline queues under their respective
-  locks and add B118's pending shadow-funnel event count. An empty census still flushes
+  locks and add B4083's pending shadow-funnel event count. An empty census still flushes
   baseline accounting. Otherwise serialize jobs with one write lock, pop up to 10000 logs
   once and call B1749's writer. Cancellation parks/requeues that batch and propagates;
   ordinary log-write failure stops the rest of this pass. On successful write, invoke
-  B104 guardrail usage on the same rows, warning nonfatally; pop at most 10000 tool records
+  B3688 guardrail usage (process_spend_logs_guardrail_usage) on the same rows, warning nonfatally; pop at most 10000 tool records
   and flush B1706, logging dropped records on failure; drain all model records and flush
   B1734 with the same loss policy; await B1699 baseline flush; drain at most 10000 turns
-  through B1746; finally flush B118 shadow funnel. Turn/funnel failures log and do not retry
-  the drained batch. Adapt B104/B118 through typed lower-layer sinks so the db crate does
+  through B1746; finally flush B4083's shadow funnel. Turn/funnel failures log and do not retry
+  the drained batch. Adapt B3688/B4083 through typed lower-layer sinks so the db crate does
   not import server features. Define decode_captured_baseline(bytes), bounded to 64 MiB,
   and add its strict-extra-field/identity cases to B1734 rollup_inputs fuzz dispatch.
   This cohort owns about 360 source lines. Budget 800 for queue/fault tests and strict DTO

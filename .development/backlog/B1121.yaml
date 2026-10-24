@@ -6,3 +6,9 @@ depends_on: [B998, B174, B011, B2401]
 file: tasks/B1121-image-generation-plan.yaml
 covers:
   - "litellm/images/main.py"
+parent: B082
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

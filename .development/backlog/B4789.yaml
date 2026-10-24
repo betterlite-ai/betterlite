@@ -1,0 +1,14 @@
+id: B4789
+milestone: M9 agents and mcp
+title: Relay A2A message and task subscription streams
+status: todo
+depends_on: [B4771, B4788, B002, B173, B732]
+file: null
+covers:
+  - "litellm/proxy/agent_endpoints/a2a_endpoints.py"
+parent: B141
+split_from: B141
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

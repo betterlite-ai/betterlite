@@ -1,0 +1,15 @@
+id: B3939
+milestone: M7 observability
+title: Datadog latency and request metrics
+status: todo
+depends_on: [B3930, B002, B173, B192, B254, B256]
+file: null
+covers:
+  - "litellm/integrations/datadog/datadog_metrics.py"
+  - "litellm/types/integrations/datadog_metrics.py"
+parent: B113
+split_from: B113
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

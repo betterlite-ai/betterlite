@@ -6,3 +6,9 @@ depends_on: [B304, B011, B301, B002]
 file: tasks/B371-usage-v2-accounting.yaml
 covers:
   - "litellm/router_strategy/lowest_tpm_rpm_v2.py"
+parent: B019
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -10,3 +10,9 @@ covers:
   - "litellm/proxy/management_endpoints/types.py"
   - "litellm/proxy/management_endpoints/sso_helper_utils.py"
   - "litellm/proxy/management_endpoints/ui_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

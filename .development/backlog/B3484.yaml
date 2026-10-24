@@ -1,0 +1,15 @@
+id: B3484
+milestone: M5 api families
+title: Translate GenAI input to chat messages and options
+status: todo
+depends_on: [B174, B175, B200, B219]
+file: null
+covers:
+  - "litellm/google_genai/adapters/transformation.py"
+  - "litellm/types/google_genai/adapters.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

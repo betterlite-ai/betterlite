@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/llms/apiserpent/__init__.py"
   - "litellm/llms/{exa_ai,fastcrw,firecrawl,google_pse,linkup,nimble,parallel_ai,searchapi,searxng,serper,tavily,you_com,tinyfish}/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

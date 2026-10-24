@@ -1,0 +1,15 @@
+id: B3793
+milestone: M6 guardrails
+title: Repello inspection content
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/repelloai.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B3784
+milestone: M6 guardrails
+title: Ovalix checkpoint corrections
+status: todo
+depends_on: [B002, B173, B189]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/ovalix/**"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/ovalix.py"
+parent: B108
+split_from: B108
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B010, B012, B176, B500, B516, B694, B2200, B1015, B2401, B2462, B24
 file: tasks/B1029-file-provider-read.yaml
 covers:
   - "litellm/files/main.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

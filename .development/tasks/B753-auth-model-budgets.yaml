@@ -33,10 +33,10 @@ description: >-
   named proxy_budget of B723 UserRepository user_id=litellm-proxy-budget. Return float spend or null.
   Cache/coordinator failures propagate; null does not schedule an alert, but any known spend including
   zero schedules proxy_budget with the caller-supplied admin name, token, ceiling and PROXY event group.
-  B116 owns alert delivery. This task never reserves spend or writes a database row.
+  B4025 owns budget alert delivery. This task never reserves spend or writes a database row.
 
 
-  B125 owns the cache_coordinator invoked by global-spend singleflight; B126 Redis transport is not
+  B4291 owns the EventDrivenCacheCoordinator invoked by global-spend singleflight; B126 Redis transport is not
   called directly by this slice. Build the production auth_model_budgets module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
   adjacent tests.rs files.

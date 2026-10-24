@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/azure/passthrough/transformation.py"
   - "litellm/llms/nvidia_nim/passthrough/transformation.py"
   - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B010, B678, B1301, B1341, B1344, B193, B002, B006]
 file: tasks/B1395-vertex-embedding-dispatch.yaml
 covers:
   - "litellm/main.py"
+parent: B014
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

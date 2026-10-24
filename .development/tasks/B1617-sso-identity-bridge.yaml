@@ -8,15 +8,15 @@ description: >-
   GENERIC_CLIENT_ID, then B1625's configured SAML, then none; all client IDs default absent
   and an empty but present ID still wins. Only generic OIDC has an assertion-capture path.
   Startup suppresses the no-provider warning because DB settings have not been reconciled;
-  post-login diagnostics do not. Consult B137's assertion-retention-enabled query only when
+  post-login diagnostics do not. Consult B4663's assertion-retention-enabled query (ema_assertion_retention_enabled) only when
   necessary, swallowing its failure with a debug diagnostic. A supplied assertion needs no
   missing-capture warning. These diagnostics must never fail a successful login.
   For Microsoft enrollment, require parseable tenant and response id UUIDs, canonicalize both,
   and accept only absent/empty endpoint overrides or the exact canonical Microsoft URLs.
   Custom or sovereign endpoint overrides suppress this enrollment path. Form the issuer as
-  https://login.microsoftonline.com/{tenant}/v2.0. Delegate valid nonempty user IDs to B141's
-  AgentIdentityStore.enroll_interactive_human; propagate AgentIdentityFailure through its
-  existing mapper instead of swallowing it like a diagnostic. Do not enroll subjects from
+  https://login.microsoftonline.com/{tenant}/v2.0. Delegate valid nonempty user IDs to B4773's
+  AgentIdentityStore.enroll_interactive_human; propagate B4770's AgentIdentityFailure through B4772's raise_identity_failure
+  mapper instead of swallowing it like a diagnostic. Do not enroll subjects from
   arbitrary generic OIDC claims. Compare provider/gap and subject projection with a pure
   sso_identity_bridge helper; test warning failures and enrollment effects through injected
   retention/identity-store interfaces. loads_provider_presence exercises empty/present/absent
@@ -77,7 +77,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/sso-identity-bridge/foreign-endpoint-suppresses-enrollment.yaml
 deviations: []
 out_of_scope:
-  - B137 stores and spends the captured assertion; this task diagnoses its absence but never creates an assertion from an access token.
+  - B4663 stores and spends the captured assertion; this task diagnoses its absence but never creates an assertion from an access token.
   - B1622 calls subject projection during Microsoft login; the remaining ui_sso.py functions are indexed in B063.
 pitfalls:
   - GOOGLE_CLIENT_ID="" selects Google for capture diagnostics even when GENERIC_CLIENT_ID is also configured.

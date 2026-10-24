@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/bedrock_mantle/chat/transformation.py"
   - "litellm/llms/bedrock_mantle/messages/transformation.py"
   - "litellm/llms/bedrock_mantle/passthrough/transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

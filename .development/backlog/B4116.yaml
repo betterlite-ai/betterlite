@@ -1,0 +1,14 @@
+id: B4116
+milestone: M7 observability
+title: Configure search interception and rewrite outgoing tools
+status: todo
+depends_on: [B4110, B4111, B568, B174]
+file: null
+covers:
+  - "litellm/integrations/websearch_interception/handler.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

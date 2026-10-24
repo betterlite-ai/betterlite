@@ -1,0 +1,14 @@
+id: B4562
+milestone: M8 platform
+title: Claude settings merge, private writes and status installation
+status: todo
+depends_on: [B192, B4560, B4561]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/claude_settings.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

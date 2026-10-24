@@ -2,9 +2,13 @@ id: B135
 milestone: M8 platform
 title: Setup wizard and CLI login
 status: todo
-depends_on: [B134]
+depends_on: [B4590, B4591, B4592, B4593, B4594, B003]
 file: null
 covers:
   - "litellm/setup_wizard.py"
-  - "litellm/proxy_auth/**"
-  - "litellm/litellm_core_utils/{cli_keyring,cli_token_utils}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

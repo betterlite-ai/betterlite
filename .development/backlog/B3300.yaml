@@ -1,0 +1,15 @@
+id: B3300
+milestone: M5 api families
+title: OCR response contracts and proxy request decoding
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/llms/base_llm/ocr/**"
+  - "litellm/proxy/ocr_endpoints/endpoints.py"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

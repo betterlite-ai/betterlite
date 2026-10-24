@@ -7,3 +7,9 @@ file: tasks/B1128-file-type-records.yaml
 covers:
   - "litellm/types/files.py"
   - "litellm/files/types.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

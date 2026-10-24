@@ -6,3 +6,9 @@ depends_on: [B002, B171]
 file: tasks/B2236-openai-mock-transport.yaml
 covers:
   - "litellm/llms/custom_httpx/mock_transport.py"
+parent: B009
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

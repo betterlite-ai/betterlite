@@ -6,3 +6,9 @@ depends_on: [B1376, B1393, B1301, B002, B171]
 file: tasks/B1385-vertex-rag-ingestion.yaml
 covers:
   - "litellm/llms/vertex_ai/rag_engine/**"
+parent: B034
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

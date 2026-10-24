@@ -7,3 +7,9 @@ file: tasks/B1131-vector-store-records.yaml
 covers:
   - "litellm/types/vector_stores.py"
   - "litellm/types/integrations/rag/bedrock_knowledgebase.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

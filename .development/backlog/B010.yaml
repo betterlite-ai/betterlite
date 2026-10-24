@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/base_llm/{chat,bridges}/**"
   - "litellm/types/llms/base.py"
   - "litellm/llms/aiohttp_openai/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

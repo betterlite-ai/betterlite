@@ -1,0 +1,14 @@
+id: B3501
+milestone: M5 api families
+title: Prepare managed-agent providers and outbound header precedence
+status: todo
+depends_on: [B1392, B247]
+file: null
+covers:
+  - "litellm/interactions/agents/{utils,main}.py"
+parent: B098
+split_from: B098
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

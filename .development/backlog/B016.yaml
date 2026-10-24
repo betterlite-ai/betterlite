@@ -8,3 +8,9 @@ covers:
   - "litellm/router.py"
   - "litellm/types/router.py"
   - "litellm/router_utils/{common_utils,handle_error,response_headers,add_retry_fallback_headers}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

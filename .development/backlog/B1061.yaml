@@ -6,3 +6,9 @@ depends_on: [B171, B010, B1060, B1062, B749, B741, B1058, B1071, B527, B558]
 file: tasks/B1061-vector-endpoint-access.yaml
 covers:
   - "litellm/proxy/vector_store_endpoints/utils.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

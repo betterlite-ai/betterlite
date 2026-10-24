@@ -1,0 +1,15 @@
+id: B3851
+milestone: M7 observability
+title: OTel credential routing and destination resolution
+status: todo
+depends_on: [B002, B009, B173, B3842, B3848, B3850]
+file: null
+covers:
+  - "litellm/integrations/otel/presets/{__init__,agentops,newrelic,signoz,langfuse,destinations}.py"
+  - "litellm/types/integrations/langfuse_otel.py"
+parent: B110
+split_from: B110
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

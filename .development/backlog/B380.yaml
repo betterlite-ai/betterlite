@@ -6,3 +6,9 @@ depends_on: [B345, B051, B301]
 file: tasks/B380-shadow-eval-models.yaml
 covers:
   - "litellm/types/management_endpoints/auto_router_endpoints.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

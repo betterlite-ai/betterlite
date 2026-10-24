@@ -7,3 +7,9 @@ file: tasks/B1429-deepseek-chat.yaml
 covers:
   - "litellm/llms/deepseek/chat/transformation.py"
   - "litellm/llms/deepseek/cost_calculator.py"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

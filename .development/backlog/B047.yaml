@@ -6,3 +6,9 @@ depends_on: [B002, B010, B083, B165, B174, B900, B1082, B1084, B1540, B1541, B15
 file: tasks/B047-speech-provider-dispatch.yaml
 covers:
   - "litellm/llms/soniox/{__init__.py,audio_transcription/{__init__.py,handler.py}}"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

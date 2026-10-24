@@ -11,3 +11,9 @@ covers:
   - "litellm/llms/openai/{chat,responses}/guardrail_translation/handler.py"
   - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
   - "litellm/llms/base_llm/guardrail_translation/utils.py"
+parent: B104
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

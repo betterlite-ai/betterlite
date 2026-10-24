@@ -7,3 +7,9 @@ file: tasks/B619-bedrock-openai-invoke.yaml
 covers:
   - "litellm/llms/bedrock/chat/invoke_transformations/amazon_openai_transformation.py"
   - "litellm/llms/bedrock/chat/chat_completions/transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

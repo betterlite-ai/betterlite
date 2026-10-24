@@ -6,3 +6,9 @@ depends_on: [B014, B302, B919, B932, B1087, B1100, B732, B855, B756, B003, B1139
 file: tasks/B940-cursor-responses-compat.yaml
 covers:
   - "litellm/proxy/response_api_endpoints/endpoints.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

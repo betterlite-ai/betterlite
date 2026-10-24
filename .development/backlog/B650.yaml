@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/bedrock/batches/transformation.py"
   - "litellm/llms/bedrock/batches/handler.py"
   - "litellm/llms/bedrock/common_utils.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

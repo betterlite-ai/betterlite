@@ -1,0 +1,14 @@
+id: B4508
+milestone: M8 platform
+title: Investigate Lens candidates against original evidence
+status: todo
+depends_on: [B4500, B4506]
+file: null
+covers:
+  - "litellm/proxy/lens/analysis.py"
+parent: B132
+split_from: B132
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B823-model-group-data.yaml
 covers:
   - "litellm/proxy/management_endpoints/model_access_group_management_endpoints.py"
   - "litellm/types/proxy/model_access_group_budget.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

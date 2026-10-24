@@ -1,0 +1,15 @@
+id: B4171
+milestone: M8 platform
+title: Allowlisted proxy configuration reports
+status: todo
+depends_on: [B003, B052, B1018, B4170]
+file: null
+covers:
+  - "litellm/proxy/bug_report_config.py"
+  - "litellm/proxy/common_utils/debug_utils.py"
+parent: B121
+split_from: B121
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

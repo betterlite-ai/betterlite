@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
   - "litellm/proxy/management_helpers/auto_router_availability.py"
   - "litellm/types/management_endpoints/auto_router_endpoints.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B002, B124, B125, B126, B171, B733, B743]
 file: tasks/B1618-sso-return-targets.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

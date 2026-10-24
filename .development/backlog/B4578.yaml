@@ -1,0 +1,14 @@
+id: B4578
+milestone: M8 platform
+title: CLI model management and YAML imports
+status: todo
+depends_on: [B4560]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/models.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

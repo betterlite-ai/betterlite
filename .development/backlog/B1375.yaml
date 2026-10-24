@@ -6,3 +6,9 @@ depends_on: [B1374, B1340, B1310, B1321, B1025, B010, B1128, B517, B171]
 file: tasks/B1375-vertex-batch-upload-stream.yaml
 covers:
   - "litellm/llms/vertex_ai/files/transformation.py"
+parent: B034
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

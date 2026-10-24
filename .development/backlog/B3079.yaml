@@ -1,0 +1,15 @@
+id: B3079
+milestone: M4 keys, spend and management
+title: Define FinOps management contracts and the admin read predicate
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/types/proxy/{cloudzero_endpoints,vantage_endpoints}.py"
+  - "litellm/proxy/_types.py"
+parent: B073
+split_from: B073
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B3751
+milestone: M6 guardrails
+title: Akto mirroring payloads and transport
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/akto/akto.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/akto.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

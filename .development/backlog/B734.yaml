@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py"
   - "litellm/proxy/auth/auth_checks.py"
   - "litellm/proxy/proxy_server.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

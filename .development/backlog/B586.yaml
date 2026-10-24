@@ -6,3 +6,9 @@ depends_on: [B177, B005, B2201, B2202, B195, B002, B171, B2214]
 file: tasks/B586-anthropic-completion.yaml
 covers:
   - "litellm/llms/anthropic/completion/transformation.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

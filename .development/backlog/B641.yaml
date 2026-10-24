@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/bedrock/count_tokens/handler.py"
   - "litellm/llms/bedrock/count_tokens/bedrock_token_counter.py"
   - "litellm/llms/bedrock/common_utils.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

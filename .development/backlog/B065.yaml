@@ -6,3 +6,9 @@ depends_on: [B002, B003, B115, B124, B165, B171, B187, B189, B191, B244, B726, B
 file: tasks/B065-audit-delivery.yaml
 covers:
   - "litellm/proxy/management_helpers/{audit_logs,utils}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

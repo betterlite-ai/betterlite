@@ -9,3 +9,9 @@ covers:
   - "litellm/models/end_user.py"
   - "litellm/models/user.py"
   - "litellm/models/verification_token.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

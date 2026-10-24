@@ -7,3 +7,9 @@ file: tasks/B2226-local-ttl-cache.yaml
 covers:
   - "litellm/caching/in_memory_cache.py"
   - "litellm/caching/dual_cache.py"
+parent: B125
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

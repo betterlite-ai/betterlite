@@ -6,3 +6,9 @@ depends_on: [B549, B502, B503, B504, B193, B218, B171, B2200, B668, B174, B219, 
 file: tasks/B550-foundry-chat.yaml
 covers:
   - "litellm/llms/azure_ai/chat/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

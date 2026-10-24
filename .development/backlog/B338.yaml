@@ -7,3 +7,9 @@ file: tasks/B338-quality-router.yaml
 covers:
   - "litellm/router_strategy/quality_router/**"
   - "litellm/router_utils/add_retry_fallback_headers.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,15 @@
+id: B3688
+milestone: M6 guardrails
+title: Guardrail compliance redaction and retryable usage rollups
+status: todo
+depends_on: [B726, B1667, B1706]
+file: null
+covers:
+  - "litellm/proxy/guardrails/usage_tracking.py"
+  - "litellm/litellm_core_utils/core_helpers.py"
+parent: B104
+split_from: B104
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

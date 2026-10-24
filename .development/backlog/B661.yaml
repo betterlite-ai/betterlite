@@ -6,3 +6,9 @@ depends_on: [B1004, B171, B682]
 file: tasks/B661-bedrock-services-realtime-session.yaml
 covers:
   - "litellm/llms/bedrock/realtime/transformation.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

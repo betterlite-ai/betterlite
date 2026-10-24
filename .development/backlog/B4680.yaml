@@ -1,0 +1,15 @@
+id: B4680
+milestone: M9 agents and mcp
+title: Local MCP tool registry and configured handlers
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/tool_registry.py"
+  - "litellm/types/mcp_server/tool_registry.py"
+parent: B138
+split_from: B138
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

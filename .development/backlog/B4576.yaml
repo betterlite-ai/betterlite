@@ -1,0 +1,14 @@
+id: B4576
+milestone: M8 platform
+title: CLI SSO polling and team selection
+status: todo
+depends_on: [B4574]
+file: null
+covers:
+  - "litellm/proxy/client/cli/commands/auth.py"
+parent: B134
+split_from: B134
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

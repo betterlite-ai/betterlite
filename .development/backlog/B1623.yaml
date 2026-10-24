@@ -6,3 +6,9 @@ depends_on: [B002, B137, B171, B1609, B1610, B1619, B1620, B1629]
 file: tasks/B1623-generic-sso-callback.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

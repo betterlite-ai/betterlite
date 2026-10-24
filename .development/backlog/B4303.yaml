@@ -1,0 +1,14 @@
+id: B4303
+milestone: M8 platform
+title: Merge partial embedding hits and token usage
+status: todo
+depends_on: [B174, B196, B4300, B4301]
+file: null
+covers:
+  - "litellm/caching/caching_handler.py"
+parent: B125
+split_from: B125
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

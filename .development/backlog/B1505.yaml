@@ -6,3 +6,9 @@ depends_on: [B124, B1502, B171]
 file: tasks/B1505-skill-search.yaml
 covers:
   - "litellm/llms/litellm_proxy/skills/skill_search.py"
+parent: B044
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

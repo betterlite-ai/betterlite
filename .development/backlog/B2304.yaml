@@ -6,3 +6,9 @@ depends_on: [B171, B244, B2303]
 file: tasks/B2304-callback-secret-fields.yaml
 covers:
   - "litellm/proxy/common_utils/callback_utils.py"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

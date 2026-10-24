@@ -2,7 +2,13 @@ id: B752
 milestone: M4 keys, spend and management
 title: Team, member, project and organization budget admission
 status: todo
-depends_on: [B001, B003, B116, B171, B721, B732, B733, B740, B757, B856, B860, B879, B1102, B2313, B2321, B2325]
+depends_on: [B001, B003, B4025, B171, B721, B732, B733, B740, B757, B856, B860, B879, B1102, B2313, B2321, B2325]
 file: tasks/B752-auth-tenant-budgets.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

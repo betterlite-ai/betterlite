@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/bedrock/common_utils.py"
   - "litellm/llms/bedrock/chat/invoke_handler.py"
   - "litellm/types/llms/bedrock.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

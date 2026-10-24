@@ -6,3 +6,9 @@ depends_on: [B004, B171]
 file: tasks/B244-structured-redaction.yaml
 covers:
   - "litellm/litellm_core_utils/sensitive_data_masker.py"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

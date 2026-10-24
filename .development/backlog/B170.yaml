@@ -5,3 +5,9 @@ status: todo
 depends_on: [B157]
 file: null
 covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

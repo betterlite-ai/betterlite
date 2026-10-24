@@ -6,3 +6,9 @@ depends_on: [B013, B171, B1020, B1030, B1035, B1044, B1087, B1019, B1039]
 file: tasks/B1046-batch-input-accounting.yaml
 covers:
   - "litellm/proxy/hooks/batch_rate_limiter.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

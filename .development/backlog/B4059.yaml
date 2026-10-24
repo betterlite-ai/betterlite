@@ -1,0 +1,14 @@
+id: B4059
+milestone: M7 observability
+title: Prompt registry selection and database row conversion
+status: todo
+depends_on: [B4050, B726]
+file: null
+covers:
+  - "litellm/proxy/prompts/{prompt_registry,prompt_endpoints}.py"
+parent: B117
+split_from: B117
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

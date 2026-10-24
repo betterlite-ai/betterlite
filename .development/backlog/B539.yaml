@@ -7,3 +7,9 @@ file: tasks/B539-azure-transcription.yaml
 covers:
   - "litellm/llms/azure/audio_transcription/transformation.py"
   - "litellm/llms/azure/audio_transcriptions.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

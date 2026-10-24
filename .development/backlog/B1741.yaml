@@ -6,3 +6,9 @@ depends_on: [B002, B198, B700, B860, B1690, B1699, B1739, B1740]
 file: tasks/B1741-spend-retention-runner.yaml
 covers:
   - "litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

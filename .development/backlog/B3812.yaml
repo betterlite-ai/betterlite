@@ -1,0 +1,14 @@
+id: B3812
+milestone: M6 guardrails
+title: Block or rewrite forbidden request tools and forced choices
+status: todo
+depends_on: [B3810, B3811]
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/tool_permission.py"
+parent: B109
+split_from: B109
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

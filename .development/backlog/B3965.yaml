@@ -1,0 +1,14 @@
+id: B3965
+milestone: M7 observability
+title: Galileo callback records and queue admission
+status: todo
+depends_on: [B3963, B3964]
+file: null
+covers:
+  - "litellm/integrations/galileo.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

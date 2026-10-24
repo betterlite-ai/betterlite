@@ -7,3 +7,9 @@ file: tasks/B083-audio-routes.yaml
 covers:
   - "litellm/llms/base_llm/audio_transcription/transformation.py"
   - "litellm/proxy/proxy_server.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

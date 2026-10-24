@@ -7,3 +7,9 @@ file: tasks/B863-management-admins.yaml
 covers:
   - "litellm/proxy/management_endpoints/common_utils.py"
   - "litellm/proxy/management/teams/access.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

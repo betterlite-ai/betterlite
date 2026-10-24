@@ -7,3 +7,9 @@ file: tasks/B857-migration-drift.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/utils.py"
   - "litellm/proxy/db/check_migration.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

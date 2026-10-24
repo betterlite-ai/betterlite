@@ -1,0 +1,14 @@
+id: B3009
+milestone: M4 keys, spend and management
+title: Share budget reset policy, retries and cache invalidation
+status: todo
+depends_on: [B3000, B002, B360, B700, B733, B872, B1690, B2226]
+file: null
+covers:
+  - "litellm/proxy/common_utils/reset_budget_job.py"
+parent: B071
+split_from: B071
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,14 @@
+id: B3975
+milestone: M7 observability
+title: Rubrik moderation payloads and block decisions
+status: todo
+depends_on: [B218]
+file: null
+covers:
+  - "litellm/integrations/rubrik.py"
+parent: B114
+split_from: B114
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

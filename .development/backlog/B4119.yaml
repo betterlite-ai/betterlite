@@ -1,0 +1,14 @@
+id: B4119
+milestone: M7 observability
+title: Build chat and Responses search follow-up plans
+status: todo
+depends_on: [B4113, B4115]
+file: null
+covers:
+  - "litellm/integrations/websearch_interception/handler.py"
+parent: B119
+split_from: B119
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

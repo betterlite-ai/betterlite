@@ -7,3 +7,9 @@ file: tasks/B959-anthropic-beta-config.yaml
 covers:
   - "litellm/anthropic_beta_headers_manager.py"
   - "litellm/anthropic_beta_headers_config.json"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

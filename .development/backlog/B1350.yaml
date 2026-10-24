@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/gemini/image_generation/**"
   - "litellm/llms/gemini/image_usage_transformation.py"
   - "litellm/types/llms/gemini.py"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

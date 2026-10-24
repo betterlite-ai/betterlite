@@ -2,12 +2,18 @@ id: B079
 milestone: M6 guardrails
 title: Policy engine, policy templates and policy API
 status: todo
-depends_on: [B104]
+depends_on: [B002, B3240, B3241, B3242, B3243, B3244, B3245, B3246, B3247, B3248, B3249, B3250, B3251, B3252, B3253, B3254, B3255, B3256, B3257, B3258, B3259, B3260, B3261, B3262, B3263, B3264, B3265, B3266, B3267, B3268, B3269]
 file: null
 covers:
-  - "policy_templates.json"
-  - "litellm/policy_templates_backup.json"
-  - "litellm/proxy/policy_engine/**"
-  - "litellm/proxy/management_endpoints/policy_endpoints/**"
+  - "litellm/proxy/policy_engine/__init__.py"
+  - "litellm/proxy/policy_engine/architecture.md"
+  - "litellm/proxy/policy_engine/init_policies.py"
+  - "litellm/proxy/management_endpoints/policy_endpoints/__init__.py"
   - "litellm/types/policy_engine.py"
-  - "litellm/types/proxy/policy_engine/**"
+  - "litellm/types/proxy/policy_engine/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B329, B331, B301, B361]
 file: tasks/B377-router-dependencies.yaml
 covers:
   - "litellm/router_utils/auto_router_model_naming.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

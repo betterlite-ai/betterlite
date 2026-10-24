@@ -1,0 +1,14 @@
+id: B4657
+milestone: M9 agents and mcp
+title: MCP token endpoint client and distributed refresh coordination
+status: todo
+depends_on: [B4650, B4656, B173]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{redis_distributed_lock,redis_refresh_coordinator,runtime_refresh_coordinator,token_endpoint}.py"
+parent: B137
+split_from: B137
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

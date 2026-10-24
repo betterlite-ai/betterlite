@@ -6,3 +6,9 @@ depends_on: [B171, B004, B1138]
 file: tasks/B906-responses-usage.yaml
 covers:
   - "litellm/responses/utils.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

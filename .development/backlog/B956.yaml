@@ -6,3 +6,9 @@ depends_on: [B014, B171, B948, B949, B1087, B950]
 file: tasks/B956-chat-mcp-plans.yaml
 covers:
   - "litellm/responses/mcp/chat_completions_handler.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

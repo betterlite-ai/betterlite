@@ -1,0 +1,14 @@
+id: B4841
+milestone: M9 agents and mcp
+title: Account harness endpoint usage and protect session credentials
+status: todo
+depends_on: [B1686, B4830]
+file: null
+covers:
+  - "litellm/harness/endpoint.py"
+parent: B143
+split_from: B143
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

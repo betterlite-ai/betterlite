@@ -6,3 +6,9 @@ depends_on: [B171, B856]
 file: tasks/B868-auxiliary-routes.yaml
 covers:
   - "litellm/proxy/_types.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

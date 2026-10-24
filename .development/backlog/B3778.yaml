@@ -1,0 +1,15 @@
+id: B3778
+milestone: M6 guardrails
+title: Lasso classification transport and session correlation
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/lasso/lasso.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/lasso.py"
+parent: B107
+split_from: B107
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

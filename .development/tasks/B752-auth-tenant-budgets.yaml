@@ -2,7 +2,7 @@ id: B752
 title: Project, organization, tag and access-group budget admission
 description: >-
   Implement TenantBudgetChecks using B2321 current-spend reads, B740 batch lookups, B879 organization
-  lookup, B733 counter keys, B2325 carried organization state and B116 alert delivery. Project hard
+  lookup, B733 counter keys, B2325 carried organization state and B4025 budget alert delivery. Project hard
   budgets skip missing rows, missing ceilings and nonfinite ceilings before reading spend:project:<id>.
   Use row spend or zero as fallback; spend >= ceiling denies, including a zero ceiling. When a token
   exists, enqueue project_budget before raising; without a token still deny, without an alert. Soft

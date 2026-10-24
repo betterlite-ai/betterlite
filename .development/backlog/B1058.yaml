@@ -10,3 +10,9 @@ covers:
   - "litellm/vector_stores/utils.py"
   - "litellm/types/integrations/rag/bedrock_knowledgebase.py"
   - "litellm/integrations/vector_store_integrations/base_vector_store.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B071, B171, B732, B739, B750, B757, B856, B860, B
 file: tasks/B1225-budget-admission-handoff.yaml
 covers:
   - "litellm/proxy/auth/user_api_key_auth.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
