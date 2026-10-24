@@ -400,9 +400,17 @@ fn prepare_writes_the_config_with_the_mock_url() {
     fs::remove_dir_all(&root).unwrap();
 }
 
-#[test]
-fn compare_group_reports_each_case_and_writes_its_artifacts() {
-    let root = env::temp_dir().join(format!("betterlite-group-{}", process::id()));
+#[rstest::rstest]
+#[case::same("same", "null")]
+#[case::differ(
+    "differ",
+    "{\n  \"message\": \"response bodies differ\",\n  \"pointer\": \"/a\"\n}"
+)]
+fn compare_group_reports_each_case_and_writes_its_artifacts(
+    #[case] name: &str,
+    #[case] diff: &str,
+) {
+    let root = env::temp_dir().join(format!("betterlite-group-{}-{name}", process::id()));
     fs::create_dir_all(&root).unwrap();
     fs::write(root.join("first.log"), "first").unwrap();
     fs::write(root.join("second.log"), "second").unwrap();
@@ -420,21 +428,14 @@ fn compare_group_reports_each_case_and_writes_its_artifacts() {
     };
     let outcomes = runner::compare_group(&root, &[same, differ], &captures).unwrap();
     assert_eq!(outcomes, vec![false, true]);
-    let differs = "{\n  \"message\": \"response bodies differ\",\n  \"pointer\": \"/a\"\n}";
-    for (name, diff) in [("same", "null"), ("differ", differs)] {
-        let mut written = fs::read_dir(root.join(name)).unwrap();
-        let directory = written.next().unwrap().unwrap().path();
-        let files = [
-            ("diff.json", diff),
-            ("litellm.log", "first"),
-            ("betterlite.log", "second"),
-            ("provider-litellm.json", "[]"),
-        ];
-        for (file, text) in files {
-            assert_eq!(fs::read_to_string(directory.join(file)).unwrap(), text);
-        }
-        assert!(directory.join("client-betterlite.json").exists());
-    }
+    let mut written = fs::read_dir(root.join(name)).unwrap();
+    let directory = written.next().unwrap().unwrap().path();
+    let read = |file: &str| fs::read_to_string(directory.join(file)).unwrap();
+    assert_eq!(read("diff.json"), diff);
+    assert_eq!(read("litellm.log"), "first");
+    assert_eq!(read("betterlite.log"), "second");
+    assert_eq!(read("provider-litellm.json"), "[]");
+    assert!(directory.join("client-betterlite.json").exists());
     fs::remove_dir_all(&root).unwrap();
 }
 
