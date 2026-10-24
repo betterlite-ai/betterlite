@@ -1,0 +1,84 @@
+id: B319
+title: Strategy-independent model RPM and TPM checks
+description: Add the enforce_model_rate_limits optional pre-call check to the B016 pipeline, using B304
+  state and B011 rate-limit metadata. Keep its counters and callback accounting compatible with other
+  strategy consumers, and expose a reservation hook that B019's ITPM/OTPM part can compose before these
+  checks. Reuse the existing token accounting rather than add a second estimator. Use the existing Rust
+  crate boundaries from B004 and B008; integrate through the server when the provider dispatcher or callbacks
+  live in another core crate. This task's source slices are the linked ranges, not a port of their Python
+  classes. Add the listed oracle cases and the matching adapters to B301's component runner where state
+  is not observable over HTTP; adapters call production logic and never reproduce it. Use deterministic
+  candidate sets or supplied random samples for comparisons, and separate seeded distribution tests for
+  random choices. Extend the existing config_yaml fuzz target and committed corpus for every newly accepted
+  config form; unsupported keys still fail by full path. Keep the implementation, adapters and tests within
+  800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/model-rate-limits/**
+  - tools/oracle/src/router_probes/model-rate-limits/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/model_rate_limits.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L100-L324
+  why: Limits, atomic RPM reservation and error handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L326-L447
+  why: Success/failure accounting and I/O reservation refund seam.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(model_rate_limits)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/model-rate-limits/limits-disabled.yaml
+- tools/oracle/cases/routing/model-rate-limits/tpm-at-limit.yaml
+- tools/oracle/cases/routing/model-rate-limits/rpm-increment-crosses-limit.yaml
+- tools/oracle/cases/routing/model-rate-limits/error-retry-after.yaml
+- tools/oracle/cases/routing/model-rate-limits/concurrent-counter.yaml
+- tools/oracle/cases/routing/model-rate-limits/success-usage-update.yaml
+- tools/oracle/cases/routing/model-rate-limits/store-failure.yaml
+- tools/oracle/cases/routing/model-rate-limits/composition-no-double-rpm.yaml
+deviations: []
+out_of_scope:
+- Virtual-key and team rate-limit middleware (B072).
+- Input/output token reservations (B019).
+pitfalls:
+- A rate-limit rejection and a Redis failure have different behavior.
+- The check must run before the provider call under every configured strategy.
+- RPM counts rejected increment-first attempts according to the pinned code.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

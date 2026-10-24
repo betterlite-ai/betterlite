@@ -232,6 +232,7 @@ tasks:
     - B316
     - B317
     - B318
+    - B319
     file: null
     covers:
     - litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py
@@ -2078,3 +2079,15 @@ tasks:
     file: tasks/B318-usage-routing-v2.yaml
     covers:
     - litellm/router_strategy/lowest_tpm_rpm_v2.py
+
+  - id: B319
+    milestone: M2 routing
+    title: Strategy-independent model RPM and TPM checks
+    status: todo
+    depends_on:
+    - B016
+    - B318
+    - B011
+    file: tasks/B319-model-rate-limits.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/model_rate_limit_check.py
