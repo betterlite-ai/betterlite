@@ -11,8 +11,11 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: check-added-large-files
+      # Codex keeps .codex/ read-only for its agents, and these two fixers open every file for writing
       - id: end-of-file-fixer
+        exclude: ^\.codex/
       - id: trailing-whitespace
+        exclude: ^\.codex/
 
   - repo: local
     hooks:
