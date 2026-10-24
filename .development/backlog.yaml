@@ -2311,9 +2311,7 @@ tasks:
     - B013
     file: tasks/B333-jev-classifier.yaml
     covers:
-    - litellm/router_strategy/complexity_router/{jev_classifier,tier_predictor}.py
-    - litellm/router_strategy/complexity_router/artifacts/**
-
+    - litellm/router_strategy/complexity_router/jev_classifier.py
   - id: B334
     milestone: M2 routing
     title: Tier pools, request overrides and context placement

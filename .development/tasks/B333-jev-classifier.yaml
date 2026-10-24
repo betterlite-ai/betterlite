@@ -1,18 +1,16 @@
 id: B333
-title: JEV classifier calls and offline tier prediction
+title: JEV classifier transport and attribution
 description: Add the JEV classifier adapter through B099 Decisions dispatch or a configured B009 HTTP
-  endpoint, using typed request/response models and B012 attribution. Add the deterministic heuristic_v2
-  artifact predictor with strict artifact parsing and the pinned packaged artifact. These share only a
-  typed forecast output; keep network transport and offline prediction in separate modules. Preserve config-only
-  URL/key sourcing and SecretString boundaries. Copy only the pinned artifact as test/production data
-  and keep its attribution. Use the existing Rust crate boundaries from B004 and B008; integrate through
+  endpoint, using typed request/response models and B012 attribution. Reuse B331 classifier outcomes and
+  timeout recovery. Preserve config-only URL/key sourcing and SecretString boundaries; B358 owns offline
+  heuristic_v2 prediction. Use the existing Rust crate boundaries from B004 and B008; integrate through
   the server when the provider dispatcher or callbacks live in another core crate. This task's source
   slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the
   matching adapters to B301's component runner where state is not observable over HTTP; adapters call
   production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
   for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
   fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
-  full path. Add a cargo-fuzz target tier_forecast under crates/betterlite-router/fuzz and a normal replays_the_tier_forecast_corpus
+  full path. Add a cargo-fuzz target jev_verdict under crates/betterlite-router/fuzz and a normal replays_the_jev_verdict_corpus
   test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
   fixtures and oracle cases are budget-excluded by checks.yaml.
 scope:
@@ -29,10 +27,6 @@ scope:
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/jev_classifier.py#L109-L304
   why: Router/direct JEV transport and cost.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L14-L157
-  why: Artifact validation, cohorts and monotonic posterior estimates.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1931-L1956
-  why: Heuristic-v2 output.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2159-L2252
   why: JEV verdict outcome.
 dod:
@@ -70,8 +64,8 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/tier_forecast.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/tier_forecast)"
-      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_tier_forecast_corpus)'
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/jev_verdict.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/jev_verdict)"
+      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_jev_verdict_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
@@ -80,18 +74,18 @@ oracle_cases:
 - tools/oracle/cases/routing/jev-classifier/jev-direct-versus-deployment.yaml
 - tools/oracle/cases/routing/jev-classifier/jev-timeout-fallback.yaml
 - tools/oracle/cases/routing/jev-classifier/jev-key-not-forwarded-to-other-base.yaml
-- tools/oracle/cases/routing/jev-classifier/artifact-global-domain-cohort.yaml
-- tools/oracle/cases/routing/jev-classifier/monotonic-tier-probabilities.yaml
-- tools/oracle/cases/routing/jev-classifier/unicode-cohort.yaml
-- tools/oracle/cases/routing/jev-classifier/threshold-last-tier.yaml
-- tools/oracle/cases/routing/jev-classifier/duplicate-artifact-statistic.yaml
+- tools/oracle/cases/routing/jev-classifier/malformed-verdict-fallback.yaml
+- tools/oracle/cases/routing/jev-classifier/negative-and-nonfinite-cost.yaml
+- tools/oracle/cases/routing/jev-classifier/model-and-cost-attribution.yaml
+- tools/oracle/cases/routing/jev-classifier/cancelled-call-no-late-update.yaml
 deviations: []
 out_of_scope:
-- Retraining the artifact or an online judge service.
+- Offline artifact prediction, which belongs to B358.
+- Retraining the classifier or running an online judge service.
 pitfalls:
 - This task waits for B099 so it does not invent the Decisions wire API.
-- Do not fetch a newer learned artifact or train from unlicensed data.
-- Reject malformed artifacts at startup instead of choosing arbitrary probabilities.
+- An upstream classifier URL and secret come only from validated operator configuration.
+- JEV output must remain untrusted bytes until the typed parser validates it.
 review_level: security
 budget:
   max_changed_lines: 800
