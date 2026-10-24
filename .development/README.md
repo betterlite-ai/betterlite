@@ -57,6 +57,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-10-24: the rule questions R1 to R21 are answered. The answers live in rules.yaml, the clippy.toml and Cargo.toml templates, the no-loops-in-tests ast-grep rule and the 300-line source limit in checks.yaml.
 - 2026-10-24: the pyramid questions are answered. Security tasks get an Opus review, Claude Opus gets one try after the Codex rungs, at most 3 dispatches run at once, every task gets a review, and `cargo gate plan` waits until 2 or 3 real dispatches show where the planner trips.
 - 2026-10-24: the architect may raise a single task's budget (lines, expects, timeouts) when the work is cohesive and passes, and says why in the PR. Agents never get more access. B001 is the first: 1,700 lines for the oracle harness.
+- 2026-10-24: up to 6 dispatches run at once, plus the planners, with a back-off when Codex returns rate limit errors. The merge queue squashes each pull request into one commit, so a branch that merged main lands without being rebuilt by hand. Content passes stay before a batch of tasks runs.
 
 ## Writing a task
 
