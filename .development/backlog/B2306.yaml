@@ -6,3 +6,9 @@ depends_on: [B061, B171, B367, B844]
 file: tasks/B2306-deployment-credential-resolution.yaml
 covers:
   - "litellm/router.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

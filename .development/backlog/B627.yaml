@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/bedrock/embed/amazon_titan_v2_transformation.py"
   - "litellm/llms/bedrock/embed/amazon_titan_multimodal_transformation.py"
   - "litellm/llms/bedrock/embed/cohere_transformation.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

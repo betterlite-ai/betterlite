@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/integrations/shadow_eval_logger.py"
   - "litellm/integrations/litellm_agent/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

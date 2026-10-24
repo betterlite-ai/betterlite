@@ -6,3 +6,9 @@ depends_on: [B002, B003, B115, B171, B189, B204, B726, B732, B860, B1704, B1714]
 file: tasks/B1729-spend-log-payload.yaml
 covers:
   - "litellm/proxy/spend_tracking/{spend_management_endpoints,cold_storage_handler}.py"
+parent: B069
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

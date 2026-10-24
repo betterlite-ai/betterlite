@@ -4,6 +4,13 @@
   "description": "One task in .development/backlog/<id>.yaml: its status, its dependencies and the LiteLLM paths it covers. The architect lands every change to it.",
   "type": "object",
   "properties": {
+    "blocked_reason": {
+      "description": "Why the entry is blocked, in one line. Null unless status is blocked.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "covers": {
       "description": "Globs over the LiteLLM paths in litellm-inventory.txt whose behavior this entry reimplements. Empty for work betterlite needs that LiteLLM has no file for.",
       "type": "array",
@@ -33,8 +40,52 @@
       "type": "string",
       "minLength": 1
     },
+    "parent": {
+      "description": "The umbrella entry this part belongs to, or null for an umbrella or a standalone entry.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
+    },
+    "pr": {
+      "description": "The pull request that merged or is merging the entry's work, otherwise null.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "resolution": {
+      "description": "How a done entry ended. Null until status is done.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Resolution"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "split_from": {
+      "description": "The entry this one was split off from when that is known, otherwise null.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
+    },
     "status": {
       "$ref": "#/$defs/Status"
+    },
+    "superseded_by": {
+      "description": "The entry that replaces a duplicate or superseded one, otherwise null.",
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
     },
     "title": {
       "type": "string",
@@ -51,6 +102,15 @@
     "covers"
   ],
   "$defs": {
+    "Resolution": {
+      "type": "string",
+      "enum": [
+        "merged",
+        "obsolete",
+        "duplicate",
+        "superseded"
+      ]
+    },
     "Status": {
       "type": "string",
       "enum": [

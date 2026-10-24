@@ -12,3 +12,9 @@ covers:
   - "litellm/completion_extras/litellm_responses_transformation/__init__.py"
   - "litellm/proxy/response_polling/__init__.py"
   - "litellm/responses/file_search/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

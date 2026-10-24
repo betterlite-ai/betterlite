@@ -6,3 +6,9 @@ depends_on: [B003, B004, B012, B1021, B1019, B1141, B2400, B732, B1100, B1139]
 file: tasks/B1054-fine-tuning-cancel.yaml
 covers:
   - "litellm/proxy/fine_tuning_endpoints/endpoints.py"
+parent: B088
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

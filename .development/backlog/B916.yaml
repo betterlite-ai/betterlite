@@ -6,3 +6,9 @@ depends_on: [B014, B004, B011, B908, B914, B915, B924, B2410, B2401]
 file: tasks/B916-responses-chat-call.yaml
 covers:
   - "litellm/responses/litellm_completion_transformation/handler.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

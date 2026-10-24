@@ -6,3 +6,9 @@ depends_on: [B004, B005, B171, B902, B1113, B1138, B913, B907]
 file: tasks/B922-chat-response-stream-tools.yaml
 covers:
   - "litellm/responses/litellm_completion_transformation/streaming_iterator.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

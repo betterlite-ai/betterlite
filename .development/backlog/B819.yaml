@@ -7,3 +7,9 @@ file: tasks/B819-access-group-sync.yaml
 covers:
   - "litellm/proxy/management_helpers/access_group_key_sync.py"
   - "litellm/proxy/management_helpers/access_group_team_sync.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

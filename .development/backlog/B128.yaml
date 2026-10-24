@@ -6,3 +6,9 @@ depends_on: [B002, B198, B4380, B4381, B4382, B4383]
 file: null
 covers:
   - "litellm/caching/valkey_semantic_cache.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B171, B925, B978, B984, B1087, B1119]
 file: tasks/B986-messages-response-stream.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/responses_adapters/streaming_iterator.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

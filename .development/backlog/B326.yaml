@@ -6,3 +6,9 @@ depends_on: [B383, B068, B304, B301, B361]
 file: tasks/B326-routing-budget-state.yaml
 covers:
   - "litellm/router_strategy/budget_limiter.py"
+parent: B020
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

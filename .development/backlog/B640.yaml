@@ -6,3 +6,9 @@ depends_on: [B591, B171, B2203]
 file: tasks/B640-bedrock-other-count-tokens.yaml
 covers:
   - "litellm/llms/bedrock/count_tokens/transformation.py"
+parent: B029
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

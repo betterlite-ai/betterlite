@@ -6,3 +6,9 @@ depends_on: [B171]
 file: tasks/B213-dot-paths.yaml
 covers:
   - "litellm/litellm_core_utils/dot_notation_indexing.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

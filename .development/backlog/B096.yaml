@@ -8,3 +8,9 @@ covers:
   - "litellm/evals/__init__.py"
   - "litellm/proxy/openai_evals_endpoints/__init__.py"
   - "litellm/proxy/openai_evals_endpoints/endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

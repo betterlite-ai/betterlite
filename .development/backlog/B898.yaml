@@ -6,3 +6,9 @@ depends_on: [B002, B012, B116, B129, B732, B737, B856]
 file: tasks/B898-key-event-sinks.yaml
 covers:
   - "litellm/proxy/hooks/key_management_event_hooks.py"
+parent: B055
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

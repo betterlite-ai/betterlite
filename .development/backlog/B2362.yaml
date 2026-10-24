@@ -6,3 +6,9 @@ depends_on: [B171, B192, B700, B722, B723, B770, B856, B860]
 file: tasks/B2362-key-user-write-primitives.yaml
 covers:
   - "litellm/proxy/utils.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

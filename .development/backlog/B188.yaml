@@ -6,3 +6,9 @@ depends_on: [B187, B005, B006]
 file: tasks/B188-logging-privacy.yaml
 covers:
   - "litellm/litellm_core_utils/{redact_messages,initialize_dynamic_callback_params,internal_call_metadata}.py"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

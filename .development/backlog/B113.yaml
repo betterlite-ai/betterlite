@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/datadog/datadog_team_handler.py"
   - "litellm/integrations/newrelic/newrelic_team_handler.py"
   - "litellm/integrations/newrelic/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

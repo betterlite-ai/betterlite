@@ -6,3 +6,9 @@ depends_on: [B1334, B1345, B1347, B1350, B1120, B997, B171]
 file: tasks/B1351-studio-image-edit.yaml
 covers:
   - "litellm/llms/gemini/image_edit/**"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

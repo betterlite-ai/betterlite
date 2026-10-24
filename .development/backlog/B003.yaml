@@ -7,3 +7,9 @@ file: tasks/B003-server.yaml
 covers:
   - "litellm/proxy/shutdown/**"
   - "litellm/proxy/common_utils/{openai_error_payload,validation_error_body}.py"
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 43

@@ -5,3 +5,9 @@ status: todo
 depends_on: [B000, B001, B171]
 file: tasks/B860-postgres-http.yaml
 covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B001, B003, B171, B732, B733, B734, B735, B738, B757, B856, B860, B
 file: tasks/B870-identity-store.yaml
 covers:
   - "litellm/proxy/auth/resolvers/store.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

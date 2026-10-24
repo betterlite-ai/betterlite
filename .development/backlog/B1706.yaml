@@ -6,3 +6,9 @@ depends_on: [B002, B171, B198, B204, B226, B700, B726, B860]
 file: tasks/B1706-tool-spend-batches.yaml
 covers:
   - "litellm/proxy/db/{spend_log_tool_index,spend_log_batching}.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

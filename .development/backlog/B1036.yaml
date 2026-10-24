@@ -6,3 +6,9 @@ depends_on: [B009, B010, B171, B1019, B1035, B1087, B517, B002]
 file: tasks/B1036-batch-provider-create.yaml
 covers:
   - "litellm/batches/main.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

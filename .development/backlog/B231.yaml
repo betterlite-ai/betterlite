@@ -6,3 +6,9 @@ depends_on: [B178, B179]
 file: tasks/B231-bedrock-tools.yaml
 covers:
   - "litellm/litellm_core_utils/prompt_templates/factory.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B193, B2203, B171]
 file: tasks/B2217-model-catalog-keys.yaml
 covers:
   - "litellm/utils.py"
+parent: B014
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

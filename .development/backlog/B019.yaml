@@ -7,3 +7,9 @@ file: tasks/B019-io-token-limits.yaml
 covers:
   - "litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py"
   - "litellm/router_utils/add_retry_fallback_headers.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

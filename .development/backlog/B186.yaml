@@ -6,3 +6,9 @@ depends_on: [B185, B238, B239, B240, B241, B242]
 file: tasks/B186-native-errors.yaml
 covers:
   - "litellm/litellm_core_utils/exception_mapping_utils.py"
+parent: B011
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

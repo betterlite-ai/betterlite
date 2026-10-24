@@ -7,3 +7,9 @@ file: tasks/B343-auto-router-access.yaml
 covers:
   - "litellm/proxy/auth/auto_router_checks.py"
   - "litellm/router_utils/auto_router_tuning_baseline.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

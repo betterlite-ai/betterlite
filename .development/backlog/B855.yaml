@@ -6,3 +6,9 @@ depends_on: [B001, B003, B732, B739, B743, B757, B860, B870, B880, B881, B883, B
 file: tasks/B855-auth-admission.yaml
 covers:
   - "litellm/proxy/auth/user_api_key_auth.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -16,3 +16,9 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/presidio.py"
   - "litellm/proxy/hooks/example_presidio_ad_hoc_recognizer.json"
   - "litellm/types/proxy/guardrails/guardrail_hooks/{promptguard,qohash,qualifire,singulr,zscaler_ai_guard,decision_model}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

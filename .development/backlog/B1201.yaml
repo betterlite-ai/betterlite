@@ -6,3 +6,9 @@ depends_on: [B111, B171, B714, B723, B724, B732, B734, B790, B819, B856, B859, B
 file: tasks/B1201-bulk-user-write.yaml
 covers:
   - "litellm/proxy/management_helpers/bulk_user_creation.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

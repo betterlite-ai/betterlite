@@ -6,3 +6,9 @@ depends_on: [B002, B003, B732, B737, B760, B764, B765, B860, B869, B882, B891]
 file: tasks/B877-jwt-team-authorization.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"
+parent: B053
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

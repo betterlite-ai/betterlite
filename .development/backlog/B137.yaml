@@ -7,3 +7,9 @@ file: null
 covers:
   - "litellm/proxy/_experimental/mcp_server/outbound_credentials/{__init__,resolver}.py"
   - "litellm/proxy/_experimental/mcp_server/auth/{litellm_auth_handler,user_api_key_auth_mcp}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

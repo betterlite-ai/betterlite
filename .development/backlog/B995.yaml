@@ -6,3 +6,9 @@ depends_on: [B171, B1087, B726, B858, B994, B1140, B003, B756, B1139, B856]
 file: tasks/B995-claude-skill-read.yaml
 covers:
   - "litellm/proxy/anthropic_endpoints/skills_endpoints.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

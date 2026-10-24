@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/public_endpoints/public_v1/__init__.py"
   - "litellm/proxy/public_endpoints/public_endpoints.py"
   - "litellm/types/proxy/public_endpoints/public_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

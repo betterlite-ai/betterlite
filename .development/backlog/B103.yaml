@@ -6,3 +6,9 @@ depends_on: [B3630, B3631, B3632, B3633, B3634, B3635, B3636, B3637, B3638, B363
 file: null
 covers:
   - "litellm/proxy/vertex_ai_endpoints/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

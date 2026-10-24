@@ -7,3 +7,9 @@ file: tasks/B171-helper-oracle.yaml
 covers:
   - "litellm/llms/custom_httpx/{asgi_handler,mock_transport}.py"
   - "litellm/litellm_core_utils/url_utils.py"
+parent: B009
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

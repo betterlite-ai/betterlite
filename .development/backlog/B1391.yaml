@@ -6,3 +6,9 @@ depends_on: [B1368, B171]
 file: tasks/B1391-google-genai-guardrail-text.yaml
 covers:
   - "litellm/llms/gemini/google_genai/guardrail_translation/**"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B346-request-scheduler.yaml
 covers:
   - "litellm/scheduler.py"
   - "litellm/types/scheduler.py"
+parent: B022
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

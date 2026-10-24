@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/{custom_logger,custom_batch_logger,custom_guardrail,custom_prompt_management,custom_secret_manager,custom_sso_handler}.py"
   - "litellm/llms/custom_llm.py"
   - "litellm/types/llms/custom_llm.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

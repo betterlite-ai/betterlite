@@ -6,3 +6,9 @@ depends_on: [B003, B171, B901, B943, B945, B1087, B754, B748, B756, B732, B855, 
 file: tasks/B941-responses-ws-auth.yaml
 covers:
   - "litellm/proxy/response_api_endpoints/endpoints.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -16,3 +16,9 @@ covers:
   - "litellm/proxy/auth/team_grants.py"
   - "litellm/types/proxy/auth/auth_checks.py"
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

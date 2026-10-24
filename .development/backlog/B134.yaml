@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/client/cli/README.md"
   - "litellm/proxy/client/cli/commands/__init__.py"
   - "litellm/proxy/client/cli/commands/autoroute/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B1301, B1302, B1304, B1306, B1352, B1369, B175, B171]
 file: tasks/B1353-vertex-lyria-speech.yaml
 covers:
   - "litellm/llms/vertex_ai/text_to_speech/transformation.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

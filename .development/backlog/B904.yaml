@@ -6,3 +6,9 @@ depends_on: [B171, B902, B903, B905, B1138]
 file: tasks/B904-response-id-traversal.yaml
 covers:
   - "litellm/responses/utils.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

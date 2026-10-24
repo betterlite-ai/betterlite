@@ -6,3 +6,9 @@ depends_on: [B002, B1534, B1135, B1084, B1087, B173, B171]
 file: tasks/B1536-runway-speech.yaml
 covers:
   - "litellm/llms/runwayml/text_to_speech/**"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

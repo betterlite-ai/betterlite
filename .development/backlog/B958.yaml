@@ -10,3 +10,9 @@ covers:
   - "litellm/anthropic_interface/exceptions/__init__.py"
   - "litellm/types/llms/anthropic_messages/anthropic_request.py"
   - "litellm/types/llms/anthropic_messages/anthropic_response.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

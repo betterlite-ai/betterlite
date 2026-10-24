@@ -6,3 +6,9 @@ depends_on: [B068, B069, B171, B1020, B1030, B1039, B1087, B1019, B002]
 file: tasks/B1040-batch-cost-finalize.yaml
 covers:
   - "litellm/batches/batch_utils.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

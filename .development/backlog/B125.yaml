@@ -8,3 +8,9 @@ covers:
   - "litellm/caching/{__init__,_internal_lru_cache}.py"
   - "litellm/caching/Readme.md"
   - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

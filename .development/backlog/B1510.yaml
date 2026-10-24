@@ -6,3 +6,9 @@ depends_on: [B668, B1507, B1508, B1509, B005, B171]
 file: tasks/B1510-chatgpt-chat.yaml
 covers:
   - "litellm/llms/chatgpt/chat/**"
+parent: B045
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

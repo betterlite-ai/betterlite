@@ -7,3 +7,9 @@ file: tasks/B1340-gemini-embedding-records.yaml
 covers:
   - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py"
   - "litellm/types/llms/vertex_ai.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B677-azure-default-chain.yaml
 covers:
   - "litellm/llms/azure/common_utils.py"
   - "litellm/secret_managers/get_azure_ad_token_provider.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B529, B668, B129, B002, B171]
 file: tasks/B2200-azure-url-policy.yaml
 covers:
   - "litellm/llms/azure/common_utils.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

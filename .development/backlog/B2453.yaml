@@ -6,3 +6,9 @@ depends_on: [B1122, B173, B2402, B206, B1002, B012, B2401]
 file: tasks/B2453-transcription-http.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
+parent: B009
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

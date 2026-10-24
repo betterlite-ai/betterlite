@@ -6,3 +6,9 @@ depends_on: [B508, B504, B171, B188, B101, B103, B668, B2200, B129]
 file: tasks/B548-azure-passthrough.yaml
 covers:
   - "litellm/llms/azure/passthrough/transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

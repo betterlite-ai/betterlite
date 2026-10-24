@@ -8,3 +8,9 @@ covers:
   - "litellm/cost_calculator.py"
   - "litellm/utils.py"
   - "litellm/litellm_core_utils/llm_response_utils/get_formatted_prompt.py"
+parent: B004
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

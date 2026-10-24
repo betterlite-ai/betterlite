@@ -6,3 +6,9 @@ depends_on: [B3960, B3961, B3962, B3963, B3964, B3965, B3966, B3967, B3968, B396
 file: null
 covers:
   - "litellm/integrations/generic_api/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

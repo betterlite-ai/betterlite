@@ -9,3 +9,9 @@ covers:
   - "litellm/integrations/SlackAlerting/Readme.md"
   - "litellm/integrations/email_templates/{email_footer,key_created_email,key_rotated_email,user_invitation_email}.py"
   - "litellm/types/integrations/pagerduty.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

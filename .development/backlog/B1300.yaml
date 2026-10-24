@@ -7,3 +7,9 @@ file: tasks/B1300-vertex-aws-federation.yaml
 covers:
   - "litellm/llms/vertex_ai/aws_credentials_supplier.py"
   - "litellm/llms/vertex_ai/vertex_ai_aws_wif.py"
+parent: B031
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

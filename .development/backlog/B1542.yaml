@@ -6,3 +6,9 @@ depends_on: [B2225, B171]
 file: tasks/B1542-deepgram-listen-metadata.yaml
 covers:
   - "litellm/llms/deepgram/common_utils.py"
+parent: B047
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

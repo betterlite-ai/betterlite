@@ -6,3 +6,9 @@ depends_on: [B002, B171, B732, B736, B747, B879, B886, B968, B2318]
 file: tasks/B969-summary-model-access.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

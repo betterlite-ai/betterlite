@@ -33,3 +33,9 @@ covers:
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250625145206_cascade_budget_and_loosen_managed_file_json/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250625213625_add_status_to_managed_object_table/migration.sql"
   - "litellm-proxy-extras/litellm_proxy_extras/migrations/20250707212517_add_mcp_info_column_mcp_servers/migration.sql"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

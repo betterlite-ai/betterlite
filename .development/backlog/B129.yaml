@@ -8,3 +8,9 @@ covers:
   - "litellm/secret_managers/main.py"
   - "litellm/secret_managers/get_azure_ad_token_provider.py"
   - "litellm/secret_managers/Readme.md"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

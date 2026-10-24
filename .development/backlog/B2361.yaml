@@ -6,3 +6,9 @@ depends_on: [B171, B192, B199, B733, B856]
 file: tasks/B2361-budget-window-start.yaml
 covers:
   - "litellm/proxy/spend_tracking/budget_reservation.py"
+parent: B071
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

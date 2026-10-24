@@ -7,3 +7,9 @@ file: tasks/B375-classifier-verdict.yaml
 covers:
   - "litellm/router_strategy/complexity_router/complexity_router.py"
   - "litellm/router_strategy/complexity_router/classification_rubrics.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

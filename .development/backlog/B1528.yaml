@@ -6,3 +6,9 @@ depends_on: [B1525, B1527, B171]
 file: tasks/B1528-fal-imagen-banana-bytedance.yaml
 covers:
   - "litellm/llms/fal_ai/image_generation/{imagen4_transformation,nano_banana_transformation,bytedance_transformation}.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

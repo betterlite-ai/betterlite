@@ -6,3 +6,9 @@ depends_on: [B001, B003, B720, B732, B739, B747, B751, B856, B860, B2310, B2318,
 file: tasks/B887-team-budget-admission.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

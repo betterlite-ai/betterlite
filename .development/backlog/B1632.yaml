@@ -6,3 +6,9 @@ depends_on: [B003, B171]
 file: tasks/B1632-scim-records.yaml
 covers:
   - "litellm/types/proxy/management_endpoints/scim_v2.py"
+parent: B064
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

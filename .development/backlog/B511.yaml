@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/openai/image_generation/dall_e_3_transformation.py"
   - "litellm/llms/openai/image_generation/gpt_transformation.py"
   - "litellm/llms/openai/openai.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

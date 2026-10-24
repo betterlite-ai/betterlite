@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/a2a/discovery.py"
   - "litellm/proxy/a2a/endpoints.py"
   - "litellm/proxy/a2a/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

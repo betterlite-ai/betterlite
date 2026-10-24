@@ -6,3 +6,9 @@ depends_on: [B3900, B3901, B3902, B3903, B3904, B3905, B3912, B3906, B3907, B390
 file: null
 covers:
   - "litellm/integrations/langsmith.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

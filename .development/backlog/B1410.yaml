@@ -7,3 +7,9 @@ file: tasks/B1410-mistral-audio.yaml
 covers:
   - "litellm/llms/mistral/common_utils.py"
   - "litellm/llms/mistral/{audio_speech,audio_transcription}/**"
+parent: B036
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

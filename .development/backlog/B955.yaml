@@ -6,3 +6,9 @@ depends_on: [B171, B932, B947, B951, B954, B1087, B949, B948, B905, B950, B952]
 file: tasks/B955-responses-mcp-dispatch.yaml
 covers:
   - "litellm/responses/main.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

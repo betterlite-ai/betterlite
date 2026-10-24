@@ -10,3 +10,9 @@ covers:
   - "litellm/repositories/object_permission_repository.py"
   - "litellm/repositories/config_repository.py"
   - "litellm/repositories/credentials_repository.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

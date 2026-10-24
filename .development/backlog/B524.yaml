@@ -7,3 +7,9 @@ file: tasks/B524-openai-decisions.yaml
 covers:
   - "litellm/llms/openai/decisions/transformation.py"
   - "litellm/llms/base_llm/decisions/transformation.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

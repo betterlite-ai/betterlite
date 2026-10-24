@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/openai_like/json_loader.py"
   - "litellm/llms/openai_like/providers.json"
   - "litellm/llms/openai_like/README.md"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

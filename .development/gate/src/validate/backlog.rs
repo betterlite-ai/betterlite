@@ -1,11 +1,95 @@
+mod tests;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
 use crate::error::GateError;
 use crate::ids::task_id_problem;
-use crate::spec::backlog::{Backlog, BacklogEntry, Status};
+use crate::spec::backlog::{Backlog, BacklogEntry, Resolution, Status};
 use crate::validate::duplicates;
+
+fn link_problems(entry: &BacklogEntry, ids: &[&str]) -> Vec<String> {
+    let mut problems = Vec::new();
+    let links = [
+        ("parent", &entry.parent),
+        ("split_from", &entry.split_from),
+        ("superseded_by", &entry.superseded_by),
+    ];
+    for (field, link) in links {
+        if let Some(target) = link
+            && (target == &entry.id || !ids.contains(&target.as_str()))
+        {
+            problems.push(format!(
+                "{}: {field} {target} is itself or not in the backlog",
+                entry.id
+            ));
+        }
+    }
+    problems
+}
+
+pub(crate) fn ticket_problems(entry: &BacklogEntry, ids: &[&str]) -> Vec<String> {
+    let mut problems = link_problems(entry, ids);
+    if (entry.status == Status::Done) != entry.resolution.is_some() {
+        problems.push(format!(
+            "{}: a done entry has a resolution, and only a done entry has one",
+            entry.id
+        ));
+    }
+    let replaced = matches!(
+        entry.resolution,
+        Some(Resolution::Duplicate | Resolution::Superseded)
+    );
+    if replaced != entry.superseded_by.is_some() {
+        problems.push(format!(
+            "{}: superseded_by is set exactly when the resolution is duplicate or superseded",
+            entry.id
+        ));
+    }
+    if entry.resolution == Some(Resolution::Merged) && entry.pr.is_none() {
+        problems.push(format!("{}: a merged entry names its pr", entry.id));
+    }
+    let reason = entry
+        .blocked_reason
+        .as_deref()
+        .is_some_and(|text| !text.trim().is_empty());
+    if (entry.status == Status::Blocked) != reason {
+        problems.push(format!(
+            "{}: blocked_reason is set exactly when the status is blocked",
+            entry.id
+        ));
+    }
+    problems
+}
+
+fn parent_cycles(backlog: &Backlog) -> Vec<String> {
+    let parents: BTreeMap<&str, &str> = backlog
+        .tasks
+        .iter()
+        .filter_map(|entry| {
+            entry
+                .parent
+                .as_deref()
+                .map(|parent| (entry.id.as_str(), parent))
+        })
+        .collect();
+    let mut problems = Vec::new();
+    for start in parents.keys() {
+        let mut current = *start;
+        for _ in 0..parents.len() {
+            let Some(next) = parents.get(current) else {
+                break;
+            };
+            if next == start {
+                problems.push(format!("{start} is its own ancestor through parent"));
+                break;
+            }
+            current = next;
+        }
+    }
+    problems
+}
 
 fn entry_problems(root: &Path, entry: &BacklogEntry, ids: &[&str]) -> Vec<String> {
     let mut problems: Vec<String> = task_id_problem(&entry.id).into_iter().collect();
@@ -27,6 +111,7 @@ fn entry_problems(root: &Path, entry: &BacklogEntry, ids: &[&str]) -> Vec<String
         (Some(file), _) if !root.join(".development").join(file).is_file() => {
             problems.push(format!("{}: .development/{file} does not exist", entry.id));
         }
+        (None, Status::Done) if entry.resolution != Some(Resolution::Merged) => {}
         (None, Status::InProgress | Status::Done | Status::Blocked) => {
             problems.push(format!(
                 "{} has a status past todo but no task file",
@@ -114,6 +199,13 @@ pub(crate) fn problems(root: &Path, backlog: &Backlog) -> Result<Vec<String>, Ga
             .iter()
             .flat_map(|entry| entry_problems(root, entry, &ids)),
     );
+    problems.extend(
+        backlog
+            .tasks
+            .iter()
+            .flat_map(|entry| ticket_problems(entry, &ids)),
+    );
+    problems.extend(parent_cycles(backlog));
     problems.extend(unlisted_files(root, backlog)?);
     problems.extend(cycles(backlog));
     Ok(problems)

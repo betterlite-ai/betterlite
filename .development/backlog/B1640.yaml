@@ -6,3 +6,9 @@ depends_on: [B003, B052, B124, B723, B724, B732, B804, B860, B1621, B1632, B1633
 file: tasks/B1640-scim-group-lifecycle.yaml
 covers:
   - "litellm/proxy/management_endpoints/scim/scim_v2.py"
+parent: B064
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

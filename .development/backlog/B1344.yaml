@@ -6,3 +6,9 @@ depends_on: [B1302, B1303, B1304, B1342, B1343, B173]
 file: tasks/B1344-vertex-predict-embeddings.yaml
 covers:
   - "litellm/llms/vertex_ai/{vertex_embeddings,multimodal_embeddings}/embedding_handler.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

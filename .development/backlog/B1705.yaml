@@ -6,3 +6,9 @@ depends_on: [B003, B052, B726, B732, B860, B1665, B1701, B1704]
 file: tasks/B1705-management-spend-facets.yaml
 covers:
   - "litellm/proxy/management_endpoints/management_v1/spend_logs.py"
+parent: B067
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

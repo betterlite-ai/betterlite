@@ -7,3 +7,9 @@ file: tasks/B591-bedrock-aws-endpoints.yaml
 covers:
   - "litellm/llms/bedrock/base_aws_llm.py"
   - "litellm/llms/bedrock/common_utils.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

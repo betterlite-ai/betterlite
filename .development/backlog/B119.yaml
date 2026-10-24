@@ -8,3 +8,9 @@ covers:
   - "litellm/litellm_core_utils/chat_completion_agentic_loop.py"
   - "litellm/integrations/websearch_interception/{__init__.py,ARCHITECTURE.md,handler.py}"
   - "litellm/integrations/code_interpreter_interception/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

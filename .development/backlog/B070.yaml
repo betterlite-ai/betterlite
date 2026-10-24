@@ -6,3 +6,9 @@ depends_on: [B002, B003, B171, B198, B204, B700, B860, B1690, B1708, B1714, B171
 file: tasks/B070-spend-writer.yaml
 covers:
   - "litellm/proxy/db/db_spend_update_writer.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

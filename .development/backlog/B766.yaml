@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B171, B213, B722, B732, B733, B734, B738, B753, B
 file: tasks/B766-jwt-key-resolution.yaml
 covers:
   - "litellm/proxy/auth/user_api_key_auth.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B004, B171, B1138, B906, B917, B1136, B912, B2412]
 file: tasks/B919-response-chat-result.yaml
 covers:
   - "litellm/completion_extras/litellm_responses_transformation/transformation.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

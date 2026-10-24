@@ -12,3 +12,9 @@ covers:
   - "litellm/proxy/types_utils/**"
   - "litellm/types/proxy/{README.md,litellm_pre_call_utils.py}"
   - "litellm/proxy/common_utils/{http_parsing_utils,openai_endpoint_utils,json_merge_patch,timezone_utils,resource_ownership,rbac_utils,registry_read_through,semantic_text_index}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

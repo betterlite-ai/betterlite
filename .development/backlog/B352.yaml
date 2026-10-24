@@ -6,3 +6,9 @@ depends_on: [B334, B335, B016, B308, B319, B020, B301, B002]
 file: tasks/B352-complexity-placement-gates.yaml
 covers:
   - "litellm/router_strategy/complexity_router/complexity_router.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

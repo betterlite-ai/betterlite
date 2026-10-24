@@ -6,3 +6,9 @@ depends_on: [B3990, B3991, B3992, B3993, B3994, B3995, B3996, B3997, B3998, B399
 file: null
 covers:
   - "litellm/integrations/s3_v2.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

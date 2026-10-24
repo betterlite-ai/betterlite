@@ -6,3 +6,9 @@ depends_on: [B647, B644, B604, B618, B218, B171, B643, B596, B1025, B600, B175, 
 file: tasks/B648-bedrock-services-batch-records.yaml
 covers:
   - "litellm/llms/bedrock/files/transformation.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

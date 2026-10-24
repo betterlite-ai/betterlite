@@ -7,3 +7,9 @@ file: tasks/B960-anthropic-beta-filter.yaml
 covers:
   - "litellm/anthropic_beta_headers_manager.py"
   - "litellm/llms/anthropic/pass_through/messages/transformation.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B907-responses-codex-tools.yaml
 covers:
   - "litellm/responses/litellm_completion_transformation/custom_tools.py"
   - "litellm/responses/litellm_completion_transformation/transformation.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

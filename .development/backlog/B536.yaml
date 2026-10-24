@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/azure/image_generation/__init__.py"
   - "litellm/llms/azure/image_generation/http_utils.py"
   - "litellm/llms/azure/image_edit/transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

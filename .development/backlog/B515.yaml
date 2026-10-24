@@ -9,3 +9,9 @@ covers:
   - "litellm/llms/openai/transcriptions/whisper_transformation.py"
   - "litellm/llms/openai/transcriptions/gpt_transformation.py"
   - "litellm/utils.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

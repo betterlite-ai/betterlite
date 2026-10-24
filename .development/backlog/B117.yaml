@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/prompts/{__init__,init_prompts,prompt_endpoints}.py"
   - "litellm/proxy/custom_prompt_management.py"
   - "litellm/proxy/test_prompts/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

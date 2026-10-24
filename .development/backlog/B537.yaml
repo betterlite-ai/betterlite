@@ -7,3 +7,9 @@ file: tasks/B537-azure-speech.yaml
 covers:
   - "litellm/llms/azure/azure.py"
   - "litellm/llms/azure/text_to_speech/transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/openai/containers/transformation.py"
   - "litellm/llms/openai/evals/transformation.py"
   - "litellm/llms/openai/vector_stores/transformation.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

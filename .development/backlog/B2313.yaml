@@ -8,3 +8,9 @@ covers:
   - "litellm/types/agents.py"
   - "litellm/types/proxy/agent_identity.py"
   - "litellm/types/proxy/carried_budget_state.py"
+parent: B167
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

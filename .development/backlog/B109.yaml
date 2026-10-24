@@ -6,3 +6,9 @@ depends_on: [B3810, B3811, B3812, B3813, B3814, B3815, B3816, B3817, B3818, B189
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/mcp_jwt_signer/{__init__,mcp_jwt_signer}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

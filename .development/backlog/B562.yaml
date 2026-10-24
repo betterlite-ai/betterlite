@@ -7,3 +7,9 @@ file: tasks/B562-foundry-model-router.yaml
 covers:
   - "litellm/llms/azure_ai/common_utils.py"
   - "litellm/llms/azure_ai/azure_model_router/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

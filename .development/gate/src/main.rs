@@ -18,6 +18,7 @@ mod process;
 mod report_check;
 mod review_check;
 mod schema;
+mod show;
 mod spec;
 mod trace;
 mod validate;
@@ -86,10 +87,20 @@ enum Command {
     #[command(
         about = "Print how many LiteLLM paths each backlog entry covers, then every path nothing covers"
     )]
-    Coverage,
+    Coverage {
+        #[arg(
+            long,
+            help = "Print every LiteLLM path with the entries that cover it instead"
+        )]
+        paths: bool,
+    },
     #[command(
         about = "Show which task owns a LiteLLM path or a betterlite file, with the LiteLLM lines it ports and its deviations"
     )]
+    #[command(
+        about = "Show a backlog entry like a ticket: status, links, what it unblocks, components, coverage and its history from git"
+    )]
+    Show { task: String },
     Trace {
         #[arg(help = "A path from the repository or LiteLLM root, optionally with :line")]
         target: String,
@@ -129,6 +140,15 @@ fn coverage_report(development: &Development) -> Result<(Vec<String>, bool), Gat
     let passed =
         measured.uncovered.is_empty() && measured.dead_globs.is_empty() && measured.stale.is_none();
     Ok((lines, passed))
+}
+
+fn path_report(development: &Development) -> Result<(Vec<String>, bool), GateError> {
+    let folder = development.root.join(".development");
+    let litellm: Litellm = read_yaml(&folder.join("litellm.yaml"))?;
+    Ok((
+        coverage::path_owners(&folder, &litellm, &development.backlog)?,
+        true,
+    ))
 }
 
 fn dispatch_command(command: Command) -> Result<(Vec<String>, bool), GateError> {
@@ -178,8 +198,10 @@ fn run_command(
         Command::Inventory { checkout } => {
             Ok((inventory::write(&development.root, &checkout)?, true))
         }
-        Command::Coverage => coverage_report(development),
+        Command::Coverage { paths: false } => coverage_report(development),
+        Command::Coverage { paths: true } => path_report(development),
         Command::Trace { target } => trace::trace(development, &target),
+        Command::Show { task } => show::show(development, &task),
         Command::Hook => Ok((Vec::new(), true)),
     }
 }

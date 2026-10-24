@@ -6,3 +6,9 @@ depends_on: [B2237, B173, B249, B005, B004, B668, B2202, B171]
 file: tasks/B2238-text-completion-transport.yaml
 covers:
   - "litellm/llms/openai/completion/handler.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B729-daily-activity-repository.yaml
 covers:
   - "litellm/repositories/daily_activity_repository.py"
   - "litellm/types/repositories/__init__.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

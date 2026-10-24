@@ -6,3 +6,9 @@ depends_on: [B1331, B171]
 file: tasks/B1392-studio-native-agents.yaml
 covers:
   - "litellm/llms/gemini/agents/**"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

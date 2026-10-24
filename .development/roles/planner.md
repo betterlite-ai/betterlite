@@ -19,7 +19,7 @@ Size and split:
 - Count the LiteLLM lines a task owns (non-blank, non-comment) and size the budget from that count, never from a copied split. The 800 lines include tests, fuzz targets and the Rust and Python oracle adapters, so more than about 400 lines of LiteLLM logic means a split.
 - Split ownership by the call graph: a function goes to the task its callers depend on, and a task never calls a function owned by a task that depends on it.
 - depends_on lists what the task uses directly, never an umbrella task, so independent tasks can run in parallel.
-- Each backlog entry is its own file, .development/backlog/<id>.yaml. Change only the entries you were given and the parts you split off, in the style the files already have; a new part gets a new file.
+- Each backlog entry is its own file, .development/backlog/<id>.yaml. Change only the entries you were given and the parts you split off, in the style the files already have; a new part gets a new file. A part you split off sets parent to its umbrella and split_from to the entry it came from; an entry you remove because nothing calls its code at the pin stays, with status done, resolution obsolete and a one-line reason in your notes.
 
 Content:
 

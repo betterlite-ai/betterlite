@@ -6,3 +6,9 @@ depends_on: [B000]
 file: tasks/B002-config.yaml
 covers:
   - "litellm/proxy/example_config_yaml/**"
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 19

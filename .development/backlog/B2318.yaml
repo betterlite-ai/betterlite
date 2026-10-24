@@ -6,3 +6,9 @@ depends_on: [B125, B171, B715, B726, B733, B734, B856, B859, B860, B2315]
 file: tasks/B2318-auth-membership-load.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

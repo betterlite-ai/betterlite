@@ -6,3 +6,9 @@ depends_on: [B001, B003, B302, B732, B736, B737, B740, B747, B856, B860, B879, B
 file: tasks/B885-model-grant-intersection.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

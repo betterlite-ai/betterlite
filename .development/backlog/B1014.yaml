@@ -6,3 +6,9 @@ depends_on: [B011, B012, B174, B209, B1079, B2401]
 file: tasks/B1014-rerank-call.yaml
 covers:
   - "litellm/rerank_api/main.py"
+parent: B085
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "db_scripts/backfill_daily_tool_spend.sql"
   - "db_scripts/backfill_key_total_spend.sql"
   - "db_scripts/backfill_key_total_spend_from_spend_logs.sql"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

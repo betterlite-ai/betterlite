@@ -13,3 +13,9 @@ covers:
   - "litellm/litellm_core_utils/{response_header_helpers,model_response_utils}.py"
   - "litellm/types/llms/openai.py"
   - "litellm/llms/openai/openai.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

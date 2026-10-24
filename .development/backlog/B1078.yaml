@@ -6,3 +6,9 @@ depends_on: [B010, B171, B174, B176, B198, B206, B905, B931, B918, B916, B2414, 
 file: tasks/B1078-responses-create-plan.yaml
 covers:
   - "litellm/responses/main.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

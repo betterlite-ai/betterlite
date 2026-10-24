@@ -6,3 +6,9 @@ depends_on: [B3720, B3721, B3722, B3723, B3724, B3725, B3726, B3727, B3728, B372
 file: null
 covers:
   - "litellm/proxy/guardrails/guardrail_hooks/{azure,model_armor,openai,ibm_guardrails,microsoft_purview,agent_365}/__init__.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
