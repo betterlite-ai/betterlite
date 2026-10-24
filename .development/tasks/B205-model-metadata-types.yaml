@@ -8,9 +8,14 @@ description: >-
   Compose these with B204's pricing groups into a ModelInfo record that B193 can deserialize, and expose an immutable
   projection for provider resolution without importing betterlite-provider. Dynamic catalog model/provider strings
   are validated data, separate from executable provider enums. Add model_fields helper cases comparing normalized
-  pinned JSON projections, with field-inventory tests and a model_fields fuzz target. Budget 360 types/projections,
-  60 wiring and 300 tests. Seed B171's shared helper_case corpus with every added operation and replay it through
-  the common typed parser.
+  pinned JSON projections, with field-inventory tests and a model_fields fuzz target.  Seed B171's shared helper_case
+  corpus with every added operation and replay it through the common typed parser. Reject unknown fields only in
+  bundled-map inventory tests. At runtime accept unknown catalog fields with warnings listing their complete paths,
+  so a remote refresh remains forward compatible; do not silently discard their existence. Known fields still enforce
+  type/depth/duplicate checks. Write the behavior rstest functions b205_model_field_tests_behavior in adjacent tests.rs
+  files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
+  helper operations model_fields in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
+  has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
@@ -32,27 +37,35 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.schema.json#L1-L120
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.schema.json#L1-L120
   why: Catalog entry structure and metadata exclusions.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L545
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L545
   why: Aliases and fallback generalizations are handled separately from ordinary model fields.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L6416-L6570
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5928-L6379
   why: Consumer expectations for model metadata.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L271-L433
+  why: ModelInfoBase and ModelInfo fields.
 dod:
-- text: Every observed non-price field is typed and the listed projections match source data, including absence
-    versus false.
+- text: >-
+    Every observed non-price field is typed and the listed projections match source data, including absence versus
+    false.
   proof:
   - model-field-tests
   - oracle
-- text: The metadata layer has no dependency on executable provider adapters and rejects unsupported new catalog
-    fields with complete paths.
+  - helper-python
+- text: >-
+    The metadata layer stays independent of executable providers; bundled tests reject unknown fields, while runtime
+    parsing accepts them and warns with complete paths.
   proof:
   - model-field-tests
-  - deny
 - text: The metadata parser replays its malformed, duplicate-field and depth-limit corpus.
   proof:
   - model-fields-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -61,22 +74,27 @@ checks:
   commands:
   - id: model-field-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/model_field/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b205_model_field_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: model-fields-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-models/fuzz/fuzz_targets/model_fields.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/model_fields)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/model_fields)"
+      && test -f crates/betterlite-models/fuzz/fuzz_targets/model_fields.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/model_fields)"
       && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_model_fields_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'model_fields' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/model-fields/limits.yaml
 - tools/oracle/cases/helpers/model-fields/omitted-false.yaml
@@ -85,6 +103,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/model-fields/provider-mode.yaml
 - tools/oracle/cases/helpers/model-fields/fallback-generalizations.yaml
 - tools/oracle/cases/helpers/model-fields/documentation-entry.yaml
+- tools/oracle/cases/helpers/model-fields/runtime-unknown-field.yaml
 deviations: []
 out_of_scope:
 - Executing fallback-generalization routing rules is B018.
