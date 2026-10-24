@@ -247,6 +247,7 @@ tasks:
     - B016
     - B320
     - B321
+    - B322
     file: null
     covers:
     - litellm/router_strategy/{tag_based_routing,budget_limiter}.py
@@ -2119,3 +2120,15 @@ tasks:
     file: tasks/B321-tag-routing.yaml
     covers:
     - litellm/router_strategy/tag_based_routing.py
+
+  - id: B322
+    milestone: M2 routing
+    title: Team-scoped deployment access and reserved windows
+    status: todo
+    depends_on:
+    - B016
+    - B052
+    file: tasks/B322-access-windows.yaml
+    covers:
+    - litellm/router_utils/access_windows.py
+    - litellm/router_utils/common_utils.py
