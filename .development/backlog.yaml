@@ -195,12 +195,14 @@ tasks:
     milestone: M2 routing
     title: Retries, retry policies and timeouts
     status: todo
-    depends_on: [B016]
+    depends_on:
+    - B016
+    - B305
     file: null
     covers:
-      - "litellm/timeout.py"
-      - "litellm/router_utils/get_retry_from_policy.py"
-      - "litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py"
+    - litellm/timeout.py
+    - litellm/router_utils/get_retry_from_policy.py
+    - litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py
   - id: B018
     milestone: M2 routing
     title: Fallbacks, cooldowns and deployment health state
@@ -1897,3 +1899,15 @@ tasks:
     - litellm/router_strategy/base_routing_strategy.py
     - litellm/router_utils/routing_read_batch.py
     - litellm/router_utils/router_callbacks/**
+
+  - id: B305
+    milestone: M2 routing
+    title: Resolve router and provider timeouts
+    status: todo
+    depends_on:
+    - B016
+    - B009
+    file: tasks/B305-routing-timeouts.yaml
+    covers:
+    - litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py
+    - litellm/timeout.py
