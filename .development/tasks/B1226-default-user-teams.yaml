@@ -21,9 +21,14 @@ description: >-
   The prisma_client argument is unused here; do not introduce a separate DB write or transaction.
 
 
-  Build the production default_user_teams module in betterlite-auth; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Build the production default_user_teams module in betterlite-server, next to B790's user fields, and
+  implement B736's DefaultTeamEnrollment port with it: the port call runs check_if_default_team_set and,
+  for a truthy result, add_new_user_to_default_team with the identity and proxy_admin auth B736 passes.
+  The module lives in the server crate because it calls B790 and B808 there; betterlite-auth only owns
+  the port. B056 installs this implementation into the auth user lookup, so this task registers nothing
+  in server state. Extend B736's default_internal_user_params config record with the teams field rather
+  than declaring a second record. Reuse the typed dependencies listed in the backlog. Keep Rust
+  implementation files below 300 lines by using named domain submodules with adjacent tests.rs files.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
@@ -68,10 +73,10 @@ description: >-
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
-    - crates/betterlite-auth/src/default_user_teams.rs
-    - crates/betterlite-auth/src/default_user_teams/**
-    - crates/betterlite-auth/src/lib.rs
-    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-server/src/default_user_teams.rs
+    - crates/betterlite-server/src/default_user_teams/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
     - tools/oracle/src/helpers/default_user_teams.rs
     - tools/oracle/src/helpers/default_user_teams/**
     - tools/oracle/helpers/default_user_teams.py
@@ -98,8 +103,8 @@ dod:
   - text: 'Cover settings_absent, teams_null_and_empty, default_team_strings_preserve_duplicates,
       default_team_records_role_and_zero_budget, mixed_entries_error_and_drop, malformed_record_fails,
       string_and_mapping_iteration, noniterable_teams_fails, enrollment_forwards_email_and_auth,
-      invalid_team_prevents_gather, enrollment_waits_for_all, enrollment_partial_failure_retains_success
-      and enrollment_does_not_add_failure_logging.'
+      invalid_team_prevents_gather, enrollment_waits_for_all, enrollment_partial_failure_retains_success,
+      enrollment_does_not_add_failure_logging and port_skips_enrollment_without_default_teams.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -119,7 +124,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^default_user_teams::tests::/)
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^default_user_teams::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -150,6 +155,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B790 owns _add_user_to_team and its error suppression; B808 owns authorized membership persistence.
+  - B736 owns the DefaultTeamEnrollment port and the get_user_object call site; B056 installs this implementation into the user lookup.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -186,6 +192,7 @@ out_of_scope:
 pitfalls:
   - all() accepts the empty teams list before the dictionary-record branch.
   - return_exceptions=True hides enrollment failures from this helper's caller after successful writes remain committed.
+  - An empty teams list is falsey in get_user_object, so the port must return before add_new_user_to_default_team runs.
 budget:
   max_changed_lines: 450
   max_new_expects: 0

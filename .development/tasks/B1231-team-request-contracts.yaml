@@ -221,7 +221,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L1-L255
 out_of_scope:
   - B859 owns inherited TeamBase/Member/team rows, B2310 object permissions and B2317 duration persistability.
-  - B008 owns validate_router_settings_dict; B067 owns ResourceResponse. B124 retains MemberDeleteRequest's base validator.
+  - B008 owns validate_router_settings_dict; B1665 owns ResourceResponse, so these contracts never depend on B067's routes. B124 retains MemberDeleteRequest's base validator.
   - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
     (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
   - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),

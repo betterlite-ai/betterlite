@@ -34,11 +34,17 @@ description: >-
   to B124 handle_exception_on_proxy: HTTP status/detail retained with internal_server_error, existing
   ProxyException preserved, other errors status_code or500 and internal_server_error. Match all fields.
 
+  At server assembly, install B1226's default-team enrollment into the DefaultTeamEnrollment port of
+  B736's user lookup, replacing NoDefaultTeams. Auth sits below management, so this route task is the
+  first place that can see both; B052 and B736 must not import B1226. Test
+  upserted_user_joins_default_teams runs get_user_object with user_id_upsert=true on the assembled state
+  and Postgres, with default_internal_user_params.teams set, and checks the membership rows B808 wrote.
+
   Implement user_management with files below300 lines and adjacent tests. B860 independent Postgres
   fixtures use POSTGRES_TEST_URL or testcontainers. B001 cases exercise real HTTP success and errors,
   inspect tables after injected failures and prove the generated raw key authenticates while only its
-  hash is stored by B893. Reuse request/row decoders; no new parser. Allow 180 production, 300 tests
-  and 80 wiring lines, 560 within a 625-line gate.
+  hash is stored by B893. Reuse request/row decoders; no new parser. Allow 180 production, 330 tests
+  and 90 wiring lines, 600 within a 625-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/user_management.rs
@@ -68,12 +74,17 @@ dod:
     proof: [behavior-tests, oracle]
   - text: native_user_creation_has_no_license_count_or_cap proves README no-paid-tier behavior.
     proof: [behavior-tests]
+  - text: The assembled user lookup enrolls an upserted user in the configured default teams through B1226.
+    proof: [default-team-port-installed]
 checks:
   optional: []
   commands:
     - id: behavior-tests
       why: Ordered creation, public errors or partial writes differ from the source.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_management::tests::/) - test(/replays_the_/)'
+    - id: default-team-port-installed
+      why: The auth user lookup still runs with NoDefaultTeams, so upserted users join no default team.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_management::tests::upserted_user_joins_default_teams$/)'
 oracle_cases:
   - tools/oracle/cases/management/user-management/new-user-with-and-without-key.yaml
   - tools/oracle/cases/management/user-management/password-and-duplicate-errors.yaml
@@ -87,7 +98,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L569-L575
 out_of_scope:
   - B790 owns request defaults and duplicate/enrollment helpers; B893 owns generated user/key persistence.
-  - B816 owns object-permission persistence, B1226 default teams and B797 event delivery.
+  - B816 owns object-permission persistence, B1226 default teams and B797 event delivery; B736 owns the enrollment port this task fills.
   - B899 owns public login/session routes. They do not gain an auth requirement through this task.
 pitfalls:
   - Object permissions can remain after generation fails; team writes can remain after organization failure.

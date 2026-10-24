@@ -81,7 +81,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/common.py#L18-L106
     why: Problem content type, URN base and delete query rejection.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/management_v1.py#L12-L20
-    why: B067 ProblemDetail fields; these routes construct this response rather than an OpenAI error envelope.
+    why: B1665 ProblemDetail fields; these routes construct this response rather than an OpenAI error envelope.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: bulk_create_mixed, bulk_delete_mixed,
       unknown_body_422, unknown_delete_query, create_ignores_unknown_query, no_db_problem_503,
@@ -115,7 +115,7 @@ oracle_cases:
   - tools/oracle/cases/management/bulk-user-routes/non-admin-route-denied.yaml
 deviations: []
 out_of_scope:
-  - B007 owns ManagementProblem, problem_response and reject_unknown_query_params; B067 owns ProblemDetail and MANAGEMENT_V1_PREFIX.
+  - B007 owns ManagementProblem, problem_response and reject_unknown_query_params; B1665 owns ProblemDetail and MANAGEMENT_V1_PREFIX; B067 composes this router and is never a dependency.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - A helper's non-ManagementProblem exception becomes 500 even when it carries a 4xx status; dependency authentication failures occur before that catch.

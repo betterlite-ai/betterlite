@@ -38,9 +38,11 @@ description: >-
   attributes. Forward all remaining response-wrapper arguments unchanged and propagate its
   errors. Keep unknown pricing distinct from a valid zero and expose typed failures to the
   caller; B069's logging/spend integration chooses the source's nonfatal failure behavior.
-  Assemble the server cost-service resource and B1694 savings context
-  without starting another spend queue or registering an inference route. B069/B070 use
-  these exported resources directly; this task does not add cost headers independently of
+  Assemble the server cost-service resource without starting another spend queue or
+  registering an inference route. Savings is not part of completion_cost: B1694 attaches
+  its savings context on top of this resource later, reusing the bound effective lookup,
+  so this task neither builds nor names a savings type. B069/B070 use these exported
+  resources directly; this task does not add cost headers independently of
   their request-processing owner. B1695 reservation counts and B1699 durable baseline work
   are independent exported leaves, not reexports that force callers through this service.
   Add response_charge helper cases executing the actual pinned completion/response functions
@@ -86,7 +88,7 @@ dod:
     proof: [completion-charge-tests, oracle, response-charge-python, response-charge-corpus]
   - text: Response wrapper precedence, service tier partitions, custom pricing and recorded breakdown fields agree with the pinned functions across call families.
     proof: [response-charge-tests, completion-charge-tests, oracle, response-charge-python]
-  - text: Runtime assembly binds effective/raw lookup separately and installs native provider and savings resources without a dependency on future spend writers.
+  - text: Runtime assembly binds effective/raw lookup separately and installs native provider policies without a dependency on savings or future spend writers.
     proof: [cost-service-tests]
 checks:
   optional: []
@@ -133,6 +135,7 @@ out_of_scope:
   - B1680 owns usage-combination helpers and BaseTokenUsageProcessor; B1681 owns websocket tier splitting, RealtimeAPITokenUsageProcessor, ResponsesWebSocketTokenUsageProcessor and every realtime/ASR helper from L2818 through L3153.
   - litellm/cost.json has no caller at the pin and is not loaded or given cases. All llm_cost_calc/utils.py and tool_call_cost_tracking.py functions belong to B1669-B1687, with the explicit unused function exclusions in those tasks.
   - B069 owns request logging/spend integration and cost-header delivery; provider-specific price formulas outside the extracted leaves remain their provider tasks. Baseline persistence, reservation counts and PTU arithmetic are consumed directly from their lower owners.
+  - B1694 owns the savings pricing context and attaches it to this cost service; savings.py is never called from completion_cost.
   - B1692 owns PTU job installation in proxy startup; completion pricing does not assemble the scheduler, pod leases or reconciliation storage.
 pitfalls:
   - A token-type breakdown lookup can make a candidate fail, while a breakdown setter failure is swallowed after a charge is known.

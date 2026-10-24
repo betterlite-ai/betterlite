@@ -28,14 +28,23 @@ description: >-
   child factories without re-registering their methods/paths.
 
 
+  Bind the OpenAI provider's Responses create operation into the operation enum and dispatcher this task extends
+  in crates/betterlite-core/src/dispatch.rs: the openai target uses B507 input preparation and B508 reply and event
+  decoding, which B932's create call executes, and keeps response item IDs, tool metadata and streaming event order.
+  This binding moved here from the OpenAI provider umbrella B024 because the Responses variant only exists once
+  this task adds it, and a provider task must not depend on a route task. Test function openai_provider_operation
+  drives POST /v1/responses with an openai/ model through the booted proxy and asserts the captured upstream
+  /v1/responses request and the returned item IDs and stream events.
+
+
   Route input projections: data.background (absent False); data.model (absent ''); data.model (absent None); data.background
   (absent None); data.stream (absent None).
 
 
   Write adjacent tests.rs behavior functions native_create_route, chat_create_route, stream_create_route, background_poll_route,
   managed_previous_response, mcp_create_route, openai_create_alias, poll_admission_429, native_background_no_ente_cd2e,
-  blocked_response_200, blocked_stream_done, response_id_security_create, route_aliases, auth_missing, auth_invalid
-  under api::responses_routes::tests. Each named function drives production code and asserts its case result; use
+  blocked_response_200, blocked_stream_done, response_id_security_create, route_aliases, auth_missing, auth_invalid,
+  openai_provider_operation under api::responses_routes::tests. Each named function drives production code and asserts its case result; use
   named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
 
 
@@ -61,11 +70,13 @@ description: >-
   Sizing: 310 owned nonblank/non-comment/non-docstring Python lines (336 nonblank/non-comment physical lines, including
   signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 338 implementation,
   140 behavior tests, 180 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 696 total within the 700-line cap. The estimate includes tests and adapters, not just production code.
+  38 wiring, plus 20 binding, 30 test and 30 fixture lines for the OpenAI Responses operation; 776 total within
+  the 780-line cap. The estimate includes tests and adapters, not just production code.
 
 
   Direct inputs come from B003 (HTTP server, health routes and master key auth), B014 (Call dispatch across providers
-  and call types, shared settings and helpers), B171 (Direct helper oracle and URL path encoding), B921 (Response
+  and call types, shared settings and helpers), B171 (Direct helper oracle and URL path encoding), B507 (OpenAI
+  Responses replay input and tool schemas), B508 (OpenAI Responses replies and event decoding), B921 (Response
   chat dispatch), B924 (Chat response stream), B929 (Responses id security), B930 (Responses affinity), B932 (Responses
   create call), B936 (Responses poll stream), B937 (Responses stream errors), B938 (Responses read routes), B939
   (Responses input tokens), B940 (Cursor responses compat), B941 (Responses ws auth), B955 (Responses mcp dispatch),
@@ -198,6 +209,11 @@ dod:
   proof:
   - case-auth-invalid
   - oracle
+- text: 'openai provider operation: the OpenAI Responses create binding reaches the upstream /v1/responses request
+    and returns its item IDs, tool metadata and stream events unchanged.'
+  proof:
+  - case-openai-provider-operation
+  - oracle
 - text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
   proof:
   - new-oracle-cases
@@ -254,6 +270,9 @@ checks:
   - id: case-auth-invalid
     why: the auth-invalid behavior or its assertions are absent
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::auth_invalid($|::)/)'
+  - id: case-openai-provider-operation
+    why: the OpenAI Responses binding is missing from the dispatcher or loses item IDs, tool metadata or stream events
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_routes::tests::openai_provider_operation($|::)/)'
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/responses-routes)"
@@ -273,6 +292,7 @@ oracle_cases:
 - tools/oracle/cases/api/responses-routes/route-aliases.yaml
 - tools/oracle/cases/api/responses-routes/auth-missing.yaml
 - tools/oracle/cases/api/responses-routes/auth-invalid.yaml
+- tools/oracle/cases/api/responses-routes/openai-provider-operation.yaml
 deviations: []
 out_of_scope:
 - 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope
@@ -288,12 +308,12 @@ out_of_scope:
   L1387-L1396, _routing_hints_from_first_ws_frame L1407-L1419, _responses_ws_failure_frame L1422-L1428, _enforce_responses_ws_first_frame_model_auth
   L1431-L1471, responses_websocket_endpoint L1476-L1620.'
 - Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+  operations and only binds OpenAI's B507/B508 Responses transformation into the dispatcher. Python package export/event-loop facades remain B158-B161.
 pitfalls:
 - A successful provider queued response can become a proxy 500 when the unavailable enterprise import executes.
 - endpoints.py:407 emits the diagnostic 'No model_id found in response hidden params for response %s, skipping managed
   object storage'; retain its level and fallback instead of turning it into a hard error.
 review_level: security
 budget:
-  max_changed_lines: 700
+  max_changed_lines: 780
   max_new_expects: 0

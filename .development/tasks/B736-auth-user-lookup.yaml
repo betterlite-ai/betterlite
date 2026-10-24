@@ -46,11 +46,16 @@ description: >-
   Other fields use B720's user schema and repository create validation, including its errors.
 
   A non-None budget_duration with absent/null budget_reset_at is calculated by B2317 before create;
-  a supplied reset time stays unchanged. Create includes organization_memberships, then call B1226's
-  default-team selector and, for a truthy result, its enrollment service with the ORIGINAL requested
-  ID/email and a B2314 UserAPIKeyAuth having user_role=proxy_admin. The source does invoke the team
-  membership service and keeps its effects; do not bypass it with a direct array patch. No SSO ID
-  is implicitly added to the create payload. There is no outer transaction over these steps.
+  a supplied reset time stays unchanged. Create includes organization_memberships, then call the
+  DefaultTeamEnrollment port this task defines with the ORIGINAL requested ID/email and a B2314
+  UserAPIKeyAuth having user_role=proxy_admin. The port stands for the source's
+  check_if_default_team_set and add_new_user_to_default_team pair: B1226 implements it over the real
+  team membership service and B056 installs it, so this lookup never depends on management writes.
+  UserLookup takes the port in its constructor; NoDefaultTeams enrolls nobody and is the value used
+  until B056 installs the real one, while tests here use a recording port. An error the port returns
+  goes through this block's failure classification like any other create-path error, and the created
+  row stays. Never replace enrollment with a direct array patch. No SSO ID is implicitly added to the
+  create payload. There is no outer transaction over these steps.
 
   For a nonempty organization_memberships sequence, drop None entries and validate each remaining
   model_dump with B2310's membership model; preserve order and duplicates. None/empty sequences are
@@ -84,9 +89,9 @@ description: >-
   accessors share this selection; they do not expand route groups or check the model catalog.
 
   Both settings load through B002, including os.environ/ references; neither has a dedicated env
-  variable. Keep type/unknown-field validation failures, not invalid_value_fallback. B1226 owns the
-  team-list portion of default_internal_user_params; compose its normalization with these scalar
-  fields. B002's unknown-config rejection still applies. Config parsing uses B002's existing decoder.
+  variable. Keep type/unknown-field validation failures, not invalid_value_fallback. B1226 later adds
+  the teams portion of default_internal_user_params to the config record defined here; this task
+  only reads the scalar fields and leaves teams and available_teams out of the create payload. B002's unknown-config rejection still applies. Config parsing uses B002's existing decoder.
   Startup already validates role_permissions at proxy_server.py L6874-L6876. For dictionary user
   defaults, L6444-L6455 converts a non-None max_budget with float(), retains the other fields and
   emits a redacted DEBUG setting diagnostic. Accept finite numeric strings and source boolean
@@ -183,7 +188,7 @@ dod:
       team_fields_not_user_columns, absent_sso_not_added_to_create,
       missing_reset_computed_before_create, explicit_reset_preserved,
       create_before_default_enrollment, original_identity_and_admin_enrollment,
-      enrollment_partial_effects_survive, null_memberships_filtered_in_order,
+      enrollment_port_error_keeps_created_user, null_memberships_filtered_in_order,
       row_validation_before_cache, cache_before_positive_cadence,
       cache_failure_keeps_committed_user and upsert_after_suppressed_miss.'
     proof: [behavior-tests, postgres-tests]
@@ -241,6 +246,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2576-L2582
 out_of_scope:
   - B2318 owns _TeamMembershipCacheMiss and the four membership functions at L2328-L2442; B734 owns their shared inflight index.
+  - B1226 owns check_if_default_team_set and add_new_user_to_default_team behind this task's DefaultTeamEnrollment port, and B056 installs that implementation; this task has no dependency on either.
   - B124 owns the remaining proxy _types.py contracts except the lower model/type owners enumerated in B858, B859, B2310, B2313 and B2314; this task owns only L5173-L5190.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
