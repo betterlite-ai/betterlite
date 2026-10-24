@@ -11,7 +11,7 @@ description: Add POST /auto_router/validate_complexity_router_config, /auto_rout
   matching adapters to B301's component runner where state is not observable over HTTP; adapters call
   production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
   for comparisons, and separate seeded distribution tests for random choices. Add a cargo-fuzz target
-  auto_router_preview under crates/betterlite-server/fuzz and a normal replays_the_auto_router_preview_corpus
+  auto_router_preview under crates/betterlite-server/fuzz and a normal replays_the_route_probe_corpus
   test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
   fixtures and oracle cases are budget-excluded by checks.yaml.
 scope:
@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/auto-router-preview/**
-  - tools/oracle/src/router_probes/auto-router-preview/**
+  - tools/oracle/src/router_probes/auto_router_preview/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/auto_router_preview.py
   - tools/oracle/litellm/probes/registry.py
@@ -30,15 +30,16 @@ references:
   why: Authorization, saved-router resolution and the three preview routes.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L18-L171
   why: Preview body variants and validation responses.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_availability.py#L29-L156
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_availability.py#L29-L148
   why: Catalog decoding and allowance result.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the auto_router_preview prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
@@ -58,9 +59,9 @@ checks:
       -E 'test(auto_router_preview)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-server/fuzz/fuzz_targets/auto_router_preview.rs && test -n "$(ls -A
-      crates/betterlite-server/fuzz/corpus/auto_router_preview)" && cargo nextest run --locked -p betterlite-server
-      --no-tests=fail -E 'test(replays_the_auto_router_preview_corpus)'
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/route_probe.rs && test -n "$(ls -A
+      crates/betterlite-server/fuzz/corpus/route_probe)" && cargo nextest run --locked -p betterlite-server
+      --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
