@@ -9,14 +9,14 @@ tasks:
   - id: B001
     milestone: M0 foundation
     title: Oracle harness against the pinned LiteLLM
-    status: in-progress
+    status: done
     depends_on: [B000]
     file: tasks/B001-oracle.yaml
     covers: []
   - id: B002
     milestone: M0 foundation
     title: Load LiteLLM config.yaml into typed config
-    status: in-progress
+    status: done
     depends_on: [B000]
     file: tasks/B002-config.yaml
     covers:
@@ -24,7 +24,7 @@ tasks:
   - id: B003
     milestone: M0 foundation
     title: HTTP server, health routes and master key auth
-    status: todo
+    status: in-progress
     depends_on: [B001, B002]
     file: tasks/B003-server.yaml
     covers:
