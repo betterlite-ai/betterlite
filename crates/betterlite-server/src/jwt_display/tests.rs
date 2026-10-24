@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 const FIXTURE: &str = include_str!("fixtures/litellm_jwt_display.html");
 const HARNESS: &str = include_str!("dom_harness.js");
 const EMPTY_NOTE: &str = "(empty \u{2014} provider returned no claims for this section)";
-const NO_CLAIMS: Claim = Claim::Record(BTreeMap::new());
+const EMPTY: Claim = Claim::Record(BTreeMap::new());
 const READY: &str = "fire('DOMContentLoaded');";
 
 #[derive(Serialize)]
@@ -87,7 +87,7 @@ fn template_snapshot() {
     let payload =
         "{\n  \"parsed_by_proxy\": {},\n  \"raw_claims\": {},\n  \"access_token_claims\": {}\n}";
     let expected = branded.replacen("SSO_DATA", payload, 1);
-    assert_eq!(page(NO_CLAIMS, NO_CLAIMS, NO_CLAIMS), expected);
+    assert_eq!(page(EMPTY, EMPTY, EMPTY), expected);
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn branding_labels(#[case] label: &str) {
 }
 
 #[rstest]
-#[case::parsed_empty(NO_CLAIMS, &[r#"p.empty-note"No fields available.""#])]
+#[case::parsed_empty(EMPTY, &[r#"p.empty-note"No fields available.""#])]
 #[case::parsed_null(record([("groups", Claim::Null(()))]), &[r#"div.data-row""[div.data-label"groups" div.data-value"null"]"#])]
 #[case::parsed_object(
     record([("team", record([("id", Claim::Number(7)), ("tags", Claim::List(vec![Claim::Text("a")]))]))]),
@@ -130,27 +130,20 @@ fn branding_labels(#[case] label: &str) {
     ],
 )]
 fn parsed_rows(#[case] parsed: Claim, #[case] rows: &[&str]) {
-    assert_eq!(
-        run_page(&page(parsed, NO_CLAIMS, NO_CLAIMS), READY).parsed,
-        rows
-    );
+    assert_eq!(run_page(&page(parsed, EMPTY, EMPTY), READY).parsed, rows);
 }
 
 #[rstest]
-#[case::raw_claims_section(record([("sub", Claim::Text("user-1")), ("email", Claim::Text("a@example.com"))]), NO_CLAIMS, ["{\n  \"email\": \"a@example.com\",\n  \"sub\": \"user-1\"\n}", EMPTY_NOTE])]
-#[case::access_claims_section(NO_CLAIMS, record([("scp", Claim::List(vec![Claim::Text("read")])), ("exp", Claim::Number(9))]), [EMPTY_NOTE, "{\n  \"exp\": 9,\n  \"scp\": [\n    \"read\"\n  ]\n}"])]
+#[case::raw_claims_section(record([("sub", Claim::Text("user-1")), ("email", Claim::Text("a@example.com"))]), EMPTY, ["{\n  \"email\": \"a@example.com\",\n  \"sub\": \"user-1\"\n}", EMPTY_NOTE])]
+#[case::access_claims_section(EMPTY, record([("scp", Claim::List(vec![Claim::Text("read")])), ("exp", Claim::Number(9))]), [EMPTY_NOTE, "{\n  \"exp\": 9,\n  \"scp\": [\n    \"read\"\n  ]\n}"])]
 fn claim_sections(#[case] raw: Claim, #[case] access: Claim, #[case] shown: [&str; 2]) {
-    let observed = run_page(&page(NO_CLAIMS, raw, access), READY);
+    let observed = run_page(&page(EMPTY, raw, access), READY);
     assert_eq!([observed.raw, observed.access], shown);
 }
 
 #[test]
 fn dom_ready() {
-    let html = page(
-        record([("sub", Claim::Text("user-1"))]),
-        NO_CLAIMS,
-        NO_CLAIMS,
-    );
+    let html = page(record([("sub", Claim::Text("user-1"))]), EMPTY, EMPTY);
     let before = run_page(&html, "");
     assert_eq!(before.parsed.len(), 0);
     assert_eq!([before.raw, before.access], ["Loading...", "Loading..."]);
@@ -164,7 +157,7 @@ fn dom_ready() {
 #[case::copy_access_claims("copyToClipboard('accessTokenClaims')", "{\n  \"aud\": \"api\"\n}")]
 fn copy_claims(#[case] onclick: &str, #[case] copied: &str) {
     let raw = record([("sub", Claim::Text("user-1"))]);
-    let html = page(NO_CLAIMS, raw, record([("aud", Claim::Text("api"))]));
+    let html = page(EMPTY, raw, record([("aud", Claim::Text("api"))]));
     assert!(html.contains(&format!("onclick=\"{onclick}\"")));
     let observed = run_page(&html, &format!("{READY} {onclick};"));
     assert_eq!(observed.clipboard, [copied]);
@@ -174,11 +167,7 @@ fn copy_claims(#[case] onclick: &str, #[case] copied: &str) {
 
 #[test]
 fn copy_failure() {
-    let html = page(
-        NO_CLAIMS,
-        record([("sub", Claim::Text("user-1"))]),
-        NO_CLAIMS,
-    );
+    let html = page(EMPTY, record([("sub", Claim::Text("user-1"))]), EMPTY);
     let actions = format!("{READY} clipboardFails = true; copyToClipboard('rawClaims');");
     let seen = run_page(&html, &actions);
     assert_eq!(seen.errors, ["Could not copy text: |Error: denied"]);
@@ -198,11 +187,7 @@ fn copy_failure() {
     "\\\"double\\\" 'single' \\u003cb\\u003e\\u0026amp;\\u003c/b\\u003e `tick`"
 )]
 fn escaped_claims(#[case] claim: &'static str, #[case] escaped: &str) {
-    let html = page(
-        NO_CLAIMS,
-        record([("claim", Claim::Text(claim))]),
-        NO_CLAIMS,
-    );
+    let html = page(EMPTY, record([("claim", Claim::Text(claim))]), EMPTY);
     assert!(html.contains(&format!("\"claim\": \"{escaped}\"")));
     let markup = ['<', '>', '&', '\u{2028}', '\u{2029}'];
     let template = TEMPLATE.matches(markup).count();
