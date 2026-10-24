@@ -7,3 +7,9 @@ file: tasks/B802-team-member-budgets.yaml
 covers:
   - "litellm/proxy/management_endpoints/team_endpoints.py"
   - "litellm/proxy/management_helpers/bulk_team_member_budgets.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

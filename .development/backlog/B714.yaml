@@ -6,3 +6,9 @@ depends_on: [B700, B710, B713, B854, B860]
 file: tasks/B714-database-replica.yaml
 covers:
   - "litellm/proxy/db/routing_prisma_wrapper.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

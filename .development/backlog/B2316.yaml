@@ -6,3 +6,9 @@ depends_on: [B126, B171, B733, B856, B2314]
 file: tasks/B2316-spend-counter-batches.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_counter_batch.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

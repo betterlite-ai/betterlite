@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/base_llm/vector_store_files/transformation.py"
   - "litellm/types/vector_store_files.py"
   - "litellm/vector_store_files/utils.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

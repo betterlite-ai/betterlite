@@ -6,3 +6,9 @@ depends_on: [B1301, B1302, B1304, B1333, B568, B960, B961, B962, B171]
 file: tasks/B1339-vertex-native-messages.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py"
+parent: B032
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

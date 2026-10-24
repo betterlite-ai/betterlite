@@ -7,3 +7,9 @@ file: tasks/B754-auth-common-checks.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
   - "litellm/proxy/auth/user_api_key_auth.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

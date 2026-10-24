@@ -6,3 +6,9 @@ depends_on: [B171, B1023]
 file: tasks/B1024-file-batch-rewrite.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/batch_guardrails.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

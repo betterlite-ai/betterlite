@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/azure/chat/gpt_transformation.py"
   - "litellm/llms/azure/chat/gpt_5_transformation.py"
   - "litellm/llms/azure/chat/o_series_transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

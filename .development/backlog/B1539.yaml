@@ -6,3 +6,9 @@ depends_on: [B004, B1525, B206, B171]
 file: tasks/B1539-fal-vision-chat.yaml
 covers:
   - "litellm/llms/fal_ai/chat/**"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

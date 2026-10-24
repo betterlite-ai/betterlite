@@ -14,3 +14,9 @@ covers:
   - "litellm/llms/azure_ai/anthropic/messages_transformation.py"
   - "litellm/llms/azure_ai/anthropic/count_tokens/handler.py"
   - "litellm/llms/azure_ai/passthrough/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

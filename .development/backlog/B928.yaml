@@ -6,3 +6,9 @@ depends_on: [B068, B171, B902, B1113, B1138, B196, B2413, B909]
 file: tasks/B928-response-synthetic-events.yaml
 covers:
   - "litellm/responses/streaming_iterator.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

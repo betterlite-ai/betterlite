@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/db/daily_spend_bulk_upsert.py"
   - "litellm/proxy/db/autorouter_session_rollup.py"
   - "litellm/proxy/_types.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B2200, B960, B961, B129, B171]
 file: tasks/B564-foundry-anthropic-messages.yaml
 covers:
   - "litellm/llms/azure_ai/anthropic/messages_transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

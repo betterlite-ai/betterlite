@@ -14,3 +14,9 @@ covers:
   - "litellm/proxy/native_compaction.py"
   - "litellm/proxy/guardrails/auto_router_compression.py"
   - "litellm/llms/custom_httpx/asgi_handler.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

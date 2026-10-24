@@ -10,3 +10,9 @@ covers:
   - "litellm/types/integrations/prometheus.py"
   - "litellm/proxy/{prometheus_cleanup,prometheus_metrics_server}.py"
   - "litellm/proxy/middleware/{prometheus_auth_middleware,billable_request_metrics_middleware}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

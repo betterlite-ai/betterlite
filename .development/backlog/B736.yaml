@@ -7,3 +7,9 @@ file: tasks/B736-auth-user-lookup.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
   - "litellm/proxy/_types.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

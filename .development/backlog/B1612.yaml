@@ -7,3 +7,9 @@ file: tasks/B1612-cli-login-pages.yaml
 covers:
   - "litellm/proxy/management_endpoints/ui_sso.py"
   - "litellm/proxy/common_utils/html_forms/{cli_sso_success,native_client_consent}.py"
+parent: B063
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

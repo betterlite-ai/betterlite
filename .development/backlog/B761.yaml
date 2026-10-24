@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B171, B173, B732, B733, B757, B856, B860, B869]
 file: tasks/B761-jwt-keys.yaml
 covers:
   - "litellm/proxy/auth/handle_jwt.py"
+parent: B053
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

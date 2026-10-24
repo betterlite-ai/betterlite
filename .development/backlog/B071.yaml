@@ -12,3 +12,9 @@ covers:
   - "litellm/proxy/hooks/{max_budget_per_session_limiter,model_max_budget_limiter}.py"
   - "litellm/proxy/auth/{budget_throttle,fallback_budget}.py"
   - "litellm/types/proxy/carried_budget_state.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

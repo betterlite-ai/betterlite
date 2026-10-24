@@ -6,3 +6,9 @@ depends_on: [B1017, B1019, B1029, B732, B855, B756, B1021, B1020, B003, B004, B1
 file: tasks/B1034-file-read-route.yaml
 covers:
   - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
+parent: B087
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

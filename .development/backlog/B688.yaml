@@ -6,3 +6,9 @@ depends_on: [B193, B171, B002, B2203, B2216, B174, B184, B2219, B2221]
 file: tasks/B688-anthropic-capability-catalog.yaml
 covers:
   - "litellm/llms/anthropic/common_utils.py"
+parent: B027
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

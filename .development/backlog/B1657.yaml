@@ -6,3 +6,9 @@ depends_on: [B003, B052, B124, B723, B724, B806, B860, B1608, B1616, B1621, B165
 file: tasks/B1657-signup-defaults-api.yaml
 covers:
   - "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py"
+parent: B066
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

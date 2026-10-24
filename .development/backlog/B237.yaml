@@ -6,3 +6,9 @@ depends_on: [B184, B187, B236, B2215]
 file: tasks/B237-azure-openrouter-errors.yaml
 covers:
   - "litellm/litellm_core_utils/exception_mapping_utils.py"
+parent: B011
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

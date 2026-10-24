@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/{openapi,openapi_registry,_lazy_openapi_snapshot}.json"
   - "litellm/proxy/common_utils/{custom_openapi_spec,openapi_schema_compat,swagger_utils}.py"
   - "litellm/proxy/swagger/**"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B171, B700, B856, B860]
 file: tasks/B2309-request-log-index-catalog.yaml
 covers:
   - "litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

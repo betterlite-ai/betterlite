@@ -7,3 +7,9 @@ file: tasks/B859-team-rows.yaml
 covers:
   - "litellm/models/team.py"
   - "litellm/models/team_membership.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

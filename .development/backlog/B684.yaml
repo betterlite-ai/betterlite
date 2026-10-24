@@ -6,3 +6,9 @@ depends_on: [B668, B178, B219, B182, B2202, B2214, B184, B673, B002, B171]
 file: tasks/B684-azure-chat-base-policy.yaml
 covers:
   - "litellm/llms/azure/chat/gpt_transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

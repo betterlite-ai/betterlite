@@ -7,3 +7,9 @@ file: tasks/B1432-hosted-chat-options.yaml
 covers:
   - "litellm/llms/{baseten,cerebras,featherless_ai,empower,friendliai,galadriel,github}/**"
   - "litellm/llms/aiml/chat/transformation.py"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

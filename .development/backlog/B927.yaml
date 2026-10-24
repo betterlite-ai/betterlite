@@ -6,3 +6,9 @@ depends_on: [B005, B011, B173, B198, B2413, B925, B926, B928, B508, B1138, B2401
 file: tasks/B927-responses-stream-driver.yaml
 covers:
   - "litellm/responses/streaming_iterator.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

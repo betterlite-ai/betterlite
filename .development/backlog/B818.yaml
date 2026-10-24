@@ -6,3 +6,9 @@ depends_on: [B003, B171, B747, B816, B817, B856, B860]
 file: tasks/B818-resource-delegation.yaml
 covers:
   - "litellm/proxy/management_helpers/object_permission_utils.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

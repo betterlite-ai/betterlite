@@ -6,3 +6,9 @@ depends_on: [B1532, B173, B672, B1087, B171]
 file: tasks/B1533-fal-video-results.yaml
 covers:
   - "litellm/llms/fal_ai/videos/**"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

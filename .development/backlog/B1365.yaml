@@ -6,3 +6,9 @@ depends_on: [B1304, B1356, B1357, B1378, B1379, B171]
 file: tasks/B1365-vertex-live-session.yaml
 covers:
   - "litellm/llms/vertex_ai/realtime/**"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

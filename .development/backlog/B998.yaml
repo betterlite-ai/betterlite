@@ -6,3 +6,9 @@ depends_on: [B010, B157, B174, B175, B176, B997, B511, B536, B549, B634, B044, B
 file: tasks/B998-image-generation-call.yaml
 covers:
   - "litellm/images/main.py"
+parent: B082
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

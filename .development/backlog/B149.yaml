@@ -11,3 +11,9 @@ covers:
   - "ui/litellm-dashboard/src/components/{ToolDetail,vector_store_providers}.*"
   - "ui/litellm-dashboard/src/components/{ToolDetail,vector_store_providers}.test.*"
   - "ui/litellm-dashboard/src/hooks/{mcpOAuthUtils,useMcpOAuthFlow,useMcpOAuthFlow.test,useTestMCPConnection,useToolsOAuthFlow,useToolsOAuthFlow.test,useUserMcpOAuthFlow}.*"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B843-model-deprecation.yaml
 covers:
   - "litellm/proxy/common_utils/model_deprecation.py"
   - "litellm/types/proxy/model_deprecation.py"
+parent: B060
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

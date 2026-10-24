@@ -7,3 +7,9 @@ file: tasks/B2330-audit-event-sink.yaml
 covers:
   - "litellm/proxy/management_helpers/audit_logs.py"
   - "litellm/proxy/_types.py"
+parent: B065
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

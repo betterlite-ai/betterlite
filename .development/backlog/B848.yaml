@@ -6,3 +6,9 @@ depends_on: [B003, B171, B720, B721, B723, B724, B725, B726, B732, B759, B841, B
 file: tasks/B848-model-info-scope.yaml
 covers:
   - "litellm/proxy/proxy_server.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -15,3 +15,9 @@ covers:
   - "litellm/types/model_insights.py"
   - "litellm/llms/anthropic/cache_aware_routing.py"
   - "litellm/llms/anthropic/prompt_cache_prediction.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B1331-studio-identity.yaml
 covers:
   - "litellm/llms/gemini/common_utils.py"
   - "litellm/llms/gemini/google_genai/transformation.py"
+parent: B035
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

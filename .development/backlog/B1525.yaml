@@ -7,3 +7,9 @@ file: tasks/B1525-fal-image-core.yaml
 covers:
   - "litellm/llms/fal_ai/image_generation/transformation.py"
   - "litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py"
+parent: B046
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

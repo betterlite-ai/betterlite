@@ -6,3 +6,9 @@ depends_on: [B171, B174, B302, B856]
 file: tasks/B2327-rejection-provider-hints.yaml
 covers:
   - "litellm/proxy/hooks/rate_limiter_utils.py"
+parent: B072
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

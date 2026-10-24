@@ -10,3 +10,9 @@ covers:
   - "litellm/llms/bedrock/search/transformation.py"
   - "litellm/llms/bedrock/vector_stores/transformation.py"
   - "litellm/llms/bedrock/realtime/handler.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

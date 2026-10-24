@@ -11,3 +11,9 @@ covers:
   - "litellm/models/skills.py"
   - "litellm/models/spend_logs.py"
   - "litellm/models/tag.py"
+parent: B051
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

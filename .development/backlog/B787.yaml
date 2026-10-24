@@ -6,3 +6,9 @@ depends_on: [B002, B003, B125, B126, B171, B732, B743, B856]
 file: tasks/B787-login-throttle.yaml
 covers:
   - "litellm/proxy/auth/login_throttle.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

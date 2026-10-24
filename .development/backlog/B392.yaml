@@ -5,3 +5,9 @@ status: todo
 depends_on: [B001]
 file: tasks/B392-routing-probe-ipc.yaml
 covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

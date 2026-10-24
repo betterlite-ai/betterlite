@@ -6,3 +6,9 @@ depends_on: [B171, B174, B205, B962, B158]
 file: tasks/B2433-messages-reasoning-route.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/adapters/handler.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B1336-vertex-gemma-envelope.yaml
 covers:
   - "litellm/llms/vertex_ai/vertex_gemma_models/transformation.py"
   - "litellm/types/llms/vertex_ai_gemma.py"
+parent: B032
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/_logging.py"
   - "litellm/_service_logger.py"
   - "litellm/types/services.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

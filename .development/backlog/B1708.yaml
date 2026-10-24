@@ -6,3 +6,9 @@ depends_on: [B002, B171, B198]
 file: tasks/B1708-collector-producer.yaml
 covers:
   - "litellm/proxy/spend_tracking/{spend_event_producer,spend_log_error_logger}.py"
+parent: B069
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B1302, B1304, B1340, B173, B171]
 file: tasks/B1341-gemini-embedding-calls.yaml
 covers:
   - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py"
+parent: B033
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

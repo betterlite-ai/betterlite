@@ -11,3 +11,9 @@ covers:
   - "litellm/llms/openai/openai.py"
   - "litellm/llms/openai/transcriptions/handler.py"
   - "litellm/llms/openai/videos/transformation.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

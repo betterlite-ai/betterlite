@@ -6,3 +6,9 @@ depends_on: [B591, B595, B1058, B171, B590, B682, B002]
 file: tasks/B660-bedrock-services-vector-stores.yaml
 covers:
   - "litellm/llms/bedrock/vector_stores/transformation.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

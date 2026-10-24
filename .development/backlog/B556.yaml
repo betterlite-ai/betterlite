@@ -6,3 +6,9 @@ depends_on: [B549, B173, B171, B037, B668, B129]
 file: tasks/B556-foundry-rerank.yaml
 covers:
   - "litellm/llms/azure_ai/rerank/transformation.py"
+parent: B026
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

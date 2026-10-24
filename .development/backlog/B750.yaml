@@ -6,3 +6,9 @@ depends_on: [B001, B002, B003, B013, B171, B302, B732, B747, B752, B757, B856, B
 file: tasks/B750-auth-pricing.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

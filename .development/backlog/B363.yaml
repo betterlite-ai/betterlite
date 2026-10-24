@@ -9,3 +9,9 @@ covers:
   - "litellm/router.py"
   - "litellm/types/router.py"
   - "litellm/router_strategy/complexity_router/complexity_router.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

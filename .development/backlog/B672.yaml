@@ -7,3 +7,9 @@ file: tasks/B672-openai-video-identifiers.yaml
 covers:
   - "litellm/llms/openai/videos/transformation.py"
   - "litellm/types/videos/utils.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

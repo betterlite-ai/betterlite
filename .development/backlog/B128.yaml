@@ -6,3 +6,9 @@ depends_on: [B126]
 file: null
 covers:
   - "litellm/caching/{qdrant_semantic_cache,redis_semantic_cache,valkey_semantic_cache}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

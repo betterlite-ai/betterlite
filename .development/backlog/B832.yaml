@@ -7,3 +7,9 @@ file: tasks/B832-model-write-fields.yaml
 covers:
   - "litellm/types/proxy/management_endpoints/model_management_endpoints.py"
   - "litellm/proxy/management_endpoints/model_management_endpoints.py"
+parent: B060
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B174, B209, B2219, B2220, B2217, B193, B171]
 file: tasks/B2221-model-capability-predicates.yaml
 covers:
   - "litellm/utils.py"
+parent: B014
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

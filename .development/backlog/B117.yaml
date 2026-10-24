@@ -11,3 +11,9 @@ covers:
   - "litellm/proxy/{prompts,test_prompts}/**"
   - "litellm/types/prompts/**"
   - "litellm/types/proxy/prompt_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

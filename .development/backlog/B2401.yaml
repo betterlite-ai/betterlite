@@ -5,3 +5,9 @@ status: todo
 depends_on: [B001, B004, B011, B900]
 file: tasks/B2401-sdk-http-oracle.yaml
 covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

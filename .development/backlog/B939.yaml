@@ -6,3 +6,9 @@ depends_on: [B003, B013, B171, B909, B934, B1087, B1100, B732, B855, B756, B1139
 file: tasks/B939-responses-input-tokens.yaml
 covers:
   - "litellm/proxy/response_api_endpoints/endpoints.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/openai/completion/transformation.py"
   - "litellm/llms/openai/completion/utils.py"
   - "litellm/utils.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

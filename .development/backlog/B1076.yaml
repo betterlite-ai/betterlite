@@ -7,3 +7,9 @@ file: tasks/B1076-vector-file-routes.yaml
 covers:
   - "litellm/proxy/vector_store_files_endpoints/endpoints.py"
   - "litellm/proxy/rag_endpoints/upload_security.py"
+parent: B090
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

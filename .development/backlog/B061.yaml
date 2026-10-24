@@ -6,3 +6,9 @@ depends_on: [B722, B724, B860, B1600, B1602, B1700]
 file: tasks/B061-encryption-migration.yaml
 covers:
   - "litellm/proxy/management_endpoints/credential_migration.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

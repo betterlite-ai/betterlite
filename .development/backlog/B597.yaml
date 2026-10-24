@@ -6,3 +6,9 @@ depends_on: [B569, B171, B688, B2221]
 file: tasks/B597-bedrock-invoke-schema.yaml
 covers:
   - "litellm/llms/bedrock/common_utils.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

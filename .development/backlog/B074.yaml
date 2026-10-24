@@ -11,3 +11,9 @@ covers:
   - "litellm/proxy/db/gateway_request_tracking.py"
   - "litellm/types/proxy/management_endpoints/common_daily_activity.py"
   - "litellm/types/proxy/gateway_requests.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

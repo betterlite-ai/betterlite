@@ -6,3 +6,9 @@ depends_on: [B209, B171]
 file: tasks/B211-provider-defaults-b.yaml
 covers:
   - "litellm/litellm_core_utils/get_llm_provider_logic.py"
+parent: B010
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

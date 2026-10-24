@@ -6,3 +6,9 @@ depends_on: [B171, B196, B2210, B682, B004]
 file: tasks/B654-bedrock-services-agentcore-response.yaml
 covers:
   - "litellm/llms/bedrock/chat/agentcore/transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

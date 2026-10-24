@@ -6,3 +6,9 @@ depends_on: [B004, B005, B173, B249, B503, B609, B2230, B1425, B1427, B171]
 file: tasks/B1428-compatible-chat-execution.yaml
 covers:
   - "litellm/llms/openai_like/chat/handler.py"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

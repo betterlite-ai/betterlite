@@ -6,3 +6,9 @@ depends_on: [B002, B091, B165, B171]
 file: tasks/B1553-brave-search.yaml
 covers:
   - "litellm/llms/brave/**"
+parent: B048
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

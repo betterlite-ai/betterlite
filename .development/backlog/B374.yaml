@@ -6,3 +6,9 @@ depends_on: [B328, B010, B301, B002]
 file: tasks/B374-tier-definitions.yaml
 covers:
   - "litellm/router_strategy/complexity_router/config.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

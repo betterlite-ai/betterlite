@@ -6,3 +6,9 @@ depends_on: [B002, B171, B302, B732, B856]
 file: tasks/B745-auth-limit-inputs.yaml
 covers:
   - "litellm/proxy/auth/auth_utils.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

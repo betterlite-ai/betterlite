@@ -7,3 +7,9 @@ file: tasks/B614-bedrock-nova-chat.yaml
 covers:
   - "litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py"
   - "litellm/llms/amazon_nova/chat/transformation.py"
+parent: B028
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

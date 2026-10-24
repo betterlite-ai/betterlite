@@ -8,3 +8,9 @@ covers:
   - "litellm/proxy/db/db_spend_update_writer.py"
   - "litellm/proxy/utils.py"
   - "litellm/proxy/hooks/autorouter_baseline_cache.py"
+parent: B070
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

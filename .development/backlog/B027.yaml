@@ -18,3 +18,9 @@ covers:
   - "litellm/llms/anthropic/files/handler.py"
   - "litellm/main.py"
   - "litellm/llms/anthropic/chat/handler.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

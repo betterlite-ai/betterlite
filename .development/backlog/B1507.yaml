@@ -6,3 +6,9 @@ depends_on: [B002, B171, B184]
 file: tasks/B1507-chatgpt-headers.yaml
 covers:
   - "litellm/llms/chatgpt/common_utils.py"
+parent: B045
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

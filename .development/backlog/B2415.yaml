@@ -6,3 +6,9 @@ depends_on: [B2419, B189, B247, B157, B978, B173, B507, B508, B2401]
 file: tasks/B2415-responses-agentic-execution.yaml
 covers:
   - "litellm/llms/custom_httpx/llm_http_handler.py"
+parent: B009
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

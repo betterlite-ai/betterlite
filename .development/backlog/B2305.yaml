@@ -7,3 +7,9 @@ file: tasks/B2305-mcp-stored-contracts.yaml
 covers:
   - "litellm/types/mcp.py"
   - "litellm/types/mcp_server/mcp_server_manager.py"
+parent: B136
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B002, B061, B171, B1138, B1113, B1087, B732]
 file: tasks/B929-responses-id-security.yaml
 covers:
   - "litellm/proxy/hooks/responses_id_security.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

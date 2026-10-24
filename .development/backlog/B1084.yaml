@@ -7,3 +7,9 @@ file: tasks/B1084-speech-call.yaml
 covers:
   - "litellm/llms/base_llm/text_to_speech/transformation.py"
   - "litellm/main.py"
+parent: B083
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

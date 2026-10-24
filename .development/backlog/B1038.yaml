@@ -6,3 +6,9 @@ depends_on: [B010, B171, B1035, B1087, B517, B002]
 file: tasks/B1038-batch-provider-cancel.yaml
 covers:
   - "litellm/batches/main.py"
+parent: B086
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

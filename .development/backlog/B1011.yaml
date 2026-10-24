@@ -6,3 +6,9 @@ depends_on: [B002, B012, B1402, B1405, B039, B157, B174, B176, B528, B529, B545,
 file: tasks/B1011-realtime-connect.yaml
 covers:
   - "litellm/realtime_api/main.py"
+parent: B084
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

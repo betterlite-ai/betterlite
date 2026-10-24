@@ -6,3 +6,9 @@ depends_on: [B136, B137, B171, B902, B1087]
 file: tasks/B948-responses-mcp-selection.yaml
 covers:
   - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
+parent: B080
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

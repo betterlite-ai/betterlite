@@ -6,3 +6,9 @@ depends_on: [B302, B010, B013, B011, B301, B002]
 file: tasks/B364-static-eligibility.yaml
 covers:
   - "litellm/router.py"
+parent: B016
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

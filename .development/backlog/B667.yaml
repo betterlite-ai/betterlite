@@ -6,3 +6,9 @@ depends_on: [B665, B662, B171]
 file: tasks/B667-bedrock-services-realtime-bridge.yaml
 covers:
   - "litellm/llms/bedrock/realtime/handler.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

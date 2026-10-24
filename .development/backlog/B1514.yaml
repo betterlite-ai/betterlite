@@ -6,3 +6,9 @@ depends_on: [B002, B668, B504, B578, B1512, B1513, B2221, B171]
 file: tasks/B1514-copilot-chat.yaml
 covers:
   - "litellm/llms/github_copilot/chat/**"
+parent: B045
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B001, B003, B052, B732, B823, B832, B860]
 file: tasks/B2341-model-group-read.yaml
 covers:
   - "litellm/proxy/management_endpoints/model_access_group_management_endpoints.py"
+parent: B058
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

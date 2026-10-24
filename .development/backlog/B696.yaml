@@ -14,3 +14,9 @@ covers:
   - "litellm/llms/azure/search/transformation.py"
   - "litellm/llms/azure/containers/transformation.py"
   - "litellm/llms/azure/passthrough/transformation.py"
+parent: B025
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

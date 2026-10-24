@@ -7,3 +7,9 @@ file: tasks/B1418-cohere-legacy-embedding.yaml
 covers:
   - "litellm/llms/cohere/embed/handler.py"
   - "litellm/llms/cohere/embed/v1_transformation.py"
+parent: B037
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

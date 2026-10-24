@@ -8,3 +8,9 @@ covers:
   - "litellm/types/proxy/management_endpoints/team_endpoints.py"
   - "litellm/proxy/management_helpers/team_metadata_validation.py"
   - "litellm/proxy/management_endpoints/team_endpoints.py"
+parent: B057
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

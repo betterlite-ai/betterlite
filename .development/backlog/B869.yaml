@@ -6,3 +6,9 @@ depends_on: [B002, B171, B736, B856, B2314]
 file: tasks/B869-jwt-settings.yaml
 covers:
   - "litellm/proxy/_types.py"
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

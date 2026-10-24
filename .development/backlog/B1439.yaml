@@ -6,3 +6,9 @@ depends_on: [B173, B184, B1438, B171]
 file: tasks/B1439-gdc-credentials.yaml
 covers:
   - "litellm/llms/gdc/chat/transformation.py"
+parent: B038
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

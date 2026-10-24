@@ -6,3 +6,9 @@ depends_on: [B594, B591, B665, B667, B661, B664, B173, B171, B595, B198, B682, B
 file: tasks/B666-bedrock-services-realtime-transport.yaml
 covers:
   - "litellm/llms/bedrock/realtime/handler.py"
+parent: B030
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

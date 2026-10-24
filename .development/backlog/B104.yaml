@@ -24,3 +24,9 @@ covers:
   - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
   - "litellm/llms/bedrock/passthrough/guardrail_translation/handler.py"
   - "litellm/litellm_core_utils/core_helpers.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

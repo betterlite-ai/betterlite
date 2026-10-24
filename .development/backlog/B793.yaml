@@ -6,3 +6,9 @@ depends_on: [B003, B171, B720, B723, B724, B732, B790, B797, B800, B816, B828, B
 file: tasks/B793-user-bulk-create.yaml
 covers:
   - "litellm/proxy/management_helpers/bulk_user_creation.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

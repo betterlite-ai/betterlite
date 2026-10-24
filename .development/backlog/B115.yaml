@@ -8,3 +8,9 @@ covers:
   - "litellm/integrations/{s3,s3_v2,dynamodb,sqs}.py"
   - "litellm/integrations/{gcs_bucket,gcs_pubsub,azure_storage,clickhouse,azure_sentinel,zerobus}/**"
   - "litellm/types/integrations/{s3_v2,gcs_bucket,azure_sentinel,zerobus}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/openai/chat/gpt_5_transformation.py"
   - "litellm/llms/openai/chat/o_series_transformation.py"
   - "litellm/llms/openai/chat/gpt_audio_transformation.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

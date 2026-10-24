@@ -9,3 +9,9 @@ covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py"
   - "litellm/proxy/config_management_endpoints/**"
   - "litellm/types/passthrough_endpoints/{pass_through_endpoints,managed_id_rewriter}.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

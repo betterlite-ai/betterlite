@@ -6,3 +6,9 @@ depends_on: [B001, B003, B052, B074, B723, B732, B790, B860, B861, B865, B2314]
 file: tasks/B798-user-activity.yaml
 covers:
   - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+parent: B056
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -6,3 +6,9 @@ depends_on: [B188]
 file: tasks/B246-callback-validation.yaml
 covers:
   - "litellm/proxy/common_utils/callback_config_validation.py"
+parent: B012
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B1223-session-token-codec.yaml
 covers:
   - "litellm/proxy/auth/auth_checks.py"
   - "litellm/proxy/common_utils/encrypt_decrypt_utils.py"
+parent: B052
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

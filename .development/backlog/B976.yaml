@@ -6,3 +6,9 @@ depends_on: [B171, B968, B975, B966, B963, B571, B247]
 file: tasks/B976-messages-stream-usage.yaml
 covers:
   - "litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py"
+parent: B081
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -7,3 +7,9 @@ file: tasks/B394-capability-forecast.yaml
 covers:
   - "litellm/router_strategy/complexity_router/capability_classifier.py"
   - "litellm/router_strategy/complexity_router/config.py"
+parent: B021
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

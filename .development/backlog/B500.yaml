@@ -8,3 +8,9 @@ covers:
   - "litellm/llms/openai/data_residency.py"
   - "litellm/llms/openai/common_utils.py"
   - "litellm/main.py"
+parent: B024
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
