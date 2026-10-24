@@ -1,8 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io;
 use std::num::{ParseFloatError, ParseIntError};
-use std::path::Path;
 
 use secrecy::SecretString;
 use thiserror::Error;
@@ -28,33 +25,8 @@ impl EnvironmentLookup for BTreeMap<String, String> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-pub struct ProcessEnvironment;
-
-impl EnvironmentLookup for ProcessEnvironment {
-    fn lookup(&self, name: &str) -> Option<String> {
-        let bytes = fs::read("/proc/self/environ").ok()?;
-        for entry in bytes.split(|byte| *byte == 0) {
-            let mut parts = entry.splitn(2, |byte| *byte == b'=');
-            let Some(key) = parts.next() else {
-                continue;
-            };
-            if key == name.as_bytes() {
-                return String::from_utf8(parts.next()?.to_vec()).ok();
-            }
-        }
-        None
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum ConfigError {
-    #[error("failed to read configuration {path}: {source}")]
-    Read {
-        path: String,
-        #[source]
-        source: io::Error,
-    },
     #[error("invalid YAML: {source}")]
     Yaml {
         #[source]
@@ -87,14 +59,6 @@ impl<L> ConfigLoader<L>
 where
     L: EnvironmentLookup,
 {
-    pub fn load_from_path(&self, path: &Path) -> Result<Config, ConfigError> {
-        let source = fs::read_to_string(path).map_err(|source| ConfigError::Read {
-            path: path.display().to_string(),
-            source,
-        })?;
-        self.load(&source)
-    }
-
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
         let raw = parse(source)?;
         if !raw.ignored.is_empty() {

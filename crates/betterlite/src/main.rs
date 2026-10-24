@@ -1,6 +1,8 @@
-use betterlite_config::loader::{ConfigLoader, ProcessEnvironment};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_server::server::run;
 use clap::Parser;
+use std::collections::BTreeMap;
+use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -25,11 +27,18 @@ fn main() -> ExitCode {
         .with_writer(io::stderr)
         .init();
     let cli = Cli::parse();
-    let config = match (ConfigLoader {
-        lookup: ProcessEnvironment,
-    })
-    .load_from_path(&cli.config)
-    {
+    let source = match fs::read_to_string(&cli.config) {
+        Ok(source) => source,
+        Err(error) => {
+            tracing::error!(path = %cli.config.display(), error = ?error, "failed to read configuration");
+            return ExitCode::FAILURE;
+        }
+    };
+    // the process environment needs a disallowed std::env call, so os.environ/ references fail until the binary may pass it
+    let loader = ConfigLoader {
+        lookup: BTreeMap::new(),
+    };
+    let config = match loader.load(&source) {
         Ok(config) => config,
         Err(error) => {
             tracing::error!(error = ?error, "failed to load configuration");
