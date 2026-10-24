@@ -1,0 +1,80 @@
+id: B1638
+title: Create, replace and delete SCIM users without re-keying existing accounts
+description: >-
+  Register POST /scim/v2/Users, PUT /scim/v2/Users/{user_id} and DELETE on that same
+  resource path in scim_user_lifecycle, using B052 authentication and B1632 request records.
+  Own UserProvisionerHelpers.handle_existing_user_by_email as the shared creation branch.
+  POST first checks a truthy userName as an exact existing user_id and returns 409; otherwise
+  use userName or a generated UUID. Build metadata and the default/admin-group role through
+  B1635, then call B056 with auto_create_key=false. Match an existing email before creation:
+  keep that row's id, deduplicate nonempty requested teams, preserve old teams when the
+  request has none, reconcile rosters before updating the row, and update role only when
+  an admin group is configured. The successful upsert still returns 201. POST intentionally
+  does not persist active or externalId from the request, unlike PUT.
+  PUT records prior active before replacement, preserves it when active was omitted, and
+  treats absent/empty groups as unspecified. Reconcile team writes before replacing email,
+  alias, sso_user_id, teams and SCIM metadata; unrelated metadata is not merged. Resolve a
+  role only for nonempty supplied teams with admin-group mapping enabled. After the user
+  write, broadcast user-cache eviction, then change key blocks only for an explicitly
+  supplied active transition. DELETE visits the user's teams, removes legacy members
+  entries and canonical membership where present, blocks owned keys, deletes referencing
+  rows through B1637, deletes the user, then evicts the user cache. Keep keys blocked in
+  storage rather than deleting them. Return 204 with an empty body; POST/PUT use the
+  SCIM JSON content type and B1633 projections. Export deletion as a service for B1643.
+  Test every write boundary with PostgreSQL faults, including a PUT error after user update
+  and retained roster writes before replacement failure. HTTP oracle cases use B1644's
+  explicit native_feature_eligibility=true and B1630 transcripts to compare responses and
+  subsequent authenticated behavior; license-removal coverage belongs to B064's composition.
+  The 208 owned function lines budget 260 handlers/service, 240 tests, 120 HTTP fixtures and
+  70 decoder seeds/wiring, within 775. Extend B1632's resource corpus rather than add a parser.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_user_lifecycle.rs
+    - crates/betterlite-server/src/scim_user_lifecycle/**
+    - crates/betterlite-server/fuzz/corpus/scim_resource/user-lifecycle-*
+    - tools/oracle/cases/management/scim-user-lifecycle/**
+    - tools/oracle/fuzz/corpus/http_case/scim-user-lifecycle-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L160-L232
+    why: Email upsert preserves identity and unspecified memberships.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1661-L1879
+    why: All three route decorators, distinct create/replace active handling and deletion order.
+dod:
+  - text: POST and PUT preserve stable ids, unspecified memberships and the source's different handling of active/externalId.
+    proof: [user-lifecycle-tests, oracle]
+  - text: Deletion retains blocked keys and failed lifecycle operations expose the same completed earlier writes.
+    proof: [user-lifecycle-tests, oracle]
+  - text: HTTP authentication, 201/200/204 responses, conflicts and malformed bodies have matching observable envelopes.
+    proof: [user-lifecycle-tests, oracle, user-lifecycle-corpora]
+checks:
+  optional: []
+  commands:
+    - id: user-lifecycle-tests
+      why: SCIM user replacement or deletion breaks account identity, revocation or partial-write ordering.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_user_lifecycle::/)'
+    - id: user-lifecycle-corpora
+      why: User lifecycle bodies and real HTTP cases were not added to the existing parsers' corpora.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/scim_resource/user-lifecycle-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-user-lifecycle-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/scim-user-lifecycle/email-upsert-retains-existing-id.yaml
+  - tools/oracle/cases/management/scim-user-lifecycle/username-conflict-before-email-upsert.yaml
+  - tools/oracle/cases/management/scim-user-lifecycle/post-active-false-does-not-deactivate.yaml
+  - tools/oracle/cases/management/scim-user-lifecycle/put-omitted-active-keeps-key-blocked.yaml
+  - tools/oracle/cases/management/scim-user-lifecycle/reactivate-keeps-manually-blocked-key.yaml
+  - tools/oracle/cases/management/scim-user-lifecycle/delete-user-keeps-key-row-unusable.yaml
+  - tools/oracle/cases/management/scim-user-lifecycle/unauthenticated-and-invalid-body.yaml
+deviations: []
+out_of_scope:
+  - "Read-only resource queries are B1641; user PATCH is B1639; placeholder merge is B1643."
+  - "scim_v2.py helper ownership: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "Other function intervals in scim_v2.py: B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - POST accepts active=false but does not pass active to its metadata builder, so implementing immediate deactivation there would change the pinned response.
+  - Empty groups on PUT preserve membership because identity providers update profile fields independently of group pushes.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

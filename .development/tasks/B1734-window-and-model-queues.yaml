@@ -1,0 +1,108 @@
+id: B1734
+title: Keep window increments distinct and roll up tool and model usage
+description: >-
+  Implement the complete WindowSpendUpdateQueue and ToolDiscoveryQueue plus
+  model_usage_rollup.py in betterlite-db::window_queue, tool_discovery and model_usage.
+  Window records carry entity type/ID, duration, exact start string, Decimal spend and
+  earliest request start. Normalize aware timestamps to naive UTC and format six fractional
+  digits; a naive window_start remains unchanged, while a naive started_at follows the
+  source's local-zone interpretation before UTC conversion. Aggregate by all four identity
+  fields, preserving distinct windows, sort by that tuple for consistent database lock
+  order, and retain the minimum non-null started_at string. The Redis wire form always
+  includes request_ids:[] for compatibility with older consumers, although it is unused.
+  Use B1690's capacity/compaction settings and an owned drain/reinsert queue; all compacted
+  window increments occupy one queued batch without losing concurrent additions.
+  Tool discovery keeps the first item for each nonempty tool_name in a flush cycle, does
+  not trim names, and clears both pending items and the seen set on flush. Preserve origin,
+  creator, key hash, team, alias and user-agent from that first item. Bound unique pending
+  names by the existing spend-queue capacity and await drain when full; never silently
+  discard a newly discovered tool. Native tests prove the same name counts again next cycle.
+  Extract load_model_insight_tasks and the pinned twenty-entry JSON catalog below B075,
+  storing its immutable ModelInsightTask records (task_type, label, category) with the
+  model-usage module. This four-line record moves here from the insights API types.
+  Select the first
+  task:-prefixed tag whose suffix is in that catalog; malformed tags or no match becomes
+  uncategorized. Invalid/nonobject metadata is not an internal call, while a truthy
+  internal_call_origin suppresses the rollup. Datetime dates use their own date; string
+  dates use the first ten characters when long enough, without further validation.
+  Model falls back to unknown, model_group to that model, provider to unknown. Only status
+  exactly success marks a successful request. Sort rollup transactions by date, group,
+  model, provider and task; one transaction performs one additive upsert per grouped key.
+  Count every entry, splitting success/failure and adding token and Decimal spend totals.
+  Retry only a proven pre-send ConnectError, four attempts by default with 2^attempt plus
+  injected [0,1] jitter; ambiguous post-send errors propagate without replay.
+  decode_model_usage_fields handles metadata/tag JSON and decode_window_stamp handles the
+  ISO strings used to build a queued window; fuzz them in one tagged rollup_inputs target.
+  Pure queue_rollup cases call the static window merge, wire projection and model-usage
+  projection functions; tool-cycle mutation and database writes use native tests, with
+  PostgreSQL exercising additive upserts. These files, the small catalog loader/data
+  and both queue/catalog records total roughly 399 source lines, capped at 800 with tests.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/window_queue.rs
+    - crates/betterlite-db/src/window_queue/**
+    - crates/betterlite-db/src/tool_discovery.rs
+    - crates/betterlite-db/src/tool_discovery/**
+    - crates/betterlite-db/src/model_usage.rs
+    - crates/betterlite-db/src/model_usage/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/rollup_inputs.rs
+    - crates/betterlite-db/fuzz/corpus/rollup_inputs/**
+    - tools/oracle/src/helpers/{mod.rs,queue_rollup.rs}
+    - tools/oracle/helpers/{dispatch.py,queue_rollup.py}
+    - tools/oracle/cases/helpers/queue-rollup/**
+    - tools/oracle/fuzz/corpus/helper_case/queue-rollup-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/window_spend_update_queue.py#L1-L195
+    why: Window identity, sorted merging and legacy Redis request_ids compatibility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/tool_discovery_queue.py#L1-L52
+    why: Per-cycle first-name deduplication and flush reset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/model_usage_rollup.py#L1-L175
+    why: Usage eligibility, task classification and safe-retry additive upserts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/model_insights_tasks.py#L1-L14
+    why: Immutable task catalog loader extracted below the insights umbrella.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/model_insights_tasks.json#L1-L22
+    why: Exact recognized task names, labels and categories.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/model_insights.py#L32-L35
+    why: Catalog record shared with B075 without importing its API response types.
+dod:
+  - text: Window aggregation preserves cross-reset identities and tool discovery deduplicates only within one bounded flush cycle.
+    proof: [rollup-queue-tests, oracle, rollup-python, rollup-helper-corpus]
+  - text: Model rollups classify only known tasks, exclude internal calls and never retry an ambiguous database write.
+    proof: [rollup-queue-tests, rollup-input-corpus, oracle, rollup-python, rollup-helper-corpus]
+checks:
+  optional: []
+  commands:
+    - id: rollup-queue-tests
+      why: A window/tool/model production module or its transactional behavior is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E '(test(/^window_queue::/) + test(/^tool_discovery::/) + test(/^model_usage::/)) - test(replays_the_rollup_inputs_corpus)'
+    - id: rollup-input-corpus
+      why: Rollup JSON/timestamp inputs have no new fuzz replay corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/rollup_inputs)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_rollup_inputs_corpus)'
+    - id: rollup-python
+      why: Queue/usage transform adapters do not pass strict Python checks.
+      run: test -f tools/oracle/helpers/queue_rollup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: rollup-helper-corpus
+      why: Rollup transform cases have no typed helper seed.
+      run: grep -rlq 'queue_rollup:' tools/oracle/fuzz/corpus/helper_case/queue-rollup-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/queue-rollup/window-order-earliest-start-and-wire-compatibility.yaml
+  - tools/oracle/cases/helpers/queue-rollup/known-task-first-match-and-internal-metadata.yaml
+  - tools/oracle/cases/helpers/queue-rollup/date-prefix-unknown-model-and-status.yaml
+deviations:
+  - what: A full tool-discovery buffer applies backpressure until it drains instead of growing an unbounded list of unique names.
+    why: The repository requires bounded queues; existing spend-queue capacity supplies the bound without another setting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/tool_discovery_queue.py#L27-L52
+out_of_scope:
+  - B1735 writes window rows; B075 consumes the extracted task catalog for insights APIs; B1690 supplies queue lifecycle/settings.
+  - B1733 owns entity/daily queues, B1706 tool usage writes, and earlier _types.py owners retain unrelated records.
+  - ModelInsightTask is the only extracted insights type; B075 keeps the metrics, totals, summaries and HTTP response records in model_insights.py.
+pitfalls:
+  - Window transaction identity includes the original window_start string, so two different windows never collapse by entity alone.
+  - Model usage accepts a ten-character date prefix without checking whether it is a calendar date.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

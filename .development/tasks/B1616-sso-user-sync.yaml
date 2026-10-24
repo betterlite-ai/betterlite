@@ -1,0 +1,90 @@
+id: B1616
+title: Reconcile SSO identities with users and memberships
+description: >-
+  Implement sso_user_sync in betterlite-server. Own create_team_member_add_task,
+  add_missing_team_member, get_existing_user_info_from_db, get_user_info_from_db,
+  _should_use_role_from_sso_response, _SsoUserNames, _get_sso_user_alias,
+  _build_sso_user_update_data, _sync_user_role_from_jwt_role_map,
+  apply_user_info_values_to_sso_user_defined_values, check_and_update_if_proxy_admin_id,
+  insert_sso_user and SSOAuthenticationHandler.upsert_sso_user/add_user_to_teams_from_sso_response.
+  Search alternate user ID before the identity's ID using B736, recomputing normalized email
+  from the identity. Existing aliases are never replaced; empty aliases use a trimmed display
+  name different from the ID, then joined first/last names. A valid CustomOpenID role updates
+  the DB; a plain mapping's role does not. Insert through B056 with auto_create_key=false,
+  sso_user_id and auth_provider metadata. Apply litellm.default_internal_user_params=None
+  while preserving a valid SSO role; internal_user alone inherits absent max_budget and
+  budget_duration from litellm.max_internal_user_budget=None and internal_user_budget_duration=None.
+  Missing role falls back to internal_user_viewer. Add only missing memberships concurrently
+  via B808 and log their failures at debug. Lookup/upsert failures keep the pinned nonblocking
+  return behavior, not an all-or-nothing transaction. B890's JWT role map is applied only
+  when its existing sync_user_role_and_teams setting and mapping are both enabled; update
+  custom values, then the changed DB role, then B733's user cache. PROXY_ADMIN_ID defaults
+  absent and can promote the exact matching user. Keep nonempty DB models when merging values.
+  Compare pure alias/update/value projection with an sso_user_values helper; cover writes,
+  membership partial failure and cache order with B860 fixtures and injected collaborators.
+  loads_user_defaults must load all three litellm settings and PROXY_ADMIN_ID. This task
+  accepts B1608 identities and B770 user records, so it adds no byte decoder. Its 340 source
+  lines budget 350 implementation, 210 tests, 90 adapters and 100 config/wiring, cap 800.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_user_sync.rs
+    - crates/betterlite-server/src/sso_user_sync/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_user_sync.rs
+    - crates/betterlite-config/src/sso_user_sync/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-user-sync-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_user_values.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_user_values.py
+    - tools/oracle/cases/helpers/sso-user-values/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-user-values-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1710-L1741
+    why: Best-effort concurrent membership additions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1753-L2017
+    why: Identity matching, alias preservation, role precedence and admin-ID promotion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2598-L2666
+    why: Default overlay and new-user creation without an API key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3263-L3317
+    why: Upsert failure handling and CustomOpenID-only team membership extraction.
+dod:
+  - text: User updates, insertion defaults and nonblocking membership failures retain the source's separate writes and returned values.
+    proof: [user-sync-tests, user-sync-config]
+  - text: Alias and role projection match the independent Python functions, including plain-map versus CustomOpenID behavior.
+    proof: [user-sync-tests, oracle, user-values-python, user-sync-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: user-sync-tests
+      why: SSO updates can overwrite an established alias, lose role authority or mishandle a partial DB failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_user_sync::/)'
+    - id: user-sync-config
+      why: Internal-user defaults or the explicit proxy-admin identity are not consumed from configuration.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_user_sync::tests::loads_user_defaults/)'
+    - id: user-values-python
+      why: The pure user projection adapter is missing or fails Python validation.
+      run: test -f tools/oracle/helpers/sso_user_values.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: user-sync-corpora
+      why: User-default configuration and the new pure projection call are absent from replay inputs.
+      run: grep -rlq 'sso_user_values:' tools/oracle/fuzz/corpus/helper_case/sso-user-values-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-user-sync-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-user-values/established-alias-kept.yaml
+  - tools/oracle/cases/helpers/sso-user-values/id-is-not-a-display-name.yaml
+  - tools/oracle/cases/helpers/sso-user-values/custom-identity-role-versus-dictionary.yaml
+  - tools/oracle/cases/helpers/sso-user-values/valid-sso-role-beats-db.yaml
+  - tools/oracle/cases/helpers/sso-user-values/nonempty-db-models-win.yaml
+deviations: []
+out_of_scope:
+  - B1624 owns get_disabled_non_admin_personal_key_creation and browser session issuance; B1615 owns CLI completion orchestration.
+  - Provider exchange and route ownership for the remainder of ui_sso.py is recorded in B063.
+pitfalls:
+  - Updating an existing user's role in upsert does not mutate the returned in-memory user object, unlike the explicit JWT role-sync path.
+  - The user_email argument to get_user_info_from_db is replaced by the email on the SSO identity before lookup.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

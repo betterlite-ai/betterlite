@@ -1,0 +1,57 @@
+id: B1645
+title: Resolve management resource labels from database and configured registries
+description: >-
+  Implement management_display_names in betterlite-server for all three functions in
+  resource_display_names.py. These lookups enrich access-group resources and must not
+  change permissions or substitute names for resource identifiers. Return immutable owned
+  maps keyed by requested ids, with an empty input taking the no-database-call fast path.
+  Deduplicate requested ids before repository queries. MCP config entries choose alias,
+  then server_name, then their registry name; a database row overrides that fallback only
+  when alias or server_name is truthy. Thus a nameless stored MCP row does not erase a
+  configured label. Agent config labels cover every alias/legacy id returned by B141's
+  ids_for_agent, restricted to requested ids; stored agent_name wins even when empty,
+  unlike the MCP rule. Key labels come only from truthy key_alias values, with no fallback
+  to the key hash. Use B726's MCP/agent table handles, B722's verification-token repository,
+  B136's configured MCP record type and B141's real registry. Repository errors propagate;
+  these functions do not catch them or query a second source after failure.
+  PostgreSQL tests seed overlapping DB/config labels, missing resources, duplicate requests,
+  a blank database name, legacy agent ids and keys lacking aliases. Record query effects
+  to prove the empty-input fast path and a single deduplicated read per resource family.
+  Build real registry instances from dependency-owned typed records; do not reproduce their
+  legacy-id algorithm in test fakes. B065 reexports these shared lookups, and access-group
+  route owners compare their enriched HTTP output. There is no new external-byte boundary
+  or pure LiteLLM helper to adapt here. The 53 source lines budget 100 lookup/wiring lines
+  and 270 database/registry tests, with a 425-line maximum.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/management_display_names.rs
+    - crates/betterlite-server/src/management_display_names/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/resource_display_names.py#L1-L61
+    why: Database/config precedence, agent alias expansion and key-label filtering.
+dod:
+  - text: MCP and agent labels preserve their different handling of empty database names and legacy ids.
+    proof: [display-name-tests]
+  - text: Key aliases, empty-input behavior and deduplicated repository queries match the pinned functions.
+    proof: [display-name-tests]
+checks:
+  optional: []
+  commands:
+    - id: display-name-tests
+      why: Resource enrichment returns the wrong label, queries unnecessarily or hides repository failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_display_names::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B821's access-group routes consume these labels; the lookup services register no endpoint.
+  - B136 owns MCP records and B141 owns AgentRegistry.get_agent_list/ids_for_agent, including their configuration and legacy-id rules.
+pitfalls:
+  - An empty stored agent_name overrides a registry label, but an empty stored MCP alias/server_name does not.
+  - A key without key_alias stays absent from the result instead of exposing its token hash as a display label.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: security

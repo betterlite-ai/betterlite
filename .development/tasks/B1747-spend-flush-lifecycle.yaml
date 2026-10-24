@@ -1,0 +1,98 @@
+id: B1747
+title: Flush memory queues and finish owned spend work during shutdown
+description: >-
+  Implement betterlite-db::spend_flush for the non-Redis balance flush, daily queue wrapper,
+  separate daily-tag flush, discovery drain and interrupted-daily requeue continuation.
+  Commit the drained entity aggregate through B1745 first; its failure aborts this pass
+  without inventing restoration of those memory increments. Then flush daily user, team,
+  org, end-user and agent queues in that order; tags stay on their separate job. Each
+  daily wrapper owns the drained map and B1746 commit future. On ordinary error, requeue
+  only the remaining map and continue siblings. If cancelled before committing, cancel
+  that future and restore the pending map; during commit, retain an owned continuation
+  that waits for its result, restoring only a failed, noncancelled future's remaining
+  rows. Settle continuations before a later queue drain. After daily queues, commit window
+  increments through B1735: restore only when B1746 deems the failure safe, otherwise
+  log the dropped increments. Finally drain tool discovery through B1606; a failure is
+  debug-logged and drained tools are not restored. No lock guard may span an awaited write.
+  Extract _wait_for_spend_log_flush_request, _monitor_spend_logs_queue,
+  drain_spend_logs_queue, _drain_spend_logs_queue_to_db and _park_remaining_spend_logs
+  from proxy/utils.py into this lifecycle layer. Load SPEND_LOG_QUEUE_SIZE_THRESHOLD=100
+  and SPEND_LOG_QUEUE_POLL_INTERVAL=2.0 from an immutable config/environment snapshot.
+  The monitor checks B1749 parked logs and B1744's complete queue census before waiting.
+  A nonempty queue is processed even below threshold; threshold resets the interval to
+  its base, otherwise multiply it by 1.5 up to 30 seconds. Empty work still flushes B1699
+  baseline accounting. A coalesced explicit flush signal resets backoff; monitor errors
+  log and sleep with increased backoff. Preserve finite zero/negative setting behavior
+  with cooperative yielding, and reject nonfinite timing at config load with a named
+  setting error rather than creating an unbounded or unschedulable timer.
+  Shutdown cancels and joins the monitor, clears its handle, then holds the write lock
+  for up to 20 B1744 job passes. Census includes every derived queue. Warn if work remains.
+  In finalization dequeue all remaining request logs and try parking them in Redis; when
+  parking fails put them back at the memory head and log that they will be lost on exit.
+  This parking step handles log rows only, not arbitrary analytics queues. Use injected
+  clocks, a controlled commit barrier and real database/Redis fixtures to prove request
+  wakeups, cancellation at both phases and shutdown ownership. Roughly 330 source lines
+  are covered, with an 800-line limit including config tests and lifecycle fault cases.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_flush.rs
+    - crates/betterlite-db/src/spend_flush/**
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-monitor-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L331-L351
+    why: Wait for an interrupted commit before deciding whether its rows remain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1696-L1874
+    why: Memory queue ordering, shielded daily commits and separate tag flush.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1984-L1996
+    why: Nonblocking discovery drain with no restoration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7246-L7253
+    why: Flush-event coalescing and early wakeup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7705-L7830
+    why: Twenty-pass shutdown drain, parking finalization and adaptive monitor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1804-L1806
+    why: Queue threshold and polling defaults.
+dod:
+  - text: Memory flushing preserves entity failure, daily recovery, window safety and discovery loss boundaries.
+    proof: [memory-flush-tests]
+  - text: Cancellation waits for committed work and shutdown joins the monitor before draining and parking rows.
+    proof: [spend-shutdown-tests]
+  - text: Loaded monitor settings govern threshold, backoff and explicit wakeups.
+    proof: [spend-monitor-tests, monitor-settings, monitor-config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: memory-flush-tests
+      why: Non-Redis table ordering and per-category restoration are missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_flush::memory::/)'
+    - id: spend-shutdown-tests
+      why: Interrupted commits or monitor shutdown can outlive their owner.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_flush::shutdown::/)'
+    - id: spend-monitor-tests
+      why: Threshold/backoff and flush signals lack clock-driven tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_flush::monitor::/)'
+    - id: monitor-settings
+      why: Polling environment values are not exercised through config loading.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_monitor_settings)'
+    - id: monitor-config-corpus
+      why: Monitor timing has no newly added configuration corpus inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-monitor-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations:
+  - what: Nonfinite SPEND_LOG_QUEUE_POLL_INTERVAL values fail configuration loading with the setting name.
+    why: An owned periodic service requires a finite representable timer; finite nonpositive values retain immediate polling with a cooperative yield.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7772-L7784
+out_of_scope:
+  - B1748 owns Redis leadership, Redis-tag continuations and periodic update_spend/update_daily_tag_spend dispatch.
+  - B1749 owns enqueue/dequeue, parking, recovery and request-log writes in proxy/utils.py; B1744 owns the queue census and each guarded job pass; B124 retains unrelated utilities.
+  - Writer construction/request entry and key/user enqueues are B070; projections are B1742/B1743/B1744, entity SQL is B1745 and daily/turn commits are B1746.
+pitfalls:
+  - Below-threshold rows are still written on each pass; the threshold changes backoff, not eligibility.
+  - Shutdown's Redis parking covers request logs only, even though its twenty-pass census counts derived analytics too.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

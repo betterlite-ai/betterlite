@@ -1,0 +1,106 @@
+id: B1672
+title: Calculate generic token totals with cache overlap and regional uplifts
+description: >-
+  Implement betterlite-models::token_cost for generic_cost_per_token, the three regional
+  multiplier helpers and apply_provider_cache_read_default in utils.py. Take B1668 CostUsage,
+  B1678's PriceLookup effective operation backed by B205, optional supplied model-info,
+  provider, service tier, residency,
+  Vertex location and a caller-pinned billing instant. A supplied model-info record, including
+  an empty one, prevents a catalog lookup. Exact provider fireworks_ai invokes the default
+  cache-read policy from cache_pricing.py. Own that file's _as_rate and
+  with_default_cache_read_rate here as shared billing primitives below provider execution;
+  B041's future Fireworks adapter consumes this policy instead of owning another copy.
+  An explicit nonnull cache price wins, otherwise use half the valid non-Boolean input
+  rate. Preserve the original record when no default is needed. Copy a modified record
+  without mutating the catalog; supply an off-peak cache default only when its nested key
+  is absent, deriving half its valid input rate or the ordinary derived read rate. A
+  present null nested cache key blocks that insertion. This placement breaks the existing
+  B041 -> B024 -> B068 dependency path while keeping the caller-facing function shared.
+  Begin prompt usage as all text when details are absent, or use B1671's parsed details.
+  When positive cache reads/writes exist and text+cache+audio+creation+image+video exceeds
+  total prompt tokens, constrain noncached modalities to max(prompt-read-write,0), allocating
+  audio then image then video and putting the remainder in text. Otherwise zero text with
+  zero image_count gets the nonnegative residual; a positive image_count deliberately blocks
+  that inference. Resolve B1670's rates once with the supplied instant and use B1671's input
+  charge, so cache and duration suppression follow the same path as other calculators.
+  Completion details first use B1671's reasoning-aware view. If text is zero, a positive
+  reasoning/audio/image/video breakdown gives a clamped residual; without any positive
+  breakdown all completion tokens become text and extra modality charging is disabled.
+  Positive audio/image/video counts each use their dedicated output price or the selected
+  completion rate when absent. Positive reasoning uses B1670's billed reasoning rate.
+  Apply the OpenAI residency multiplier and Vertex endpoint multiplier to both totals,
+  in that order, with checked Decimal arithmetic. Residency recognizes lowercased us/eu
+  only, without trimming. Vertex treats absent or case-insensitive global as no uplift;
+  any other supplied location, even empty string, uses regional_endpoint_uplift_multiplier.
+  Missing or malformed numeric multipliers warn and use one. The separate provider-geo
+  helper reads lowercased inference_geo, skips nonstrings/global/not_available and defaults
+  missing entries to one; invalid present geo prices propagate instead of using the other
+  helpers' warning fallback. Generic totals do not apply this provider-geo multiplier;
+  Anthropic and billed-rate reporting apply it at their own call sites.
+  Add pure token_cost cases with explicit model-info and billing time, so Python never
+  mutates the global catalog or reads its clock. Catalog lookup failures, supplied-empty
+  bypass and exact arithmetic receive native tests. Use the existing helper decoder for
+  record inputs. The 218 utils.py lines plus 31 cache-policy lines allow 280 implementation, 240 tests
+  and 200 differential adapters/cases, with a 775-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/token_cost.rs
+    - crates/betterlite-models/src/token_cost/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/token_cost.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/token_cost.py
+    - tools/oracle/cases/helpers/token-cost/**
+    - tools/oracle/fuzz/corpus/helper_case/token-cost-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L99-L102
+    why: The sole provider-specific cache-default dispatch before generic totals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1176-L1248
+    why: Residency, Vertex endpoint and provider-geo helpers have different fallback rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1291-L1492
+    why: Cache overlap, modality remainders and final regional multiplication.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/cache_pricing.py#L10-L42
+    why: Shared Fireworks cache policy extracted below the provider and billing callers.
+dod:
+  - text: Generic input totals repair overlapping cached modalities in source priority order and preserve image-count residual suppression.
+    proof: [token-cost-tests, oracle, token-cost-python]
+  - text: Completion remainders and dedicated modality prices use one rate-resolution instant without charging reasoning twice.
+    proof: [token-cost-tests, oracle, token-cost-python, token-cost-corpus]
+  - text: Supplied pricing bypasses lookup and regional helpers preserve their distinct accepted names and error fallbacks.
+    proof: [token-cost-tests, oracle, token-cost-python]
+checks:
+  optional: []
+  commands:
+    - id: token-cost-tests
+      why: Cache overlap repair, regional fallback or supplied-model bypass changes total billing.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^token_cost::/)'
+    - id: token-cost-python
+      why: Generic cost fixtures lack a checked adapter using explicit model-info and time.
+      run: test -f tools/oracle/helpers/token_cost.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: token-cost-corpus
+      why: token_cost records are not represented in shared decoder replay.
+      run: grep -rlq 'token_cost:' tools/oracle/fuzz/corpus/helper_case/token-cost-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/token-cost/overlap-consumes-audio-before-image-video.yaml
+  - tools/oracle/cases/helpers/token-cost/image-count-blocks-text-remainder.yaml
+  - tools/oracle/cases/helpers/token-cost/reasoning-and-modality-output-fallbacks.yaml
+  - tools/oracle/cases/helpers/token-cost/empty-supplied-pricing-skips-public-map.yaml
+  - tools/oracle/cases/helpers/token-cost/residency-and-vertex-uplifts-multiply.yaml
+  - tools/oracle/cases/helpers/token-cost/provider-geo-errors-versus-uplift-warning.yaml
+  - tools/oracle/cases/helpers/token-cost/fireworks-explicit-free-cache-and-off-peak-default.yaml
+deviations:
+  - what: Generic billing reports exact Decimal totals and a typed failure for nonfinite rates or arithmetic overflow.
+    why: Float approximation cannot be the stored source of spend, while ordinary malformed uplift values still warn and use one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1480-L1492
+out_of_scope:
+  - B041 retains Fireworks transport and transforms, but its future task must consume this task's cache_pricing.py policy rather than create a provider-to-billing dependency cycle.
+  - Generic pricing consumes B1670's rate selection and B1671's modality arithmetic; their utils.py functions stay there, and off-peak evaluation stays B1669. The remaining functions implement billed breakdowns/cache savings (B1673), image arithmetic (B1674), server-tool usage counters (B1675), character metrics (B1676), and requested-image fields plus image/tool dispatch (B1687).
+pitfalls:
+  - A positive image_count prevents inferred prompt text even when all supplied modality token counters are zero.
+  - Provider-specific inference_geo is intentionally absent from generic totals even though billed-rate reporting uses it.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

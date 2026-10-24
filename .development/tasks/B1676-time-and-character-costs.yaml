@@ -1,0 +1,112 @@
+id: B1676
+title: Price audio, video and wall-clock calls in their declared units
+description: >-
+  Build betterlite-models::duration_cost for all live functions in OpenAI/Azure cost modules,
+  utils.py _is_above_128k/select_cost_metric_for_model/_generic_cost_per_character, and
+  cost_calculator.py L332-L376, transcription_cost L2403-L2404 and default_video_cost_calculator
+  L2499-L2575. Keep the OpenAI and Azure token operations as typed branches calling B1672,
+  forwarding service tier and OpenAI residency; Azure's response_time_ms is deliberately
+  unused. The transcription_cost alias uses the same duration operation, with no separate
+  two-line wrapper. OpenAI cost_router has no caller at the pin and gets no implementation.
+  Route effective metadata through B1678 PriceLookup, leaving B193 raw-map queries distinct.
+  OpenAI audio duration lookup defaults a falsey provider to openai. A strictly positive
+  output_cost_per_second charges output; otherwise a present nonnull input_cost_per_second
+  charges input even when zero or negative, and no usable field gives a zero pair. Do not
+  clamp the supplied duration. Wall-clock pricing instead catches lookup failure and
+  declines models with positive input/output token prices or any nonnull tiered_pricing,
+  including an empty list. Only absent mode or chat/completion/embedding/responses qualifies.
+  Choose first nonnull cost_per_second, input_cost_per_second, output_cost_per_second and
+  charge response_time_ms-or-zero/1000 to input, retaining explicit zero and signed durations.
+  Character metric selection uses truthiness, preferring input_cost_per_character over
+  input_cost_per_token and failing with the model key when neither is truthy. Character
+  calculation resolves model-info before separate input/output try blocks. A supplied
+  custom rate bypasses its missing catalog field; missing or erroneous side pricing warns
+  and returns None only for that side. Preserve _is_above_128k's strict >128000 predicate
+  for Vertex callers without creating a trivial forwarding function.
+  Video resolution sanitization trims and lowercases, keeps Unicode alphanumeric characters
+  and underscores, and accepts only 1..24 resulting characters. Punctuation removal is
+  intentional, so 1,080p selects 1080p. A nonnull resolution-specific output_cost_per_second_*
+  overrides base seconds, including zero; invalid present numeric values are errors rather
+  than a fallback. Both video calculators prefer output_cost_per_video_per_second even
+  when zero, then resolution/base output seconds, then zero with a diagnostic. OpenAI uses
+  a warning for no price, whereas the default path logs informationally.
+  Supplied model-info, including {}, completely bypasses lookup for both video paths.
+  Otherwise OpenAI uses the effective model-info resolver; default video searches the raw
+  B193 map in source order: normalized base name, original model, last path segment, removed
+  provider name, then provider/model. Provider removal replaces every matching occurrence
+  after the initial prefix test. Unknown model raises, while a known unpriced model is free.
+  Keep effective metadata resolution behind a typed caller-supplied lookup boundary so
+  raw catalog and synthesized metadata prices cannot be confused; B205 owns the public
+  model-info operation used by the assembled calculator.
+  Add pure duration_cost cases for supplied-price video calculations, resolution suffixes
+  and unit-selection predicates; native catalog fixtures test lookup order and partial
+  character failures. External bytes are decoded by existing request/catalog owners; this
+  module operates on parsed strings and records and seeds helper_case. The 326 nonblank
+  live source lines allocate 330 logic, 250 tests and 195 adapters/fixtures, cap 800.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/duration_cost.rs
+    - crates/betterlite-models/src/duration_cost/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/duration_cost.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/duration_cost.py
+    - tools/oracle/cases/helpers/duration-cost/**
+    - tools/oracle/fuzz/corpus/helper_case/duration-cost-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/cost_calculation.py#L15-L177
+    why: Token forwarding, asymmetric audio rate selection and video resolution pricing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/cost_calculation.py#L10-L33
+    why: Azure delegates token prices without consuming response duration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L156-L250
+    why: Strict 128k threshold, truthy metric selection and independent character-side failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L332-L376
+    why: Eligible wall-clock modes and first-nonnull second-rate selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2403-L2404
+    why: Azure speech passthrough's live transcription-cost forwarding boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2499-L2575
+    why: Default video raw-map candidates differ from the OpenAI metadata lookup.
+dod:
+  - text: Audio and wall-clock billing select different sides and rates, preserving explicit zero and mode/token exclusions.
+    proof: [duration-cost-tests, oracle, duration-cost-python]
+  - text: Video pricing preserves sanitized resolution precedence, supplied-empty bypass and known-unpriced versus unknown-model behavior.
+    proof: [duration-cost-tests, oracle, duration-cost-python, duration-cost-corpus]
+  - text: Character input/output failure is independent after lookup, and provider token forwarding retains its exact arguments.
+    proof: [duration-cost-tests]
+checks:
+  optional: []
+  commands:
+    - id: duration-cost-tests
+      why: A duration is charged as tokens, on the wrong side, or against a lower-priority price.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^duration_cost::/)'
+    - id: duration-cost-python
+      why: Unit and resolution pricing fixtures have no checked source adapter.
+      run: test -f tools/oracle/helpers/duration_cost.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: duration-cost-corpus
+      why: duration_cost helper inputs are absent from the common parser corpus.
+      run: grep -rlq 'duration_cost:' tools/oracle/fuzz/corpus/helper_case/duration-cost-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/duration-cost/resolution-punctuation-unicode-and-length.yaml
+  - tools/oracle/cases/helpers/duration-cost/free-video-rate-wins-over-resolution.yaml
+  - tools/oracle/cases/helpers/duration-cost/empty-video-price-table-returns-zero.yaml
+  - tools/oracle/cases/helpers/duration-cost/zero-token-prices-versus-empty-tier-table.yaml
+  - tools/oracle/cases/helpers/duration-cost/character-metric-truthiness-and-128k-equality.yaml
+deviations:
+  - what: Duration and character charges are computed as exact decimals; nonfinite values or overflow cannot become a successful monetary result.
+    why: The pinned signed and missing-value rules remain, but spend values must fit the shared finite money representation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/cost_calculation.py#L50-L90
+out_of_scope:
+  - OpenAI cost_router has no caller at the pin; its transcription-versus-token branch is not a new API.
+  - get_billable_input_tokens inside the utils.py reference is B1671. Its other helpers remain B1669 off-peak, B1670 rate selection, B1671 modality math, B1672 generic/uplift, B1673 breakdown/savings, B1674 image math, B1675 search counters and B1687 image dispatch.
+  - For cost_calculator.py, B1673 owns custom rates, B1677 additional fees, B1683 usage/tier diagnostics, B1686 token/vector/rerank dispatch, B1689 replicate/early completion charges, B1682 identity/breakdown storage, B1649 adjustments, B1678 OCR, B1674 image defaults, B1679 batch prices, B1680 aggregation and B1681 realtime; B1688 prepares completion input and B068 composes the completion/response entry points.
+  - Audio file parsing and request URL handling are endpoint/provider responsibilities; these functions receive usage durations or response times only.
+pitfalls:
+  - A known model with empty tiered_pricing declines wall-clock charging even when both token prices are zero.
+  - The same output-second price charges output for audio but input for an eligible wall-clock model.
+  - An explicitly supplied empty video price table prevents public-price fallback and returns zero.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

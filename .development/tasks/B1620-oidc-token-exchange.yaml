@@ -1,0 +1,83 @@
+id: B1620
+title: Exchange PKCE codes and merge authoritative token fields
+description: >-
+  Add oidc_token_exchange to betterlite-auth, owning SSOAuthenticationHandler's
+  _validate_token_response, _pkce_token_exchange and _get_pkce_userinfo. Send configured
+  token/userinfo destinations through B173/B009. The token POST is form encoded with a 30s
+  timeout, grant_type=authorization_code, code and code_verifier; omit an empty redirect_uri.
+  With include_client_id=false use Basic authorization when a nonempty secret exists, otherwise
+  put client_id in the body; with true put client_id and any nonempty secret in the body.
+  Pinned Content-Type and Accept override additional headers. Require status 200 and a JSON
+  object containing a nonempty string access_token; network, status and validation failures
+  become 401 auth_error/param token_exchange. Userinfo GET sets its own Bearer header even
+  when additional headers contain Authorization. Failure, empty JSON or null warns and falls
+  back to the ID token using B760's unverified decoder; this token came from the configured
+  exchange and is never a caller-supplied authentication bearer. Missing/empty fallback or
+  invalid JWT gives 401 auth_error/param userinfo. Preserve the later conversion failure for
+  truthy nonobject userinfo rather than inventing successful identity fields.
+  Userinfo wins identity claims. For access_token/id_token/refresh_token, a token-response
+  value wins, explicit null removes the key, and an absent field leaves userinfo's fallback.
+  Define decode_oidc_token_response and decode_oidc_userinfo over bounded response bytes,
+  fuzzed by tagged oidc_token_response. Use an oidc_token_response pure helper for the
+  original validation function; Rust local HTTP tests inspect actual request headers/body,
+  fallback sequencing and three-way merge. B1623 adds the public callback oracle flow.
+  No new settings are introduced: callers pass B1610's validated inputs. The 235 source
+  lines support 290 implementation, 200 tests, 70 adapters and 90 parser/wiring, cap 750.
+scope:
+  paths:
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/oidc_token_exchange.rs
+    - crates/betterlite-auth/src/oidc_token_exchange/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/oidc_token_response.rs
+    - crates/betterlite-auth/fuzz/corpus/oidc_token_response/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/oidc_token_response.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/oidc_token_response.py
+    - tools/oracle/cases/helpers/oidc-token-response/**
+    - tools/oracle/fuzz/corpus/helper_case/oidc-token-response-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3959-L4251
+    why: Token POST authentication, validation, userinfo fallback and credential merge semantics.
+dod:
+  - text: Token requests use the pinned authentication placement and return the specified error provenance on provider failures.
+    proof: [exchange-tests, oracle, token-python]
+  - text: Userinfo fallback and credential-field merging preserve absent versus null without exposing bearer bodies in logs.
+    proof: [exchange-tests]
+  - text: Both provider JSON boundaries replay malformed, empty and credential-bearing corpus inputs.
+    proof: [token-corpus]
+checks:
+  optional: []
+  commands:
+    - id: exchange-tests
+      why: OAuth credentials are sent in the wrong place, lost during merging or exposed by diagnostics.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^oidc_token_exchange::/) - test(replays_the_oidc_token_response_corpus)'
+    - id: token-python
+      why: Token validation has no independently invoked original helper.
+      run: test -f tools/oracle/helpers/oidc_token_response.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: token-corpus
+      why: Provider token parsing is missing a target, added seeds or oracle-envelope coverage.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/oidc_token_response.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/oidc_token_response)" && grep -rlq 'oidc_token_response:' tools/oracle/fuzz/corpus/helper_case/oidc-token-response-* && cargo nextest run --locked -p betterlite-auth -p betterlite-oracle --no-tests=fail -E 'test(replays_the_oidc_token_response_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/oidc-token-response/non-json-and-nonobject.yaml
+  - tools/oracle/cases/helpers/oidc-token-response/null-empty-and-numeric-access-token.yaml
+  - tools/oracle/cases/helpers/oidc-token-response/provider-error-in-success-status.yaml
+  - tools/oracle/cases/helpers/oidc-token-response/valid-token-with-extra-fields.yaml
+deviations:
+  - what: OAuth failure diagnostics report status and failure category without copying the provider response body into logs or error messages.
+    why: The source logs the first 500 response characters, which can contain credentials; secrets-stay-secret requires redaction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3967-L3990
+out_of_scope:
+  - B1610 resolves endpoints and secrets, B1619 owns verifier lifecycle and B1623 maps exchange output into the generic SSO identity.
+  - All other ui_sso.py call sites and helpers are assigned in B063's ownership inventory.
+pitfalls:
+  - Explicit null from the token endpoint removes a userinfo id_token instead of allowing it to become the retained assertion.
+  - A userinfo HTTP 200 with an empty object still triggers ID-token fallback.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

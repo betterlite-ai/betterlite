@@ -1,0 +1,99 @@
+id: B1701
+title: Plan scoped management queries and format problem documents
+description: >-
+  Add betterlite-server::list_api::{plan,problem,links}. Own common.py and list_framework.py's
+  predicate/spec records, validation and planning functions, leaving SQL rendering and
+  execution to B1702. ListSpec validates page defaults, a nonempty tiebreaker, declared
+  default-sort fields and text-only contains filters. Use closed Predicate/Scope enums;
+  caller scope is evaluated before unknown parameters and is always conjoined before
+  filters/search. Preserve forbidden 403 versus invalid-query-parameter, invalid-sort-field,
+  duplicate-sort-field, unsupported-filter-operator and unknown-query-parameter 400 problem
+  slugs under urn:litellm:error:. Problems use application/problem+json and omit null fields.
+  decode_list_query accepts raw URL-query bytes, retains duplicate pairs for B1702, and
+  supplies the last-value mapping used by planning. Recognize page/page_size, sort only
+  when sortable fields exist, q only when searchable fields exist, and filter[field] or
+  filter[field][operator]. A syntactically invalid operator is unknown; a recognized but
+  disallowed operator is unsupported. Sort trims comma segments, accepts leading minus,
+  rejects duplicates and always appends an ascending tiebreaker, even if already present.
+  Parse positive Python-compatible integers; page_size clamps to the resource maximum.
+  Filters run in sorted parameter-name order, in values trim each comma-separated item,
+  is_null accepts case-insensitive true/false without trimming, and timestamps normalize
+  naive values to UTC. Monetary float filters become Decimal; reject nonfinite values as
+  invalid-query-parameter. Search is an OR over sorted searchable fields and empty q adds
+  no predicate. Checked offset arithmetic must return a query problem on overflow.
+  Include allowed-name construction, scope/facet planning and unknown-query rejection using
+  each route's explicit declared aliases. Validation errors suppress a parent's too_short
+  when a child has a longer matching location; any remaining body error yields 422
+  invalid-request-body, otherwise 400 invalid-query-parameter. Build relative links by
+  preserving ordered repeated parameters except all old page pairs, then append page.
+  Empty counted lists link first/last to page 1; facet links have no first/last.
+  Pure management_plan cases call build_query_plan and request_validation_problem with
+  declared specs and parsed error records. Native tests cover byte decoding and link encoding;
+  B1703 exercises the shared HTTP problem handler through its real budget route. Fuzz
+  decode_list_query in the server crate and replay its corpus separately. Owned source is
+  99 common lines plus approximately 285 planning/type lines; allocate 390 implementation,
+  230 tests and 180 adapters/corpus lines, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/list_api.rs
+    - crates/betterlite-server/src/list_api/{plan,problem,links}.rs
+    - crates/betterlite-server/src/list_api/{plan,problem,links}/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/list_query.rs
+    - crates/betterlite-server/fuzz/corpus/list_query/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/management_plan.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/management_plan.py
+    - tools/oracle/cases/helpers/management-plan/**
+    - tools/oracle/fuzz/corpus/helper_case/management-plan-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/common.py#L17-L132
+    why: Problems, validation-error precedence, unknown aliases and pagination URLs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/list_framework.py#L44-L196
+    why: Immutable predicate/spec/executor contracts and construction-time validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/list_framework.py#L293-L545
+    why: Query coercion, ordered error selection, scope-first plans and facet predicates.
+dod:
+  - text: Scoped plans and problem documents match operator, sorting, pagination and validation precedence at the pin.
+    proof: [plan-tests, oracle, plan-python, plan-corpus]
+  - text: Raw query decoding preserves repeated parameters and pagination URLs preserve their ordering while replacing page.
+    proof: [plan-tests, query-corpus]
+checks:
+  optional: []
+  commands:
+    - id: plan-tests
+      why: Planning, problem formatting or link behavior tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^list_api::(plan|problem|links)::/) - test(replays_the_list_query_corpus)'
+    - id: plan-python
+      why: The plan adapter does not type-check against the pinned pure functions.
+      run: test -f tools/oracle/helpers/management_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: plan-corpus
+      why: No management-plan helper input exercises the shared decoder.
+      run: grep -rlq 'management_plan:' tools/oracle/fuzz/corpus/helper_case/management-plan-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: query-corpus
+      why: List query byte decoding has no new replayed seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/list_query)" && test -f crates/betterlite-server/fuzz/fuzz_targets/list_query.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_list_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-plan/scope-denied-precedes-unknown.yaml
+  - tools/oracle/cases/helpers/management-plan/operator-syntax-versus-unsupported.yaml
+  - tools/oracle/cases/helpers/management-plan/sort-duplicates-and-tiebreaker.yaml
+  - tools/oracle/cases/helpers/management-plan/page-cap-null-and-utc-filters.yaml
+  - tools/oracle/cases/helpers/management-plan/child-validation-suppresses-parent-length.yaml
+deviations:
+  - what: Nonfinite numeric filters and offsets beyond the native index range return a 400 invalid-query-parameter problem.
+    why: Decimal money and checked bounded indexing cannot represent Python infinity, NaN or arbitrary-size offsets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/list_framework.py#L406-L416
+out_of_scope:
+  - B1702 owns SQL rendering, handle_list, handle_facet, _duplicate_params and all in_memory.py execution; B1665 owns response records.
+  - B007's broad list_api ownership needs narrowing to these extracted leaves before workers run; its existing model-list task is unchanged here.
+pitfalls:
+  - An unknown operator and an unsupported valid operator produce different problem types.
+  - Requested descending sort still ends with the ascending tiebreaker.
+  - Counted-list page_size is capped, while the spend-log facet routes separately reject values above 100.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

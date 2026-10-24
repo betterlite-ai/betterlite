@@ -1,0 +1,118 @@
+id: B1693
+title: Preserve savings evidence, cache buckets and compression attribution
+description: >-
+  Create betterlite-models::savings_evidence for SavingsSpend, PricingBasis, BaselineCostSnapshot,
+  BaselineCosts and the parsed-record extraction helpers from savings.py. Keep compression,
+  prompt_caching, autorouter and gateway_injected_caching as separate signed money values;
+  the latter two default to zero. PricingBasis has optional service_tier, data_residency
+  and vertex_location, all None by default, and retains the source's three-element tuple
+  serialization. BaselineCostSnapshot rejects extra fields and Boolean/nonnumeric amounts;
+  actual_spend is required finite nonnegative, actual_token_cost defaults None and classifier_cost
+  defaults zero, both nonnegative when present. Its prices are optional catalog records.
+  BaselineCosts.savings is baseline minus actual without clamping.
+  Extract basis values only when strings; unknown or nonstring values become None without
+  inferring them from response usage. Recorded token cost requires numeric input_cost and
+  output_cost and adds only those two, including Boolean numeric behavior at this extraction
+  layer. Never add cache_read_cost/cache_creation_cost again. _numeric_savings accepts finite
+  signed numbers but rejects bool and strings. A versioned autorouter estimate contributes
+  only when version is an exact integer in 1,2,3 and status is estimated; then read the
+  numeric autorouter_savings value. classifier_cost uses the same numeric reader. Rebuild
+  logged usage through B1668 and warn/return None on malformed records; absent/empty usage
+  is simply unavailable.
+  Implement marks_gateway_injection using the string litellm_gateway_injected_cache marker:
+  empty string applies to every deployment, otherwise only an exact model_id match qualifies.
+  A nonstring marker never attributes savings. Cache-read extraction first takes a truthy
+  numeric top-level cache_read_input_tokens, else numeric details.cached_tokens. Write
+  extraction takes truthy numeric top-level cache_creation_input_tokens, then the first
+  truthy numeric cache_write_tokens/cache_creation_tokens detail in that order. These
+  extractors accept bool and truncate finite floats toward zero; negative values survive.
+  _cache_token_split instead prefers typed cache_creation_tokens before cache_write_tokens.
+  For baseline usage, None pricing means both cache buckets remain priced; otherwise only
+  truthy cache-read/write rate fields retain each bucket, so an explicit zero rate also
+  converts that bucket to ordinary input. If a conversion is needed, rebuild usage/public
+  and private counts, clear TTL detail when no writes remain, and set text tokens to
+  max(prompt-read-write-audio-image-video,0). Leave the original record unchanged when
+  there is no positive cache usage or no changed bucket.
+  Own all five compression_savings.py functions in this module. Add native compression_savings
+  tokens_saved to each guardrail_information entry whose provider is exactly headroom;
+  a bare mapping is one entry, a list is many, and other shapes contribute zero. Accept
+  nonnegative numeric tokens_saved excluding bool, truncate floats and reject unrepresentable
+  totals. Other providers, numeric strings and negative values contribute zero.
+  Implement _coerce_billed_at as decode_billed_at(text) plus typed datetime passthrough:
+  replace Z with +00:00 before ISO parsing and return None for invalid strings. Put its
+  fuzz target/replay in models, with pure savings_evidence cases covering the source
+  projections and decoder. These owners comprise 261 nonblank lines; budget 270 records/
+  arithmetic, 230 tests and 230 oracle/fuzz within 775 changed lines.
+scope:
+  paths:
+    - crates/betterlite-models/Cargo.toml
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/savings_evidence.rs
+    - crates/betterlite-models/src/savings_evidence/**
+    - crates/betterlite-models/fuzz/Cargo.toml
+    - crates/betterlite-models/fuzz/fuzz_targets/billed_at.rs
+    - crates/betterlite-models/fuzz/corpus/billed_at/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/savings_evidence.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/savings_evidence.py
+    - tools/oracle/cases/helpers/savings-evidence/**
+    - tools/oracle/fuzz/corpus/helper_case/savings-evidence-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L37-L55
+    why: Savings components and ISO billing-time coercion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L107-L229
+    why: Basis/snapshot records, signed difference and recorded input/output cost extraction; pricing constructors are B1694.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L267-L324
+    why: Cache bucket normalization for baseline models with absent or zero cache prices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L381-L503
+    why: Usage recovery, deployment-specific injection, cache counts and versioned numeric evidence; router accessor is B1694.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/compression_savings.py#L13-L62
+    why: Additive native/Headroom compression extraction with Boolean rejection.
+dod:
+  - text: Savings records and numeric readers distinguish unknown, zero, negative and Boolean values and preserve versioned estimate eligibility.
+    proof: [savings-evidence-tests, oracle, savings-evidence-python, savings-evidence-corpus]
+  - text: Cache conversion, injection attribution and compression extraction retain their separate precedence and shape rules without double counting token cost.
+    proof: [savings-evidence-tests, oracle, savings-evidence-python]
+  - text: ISO billed_at text is handled by the models decoder and invalid values follow its None fallback under corpus replay.
+    proof: [savings-evidence-tests, billed-at-corpus, oracle, savings-evidence-python]
+checks:
+  optional: []
+  commands:
+    - id: savings-evidence-tests
+      why: Savings evidence becomes falsely known, changes sign or credits the wrong deployment.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^savings_evidence::/) - test(replays_the_billed_at_corpus)'
+    - id: billed-at-corpus
+      why: Billing-time text has no new decoder-local malformed-input corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/billed_at)" && test -f crates/betterlite-models/fuzz/fuzz_targets/billed_at.rs && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_billed_at_corpus)'
+    - id: savings-evidence-python
+      why: Savings projection cases lack checked calls to the source helpers.
+      run: test -f tools/oracle/helpers/savings_evidence.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: savings-evidence-corpus
+      why: Savings evidence operations are not represented in the shared parser corpus.
+      run: grep -rlq 'savings_evidence:' tools/oracle/fuzz/corpus/helper_case/savings-evidence-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/savings-evidence/version-bool-and-unknown-status.yaml
+  - tools/oracle/cases/helpers/savings-evidence/recorded-token-cost-excludes-cache-components.yaml
+  - tools/oracle/cases/helpers/savings-evidence/top-level-zero-and-write-alias-precedence.yaml
+  - tools/oracle/cases/helpers/savings-evidence/zero-baseline-cache-rate-becomes-ordinary-input.yaml
+  - tools/oracle/cases/helpers/savings-evidence/injection-all-deployments-and-sibling-leg.yaml
+  - tools/oracle/cases/helpers/savings-evidence/native-plus-headroom-compression.yaml
+  - tools/oracle/cases/helpers/savings-evidence/snapshot-strictness-and-tuple-basis.yaml
+  - tools/oracle/cases/helpers/savings-evidence/iso-time-z-offset-and-invalid.yaml
+deviations:
+  - what: Savings counters and money use checked finite arithmetic; nonfinite or overflowing compression/cache counts return a typed data error rather than entering a daily subtotal.
+    why: The source's int/float conversions can overflow or carry nonfinite values, which cannot be persisted as valid spend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/compression_savings.py#L13-L18
+out_of_scope:
+  - B1694 owns _ModelIdentity, _resolve_model, _effective_model_info, _model_info, baseline_cost_snapshot, price_baseline_comparison, _cost_of_usage, compute_autorouter_savings, _proxy_llm_router and every request/logging pricing function from L506 through the end of savings.py.
+  - This task transforms parsed savings records; request token counting belongs to B1695 and persistence/publication belongs to the baseline-accounting tasks split from B068.
+pitfalls:
+  - A zero baseline cache rate is falsey here and moves the bucket to ordinary input rather than making it free.
+  - The empty injection marker is intentional and means every deployment, not missing evidence.
+  - Logged cache creation extraction prefers cache_write_tokens, but typed _cache_token_split prefers cache_creation_tokens.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

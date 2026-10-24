@@ -1,0 +1,103 @@
+id: B1699
+title: Persist and replay baseline observations with retryable publication
+description: >-
+  Implement BaselineAccountingStore and flush_baseline_accounting in betterlite-db::baseline::store
+  and ::flush, using B1698 records/publication and B714 writer-pinned transactions. Each
+  append/project transaction has a ten-second client deadline, statement_timeout=5000 and
+  lock_timeout=1000. Preserve the source comparison/observation tables from B708, with no
+  new uniqueness rule. Comparison creation sets initial_equivalent from absence of an
+  existing key-scoped auto-router session, then locks its scope row FOR UPDATE.
+  Append uses revision+1 and canonical record bytes, inserts by globally unique request_id
+  with DO NOTHING, and writes the turn through B1697 only when the observation was inserted.
+  A same-scope duplicate with differing bytes is marked conflicted once and gets the new
+  revision; an identical retry neither rewrites its turn nor dirties the comparison. A
+  request ID belonging to another scope returns conflict. For retired scopes publish an
+  unknown comparison_retired value using the canonical existing record when present, then
+  return retired. Otherwise an inserted/conflicted observation withdraws estimated
+  publications at or after its original timestamp, resets attempted_at and advances revision.
+  Append catches transaction errors, warns and returns unavailable; committed retries remain
+  idempotent. Keep recorded/retired/conflict/unavailable as distinct results.
+  Page by complete start-time groups: select at most 128 distinct timestamps greater than
+  the cursor, then all matching observations sorted by started_at/request_id. Filter by
+  revision, and for withdrawal additionally require estimated publication at or after the
+  withdrawal start. Never split a tied group at a row-count boundary. Withdrawal publishes
+  pending_projection with comparison start=min(previous start,new start), using B1698's
+  negative deltas to remove previously reported savings in the same transaction.
+  Project locks the comparison, returns unchanged if absent/retired/clean, and returns
+  unavailable if an unpublished observation has no spend-log row yet. Decode the checkpoint
+  or initialize from initial_equivalent. A newer revision at or before checkpoint.last_at
+  forces full replay; otherwise process only later revisions. Replay complete timestamp groups
+  with B1696, publish B1698 corrections page by page, then atomically store history and set
+  published_revision=revision. Any error rolls back all pages, warns and leaves the durable
+  comparison dirty for retry. Projection order must not depend on callback arrival order.
+  retire_before uses caller batch_size and max(1,timeout_ms) for both SQL timeouts. Mark old
+  unretired comparisons with FOR UPDATE SKIP LOCKED, clear history, then delete at most the
+  batch size of observations attached to retired old comparisons. Do not rewrite historical
+  spend/session savings during retirement, and do not swallow retirement errors.
+  Flush drains up to 32 queued records, remembers whether more were queued, appends at most
+  four concurrently under a five-second deadline and requeues only unavailable results.
+  On exception/timeout requeue the whole leased batch after existing pending records; on
+  cancellation requeue then propagate cancellation. Retain queue-capacity permits until a
+  record is acknowledged so retrying a full queue cannot deadlock or discard it. Use B1690's
+  configured bounded capacity with producer backpressure. Request another flush only when
+  more were initially queued and some current records completed.
+  Then claim at most 32 dirty scopes whose attempted_at is absent or older than 30 seconds,
+  ordered null-attempt first then updated_at/scope, using SKIP LOCKED and a one-second
+  statement timeout. Stamp attempted_at in that transaction before projecting at concurrency
+  four under five seconds. A full claim with any published result requests another flush;
+  failures warn and remain eligible after the interval. Inject an owned flush notifier,
+  not a dependency on B070's final writer or proxy module globals.
+  Native Postgres tests cover identical/conflicting/cross-scope duplicates, missing log rows,
+  late observations and ties across pages, rollback after partial publication, retirement,
+  claim contention, requeue ordering, timeouts and cancellation. No route or pure adapter is
+  added by this stateful task. The remaining source ranges total 300 nonblank lines;
+  allocate 330 store/queue logic and 420 tests/wiring, capped at 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-db/src/baseline.rs
+    - crates/betterlite-db/src/baseline/store.rs
+    - crates/betterlite-db/src/baseline/store/**
+    - crates/betterlite-db/src/baseline/flush.rs
+    - crates/betterlite-db/src/baseline/flush/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L184-L240
+    why: Transaction contracts, comparison locks, global request IDs and complete-timestamp paging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L308-L311
+    why: Transactions must use the primary writer connection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L389-L587
+    why: Append/conflict semantics, withdrawal, retirement and incremental/full projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L589-L654
+    why: Batch/concurrency limits, whole-batch cancellation recovery and dirty-scope claim throttle.
+dod:
+  - text: Append records observations and turns exactly once, marks conflicting evidence and atomically withdraws affected estimates before dirtying the comparison.
+    proof: [baseline-store-tests]
+  - text: Projection preserves complete timestamp groups, chooses checkpoint versus full replay correctly and commits all reporting corrections with its revision/history update.
+    proof: [baseline-store-tests]
+  - text: Retirement and bounded flushing preserve source limits, dirty-claim fairness, retry ordering and cancellation ownership without losing queued observations.
+    proof: [baseline-store-tests, baseline-flush-tests]
+checks:
+  optional: []
+  commands:
+    - id: baseline-store-tests
+      why: Durable observation, replay or retirement behavior violates an accounting transaction boundary.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^baseline::store::/)'
+    - id: baseline-flush-tests
+      why: A flush loses ownership, duplicates a committed turn, misclaims dirty work or fails to requeue on cancellation.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^baseline::flush::/)'
+oracle_cases: []
+deviations:
+  - what: A full baseline observation queue applies producer backpressure at the configured spend queue capacity instead of growing the proxy's list without a limit.
+    why: Observations must remain owned and retryable under the bounded-memory rule; capacity includes leased in-flight records until acknowledgment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/baseline_accounting.py#L620-L639
+out_of_scope:
+  - B1698 owns all accounting/publication data records, JSON decoders, canonical serialization, correction SQL and _publish/_project_group; B1696 owns the pure history algorithm.
+  - B070 wires the exported baseline flush service and notifier into spend persistence; B075 supplies captured provider baseline observations, and B344 retains session turn collection/drain orchestration.
+pitfalls:
+  - Identical duplicate observations do not advance revision, but differing same-scope duplicates must retract affected published savings.
+  - The page limit counts distinct timestamps, not observation rows, so tied requests must stay in one replay group.
+  - A failed projection must leave published_revision behind revision; marking it clean would permanently suppress retry.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,79 @@
+id: B1723
+title: Serve tag summaries and scoped key and user spend tables
+description: >-
+  Register GET /spend/keys, /spend/users, /spend/tags, /global/spend/all_tag_names and
+  /global/spend/tags in server::spend::tag_reports. Use B1704's exact admin/viewer predicate
+  for key and user tables. Administrators read every key; other callers read only keys
+  with their user_id, returning [] when that ID is falsey. Users follow the same scope,
+  but a supplied different user_id is 403. A unique-user lookup always returns a singleton
+  list, including [null] when absent; remove password from every returned user object.
+  Missing database and caught ordinary errors are 400 on these two routes, while user
+  scope's HTTPException is preserved. Reuse B722/B723 repository projections and their
+  source ordering rather than sorting a second time in the handler.
+  /spend/tags uses get_spend_by_tags to expand every request_tags array from SpendLogs,
+  count occurrences and sum spend per tag. Its accepted start_date/end_date values are
+  deliberately unused. The all_tag_names route reads distinct expanded tags and returns
+  tag_names, with [] only for a None database result. These routes do not require a paid
+  feature despite their old docstrings. Their wrapper preserves ProxyException and converts
+  other exceptions to internal_error with param None and the source status, default 500.
+  /global/spend/tags requires both dates, returning bad_request/400/param null when missing.
+  Its helper splits a nonempty tags string on commas without trimming. Missing/empty tags
+  or the exact element all-tags selects all DailyTagSpend rows in the inclusive date range;
+  otherwise filter by the bound array and aggregate by tag. Aggregate all dates into spend
+  and log counts, sort descending spend, and round monetary output to four decimal places
+  with ties-even Decimal rounding. Return every tag under spend_per_tag; the top-ten comment
+  does not impose a limit. Keep malformed-date database errors in the route's 500 wrapper.
+  decode_tag_report_query parses raw query bytes for these scalar options, preserving
+  repeated-value precedence and literal comma/whitespace behavior. Fuzz it alongside
+  native cross-tenant/password-removal tests. Drive all five handlers through HTTP oracle
+  fixtures with real database rows, including repeated tags, all-tags and unused dates.
+  Owned handlers, helpers and tag row records occupy about 393 nonblank source lines;
+  the 800-line cap includes query decoding, security cases and corpus replay.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/tag_reports.rs
+    - crates/betterlite-server/src/spend/tag_reports/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/tag_report_query.rs
+    - crates/betterlite-server/fuzz/corpus/tag_report_query/**
+    - tools/oracle/cases/http/spend-tag-reports/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L411-L617
+    why: Key/user scope, password stripping and the legacy tag endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2074-L2205
+    why: Tag name discovery, UI tag query and its ProxyException boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4397-L4502
+    why: Date-ignoring raw tags and inclusive daily tag aggregation.
+dod:
+  - text: Key/user spend tables enforce their own-user scope and never return password fields.
+    proof: [tag-report-tests, oracle]
+  - text: Raw and daily tag APIs keep distinct date/filter behavior, complete result sets and exact error envelopes.
+    proof: [tag-report-tests, tag-report-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: tag-report-tests
+      why: Tag aggregation or identity table isolation is absent.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::tag_reports::/) - test(replays_the_tag_report_query_corpus)'
+    - id: tag-report-corpus
+      why: The report query parser has no new comma/date/null boundary corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tag_report_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_tag_report_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-tag-reports/key-and-user-self-scope.yaml
+  - tools/oracle/cases/http/spend-tag-reports/missing-user-password-and-db.yaml
+  - tools/oracle/cases/http/spend-tag-reports/raw-tags-ignore-dates.yaml
+  - tools/oracle/cases/http/spend-tag-reports/all-tags-comma-whitespace-and-rounding.yaml
+  - tools/oracle/cases/http/spend-tag-reports/tag-names-and-missing-date-errors.yaml
+deviations: []
+out_of_scope:
+  - B1721 owns activity/provider charts, B1722 exception/reset/end-user diagnostics, B1724 monthly aggregates and B1725 estimates/team/provider-budget output.
+  - B1726/B1727 own detailed grouped reports; B1704, B069 and the spend-log query/detail/session leaves retain the other endpoint helpers and routes.
+pitfalls:
+  - all_tags is an ordinary tag; only all-tags activates the all-tag branch.
+  - The daily chart returns more than ten tags when they exist, despite its top-ten comment.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

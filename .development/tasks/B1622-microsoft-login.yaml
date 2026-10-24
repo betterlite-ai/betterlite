@@ -1,0 +1,91 @@
+id: B1622
+title: Convert Microsoft OAuth logins into proxy identities
+description: >-
+  Build microsoft_login in betterlite-server around B1629's per-login OAuthClient. Own
+  CustomMicrosoftSSO.__init__/get_discovery_document and the sso package re-export, plus
+  MicrosoftSSOHandler.get_microsoft_callback_response, openid_from_response,
+  get_user_role_from_app_roles and get_app_roles_from_id_token. MICROSOFT_CLIENT_SECRET and
+  MICROSOFT_TENANT default absent; either missing value yields 500 auth_error with its env
+  name as param. An empty tenant reaches the inherited common-tenant default. Empty or absent
+  MICROSOFT_AUTHORIZATION_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT and MICROSOFT_USERINFO_ENDPOINT
+  use login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize, the matching /token endpoint
+  and graph.microsoft.com/v1.0/me. Default scopes are openid/User.Read/email; preserve custom
+  constructor scopes and allow_insecure_http=true at the callback. After userinfo exchange,
+  B1621 retrieves Graph teams, then decode the ID token with B760 for app_roles or roles.
+  A truthy non-list app_roles masks roles and produces an empty result; malformed tokens
+  log and produce no roles. B1608 resolves role privilege deterministically.
+  Normal conversion uses MICROSOFT_USER_EMAIL_ATTRIBUTE=userPrincipalName with mail fallback,
+  DISPLAY_NAME_ATTRIBUTE=displayName, ID_ATTRIBUTE=id, FIRST_NAME_ATTRIBUTE=givenName and
+  LAST_NAME_ATTRIBUTE=surname (all with MICROSOFT_USER_ prefix), normalizing email through
+  B1609. Capture B1617's trusted interactive subject in request context only for ordinary
+  login. Raw mode returns original userinfo plus graph_api_user_groups and app_roles without
+  enrolling a subject. Reuse B1629's provider-document decoder and seed it with custom-field
+  records; add malformed/heterogeneous role seeds to B760's JWT corpus. The microsoft_identity
+  helper compares discovery and pure role/profile conversion. loads_microsoft_settings covers
+  each consumed env key. Source ownership totals 239 lines including the endpoint class;
+  budget 280 product, 180 tests, 90 adapters and 110 config/corpus lines, capped at 725.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/microsoft_login.rs
+    - crates/betterlite-server/src/microsoft_login/**
+    - crates/betterlite-auth/fuzz/corpus/oauth_provider_document/microsoft-*
+    - crates/betterlite-auth/fuzz/corpus/jwt_claims/microsoft-roles-*
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/microsoft_login.rs
+    - crates/betterlite-config/src/microsoft_login/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-login-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/microsoft_identity.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/microsoft_identity.py
+    - tools/oracle/cases/helpers/microsoft-identity/**
+    - tools/oracle/fuzz/corpus/helper_case/microsoft-identity-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/custom_microsoft_sso.py#L1-L82
+    why: Microsoft discovery overrides and inherited constructor arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4282-L4441
+    why: Callback ordering, raw debugging, subject capture and app-role projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2042-L2046
+    why: Exact Microsoft user-field environment defaults.
+dod:
+  - text: Microsoft discovery, field overrides and app-role precedence match the source without promoting malformed claims.
+    proof: [microsoft-tests, microsoft-config, oracle, microsoft-python]
+  - text: Graph lookup precedes conversion and raw mode cannot trigger interactive subject enrollment.
+    proof: [microsoft-tests]
+  - text: Microsoft profile and JWT role cases replay through existing decoders.
+    proof: [microsoft-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: microsoft-tests
+      why: Microsoft profile conversion, callback sequencing or enrollment context is incorrect.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^microsoft_login::/)'
+    - id: microsoft-config
+      why: A Microsoft secret, endpoint or attribute name is unsupported by the config loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^microsoft_login::tests::loads_microsoft_settings/)'
+    - id: microsoft-python
+      why: Microsoft-specific pure behavior is missing from the checked oracle adapter.
+      run: test -f tools/oracle/helpers/microsoft_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: microsoft-corpora
+      why: Added Microsoft records or claim/config/helper envelopes are missing from parser replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-auth/fuzz/corpus/oauth_provider_document/microsoft-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-auth/fuzz/corpus/jwt_claims/microsoft-roles-*')" && grep -rlq 'microsoft_identity:' tools/oracle/fuzz/corpus/helper_case/microsoft-identity-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-login-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_oauth_provider_document_corpus) | test(replays_the_jwt_claims_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/microsoft-identity/empty-endpoints-fall-back.yaml
+  - tools/oracle/cases/helpers/microsoft-identity/mail-fallback-and-custom-fields.yaml
+  - tools/oracle/cases/helpers/microsoft-identity/truthy-nonlist-app-roles.yaml
+  - tools/oracle/cases/helpers/microsoft-identity/multiple-valid-role-priorities.yaml
+  - tools/oracle/cases/helpers/microsoft-identity/malformed-id-token.yaml
+deviations: []
+out_of_scope:
+  - Graph pagination/team creation is B1621, Google conversion is B1629 and generic OAuth is B1623.
+  - B063 owns callback dispatch; its complete inventory assigns the remaining ui_sso.py helpers.
+pitfalls:
+  - MICROSOFT_USER_EMAIL_ATTRIBUTE falls back to mail on an empty value, whereas the other configured profile fields have no fallback.
+  - app_roles is selected before checking that it is a list, so a nonempty scalar suppresses an otherwise valid roles array.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

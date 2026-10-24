@@ -1,0 +1,89 @@
+id: B1660
+title: Expose effective UI settings and merge administrator patches
+description: >-
+  Implement ui_settings_routes for public GET /get/ui_settings and authenticated PATCH
+  /update/ui_settings. Follow the actual GET decorator, which has no auth dependency despite
+  its docstring. Both need a database; PATCH additionally requires exact proxy_admin and
+  effective store_model_in_db=true, in that order. Read/write row id ui_settings through B726.
+  GET decodes the object or JSON-string row with B1659, filters its allowlist, applies its
+  runtime policy projection, then refreshes ui_settings:settings_dict for 600 seconds. Overlay
+  every allowlisted key present in B120's effective SettingsStore before asking B1656 for
+  values and schema. Add the two read-only derived values and their source labels through
+  B1659; a persisted value not present in SettingsStore reports db. Failed schema construction
+  can therefore follow already-applied runtime/cache changes.
+  decode_ui_settings_patch(bytes) validates only the required JSON-object outer shape at the
+  HTTP boundary. After admin/DB/storage guards, compare submitted derived values with current
+  values and reject conflicting names in sorted order with 400. Preserve Python value equality
+  for Boolean/numeric 0 and 1; a matching echoed derived field is accepted and later discarded.
+  Validate the UISettings record next, returning B003's public 422 errors containing only type,
+  loc and msg. Check team_admin_editable_team_fields against B1200's supported permissions and
+  return sorted unsupported names with 400. The absent extension's enable_projects_ui remains
+  unsupported with 403; no extension or feature implementation is introduced.
+  Retain only explicitly submitted allowlisted fields, read the existing stored dictionary,
+  merge incoming fields over it and upsert the whole JSON-string row. Existing unknown keys
+  survive this write and appear in PATCH's returned settings even though GET hides them.
+  Apply runtime flags after DB persistence, set the sanitized cache, and only then submit the
+  B124 audit record through B065. Do not reject config-owned fields here: the DB write can
+  succeed while the configured effective value still wins on GET. Cache/application failures
+  after upsert do not roll the row back. Native tests exercise those boundaries and GET's
+  refresh side effects; multi-step HTTP oracle cases prove partial patches, unchanged derived
+  echoes, source labels, hidden extras and public GET access. Fuzz ui_settings_patch and replay
+  replays_the_ui_settings_patch_corpus. The two handlers contain 169 source lines; budget 220
+  routes/validation, 230 state tests and 210 HTTP/fuzz material within 725 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/ui_settings_routes.rs
+    - crates/betterlite-server/src/ui_settings_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/ui_settings_patch.rs
+    - crates/betterlite-server/fuzz/corpus/ui_settings_patch/**
+    - tools/oracle/cases/management/ui-settings/**
+    - tools/oracle/fuzz/corpus/http_case/ui-settings-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1745-L1961
+    why: Public GET, administrator PATCH, derived comparisons and DB/runtime/cache/audit sequencing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/validation_error_body.py#L1-L13
+    why: Dependency-owned model validation errors deliberately omit input, ctx and documentation URLs.
+dod:
+  - text: GET publishes effective values with correct provenance while refreshing the runtime subset and cache from the stored row.
+    proof: [ui-routes-tests, oracle, ui-patch-corpus]
+  - text: PATCH distinguishes unchanged derived echoes, unsupported permissions and explicit allowlisted fields while preserving stored extras.
+    proof: [ui-routes-tests, oracle, ui-patch-corpus]
+  - text: Public reads, admin-only writes and partial persistence failures retain their source ordering and error envelopes.
+    proof: [ui-routes-tests, oracle, ui-patch-corpus]
+checks:
+  optional: []
+  commands:
+    - id: ui-routes-tests
+      why: Effective UI settings or administrator patches bypass provenance and write-order rules.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^ui_settings_routes::/) - test(replays_the_ui_settings_patch_corpus)'
+    - id: ui-patch-corpus
+      why: UI patch parsing has no adversarial object/derived-value replay cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/ui_settings_patch)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_ui_settings_patch_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/ui-settings/public-get-and-admin-only-patch.yaml
+  - tools/oracle/cases/management/ui-settings/config-wins-over-successfully-written-db-flag.yaml
+  - tools/oracle/cases/management/ui-settings/patch-keeps-omitted-fields-and-stored-extras.yaml
+  - tools/oracle/cases/management/ui-settings/matching-derived-echo-and-numeric-boolean-equality.yaml
+  - tools/oracle/cases/management/ui-settings/changed-derived-fields-sorted-400.yaml
+  - tools/oracle/cases/management/ui-settings/team-permission-validation-and-public-422.yaml
+  - tools/oracle/cases/management/ui-settings/missing-database-and-disabled-storage.yaml
+deviations:
+  - what: enable_projects_ui still returns 403 because its implementation is absent, but the detail says the setting is unavailable on this build without advertising a LiteLLM Enterprise upgrade.
+    why: Enterprise extension code is excluded and betterlite has no paid tier.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1892-L1905
+  - what: A successful UI patch may omit its audit record on audit-queue overload, with a warning and counter.
+    why: The audit handoff uses B065's bounded task ownership instead of asyncio.create_task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1946-L1955
+out_of_scope:
+  - "Outside these handlers, proxy_setting_endpoints.py assigns row/schema/save helpers L88-L127, L723-L783, L800-L849 and L1001-L1072 to B1656; defaults L858-L998 and L1080-L1127 to B1657; allowed-IP L591-L720 to B1658; flag/cache/source helpers L379-L399, L453-L470, L786-L797 and L1671-L1742 to B1659; SSO L1136-L1322 to B1661; theme/upload L141-L167, L1330-L1463 and L1969-L2024 to B1662; search L548-L582 and L1472-L1664 to B1663."
+  - The enterprise register_extra_ui_setting function L439-L450 has no caller at the pin and is not ported.
+pitfalls:
+  - PATCH returns stored unknown keys that GET intentionally removes, so sharing one final response sanitizer would change behavior.
+  - A configured flag can shadow a successful DB patch; this endpoint does not perform the allowed-IP API's config-owned-write rejection.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

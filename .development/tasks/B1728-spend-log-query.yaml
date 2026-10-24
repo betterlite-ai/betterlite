@@ -1,0 +1,96 @@
+id: B1728
+title: Decode spend-log filters and preserve route-specific date semantics
+description: >-
+  Create server::spend::log_query with typed SpendLogQuery, prepared filter records and
+  the fixed SQL column/session expressions consumed by later listing tasks. Own
+  ui_view_spend_logs L2475-L2765's parameter declarations, validation and initial filters,
+  plus _build_spend_log_search_condition, _build_status_filter_condition and
+  _span_type_sql_condition. B1732 owns the route and database/auth sequencing; expose
+  validation phases so it can check database availability before sort/filter validation
+  without delaying framework-level query errors.
+  decode_spend_log_query consumes raw query bytes with last-scalar-value precedence.
+  page defaults 1 and is >=1; page_size defaults 50 and is 1..1000. sort_by defaults
+  startTime and allows spend,total_tokens,startTime,endTime,request_duration_ms,model,ttft_ms.
+  sort_order defaults desc, accepts case-insensitive asc/desc without trimming, and null
+  becomes desc. cache_hit_filter accepts only hit/miss; span_type only llm/agent/mcp/batch.
+  Invalid choices produce 400 bad_request with their parameter name; numeric/Boolean
+  request decoding preserves FastAPI 422 fields. Money is Decimal, and nonfinite values
+  receive 422 rather than reaching a database comparison. All remaining source scalar
+  filters default null; exclude_internal_health_checks and group_by_session default false.
+  A UI request_id-only lookup omits the date window even when supplied dates are malformed.
+  Search requires dates on both routes. Public v2 accepts stripped date-only or second-
+  precision timestamps; UI accepts only the latter. Attach UTC and keep inclusive endpoints,
+  with no range-order validation. Prepare equality filters by non-null presence, metadata
+  key-alias/error-code/error-message filters, and inclusive spend bounds. Retain request_id
+  separately because execution expands it to request_id OR litellm_call_id.
+  Search SQL matches indexed request_id across all time, but other exact ID columns only
+  inside its bound window. Its parameter tuple is search,start,end and starts at the supplied
+  placeholder index. The public route additionally retains its outer date window. Success
+  status includes null; other statuses remain exact strings. Fixed span predicates include
+  call_mcp_tool/list_mcp_tools, asend_message and all four batch create/retrieve spellings;
+  llm excludes those three groups. Export the 10000 count cap, session key fallback and
+  representative ordering: final agent end time first, then non-MCP/newest start/request ID.
+  Pin the lean list columns, including duration fallback, without messages/response/request
+  bodies. Keep health-check names/hashes sourced through the existing typed constants and
+  B1715 hashing. The 330 source lines budget 800 with decoder fuzz and native validation
+  tests. Pure log_predicates oracle cases cover only the three standalone helpers; later
+  route cases validate the split handler through real HTTP rather than calling it as a helper.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/log_query.rs
+    - crates/betterlite-server/src/spend/log_query/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/spend_log_query.rs
+    - crates/betterlite-server/fuzz/corpus/spend_log_query/**
+    - tools/oracle/src/helpers/{mod.rs,log_predicates.rs}
+    - tools/oracle/helpers/{dispatch.py,log_predicates.py}
+    - tools/oracle/cases/helpers/log-predicates/**
+    - tools/oracle/fuzz/corpus/helper_case/log-predicates-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L74-L113
+    why: Fixed lean columns, count cap, call classes and session representative ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2433-L2455
+    why: Standalone ID search condition and parameter ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2475-L2765
+    why: Owned input/validation/filter portion of the handler; route registration belongs to B1732.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4810-L4832
+    why: Status and span helper semantics.
+dod:
+  - text: Log-query decoding preserves defaults, presence, error parameters and different UI/v2 date rules.
+    proof: [log-query-tests, log-query-corpus]
+  - text: Search/status/span predicates use bound values and the pinned call classifications.
+    proof: [log-query-tests, oracle, log-predicate-python, log-predicate-corpus]
+checks:
+  optional: []
+  commands:
+    - id: log-query-tests
+      why: Query defaults, validation phases or route-specific dates are missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::log_query::/) - test(replays_the_spend_log_query_corpus)'
+    - id: log-query-corpus
+      why: The spend-log query decoder lacks a committed fuzz corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_log_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_log_query_corpus)'
+    - id: log-predicate-python
+      why: Standalone predicate adapters do not typecheck against the pin.
+      run: test -f tools/oracle/helpers/log_predicates.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: log-predicate-corpus
+      why: Predicate operations have no helper replay input.
+      run: grep -rlq 'log_predicates:' tools/oracle/fuzz/corpus/helper_case/log-predicates-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/log-predicates/search-window-and-placeholder-index.yaml
+  - tools/oracle/cases/helpers/log-predicates/success-null-and-span-classes.yaml
+deviations:
+  - what: Nonfinite min_spend/max_spend query values fail with HTTP 422 validation errors before SQL execution.
+    why: Monetary filters use the repository's finite Decimal boundary instead of Python float NaN/infinity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2499-L2506
+out_of_scope:
+  - B1732 owns ui_view_spend_logs decorators and L2766-L3075 authorization/execution; B1729 detail/daily projection, B1730 response enrichment/legacy listing and B1731 session pagination own the other log functions.
+  - B1704 retains visibility; B1721-B1727 own reports and B069 capture rate/composition.
+pitfalls:
+  - A UI request_id lookup without search ignores even malformed supplied date strings.
+  - The search helper's unbounded request_id arm does not remove the public v2 route's outer time restriction.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

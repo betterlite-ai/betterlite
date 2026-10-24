@@ -1,0 +1,89 @@
+id: B1710
+title: Recover historical key attribution from tokens and user records
+description: >-
+  Add betterlite-db::key_attribution for key_metadata_recovery.py's non-spend-log-cache
+  functions: shared metadata records, _unanimous, _db_or_empty, bounded transaction reads,
+  reverse-hash lookup, daily owner recovery, all user-detail/CLI helpers and export-row
+  filling. The spend-log edge probes/cache belong to B1711. Extract is_valid_sha256_hash
+  from litellm_logging.py into betterlite-models::key_digest as the exact 64 ASCII hex
+  predicate, so database recovery need not import logging. Existing logging callers can
+  consume this low-level function without a reverse dependency.
+  Double-hash recovery considers only valid digest strings, queries SHA256 of the stored
+  token text against active keys first, then only unresolved digests against deleted keys.
+  Deleted rows use DISTINCT ON token ordered deleted_at DESC. Ignore returned digests
+  outside the requested set. Catch database-driver failures with a warning and empty
+  results; malformed typed rows and other errors still propagate. Do not recover secrets
+  or substitute raw token values into report output.
+  Daily-owner recovery groups all DailyUserSpend rows for the requested keys, excludes
+  null/empty user IDs and accepts an owner only when MIN/MAX agree or one endpoint is
+  absent. Its bounded read uses a ten-second transaction and SET LOCAL statement_timeout
+  =5000; expose that bounded-read primitive for B1711's planner settings. User detail reads
+  use B703's chunked IN primitive and B723's users. Empty email becomes absent and only
+  a list containing exactly one nonempty string qualifies as only_team.
+  CLI attribution recognizes cli-session- followed by a nonempty user ID and recovers
+  it only if the user exists. attach_user_details fills a falsey email and, for CLI keys
+  only, a falsey team from that user's unique team. Skip users already having an email
+  unless a CLI key still needs a team. Exports select rows with a nonempty string key and
+  alias null or empty, recover CLI first then double hashes, attach user details, and
+  preserve input order. Recovered alias/team override falsey row fields, while an existing
+  row email wins. Configurable field names change only this projection, not SQL identifiers.
+  Add key_attribution pure cases for unanimity, CLI recognition, detail merging and row
+  projection; native Postgres tests prove active-before-deleted precedence, newest tombstone,
+  conflicting daily owners, chunking and driver-only fallback. The owned functions/constants
+  comprise approximately 300 nonblank lines; budget 310 implementation, 260 database/tests
+  and 170 helper/wiring lines, at most 800.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/key_attribution.rs
+    - crates/betterlite-db/src/key_attribution/**
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/key_digest.rs
+    - crates/betterlite-models/src/key_digest/**
+    - tools/oracle/src/helpers/{mod.rs,key_attribution.rs}
+    - tools/oracle/helpers/{dispatch.py,key_attribution.py}
+    - tools/oracle/cases/helpers/key-attribution/**
+    - tools/oracle/fuzz/corpus/helper_case/key-attribution-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L28-L42
+    why: Active and newest-deleted token digest queries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L95-L372
+    why: Shared records, bounded reads, daily ownership and user/CLI recovery; edge-row record/cache constants are B1711.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L483-L554
+    why: Export-row selection, precedence and custom field names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5599-L5601
+    why: Shared digest predicate extracted below logging and database consumers.
+dod:
+  - text: Recovery uses active/deleted/CLI evidence in the pinned order and refuses conflicting daily ownership without returning token secrets.
+    proof: [attribution-tests]
+  - text: User detail and export projections preserve alias/email/team precedence and exact digest/CLI recognition.
+    proof: [attribution-tests, oracle, attribution-python, attribution-corpus]
+checks:
+  optional: []
+  commands:
+    - id: attribution-tests
+      why: Historical ownership queries, typed failure handling or metadata projections are incorrect.
+      run: cargo nextest run --locked -p betterlite-db -p betterlite-models --no-tests=fail -E 'test(/^key_attribution::/) + test(/^key_digest::/)'
+    - id: attribution-python
+      why: Attribution projection adapters lack direct checked source calls.
+      run: test -f tools/oracle/helpers/key_attribution.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: attribution-corpus
+      why: No attribution operation is seeded in the existing helper decoder.
+      run: grep -rlq 'key_attribution:' tools/oracle/fuzz/corpus/helper_case/key-attribution-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-attribution/hex-and-cli-prefix-boundaries.yaml
+  - tools/oracle/cases/helpers/key-attribution/unanimous-or-conflicting-owners.yaml
+  - tools/oracle/cases/helpers/key-attribution/cli-only-team-and-email-precedence.yaml
+  - tools/oracle/cases/helpers/key-attribution/custom-export-field-names.yaml
+deviations: []
+out_of_scope:
+  - B1711 owns edge-probe SQL, _SpendLogDigestRow, digest-window cache keys and all cached spend-log recovery functions at lines 375-480.
+  - Other litellm_logging.py functions remain with B247-B254, B1682 and the response-cost integration leaf; this task extracts only the digest predicate.
+pitfalls:
+  - A deleted token's latest tombstone is selected before merging recovered metadata.
+  - A unique team can fill CLI attribution but must not be inferred for an ordinary key.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

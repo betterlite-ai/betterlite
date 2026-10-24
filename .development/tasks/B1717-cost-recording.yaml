@@ -1,0 +1,105 @@
+id: B1717
+title: Record response cost and its diagnostic without breaking completion
+description: >-
+  Build betterlite-core::cost::recording around B247's mutable call log and B068's
+  calculator. CostRecorder holds those dependencies explicitly; do not introduce a
+  logging-to-core crate dependency. Sync header construction and async success logging
+  invoke this same implementation. Exact cache_hit=true returns zero before diagnostics;
+  otherwise use the stored cache flag when the argument is null, then B188's unbilled
+  call predicate. Normalize native generateContent responses with the provider's existing
+  B031 conversion, using a synthetic successful response with empty headers; a conversion
+  error leaves the original response intact. Unwrap Responses completion/failure events.
+  A typed response's non-null hidden response_cost wins immediately, with diagnostics but
+  without additional_response_cost. Recover model_id from hidden fields then B253's router
+  metadata helper. Supply B068 model/provider/base model, call type, optional parameters,
+  built-in tools, residency and resolved region. Only speech/aspeech receives string input
+  as a billable prompt; other calls receive the empty string.
+  Implement the base-model helpers from utils.py/get_litellm_params.py: non-null top-level
+  base_model, then truthy metadata.model_info, then litellm_metadata.model_info. Custom-price
+  detection checks the exact inherited CustomPricingLiteLLMParams field set for non-null
+  values, even zero; off_peak_pricing counts only inside model_info. Use B204's typed price
+  fields and a pinned membership set, not a second monetary parser. Metadata is checked
+  before litellm_metadata for deployment info. B1664's spillover detection disables custom
+  pricing. Vertex location uses explicit optional parameters, then logging parameters, then
+  B031's configured default and model-region normalization; only vertex_ai-prefixed providers
+  qualify. Bedrock Mantle uses B625's resolver only for the exact bedrock_mantle provider.
+  Failed argument preparation records the short failure diagnostic and returns null. A
+  calculation failure records the full attempted pricing identity, invokes zero-cost
+  diagnostics with calculation_failed=true and returns null. Positive numeric additional
+  response cost is added to the calculated amount or zero; negative/zero/non-numeric values
+  do not alter it. Keep Decimal arithmetic, including the source's Boolean numeric inputs.
+  Diagnostic failure cannot fail a response or erase an earlier finding. A null cost without
+  calculation failure also leaves it alone; a stored cache hit clears it. Nonzero costs and
+  unbilled calls have no finding. Otherwise use B1683 usage/diagnosis and B1682's selected
+  price entry; absent price lookup differs from an empty entry. Store the newest finding,
+  warn only once per call log, and include model_group only when it is a string.
+  Implement core_helpers.set_response_cost_in_hidden_params in the same lower core layer:
+  null is a no-op; merge the provider cost header into existing mapping-valued additional
+  headers, without inventing a response_cost hidden field. Native tests drive a failing
+  calculator, preexisting diagnostics and warning capture. Pure cost_recording oracle
+  cases project fixed call-log/response/catalog inputs, with no callback or HTTP handler.
+  The methods and extracted helpers total about 380 executable source lines; allow 800
+  changed lines including compact membership data, tests and both oracle adapters.
+scope:
+  paths:
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/recording.rs
+    - crates/betterlite-core/src/cost/recording/**
+    - crates/betterlite-core/src/cost/dispatch.rs
+    - crates/betterlite-core/src/helpers.rs
+    - tools/oracle/src/helpers/{mod.rs,cost_recording.rs}
+    - tools/oracle/helpers/{dispatch.py,cost_recording.py}
+    - tools/oracle/cases/helpers/cost-recording/**
+    - tools/oracle/fuzz/corpus/helper_case/cost-recording-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1798-L2115
+    why: Cost calculation, provider normalization, failure information and diagnostic update order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L496-L534
+    why: Vertex and Mantle region selection used by billing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5555-L5597
+    why: Deployment metadata and custom-price presence probes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3711-L3854
+    why: Inherited custom-price field membership; monetary representations reuse B204.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7960-L7983
+    why: Base-model precedence across the two metadata buckets.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_litellm_params.py#L123-L132
+    why: Base-model extraction from model_info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L758-L772
+    why: Provider cost is stamped into additional headers rather than the cached cost field.
+dod:
+  - text: Cost recording preserves early returns, region/custom-price selection, positive additions and both failure boundaries.
+    proof: [recording-tests, oracle, recording-python, recording-corpus]
+  - text: Diagnostic replacement, warn-once behavior and provider header stamping survive malformed optional evidence.
+    proof: [recording-tests, oracle, recording-python]
+checks:
+  optional: []
+  commands:
+    - id: recording-tests
+      why: CostRecorder or its failure-safe mutation contract is absent.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::recording::/)'
+    - id: recording-python
+      why: The fixed-input cost recording adapter cannot run against the pin.
+      run: test -f tools/oracle/helpers/cost_recording.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: recording-corpus
+      why: The typed helper dispatcher has no cost recording seed.
+      run: grep -rlq 'cost_recording:' tools/oracle/fuzz/corpus/helper_case/cost-recording-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/cost-recording/hidden-cost-skips-additional-charge.yaml
+  - tools/oracle/cases/helpers/cost-recording/spillover-and-zero-custom-price.yaml
+  - tools/oracle/cases/helpers/cost-recording/metadata-base-model-and-region.yaml
+  - tools/oracle/cases/helpers/cost-recording/speech-input-and-native-generate-content.yaml
+  - tools/oracle/cases/helpers/cost-recording/failed-calculation-and-sticky-warning.yaml
+  - tools/oracle/cases/helpers/cost-recording/provider-header-merge.yaml
+deviations: []
+out_of_scope:
+  - B247, B250, B251 and B253 retain unrelated Logging methods and dispatch; B1682 owns cost breakdown, B1710 digest validation and B1715 access groups.
+  - B206 retains other core_helpers functions except budget reservation wrappers assigned to the spend settlement leaf; B176 retains the remaining get_litellm_params functions.
+  - B204 owns monetary types; B884 owns request bans; B1716 owns end-user attribution and earlier utils.py owners retain its other helpers.
+pitfalls:
+  - A hidden response_cost of zero is authoritative and still bypasses an otherwise positive additional_response_cost.
+  - A top-level off_peak_pricing entry alone does not enable custom pricing.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

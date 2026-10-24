@@ -1,0 +1,126 @@
+id: B1697
+title: Build daily spend batches and atomic auto-router turn upserts
+description: >-
+  Add betterlite-db::daily_spend_sql for all daily_spend_bulk_upsert.py functions and
+  betterlite-db::autorouter_turn_sql for AutoRouterTurnTransaction, its ordered bind fields,
+  _p, _session_upsert_sql, _as_sql_param, _upsert_params and write_autorouter_turn. Extract
+  these database primitives below B344, whose turn construction/retry/session-drain service
+  will consume them; baseline accounting cannot depend on that B070-dependent service.
+  DailySpendEntity is the closed user/team/org/tag/end_user/agent set, mapping to the six
+  pinned daily tables and their exact ID columns. Only tag rows carry request_id.
+  Own BaseDailySpendTransaction and its six entity-specific records from _types.py
+  L5628-L5685 alongside the SQL builder. Preserve optional autorouter savings/timing
+  fields for rolling-version queue compatibility; B1733 consumes these records. These
+  roughly 45 declaration lines bring owned source to about 370 within the existing cap.
+  Entity extraction distinguishes a missing key from null: user:null yields one None ID,
+  other null entities yield none; end_user empty string yields none, while other string
+  IDs may be empty. Tags accept a sequence or JSON text validated as strings and deduplicate
+  in first-seen order. Implement decode_daily_tags(bytes) in db with fuzz/replay. Reject
+  invalid JSON/tag types rather than dropping bad members. No arbitrary table/column name
+  from input is interpolated into SQL.
+  Normalize entity ID and date/api_key/model/custom_llm_provider/mcp_namespaced_tool_name/
+  endpoint to a NULL-free conflict tuple using Python stringification, None becoming empty.
+  Stable-sort and merge collisions, including null versus empty. Keep the first row's
+  non-counter metadata, sum ten counter columns and five spend columns; a singleton stays
+  unchanged until parameter conversion. Numeric counters accept int/float/bool and truncate
+  finite floats, numeric money accepts int/float/bool, other values become zero. Use checked
+  integers and Decimal at Rust boundaries and B700's schema-compatible numeric binding.
+  Build one parameterized INSERT with explicit bigint/double-precision casts, generated
+  UUIDs, server UTC updated_at and additive ON CONFLICT updates. Do not update model_group
+  on conflict. A tag's nonnull incoming request_id replaces the old one; null preserves it.
+  The builder itself does not make an empty batch valid SQL, so production callers must
+  skip empty batches. It does not chunk by bind count; B070's writer owns batch sizing.
+  The turn record preserves its twenty source fields and defaults, including cache_touched,
+  nullable TTL/tier/baseline and empty user_id. Derive bind order from that record once;
+  Boolean binds become zero/one and datetimes use the same ISO timestamp meaning. One SQL
+  statement updates key and user session tables; empty api_key suppresses only the key row,
+  empty user_id only the user row. Initial turns increment first_visit, not same_model.
+  Existing rows always add cost/token/coverage counters, including unordered turns. A turn
+  at last_turn_at is in order. Classify same/first/return using stored last_model and model
+  membership; return misses expire only when idle_seconds is strictly greater than TTL.
+  Cache-touch time uses max when touched and retains its old value when untouched; TTL
+  coalescing favors the new value only for in-order turns. Never let an older turn replace
+  last_model. Tier counts increment only when router_type agrees; baseline counts increment
+  whenever nonnull, estimated-baseline counts only for savings_estimated_turns exactly one.
+  first_turn_at takes min and last_turn_at max. Keep both table changes in the same statement
+  and expose write_autorouter_turn on an existing transaction connection.
+  Pure spend_upsert helpers compare normalized daily groups/bind values, entity extraction
+  and turn binds; normalize only SQL whitespace and mask generated UUID bind positions with
+  explicit reasons. Native Postgres tests cover concurrent collisions, out-of-order turns,
+  equal timestamps, untouched cache, TTL boundary, empty identities and tag request retention.
+  The selected daily/session source, including daily records, totals about 370 nonblank lines; budget 320 statements/records,
+  260 tests and 220 oracle/fuzz integration within 800.
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/daily_spend_sql.rs
+    - crates/betterlite-db/src/daily_spend_sql/**
+    - crates/betterlite-db/src/autorouter_turn_sql.rs
+    - crates/betterlite-db/src/autorouter_turn_sql/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/daily_tags.rs
+    - crates/betterlite-db/fuzz/corpus/daily_tags/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/spend_upsert.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/spend_upsert.py
+    - tools/oracle/cases/helpers/spend-upsert/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-upsert-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5628-L5685
+    why: Shared daily queue records and optional rolling-upgrade fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/daily_spend_bulk_upsert.py#L19-L220
+    why: Entity IDs, conflict normalization, additive columns and the batch SQL/bind builder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L117-L137
+    why: Shared turn transaction fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L286-L422
+    why: Ordered SQL binds and atomic key/user session updates using stored row state.
+dod:
+  - text: Daily entity extraction and conflict merging retain null/empty, numeric-conversion and tag-deduplication behavior.
+    proof: [daily-upsert-tests, oracle, spend-upsert-python, spend-upsert-corpus, daily-tags-corpus]
+  - text: Daily batch SQL atomically adds the exact counters, preserves existing model_group and retains a tag request ID when the new row lacks one.
+    proof: [daily-upsert-tests, oracle, spend-upsert-python]
+  - text: Shared turn writes update both session scopes atomically and classify concurrent/out-of-order turns using the pinned row-local rules.
+    proof: [turn-upsert-tests, oracle, spend-upsert-python]
+checks:
+  optional: []
+  commands:
+    - id: daily-upsert-tests
+      why: Daily collision merging or SQL updates duplicate, omit or overwrite spend.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_spend_sql::/) - test(replays_the_daily_tags_corpus)'
+    - id: turn-upsert-tests
+      why: Session writes misclassify ties, unordered turns or cache TTL state under concurrent updates.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^autorouter_turn_sql::/)'
+    - id: daily-tags-corpus
+      why: Serialized tag lists have no new db decoder fuzz seeds or replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/daily_tags)" && test -f crates/betterlite-db/fuzz/fuzz_targets/daily_tags.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_daily_tags_corpus)'
+    - id: spend-upsert-python
+      why: SQL/value fixtures cannot execute the pinned pure builders.
+      run: test -f tools/oracle/helpers/spend_upsert.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: spend-upsert-corpus
+      why: Daily and turn upsert records have no shared helper-case seed.
+      run: grep -rlq 'spend_upsert:' tools/oracle/fuzz/corpus/helper_case/spend-upsert-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-upsert/user-null-and-end-user-empty.yaml
+  - tools/oracle/cases/helpers/spend-upsert/tags-json-deduplication-and-invalid-member.yaml
+  - tools/oracle/cases/helpers/spend-upsert/null-empty-collision-retains-first-metadata.yaml
+  - tools/oracle/cases/helpers/spend-upsert/numeric-booleans-and-string-counters.yaml
+  - tools/oracle/cases/helpers/spend-upsert/tag-request-id-and-daily-column-order.yaml
+  - tools/oracle/cases/helpers/spend-upsert/turn-bind-order-and-datetime.yaml
+deviations:
+  - what: Unrepresentable daily counters or nonfinite numeric amounts fail with a typed persistence-input error instead of overflowing a cast or sending NaN/Infinity to Postgres.
+    why: Aggregated spend must meet checked-counter and finite-money rules while retaining the pinned schema and ordinary numeric coercions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/daily_spend_bulk_upsert.py#L115-L145
+out_of_scope:
+  - B344 retains turn_cache_facts, _turn_time_utc, _write_ttl_seconds, bounded_session_id, build_autorouter_turn_transaction, retry/partition/drain/flush functions and benchmark read constants in autorouter_session_rollup.py; its extracted record and SQL writer now live here.
+  - B070's remaining parts decide flush batch sizes, queue lifecycle and retries; this task only constructs statements and writes an explicit turn on a supplied transaction.
+pitfalls:
+  - NULL and empty-string conflict members must merge before one INSERT or Postgres can reject a row touched twice by that statement.
+  - A turn at the stored last timestamp is in order, while an older turn still adds spend and tokens.
+  - Daily upserts do not update model_group on conflict, despite replacing that field in PTU sentinel upserts.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

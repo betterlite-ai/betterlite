@@ -1,0 +1,110 @@
+id: B063
+title: Assemble OAuth, CLI and SAML login services
+description: >-
+  Assemble the completed SSO routers in betterlite-server::sso and expose them from the real
+  proxy application. Supply one request-scoped view of current B002 settings, overlaid with
+  B1646's RuntimeEnvironment snapshot for native SSO environment lookups, plus the existing
+  DB, cache and outbound services; a management settings refresh must be visible to the next
+  login without mixing two configurations inside one exchange. Keep each login's bearer
+  material in its own provider instance and keep the CLI, PKCE and SAML cache namespaces
+  separate. Compose the route owners rather than registering their paths again: B1628 owns
+  GET /sso/key/generate; B1615 GET /sso/callback; B1613 POST /sso/cli/start and
+  POST /sso/cli/complete/{login_id}; B1614 GET /sso/cli/poll/{key_id}; B1625 GET
+  /sso/saml/login and /sso/saml/metadata; B1626 POST /sso/saml/callback; B1627 GET
+  /sso/get/ui_settings, /sso/readiness, /sso/debug/login and /sso/debug/callback.
+  Preserve authenticated versus public routing from those owners; no additional aliases are
+  present at the pin. B1608's identity types cross service boundaries without reserializing
+  secret-bearing values. Constructor wiring must support the open-source custom post-SSO
+  callable through B165 while leaving the enterprise custom-UI handler unavailable.
+  The old _raise_if_sso_exceeds_free_user_limit is deliberately absent under the no-paid-tier
+  decision. The three custom-SSO example functions listed below have no reachable caller at
+  the pin and add no product handlers. Test router composition, isolation of simultaneous
+  provider logins, config refresh between logins, and a CLI flow followed by a browser login
+  using B1630/B1631's real-proxy fixtures. loads_sso_service_snapshot verifies loaded provider
+  settings reach the assembled graph; add its config_yaml seed without inventing new keys.
+  Test a published SSO runtime overlay between requests and pin each in-flight exchange to
+  the snapshot it began with; custom Python os.environ access retains B1646's stated limitation.
+  This final part owns module/router composition and the omitted 19-line cap helper; all
+  executable source functions are assigned below. Budget 180 composition/context, 220
+  integration tests and 80 config/exports lines within 550; no new outside-byte parser is needed.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso.rs
+    - crates/betterlite-server/src/sso/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso.rs
+    - crates/betterlite-config/src/sso/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-services-*
+    - tools/oracle/cases/sso/services/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L977-L1127
+    why: Original entrypoint composition and the removed five-user gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2020-L2221
+    why: OAuth versus SAML callback service boundaries and public routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/custom_sso.py#L23-L46
+    why: Unreferenced example callable, distinct from invoking operator-configured custom SSO.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/custom_hooks/custom_ui_sso_hook.py#L11-L38
+    why: Example custom-UI handler whose invocation requires the excluded enterprise dispatcher.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_sso_handler.py#L9-L43
+    why: Header-based custom-UI implementation with no reachable open-source caller.
+dod:
+  - text: All twelve SSO routes are composed exactly once with their intended public/authenticated boundaries.
+    proof: [sso-composition-tests, oracle]
+  - text: Provider credentials and cache namespaces stay isolated, and newly loaded settings apply on the next login.
+    proof: [sso-composition-tests, sso-snapshot-config]
+  - text: No free-user query or enterprise-only custom-UI execution enters the assembled service graph.
+    proof: [sso-composition-tests, sso-snapshot-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sso-composition-tests
+      why: SSO composition duplicates a route, omits a service or shares login state incorrectly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso::/)'
+    - id: sso-snapshot-config
+      why: The actual config loader's SSO snapshot does not reach the assembled services.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso::tests::loads_sso_service_snapshot/)'
+    - id: sso-snapshot-corpus
+      why: The composed provider configuration has no newly added loader replay example.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-services-*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/services/route-auth-boundaries.yaml
+  - tools/oracle/cases/sso/services/cli-then-browser-login.yaml
+  - tools/oracle/cases/sso/services/provider-precedence-with-saml-configured.yaml
+  - tools/oracle/cases/sso/services/password-fallback-keeps-return-target.yaml
+deviations:
+  - what: SSO composition never queries billable-user count to decide whether login is permitted.
+    why: _raise_if_sso_exceeds_free_user_limit enforces a paid-tier ceiling that the README explicitly removes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L977-L995
+out_of_scope:
+  - 'ui_sso.py B1608: _as_object and shared token-field classification.'
+  - 'ui_sso.py B1609: normalize_email, determine_role_from_groups, process_sso_jwt_access_token, _decode_sso_token_claims, _merge_sso_token_claims, generic_response_convertor.'
+  - 'ui_sso.py B1610: _SsoConfigRow.sso_settings, _sso_config_db, _setup_generic_sso_env_vars, _setup_team_mappings, _setup_role_mappings, _parse_generic_sso_headers.'
+  - 'ui_sso.py B1611: _UserMetadataRow.metadata, _user_meta_db, _parse_cli_sso_claim_map, _is_safe_cli_sso_metadata_dest_key, _is_safe_cli_sso_scalar_claim_value, _sso_result_to_dict, _get_nested_claim_value, _extract_sso_claim_value, _set_nested_metadata_value, _flatten_cli_sso_metadata_for_poll, build_cli_sso_attribution_metadata, _merge_cli_sso_attribution_metadata, _persist_cli_sso_user_metadata, _cli_poll_attribution_metadata_from_session.'
+  - 'ui_sso.py B1612: _render_cli_sso_verification_page.'
+  - 'ui_sso.py B1613: _hash_cli_sso_secret, _normalize_cli_sso_user_code, _generate_cli_sso_user_code, _get_cli_sso_flow_cache_key, _is_valid_cli_sso_login_id, _is_valid_cli_sso_user_code, _cli_sso_verification_uri_complete_enabled, _cli_sso_start_response_body, _get_cli_sso_start_rate_limit_cache_key, _check_cli_sso_start_rate_limit, _read_cli_sso_flow, _get_cli_sso_flow_or_raise, _set_cli_sso_flow, _verify_cli_sso_poll_secret, cli_sso_start, cli_sso_complete, SSOAuthenticationHandler._get_cli_state.'
+  - 'ui_sso.py B1614: _TeamDetailRow.model_dump, _team_detail_db, _TeamRowGrants, CliSsoTeamDetail, _cli_sso_team_detail, fetch_cli_sso_team_details, _cli_sso_session_teams, selected_cli_sso_team_detail, cli_poll_key.'
+  - 'ui_sso.py B1615: auth_callback, _build_cli_sso_user_defined_values, _complete_cli_sso_callback_session, cli_sso_callback.'
+  - 'ui_sso.py B1616: create_team_member_add_task, add_missing_team_member, get_existing_user_info_from_db, get_user_info_from_db, _should_use_role_from_sso_response, _SsoUserNames, _get_sso_user_alias, _build_sso_user_update_data, _sync_user_role_from_jwt_role_map, apply_user_info_values_to_sso_user_defined_values, check_and_update_if_proxy_admin_id, insert_sso_user, SSOAuthenticationHandler.upsert_sso_user, SSOAuthenticationHandler.add_user_to_teams_from_sso_response.'
+  - 'ui_sso.py B1617: warn_if_id_jag_assertion_uncaptured, warn_if_id_jag_capture_gap and RetentionCheck.'
+  - 'ui_sso.py B1618: _is_same_origin_return_path, _sso_return_to_redirect, set_session_token_cookie, _persist_return_to_cookie, SSOAuthenticationHandler._validate_return_to including _origin, SSOAuthenticationHandler.get_redirect_url_for_sso.'
+  - 'ui_sso.py B1619: SSOAuthenticationHandler._get_generic_sso_redirect_params, prepare_token_exchange_parameters, _handle_missing_pkce_verifier, _delete_pkce_verifier, generate_pkce_params.'
+  - 'ui_sso.py B1620: SSOAuthenticationHandler._validate_token_response, _pkce_token_exchange, _get_pkce_userinfo.'
+  - 'ui_sso.py B1621: _ServicePrincipalAssignment.get, _ServicePrincipalPage.get, SSOAuthenticationHandler.create_litellm_team_from_sso_group, _cast_and_deepcopy_litellm_default_team_params; MicrosoftSSOHandler.get_graph_api_base_url, get_graph_api_user_groups_endpoint, get_user_groups_from_graph_api, fetch_and_parse_groups, _get_group_ids_from_graph_api_response, _cast_graph_api_response_dict, get_group_ids_from_service_principal, create_litellm_teams_from_service_principal_team_ids.'
+  - 'ui_sso.py B1622: MicrosoftSSOHandler.get_microsoft_callback_response, openid_from_response, get_user_role_from_app_roles, get_app_roles_from_id_token.'
+  - 'ui_sso.py B1623: _handle_generic_sso_error, get_generic_sso_response including response_convertor.'
+  - 'ui_sso.py B1624: _CustomSsoCall.__call__, get_disabled_non_admin_personal_key_creation, SSOAuthenticationHandler.verify_user_in_restricted_sso_group, _get_user_email_and_id_from_result, get_redirect_response_from_openid.'
+  - 'ui_sso.py B1625: saml_login, saml_metadata; B1626: saml_callback.'
+  - 'ui_sso.py B1627: get_ui_settings, sso_readiness, _raise_if_sso_debug_disabled, debug_sso_login, debug_sso_callback.'
+  - 'ui_sso.py B1628: google_login, SSOAuthenticationHandler.get_sso_login_redirect, get_generic_sso_redirect_response, should_use_sso_handler; B1629: GoogleSSOHandler.get_google_callback_response.'
+  - 'custom_sso.py custom_sso_handler: no caller at the pin; the configured callable port is supplied by B165 instead of shipping this example.'
+  - 'custom_hooks/custom_ui_sso_hook.py and integrations/custom_sso_handler.py CustomSSOLoginHandler.handle_custom_ui_sso_sign_in: no caller at the pin without the excluded enterprise dispatcher.'
+pitfalls:
+  - The log text mentioning /google-login/key/generate does not declare an alias; only /sso/key/generate is registered.
+  - A user settings refresh must not mutate the OAuth client handling an already-started exchange.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,86 @@
+id: B1635
+title: Derive SCIM user metadata and configured administrator roles
+description: >-
+  Add scim_role_settings to betterlite-server and its loader bindings to betterlite-config.
+  Own ScimUserData, _extract_scim_user_data, _build_scim_metadata, the upsert/admin-group
+  setting readers, _default_scim_user_role, _resolve_scim_user_role,
+  _scim_groups_from_team_ids and _recompute_scim_member_roles. Read current proxy config
+  litellm_settings.scim_upsert_user=true and scim_admin_group=None; a failed config read
+  warns and restores those respective defaults. Preserve truthiness coercion rather than
+  treating the string false as Boolean false. Empty admin-group values disable mapping.
+  litellm.default_internal_user_params defaults None; a non-null user_role there supplies
+  the fallback, otherwise internal_user_viewer. A configured group matches either exact
+  value or display and assigns proxy_admin; nonmembers receive that fallback. Without
+  a configured group, return no role change. Team alias lookups retain missing ids with
+  absent display. Recompute requested users sequentially from their resulting teams,
+  skip missing users, and persist the resolved role without adding a cache operation
+  that the source does not perform.
+  Extract the first email even when another entry says primary; alias comes only from
+  name.givenName, externalId becomes sso_user_id, and groups supply ordered team ids.
+  Metadata always contains scim_metadata with both nullable names. Include scim_active
+  only when supplied to the builder, directory extension blocks only when present,
+  and preserve empty entitlement/role lists. Expose these pure decisions through
+  scim_user_values; exercise repository-dependent role recalculation with real PostgreSQL.
+  loads_scim_role_settings must load absent, false, string false, empty group and a custom
+  default role through the config layer. Add its accepted settings to config_yaml seeds.
+  The 161 function lines plus the extracted-data record support 230 implementation,
+  180 tests, 100 adapters and 70 config/corpus lines inside a 650-line budget.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_role_settings.rs
+    - crates/betterlite-server/src/scim_role_settings/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/scim_role_settings.rs
+    - crates/betterlite-config/src/scim_role_settings/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/scim-role-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/scim_user_values.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/scim_user_values.py
+    - tools/oracle/cases/helpers/scim-user-values/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-user-values-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L235-L249
+    why: Extracted user-data fields shared by POST and PUT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L305-L484
+    why: Metadata projection, live config fallback and global-role recomputation.
+dod:
+  - text: Directory field selection and metadata serialization match the pure pinned functions.
+    proof: [scim-role-tests, oracle, scim-values-python]
+  - text: Loaded upsert/admin-group settings control role promotion, demotion and the no-change case.
+    proof: [scim-role-tests, scim-role-config, scim-role-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: scim-role-tests
+      why: SCIM metadata extraction or administrator-group reconciliation is incorrect.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_role_settings::/)'
+    - id: scim-role-config
+      why: The config loader has not implemented SCIM defaults and coercion behavior.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^scim_role_settings::tests::loads_scim_role_settings/)'
+    - id: scim-values-python
+      why: The SCIM metadata/role oracle is missing its checked Python implementation.
+      run: test -f tools/oracle/helpers/scim_user_values.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: scim-role-corpora
+      why: Loaded SCIM settings and role helper operations lack replay coverage.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/scim-role-*')" && grep -rlq 'scim_user_values:' tools/oracle/fuzz/corpus/helper_case/scim-user-values-* && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-user-values/first-email-beats-primary.yaml
+  - tools/oracle/cases/helpers/scim-user-values/group-display-can-grant-admin.yaml
+  - tools/oracle/cases/helpers/scim-user-values/no-admin-group-leaves-role-unset.yaml
+  - tools/oracle/cases/helpers/scim-user-values/empty-directory-lists-stay-present.yaml
+deviations: []
+out_of_scope:
+  - "scim_v2.py support services assigned elsewhere: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "The remaining scim_v2.py functions belong to B1638 L164-L232/L1661-L1879, B1639 L1965-L2197/L2325-L2397, B1640 L2511-L2708, B1641 L1556-L1658/L2405-L2508, B1642 L1171-L1553, B1643 L1882-L1962, or B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - Recomputing an unchanged member is necessary after a group rename because scim_admin_group can match the display name.
+  - The default role helper treats a missing user_role differently from placeholder creation's direct dictionary lookup.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

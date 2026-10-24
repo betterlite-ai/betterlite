@@ -1,0 +1,84 @@
+id: B1657
+title: Manage signup defaults and validate their existing teams and organization
+description: >-
+  Implement signup_defaults_routes for GET /get/internal_user_settings and /get/default_team_settings
+  and PATCH /update/internal_user_settings and /update/default_team_settings. Use B052's route
+  authorization without inventing another local admin check. GET loads B124's current config
+  and B1656's schema response for default_internal_user_params or default_team_params. Use
+  B124's DefaultInternalUserParams and NewUserRequestTeam records and B1608's DefaultTeamSSOParams.
+  User-role default is internal_user_viewer, other user defaults are null; team models default []
+  and other team parameters are null. Reuse B1616/B1621's configuration bindings, which default
+  the whole corresponding litellm setting to None rather than an eagerly materialized object.
+  Decode both PATCH forms with decode_signup_defaults(bytes, User|Team), retaining the union
+  of all-string teams or all-object teams and the dependency-owned exact-money validation.
+  User PATCH validates a supplied teams list before calling the shared save service. Extract
+  team IDs without trimming, reject duplicates with 400 in first-occurrence order, then query
+  B724 once and reject missing IDs with the source's ordered message. An empty list skips DB
+  validation. If every team is an object, invoke B806's update_team service sequentially with
+  team_member_budget=max_budget_in_team and the actual caller; log each failure and continue.
+  These member-budget changes happen before B1656 checks storage enablement or saves defaults,
+  so a later 500 does not roll them back. String lists never update member budgets.
+  Team PATCH validates any non-null organization_id through B723, including an empty string;
+  missing DB is 500 and unknown organization is 400 before changing defaults. Then delegate
+  replacement, runtime publication, save and audit to B1656. Preserve each route's exact
+  success message and returned settings with nulls omitted by that service.
+  Native database tests inject a failed middle team update and a subsequent failed default save,
+  inspecting both the retained team writes and runtime defaults. HTTP cases verify four route
+  schemas, duplicate/missing references, user-role defaults, object-team budget effects and
+  unauthenticated/forbidden requests with complete error envelopes. Fuzz signup_defaults and
+  replay replays_the_signup_defaults_corpus. Ownership is 147 function lines, allowing 210
+  handlers/validation, 200 tests and 200 HTTP/fuzz fixtures within 675 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/signup_defaults_routes.rs
+    - crates/betterlite-server/src/signup_defaults_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/signup_defaults.rs
+    - crates/betterlite-server/fuzz/corpus/signup_defaults/**
+    - tools/oracle/cases/management/signup-defaults/**
+    - tools/oracle/fuzz/corpus/http_case/signup-defaults-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L852-L998
+    why: GET decorators, default-reference validation and best-effort sequential member-budget updates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1075-L1127
+    why: PATCH decorators and validation/member-update ordering before the shared save.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5595-L5632
+    why: User default role and the string-list/object-list team union.
+dod:
+  - text: Default settings expose their pinned schemas and validate team and organization references before replacing stored defaults.
+    proof: [signup-defaults-tests, oracle, signup-defaults-corpus]
+  - text: Object-team member budgets update sequentially and can survive a later defaults-save failure.
+    proof: [signup-defaults-tests, oracle]
+  - text: Request unions, money values and authentication follow the existing record and management contracts.
+    proof: [signup-defaults-tests, oracle, signup-defaults-corpus]
+checks:
+  optional: []
+  commands:
+    - id: signup-defaults-tests
+      why: Invalid default references are persisted or earlier member-budget effects are incorrectly rolled back.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^signup_defaults_routes::/) - test(replays_the_signup_defaults_corpus)'
+    - id: signup-defaults-corpus
+      why: Signup defaults lack parser regressions for heterogeneous teams and invalid monetary values.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/signup_defaults)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_signup_defaults_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/signup-defaults/get-user-and-team-default-schemas.yaml
+  - tools/oracle/cases/management/signup-defaults/duplicate-team-ids-before-database-read.yaml
+  - tools/oracle/cases/management/signup-defaults/missing-team-list-preserves-input-order.yaml
+  - tools/oracle/cases/management/signup-defaults/object-team-budgets-versus-string-memberships.yaml
+  - tools/oracle/cases/management/signup-defaults/team-updates-before-disabled-storage-error.yaml
+  - tools/oracle/cases/management/signup-defaults/unknown-organization-and-empty-list.yaml
+  - tools/oracle/cases/management/signup-defaults/partial-patch-replaces-defaults.yaml
+  - tools/oracle/cases/management/signup-defaults/invalid-union-role-and-auth.yaml
+deviations: []
+out_of_scope:
+  - "In proxy_setting_endpoints.py, B1656 owns row adapters L88-L127, schema helpers L723-L783 and L800-L849, and _update_litellm_setting L1001-L1072; B1658 owns L591-L720; B1659 owns L379-L399, L453-L470, L786-L797 and L1671-L1742; B1660 owns L1750-L1961; B1661 owns L1136-L1322; B1662 owns L141-L167, L1330-L1463 and L1969-L2024; B1663 owns L548-L582 and L1472-L1664."
+  - The unused enterprise registration function register_extra_ui_setting L439-L450 has no caller at the pin and remains unimplemented.
+pitfalls:
+  - Object-team budget updates run before the shared store_model_in_db guard, so disabled storage can still leave team budgets changed.
+  - organization_id="" is supplied and must be checked, while teams=[] deliberately avoids the team existence query.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

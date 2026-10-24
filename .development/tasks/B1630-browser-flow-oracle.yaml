@@ -1,0 +1,80 @@
+id: B1630
+title: Drive stateful login flows through both real proxies
+description: >-
+  Extend B001/B860's HTTP oracle with an optional steps list for browser/CLI login tests,
+  preserving the existing single-request schema. A case selects either request or steps,
+  never both. Each step has the existing request/compare fields plus named captures from a
+  response JSON pointer, named response header, named cookie, Location query parameter or
+  named HTML form control. Capture values are private to each proxy execution; subsequent
+  requests interpolate only declared {{capture:name}} references, with explicit raw, query
+  or form encoding. Keep one cookie jar per proxy, do not follow redirects automatically,
+  and use the normal upstream transcript comparison. Resolve {{upstream}} in case env values
+  as well as config so GENERIC_TOKEN_ENDPOINT and Microsoft endpoint overrides reach the
+  local mock without adding product-only test settings. No scripts, arbitrary expressions,
+  network destinations from captures or helper calls to FastAPI handlers are permitted.
+  Add an optional HTML-form response projection selecting form method/action and named controls;
+  normalize only declared dynamic capture values and branded text with a reason at each
+  excluded pointer. Compare status, error envelope and requested headers at every step.
+  Use a maintained HTML parser such as scraper to read form controls, retaining duplicate
+  control names; do not extract tokens with substring regexes. Missing or ambiguous captures
+  fail the case. Bound execution to 64 steps, 128 captures, 64 KiB per capture and the existing
+  per-case deadline; secret captures never appear in diagnostics. Reuse B900 fixture-byte
+  requests for URL-encoded and XML-bearing forms. Put the runner in http::browser_flow and
+  use B860's actual PostgreSQL lifecycle throughout. Extend decode_http_case for the typed
+  transcript; add decode_html_form_capture for response bytes and a browser_form fuzz target.
+  Regression tests must detect a changed status at step two, cookies crossing between proxies,
+  a failed capture, unsafe URL interpolation and cleanup after a late failure. This is a
+  prerequisite test adapter split from B063: it owns no LiteLLM production functions, whose
+  login/cache code supplies the flow requirements. Estimate 300 driver/schema, 100 HTML
+  projection, 230 tests and 80 fuzz/wiring lines, capped at 800.
+scope:
+  paths:
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/case/**
+    - tools/oracle/src/http.rs
+    - tools/oracle/src/http/browser_flow.rs
+    - tools/oracle/src/http/browser_flow/**
+    - tools/oracle/src/runner.rs
+    - tools/oracle/src/runner/**
+    - tools/oracle/src/process.rs
+    - tools/oracle/src/process/**
+    - tools/oracle/fuzz/Cargo.toml
+    - tools/oracle/fuzz/fuzz_targets/browser_form.rs
+    - tools/oracle/fuzz/corpus/browser_form/**
+    - tools/oracle/fuzz/corpus/http_case/browser-flow-*
+    - tools/oracle/cases/sso/browser-flow-fixture/**
+    - tools/oracle/fixtures/multipart-oracle/browser-flow/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L703-L785
+    why: Start and browser-confirmation requests require values returned by earlier steps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2466-L2595
+    why: Polling consumes the independent secret and completed session from the same flow.
+  - url: https://docs.rs/scraper/latest/scraper/
+    why: Existing HTML parsing and selector support for form capture.
+dod:
+  - text: A transcript boots both proxies, keeps their captured values isolated and detects differences on later steps.
+    proof: [browser-flow-tests]
+  - text: Form projection, capture bounds and failure cleanup reject malformed or unsafe transcripts without leaking tokens.
+    proof: [browser-flow-tests, browser-flow-corpora]
+checks:
+  optional: []
+  commands:
+    - id: browser-flow-tests
+      why: Multi-request comparison, per-proxy isolation or cleanup is absent from the actual HTTP runner.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::browser_flow::/) - test(replays_the_browser_form_corpus)'
+    - id: browser-flow-corpora
+      why: The extended HttpCase and HTML capture decoders lack newly added replay inputs.
+      run: test -f tools/oracle/fuzz/fuzz_targets/browser_form.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/browser_form)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/browser-flow-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_browser_form_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Product CLI routes are B1613/B1614, browser callbacks are B063/B1615 and SAML routes are B1625/B1626; their task cases use this driver after their services exist.
+pitfalls:
+  - Feeding a secret captured from LiteLLM into the betterlite run would test shared credentials instead of two independent implementations.
+  - A Location header is observed data, not permission for the oracle to follow an arbitrary remote redirect.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

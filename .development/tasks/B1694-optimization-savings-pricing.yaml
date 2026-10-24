@@ -1,0 +1,124 @@
+id: B1694
+title: Price optimization savings against recorded usage and deployment rates
+description: >-
+  Implement the remaining savings.py pricing functions in betterlite-models::savings_pricing,
+  using B1693 evidence and B1672/B1675 token policies. Define an injected SavingsPricingContext
+  for canonical model/provider resolution, effective deployment prices and B1678 public
+  lookup. The models crate must not import Router or proxy state. Add the production adapter
+  in betterlite-server::savings using B174 and B845 get_deployment_model_info; outside a
+  proxy the context has no deployment resolver and uses public prices. This replaces only
+  _proxy_llm_router's global access, not its public-price fallback. B068 installs the adapter
+  for logging and later spend writers. Resolve or lookup failures emit debug and become
+  unavailable estimates; no dashboard metric failure may abort a spend write.
+  _cost_of_usage calls Anthropic pricing for canonical provider anthropic, forwarding tier
+  but not residency/location; other providers use generic pricing with all three B1693
+  basis fields. Catch pricing exceptions and return None. Request pricing prefers truthy
+  effective deployment information, then public information; an empty deployment mapping
+  therefore falls back. By contrast explicit baseline_info and selected_info use nonnull
+  semantics in comparisons, so an empty supplied baseline table is retained.
+  compute_autorouter_savings canonicalizes both identities, requires baseline_usage whenever
+  the selected usage reports either cache bucket, and never derives cache warmth from the
+  conversation_continuing argument. Reprice baseline usage after B1693's cache normalization.
+  Selected cost is recorded input_cost plus output_cost whenever available, otherwise priced
+  selected usage. For observed_initial, return zero only when usage, canonical identity,
+  nonempty deployment ID, complete effective prices and recorded token cost all agree; apply
+  isclose with rel_tol=1e-9 and abs_tol=1e-12. Any failed equivalence is None. Other provenance
+  returns the signed finite baseline-minus-selected difference. Do not clamp a loss.
+  baseline_cost_snapshot records provider=anthropic, actual spend, basis, recorded token cost
+  and classifier_cost or zero through B1693's strict snapshot. price_baseline_comparison
+  returns None without usage/provenance. For observed_identical, actual=spend+classifier and
+  baseline=spend. For modeled, require prices and recorded actual token cost; price baseline
+  tokens and replace only that token portion in actual_spend. Reject negative/nonfinite token
+  or resulting baseline totals. Tool fees, discounts and margins remain on both sides.
+  Request autorouter savings requires valid usage, model and a nonempty string decision
+  savings_baseline_model; read an optional string savings_baseline_deployment_id, resolve
+  both deployment prices, compute gross and subtract a finite recorded classifier cost.
+  Logging payloads with truthy internal_call_origin return None before lookup. Prompt-cache
+  savings uses B1673 with recorded basis and B1693 billed_at coercion; missing prices/usage
+  or nonfinite result is unavailable. Inject the request clock for an absent billed_at.
+  compute_savings_spend prices max(compression_saved_tokens,0) at the flat input rate only,
+  converts unavailable caching to zero and copies that signed caching result into the
+  gateway component only when attributed. A nonnull recorded_autorouter_savings_estimate
+  makes its versioned recorded result authoritative even if unknown/invalid; never recompute
+  in that case. Without an estimate, a valid recorded numeric savings value wins before
+  usage validation, otherwise compute request savings. Return zero only for the final
+  unavailable autorouter component, retaining the estimate metadata separately in callers.
+  Pure savings_pricing cases call source functions with explicit prices, parsed records and
+  deterministic contexts; no adapter imports proxy_server or FastAPI. Compare cache losses,
+  classifier subtraction, initial equivalence and recorded-value precedence. Native adapter
+  tests verify B845 deployment lookup and absent-proxy fallback. The 375 nonblank source
+  lines budget 320 pricing/context, 260 tests and 220 adapters within 800.
+scope:
+  paths:
+    - crates/betterlite-models/Cargo.toml
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/savings_pricing.rs
+    - crates/betterlite-models/src/savings_pricing/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/savings.rs
+    - crates/betterlite-server/src/savings/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/savings_pricing.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/savings_pricing.py
+    - tools/oracle/cases/helpers/savings-pricing/**
+    - tools/oracle/fuzz/corpus/helper_case/savings-pricing-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L53-L104
+    why: Canonical identities and failure-tolerant deployment/public price lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L137-L184
+    why: Anthropic snapshot construction and replacement of only baseline token cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L232-L264
+    why: Anthropic versus generic pricing arguments and unavailable-price fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L327-L378
+    why: Required baseline cache evidence and strict observed-initial equivalence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L506-L732
+    why: Classifier netting, internal-call exclusion, caching and authoritative recorded estimates.
+dod:
+  - text: Baseline comparisons require the recorded evidence appropriate to their provenance and retain signed savings after classifier cost.
+    proof: [savings-pricing-tests, oracle, savings-pricing-python, savings-pricing-corpus]
+  - text: Compression, cache and autorouter components use their distinct rates and recorded-value precedence without recomputing a versioned unknown estimate.
+    proof: [savings-pricing-tests, oracle, savings-pricing-python]
+  - text: The server adapter supplies canonical and effective deployment prices while models/logging remain independent of proxy globals.
+    proof: [savings-context-tests, savings-pricing-tests]
+checks:
+  optional: []
+  commands:
+    - id: savings-pricing-tests
+      why: Savings arithmetic invents cache warmth, clamps losses or disregards recorded billing evidence.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^savings_pricing::/)'
+    - id: savings-context-tests
+      why: Runtime savings uses public list prices instead of effective deployment rates or loses the no-router fallback.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^savings::/)'
+    - id: savings-pricing-python
+      why: Comparison fixtures lack checked source execution with supplied prices and evidence.
+      run: test -f tools/oracle/helpers/savings_pricing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: savings-pricing-corpus
+      why: Savings-pricing inputs are missing from shared helper parser replay.
+      run: grep -rlq 'savings_pricing:' tools/oracle/fuzz/corpus/helper_case/savings-pricing-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/savings-pricing/cache-usage-without-baseline-evidence-is-unknown.yaml
+  - tools/oracle/cases/helpers/savings-pricing/observed-initial-requires-identical-deployment-and-rates.yaml
+  - tools/oracle/cases/helpers/savings-pricing/recorded-selected-token-cost-wins.yaml
+  - tools/oracle/cases/helpers/savings-pricing/modeled-baseline-keeps-nontoken-costs.yaml
+  - tools/oracle/cases/helpers/savings-pricing/identical-baseline-still-pays-classifier.yaml
+  - tools/oracle/cases/helpers/savings-pricing/cache-write-loss-and-gateway-subset.yaml
+  - tools/oracle/cases/helpers/savings-pricing/versioned-unknown-prevents-recomputation.yaml
+  - tools/oracle/cases/helpers/savings-pricing/recorded-savings-before-malformed-usage.yaml
+deviations:
+  - what: Optimization amounts are calculated with Decimal and checked finite values; the source's initial-equivalence tolerance is retained in Decimal rather than binary float.
+    why: Savings and daily spend must share a monetary representation without manufacturing rounding differences between the logged and persisted totals.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/savings.py#L362-L378
+out_of_scope:
+  - B1693 owns all savings.py records except _ModelIdentity and the extraction/cache-normalization functions; it also owns compression_savings.py in full.
+  - Baseline history construction and durable correction publication belong to the baseline-accounting splits of B068; this task prices supplied observations only.
+pitfalls:
+  - A supplied empty baseline_info is authoritative, while an empty deployment lookup falls through to public pricing in request savings.
+  - observed_initial and observed_identical are different provenance literals consumed by different comparison APIs.
+  - A nonnull unknown estimate suppresses recomputation even when a usable routing decision and usage record are present.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

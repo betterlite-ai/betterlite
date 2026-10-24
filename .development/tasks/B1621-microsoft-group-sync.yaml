@@ -1,0 +1,98 @@
+id: B1621
+title: Read Microsoft Graph groups and create SSO teams
+description: >-
+  Add microsoft_group_sync to betterlite-server. Own _ServicePrincipalAssignment,
+  _ServicePrincipalPage, MicrosoftSSOHandler's graph constants, get_graph_api_base_url,
+  get_graph_api_user_groups_endpoint, get_user_groups_from_graph_api, fetch_and_parse_groups,
+  _get_group_ids_from_graph_api_response, _cast_graph_api_response_dict,
+  get_group_ids_from_service_principal, create_litellm_teams_from_service_principal_team_ids,
+  and SSOAuthenticationHandler.create_litellm_team_from_sso_group/
+  _cast_and_deepcopy_litellm_default_team_params. MICROSOFT_GRAPH_ENDPOINT defaults to
+  https://graph.microsoft.com/v1.0; an empty resolved secret uses that default.
+  MICROSOFT_SERVICE_PRINCIPAL_ID defaults absent. Fetch /me/memberOf and, when configured,
+  /servicePrincipals/{id}/appRoleAssignedTo, following at most 200 pages per traversal.
+  Only principalType=Group assignments create teams; a nonempty assigned-group list filters
+  membership, while an empty list leaves all memberships. Preserve duplicates and the source's
+  JSON-first handling even on non-200 Graph responses. Group retrieval failures return []
+  after logging, including errors after earlier team writes. Missing DB fails before team
+  creation's catch; lookup/create failures inside it log and continue. Existing teams are
+  untouched. Apply litellm.default_team_params=None by deep copy, preserving the distinct
+  dictionary versus typed-default overlay order, then use B804's team service and the pinned
+  audit key alias. Decode Graph response bytes through decode_microsoft_graph_page, retaining
+  @odata.nextLink and typed B1608 directory objects; fuzz both page shapes with microsoft_graph.
+  Use B009's configured-origin follow-up URL policy before attaching the Bearer header.
+  Compare pure Graph projection/default overlays in microsoft_group_values; test page caps,
+  partial writes and empty-filter semantics with a local HTTP peer plus PostgreSQL.
+  loads_graph_settings covers the two env names and default_team_params. The owned 252 source
+  lines allow 290 production, 200 tests, 80 adapters and 110 config/fuzz lines, budget 750.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/microsoft_group_sync.rs
+    - crates/betterlite-server/src/microsoft_group_sync/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/microsoft_graph.rs
+    - crates/betterlite-server/fuzz/corpus/microsoft_graph/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/microsoft_group_sync.rs
+    - crates/betterlite-config/src/microsoft_group_sync/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-groups-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/microsoft_group_values.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/microsoft_group_values.py
+    - tools/oracle/cases/helpers/microsoft-groups/**
+    - tools/oracle/fuzz/corpus/helper_case/microsoft-groups-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L241-L254
+    why: Service-principal page record contracts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3355-L3439
+    why: Team creation, default overlays and nonblocking errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4253-L4280
+    why: Graph base URL and page-limit constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4443-L4628
+    why: Membership and assignment traversal with filtering after team creation.
+dod:
+  - text: Graph pages, assignment filtering and team defaults preserve duplicates and partial side effects.
+    proof: [graph-tests, graph-config, oracle, graph-python]
+  - text: Off-origin next links never receive credentials and fail through the documented empty-group fallback.
+    proof: [graph-tests]
+  - text: Directory and assignment response shapes replay through the production Graph decoder.
+    proof: [graph-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: graph-tests
+      why: Graph traversal changes membership authority, write ordering or credential destination.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^microsoft_group_sync::/) - test(replays_the_microsoft_graph_corpus)'
+    - id: graph-config
+      why: Graph endpoint, service principal or team defaults are not loaded from their supported settings.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^microsoft_group_sync::tests::loads_graph_settings/)'
+    - id: graph-python
+      why: Graph/default projection is not compared with the pinned pure functions.
+      run: test -f tools/oracle/helpers/microsoft_group_values.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: graph-corpora
+      why: Graph, config or helper-case decoder coverage for this feature was not added.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/microsoft_graph.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/microsoft_graph)" && grep -rlq 'microsoft_group_values:' tools/oracle/fuzz/corpus/helper_case/microsoft-groups-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/microsoft-groups-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_microsoft_graph_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/microsoft-groups/null-and-repeated-directory-ids.yaml
+  - tools/oracle/cases/helpers/microsoft-groups/odata-field-renaming.yaml
+  - tools/oracle/cases/helpers/microsoft-groups/dictionary-defaults-pin-group-id.yaml
+  - tools/oracle/cases/helpers/microsoft-groups/typed-default-overlay.yaml
+deviations:
+  - what: A Graph nextLink outside the configured Graph origin is rejected before sending credentials; group retrieval logs the failure and returns an empty list.
+    why: B009 requires origin validation for provider-returned follow-up URLs, where LiteLLM forwards the Bearer header directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L4475-L4505
+out_of_scope:
+  - Microsoft token callbacks and role claims belong to B1622; interactive subject enrollment belongs to B1617.
+  - B063's ownership inventory covers ui_sso.py functions unrelated to Graph and SSO team creation.
+pitfalls:
+  - An empty service-principal assignment list disables filtering; it does not deny all group membership.
+  - A failure on a later membership page discards accumulated group IDs but cannot undo teams already created from assignments.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

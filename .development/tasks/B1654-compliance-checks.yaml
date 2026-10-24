@@ -1,0 +1,86 @@
+id: B1654
+title: Evaluate the compliance API's guardrail evidence checks
+description: >-
+  Build compliance_checks in betterlite-server with the complete ComplianceChecker and request,
+  result and response records. Register POST /compliance/eu-ai-act and POST /compliance/gdpr
+  through B052 authentication and B865's management wrapper. These endpoints evaluate the
+  caller-supplied record; they neither fetch request_id from spend storage nor execute guardrails.
+  decode_compliance_request(bytes) requires a string request_id, permits absent/null user_id,
+  model and timestamp, and accepts absent/null guardrail_information or a list of objects with
+  arbitrary logged fields. Ignore extra top-level fields as Pydantic does. Preserve empty-string
+  values: audit completeness tests truthiness, not field presence or timestamp validity.
+  Discard only guardrails whose guardrail_status equals not_run. Missing status and other
+  strings still count as applied. A missing/null mode means pre_call; a string must equal the
+  requested mode exactly. A list must be nonempty and every element must equal that mode.
+  For a mode object, require non-null default and require that default and every branch of a
+  dictionary-valued tags field agree; non-dictionary tags contribute no branches. A branch may
+  be a matching string or a nonempty homogeneous list, never another mode object. Implement
+  this guarantee test once and use it for the source's pre-call checks.
+  Preserve check order and exact names, article labels and detail messages. EU AI Act returns
+  applied-guardrails, pre-call-screening and audit-completeness checks; GDPR returns pre-call
+  data-protection, sensitive-data-protection and audit-completeness checks. Sensitive protection
+  passes when any pre-call guardrail has status guardrail_intervened, failed or blocked, or when
+  the nonempty pre-call set all have status success. Intervention wording wins over success.
+  Missing audit fields are listed in user_id, model, timestamp, guardrail_results order.
+  compliant is the conjunction of the three results, and a negative verdict still returns 200.
+  Exercise these branches through HTTP oracle cases, including mixed configured modes, divergent
+  tags, ignored not_run entries, arbitrary timestamp text, missing request_id and authentication
+  failures; compare response envelopes and content type. Native rstest cases isolate mode and
+  status combinations without duplicating the production algorithm. Fuzz the request decoder
+  with compliance_request and replays_the_compliance_request_corpus. The 295 nonblank source
+  lines across the three owned files budget 270 implementation, 230 tests and 210 HTTP/fuzz
+  material within 750 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/compliance_checks.rs
+    - crates/betterlite-server/src/compliance_checks/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/compliance_request.rs
+    - crates/betterlite-server/fuzz/corpus/compliance_request/**
+    - tools/oracle/cases/management/compliance/**
+    - tools/oracle/fuzz/corpus/http_case/compliance-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/compliance_checks.py#L16-L243
+    why: Complete guardrail classification, conservative mode matching and ordered article results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/compliance_endpoints.py#L26-L81
+    why: Both authenticated route decorators, management wrapping and verdict construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/compliance_endpoints.py#L1-L31
+    why: Required request_id, nullable evidence and response field names.
+dod:
+  - text: Compliance results count only defensible mode evidence and retain the source's intervention and audit-field rules.
+    proof: [compliance-tests, oracle, compliance-corpus]
+  - text: Both authenticated endpoints return ordered article results and ordinary 200 responses for negative verdicts.
+    proof: [compliance-tests, oracle, compliance-corpus]
+  - text: The byte decoder preserves nullable evidence and rejects invalid request shapes without panicking.
+    proof: [compliance-tests, oracle, compliance-corpus]
+checks:
+  optional: []
+  commands:
+    - id: compliance-tests
+      why: Evidence is classified as pre-call or compliant without the source's required conditions.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^compliance_checks::/) - test(replays_the_compliance_request_corpus)'
+    - id: compliance-corpus
+      why: Malformed guardrail evidence has not been supplied to the request decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/compliance_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_compliance_request_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/compliance/default-pre-call-success.yaml
+  - tools/oracle/cases/management/compliance/not-run-does-not-fill-audit-evidence.yaml
+  - tools/oracle/cases/management/compliance/mixed-mode-list-cannot-prove-screening.yaml
+  - tools/oracle/cases/management/compliance/default-and-every-tag-must-agree.yaml
+  - tools/oracle/cases/management/compliance/failed-pre-call-status-counts-as-intervention.yaml
+  - tools/oracle/cases/management/compliance/unknown-status-applied-but-not-protective.yaml
+  - tools/oracle/cases/management/compliance/missing-audit-fields-have-stable-order.yaml
+  - tools/oracle/cases/management/compliance/body-validation-and-authorization.yaml
+deviations: []
+out_of_scope:
+  - Spend-log retrieval and writing remain B069; these routes use the supplied evidence without a database lookup.
+  - Guardrail execution and concrete resolved-mode logging remain their existing guardrail and logging owners.
+pitfalls:
+  - The failed guardrail status counts as an intervention for GDPR, whereas not_run removes the entry entirely.
+  - A list containing both pre_call and post_call proves neither mode under the pinned conservative matcher.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

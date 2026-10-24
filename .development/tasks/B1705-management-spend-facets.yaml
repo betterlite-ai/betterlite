@@ -1,0 +1,77 @@
+id: B1705
+title: List visible spend-log users from a bounded recent-row scan
+description: >-
+  Build betterlite-server::management::spend_facets and register GET
+  /management/v1/spend_logs/end_users and /management/v1/spend_logs/users, with B052
+  authentication and B1701 unknown-query/problem handling. Both require
+  filter[startTime][gte] and filter[startTime][lte], accept q=null, page=1 and page_size=50,
+  and reject page below 1 or page_size outside 1..100. Preserve FastAPI's last-value
+  behavior for repeated declared query parameters; these routes do not invoke the list
+  framework's duplicate checker. decode_spend_facet_query consumes B1701's decoded pairs,
+  with a byte-entry wrapper used by both the route and the spend_facet_query fuzz target.
+  Normalize naive timestamps to UTC and retain inclusive start/end comparisons; no extra
+  start-before-end validation is added. Permit only the two enum-selected column names.
+  The SQL first restricts date, non-null/nonempty facet value, escaped literal q and caller
+  scope, then scans at most 10000 rows ordered startTime DESC, request_id DESC. DISTINCT
+  and ascending facet sort happen outside that limited scan. Fetch page_size+1 values
+  after the page offset, derive has_more and return B1665's facet envelope with B1701
+  relative links. Do not count the full table or apply authorization after the scan cap.
+  Admin-view callers have no scope predicate. Others use B1704's permitted-team lookup;
+  lookup errors leave an empty team list. OR the caller's non-null user_id, including an
+  empty string, with any permitted team IDs using a single text-array bind; neither
+  identity nor team means the literal FALSE predicate. Parameter numbering follows date,
+  optional search, scope, scan cap, page limit and offset in that order.
+  Missing database yields 503 database-not-connected; other failures become 500
+  internal-server-error, and existing management problems pass through. Booted oracle
+  cases compare content-type/status/problem identifiers and complete result/link shapes,
+  including a foreign newest-row flood, literal percent/underscore searches, offset
+  timestamps, repeated query fields, page_size 101 and missing bounds. B860 fixtures
+  should seed enough tied rows to prove the request_id cutoff and inner-scan behavior.
+  Own the whole 218-line source module; plan 230 SQL/route/decoder, 230 tests and 190
+  HTTP/fuzz fixtures, within 750 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/management.rs
+    - crates/betterlite-server/src/management/spend_facets.rs
+    - crates/betterlite-server/src/management/spend_facets/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/spend_facet_query.rs
+    - crates/betterlite-server/fuzz/corpus/spend_facet_query/**
+    - tools/oracle/cases/http/management-spend-facets/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/spend_logs.py#L30-L157
+    why: Visibility predicates, capped inner scan, distinct paging and problem conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/spend_logs.py#L160-L250
+    why: Both route decorators, required aliases and bounded page validation.
+dod:
+  - text: Both facets expose only visible users from the bounded recent scan, with deterministic cutoffs and correct has_more links.
+    proof: [facet-tests, oracle]
+  - text: Query decoding and database failures retain management status/problem semantics, including repeated-key and limit behavior.
+    proof: [facet-tests, facet-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: facet-tests
+      why: Facet scoping, bound ordering or paging exposes an incorrect value or response.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::spend_facets::/) - test(replays_the_spend_facet_query_corpus)'
+    - id: facet-corpus
+      why: The production facet query decoder has no new fuzz seed or replay coverage.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_facet_query)" && test -f crates/betterlite-server/fuzz/fuzz_targets/spend_facet_query.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_facet_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/management-spend-facets/own-user-team-and-unidentified-caller.yaml
+  - tools/oracle/cases/http/management-spend-facets/foreign-flood-before-scan-cap.yaml
+  - tools/oracle/cases/http/management-spend-facets/tied-cutoff-and-page-lookahead.yaml
+  - tools/oracle/cases/http/management-spend-facets/utc-window-and-literal-wildcards.yaml
+  - tools/oracle/cases/http/management-spend-facets/repeated-query-missing-bound-and-page-limit.yaml
+  - tools/oracle/cases/http/management-spend-facets/database-and-auth-errors.yaml
+deviations: []
+out_of_scope:
+  - B1704 owns permission resolution; B069 owns the spend-log listing/detail routes and their reports, which this task does not alias.
+pitfalls:
+  - Moving DISTINCT inside the newest-row limit changes which facet values are available.
+  - Authorization predicates must be applied before the 10000-row scan cap.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

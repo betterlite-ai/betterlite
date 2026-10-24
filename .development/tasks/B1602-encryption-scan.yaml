@@ -1,0 +1,82 @@
+id: B1602
+title: Classify encrypted values and scan residual legacy storage
+description: >-
+  Build encryption_scan in betterlite-db around B1600's cipher. Own LocationReport, MigrationReport,
+  is_migrated, classify_value, reencrypt_value, _iter_callback_var_dicts, _classify_callback_value,
+  _COVERED_TABLE_SPECS and every _scan_* and _classify_* function in credential_migration.py,
+  plus _iter_encrypted_strings. Classification deliberately trusts the v2:gcm: prefix without
+  decrypting it; undecipherable unmarked strings count as plaintext. Secret maps are different:
+  decoding failure counts as undecryptable and an empty decoded map contributes no count.
+  Enumerate model litellm_params, credential_values, MCP credentials/env_vars/static_headers/env,
+  user credential_b64 and values_b64, then environment_variables. Preserve missing-table and
+  find_many failure handling, JSON-string versus native-JSON rows, and callback fields under both
+  logging[*].callback_vars and callback_settings.callback_vars. Walk leaves iteratively.
+  Provide decode_migration_json(&[u8]) for the stored JSON representations, using a typed recursive
+  value enum and a bounded input; add migration_json fuzz/replay in betterlite-db. Counters use
+  checked integers and as_dict's wire keys, while secrets stay wrapped throughout traversal.
+  Add the pure encryption_classification helper operation to B171 for classification and report
+  projections; database scans use B860 Postgres tests with pinned table shapes. Tests must show
+  that unavailable tables produce empty reports without stopping subsequent scans and that scanning
+  changes no row. Counted ranges contain 260 nonblank, noncomment lines including docstrings;
+  plan 240 implementation, 180 tests, 100 helper adapters and 100 decoder/wiring lines, total 620.
+scope:
+  paths:
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/encryption_scan.rs
+    - crates/betterlite-db/src/encryption_scan/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/migration_json.rs
+    - crates/betterlite-db/fuzz/corpus/migration_json/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/encryption_classification.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/encryption_classification.py
+    - tools/oracle/cases/helpers/encryption-classification/**
+    - tools/oracle/fuzz/corpus/helper_case/encryption-classification-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L54-L173
+    why: Report fields, prefix-based classification and the single-value rewrite primitive.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L404-L570
+    why: Callback classification, exact scan locations and read-only failure handling.
+dod:
+  - text: Prefix, plaintext, legacy, empty-map and malformed-map classifications match the MIT helpers.
+    proof: [oracle, scan-tests, classification-python]
+  - text: Scanning visits every listed column without writes and continues when a covered table is unavailable.
+    proof: [scan-tests]
+  - text: Stored JSON bytes and the classification operation have committed replay inputs.
+    proof: [migration-corpus, classification-corpus]
+checks:
+  optional: []
+  commands:
+    - id: scan-tests
+      why: A scan location, classification or read-only guarantee is untested or incorrect.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^encryption_scan::/) - test(replays_the_migration_json_corpus)'
+    - id: classification-python
+      why: The direct MIT classification adapter is missing or not strictly typed.
+      run: test -f tools/oracle/helpers/encryption_classification.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: migration-corpus
+      why: Nested stored-value decoding lacks its fuzz target or replay cases.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/migration_json.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/migration_json)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_migration_json_corpus)'
+    - id: classification-corpus
+      why: HelperCase has no encryption_classification variant seed.
+      run: grep -rlq 'encryption_classification:' tools/oracle/fuzz/corpus/helper_case/encryption-classification-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/encryption-classification/unverified-v2-prefix.yaml
+  - tools/oracle/cases/helpers/encryption-classification/legacy-versus-plaintext.yaml
+  - tools/oracle/cases/helpers/encryption-classification/marked-callback-shapes.yaml
+  - tools/oracle/cases/helpers/encryption-classification/empty-secret-map.yaml
+  - tools/oracle/cases/helpers/encryption-classification/report-counts.yaml
+deviations: []
+out_of_scope:
+  - reencrypt_selective_dict has no caller at the pin and is not ported.
+  - B061 owns _assert_aes_gate_enabled, _migrate_config_settings_row, _migrate_sso_config, _migrate_callback_vars_table, _migrate_covered_tables, migrate_encryption and check_encryption in the same file.
+pitfalls:
+  - "An invalid v2:gcm: payload is classified as migrated by the general scanner, so this count is not an authentication test."
+  - MCP static_headers and env count one encrypted map, not each member secret.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

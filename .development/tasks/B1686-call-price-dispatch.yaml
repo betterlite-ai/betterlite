@@ -1,0 +1,119 @@
+id: B1686
+title: Dispatch call pricing after custom-cache and model-name normalization
+description: >-
+  Build betterlite-core::cost::call_price for cost_per_token L379-L756 and the vector-store
+  and rerank dispatchers L2337-L2400. Define CallPriceInput with the source's explicit
+  token counters, optional usage, time/character/cache fields, custom prices, query count,
+  billed units, call type, region, tier/residency/location and selected/request model names.
+  Reject a null model before pricing; empty string remains a distinct accepted input until
+  a later resolver rejects it. Reuse supplied usage or construct its B1668 projection from
+  the explicit counters/cache fields, retaining the distinction for custom pricing.
+  Custom-price normalization reads cache details first, then supplied usage's nonnull
+  top-level cache_read_input_tokens/cache_creation_input_tokens. Either top-level field
+  marks Anthropic-style exclusive input even when zero. A falsey resolved cache count may
+  fall back to a truthy explicit cache argument, also marking exclusive input. Add those
+  caches to the explicit prompt_tokens argument, not usage.prompt_tokens; pass explicit
+  completion_tokens to B1673 as well. A custom token/second price returns immediately,
+  before provider inference, catalog access or call-specific logic.
+  With an explicitly supplied provider, collapse repeated leading provider/ chains, join
+  one provider prefix and prefer a provider/region/bare-model raw entry when registered.
+  Without a provider, infer through B174 but leave the candidate name unjoined. Choose the
+  raw catalog candidate in order joined/region name, current model, model with its first
+  slash component removed; otherwise retain current model. Keep the latter stripped name
+  separately for speech/transcription/Vertex calls. This is not B1682's response-model
+  selection and must not be substituted with it.
+  Dispatch call type before provider: speech checks Vertex Lyria fixed pricing first for
+  vertex_ai/vertex_ai_beta, then character or generic token pricing; character speech requires
+  prompt_characters and uses zero output characters/custom output rate. Rerank, vector-store
+  search, OCR, batch retrieval, transcription and search each take their dedicated path.
+  Positive transcription token evidence uses generic token pricing; otherwise B1676 bills
+  audio duration. Search passes number_of_queries-or-one and response hidden params, not
+  request optional_params. Batch retrieval passes the selected usage and residency, without
+  inventing deployment model-info. Then try B1676 wall-clock billing before provider token
+  branches. Native OpenAI/Azure/Anthropic/Bedrock/Foundry prices call B1672/B1675-B1677.
+  Other provider formulas are injected through ProviderPricePolicy at the B010 provider
+  boundary, below core, so provider installation can supply pricing without a dependency
+  cycle back to B068. Add typed policy operations for token/character, Lyria, search,
+  rerank and vector-store prices; their inputs reuse B010 OperationResult and low billing
+  records, never core request state. Uninstalled executable providers retain B010's typed
+  unsupported-provider outcome; this seam does not pretend their formula is generic.
+  The dispatch matrix is exact: vertex_ai selects character/token policy and forwards
+  Vertex location; databricks and gemini receive service tier; fireworks_ai/deepseek/tencent/
+  perplexity/xai/lemonade receive usage without tier; dashscope/qwencloud/qwen_ai_platform
+  also receive the exact provider name. OpenAI receives tier/residency, Azure tier/time,
+  Foundry tier/time/request_model. Other providers use generic prices only when effective
+  info has positive token rates or nonnull tiered_pricing, otherwise return zero.
+  Vector search defaults absent provider to openai, but a slash-containing model re-resolves
+  provider and API subtype; no selected vector configuration returns zero. Rerank resolves
+  provider, selects its config with api_base=None and empty version params, soft-loads
+  model-info, then delegates even when info is absent; other errors propagate.
+  Pure call_price fixtures cover custom-cache normalization through the original function,
+  where custom prices avoid global lookup. Native tests capture every policy operation and
+  argument, candidate order, early custom return and malformed input. Provider-owned formula
+  tests remain with their actual implementations; this task tests dispatch. The 376 nonblank
+  source lines budget 340 logic/interfaces, 280 tests and 180 adapters/wiring, cap 800.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/call_price.rs
+    - crates/betterlite-core/src/cost/call_price/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/lib.rs
+    - crates/betterlite-provider/src/pricing.rs
+    - crates/betterlite-provider/src/pricing/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/call_price.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/call_price.py
+    - tools/oracle/cases/helpers/call-price/**
+    - tools/oracle/fuzz/corpus/helper_case/call-price-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L379-L756
+    why: Custom-price early return, caller-supplied provider normalization and the call/provider dispatch matrix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2337-L2400
+    why: Vector-store unsupported fallback and rerank's soft pricing lookup before delegation.
+dod:
+  - text: Custom pricing uses explicit token arguments and the source's inclusive/exclusive cache normalization before any provider or catalog work.
+    proof: [call-price-tests, oracle, call-price-python, call-price-corpus]
+  - text: Caller-supplied provider prefixes and region entries follow their own normalization order without changing inferred-provider behavior.
+    proof: [call-price-tests]
+  - text: Every listed call/provider branch forwards its exact inputs, and the provider policy boundary permits later provider installation without core imports.
+    proof: [call-price-tests, provider-price-policy-tests]
+checks:
+  optional: []
+  commands:
+    - id: call-price-tests
+      why: Pricing dispatch changes cache normalization, model selection or call-specific precedence.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::call_price::/)'
+    - id: provider-price-policy-tests
+      why: The pricing policy interface loses an operation or uses core-owned request state.
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^pricing::/)'
+    - id: call-price-python
+      why: Custom-cache dispatch cases lack the checked adapter calling cost_per_token itself.
+      run: test -f tools/oracle/helpers/call_price.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: call-price-corpus
+      why: No call_price operation is covered by a helper parser seed.
+      run: grep -rlq 'call_price:' tools/oracle/fuzz/corpus/helper_case/call-price-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/call-price/custom-uses-explicit-tokens-not-usage-total.yaml
+  - tools/oracle/cases/helpers/call-price/top-level-zero-cache-marks-anthropic-style.yaml
+  - tools/oracle/cases/helpers/call-price/falsey-detail-count-falls-back-to-explicit-cache.yaml
+  - tools/oracle/cases/helpers/call-price/custom-pricing-bypasses-unknown-provider.yaml
+  - tools/oracle/cases/helpers/call-price/null-model-rejected-before-free-custom-price.yaml
+deviations:
+  - what: Cache normalization and custom call prices use checked counters and Decimal values; overflow produces a typed pricing failure instead of float rounding or infinity.
+    why: Early custom prices must meet the same finite money contract as catalog prices.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L447-L506
+out_of_scope:
+  - Provider-specific formulas outside this batch retain B031/B033/B035/B038-B042 and other provider owners; this task owns their typed dispatch interface and argument flow, not those formulas.
+  - B1678 owns OCR, B1679 batch arithmetic, B1676 duration/character primitives and B1672/B1675/B1677 current native token policies; cost_calculator.py functions outside these owned ranges remain B068 or its previously named leaves.
+pitfalls:
+  - Supplying usage does not replace the explicit prompt_tokens/completion_tokens arguments used by custom pricing.
+  - Region-qualified catalog lookup is attempted only when the caller supplied a provider, not when one was inferred.
+  - The direct search price path turns zero query count into one, unlike completion_cost's list-query branch.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

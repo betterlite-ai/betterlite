@@ -1,0 +1,80 @@
+id: B1644
+title: Exercise MIT feature handlers behind LiteLLM's paid-tier eligibility flag
+description: >-
+  Extend the HTTP oracle with the explicit optional native_feature_eligibility Boolean,
+  default false, so SCIM's MIT handlers can be compared after the README's removal of
+  paid tiers. The ordinary pinned oracle remains unchanged when the field is absent.
+  In opted-in LiteLLM children only, use its LITELLM_WORKER_STARTUP_HOOKS mechanism to
+  run the fixed tools/oracle/fixtures/native-feature-oracle/startup.py function, setting
+  proxy_server.premium_user=true before startup's premium check. Do not patch authentication,
+  repositories, endpoints, license-verification methods or feature implementations.
+  Keep litellm_enterprise uninstalled and do not introduce a license key, remote license
+  service or configurable import/function name. Reject case configuration that supplies
+  LITELLM_LICENSE, general_settings.litellm_license or a conflicting startup hook, since
+  those can overwrite the controlled eligibility flag. The hook path is test-owned and
+  the process environment extension is private to that child; betterlite receives neither.
+  Self-check starts two identically eligible LiteLLM processes. Mark the opt-in in result
+  artifacts so an eligible-handler comparison cannot be mistaken for stock OSS behavior.
+  Integration tests boot the actual proxy and show that unauthenticated SCIM requests still
+  fail auth, an authenticated ServiceProviderConfig request reaches its MIT handler with
+  the flag, and the same request gets the stock 403 without it. Check the enterprise import
+  still fails in both modes, no license network request occurs, concurrent eligible/default
+  runs cannot leak flags, and dropping the owner kills the actual server process.
+  Extend decode_http_case's existing corpus and add eligibility parsing/rejection cases;
+  Python startup code gets its own strict checking configuration. The 19-line SCIM guard
+  and 40-line startup-hook/check sequence need no production port here; budget 150 runner
+  and schema lines, 210 integration tests and 90 hook/fixture lines, capped at 525.
+scope:
+  paths:
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/case/**
+    - tools/oracle/src/process.rs
+    - tools/oracle/src/process/**
+    - tools/oracle/src/runner.rs
+    - tools/oracle/src/runner/**
+    - tools/oracle/src/http.rs
+    - tools/oracle/src/http/native_feature_eligibility/**
+    - tools/oracle/fixtures/native-feature-oracle/**
+    - tools/oracle/fuzz/corpus/http_case/native-feature-*
+    - tools/oracle/cases/management/native-feature-oracle/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L262-L266
+    why: The SCIM router's eligibility dependency precedes otherwise available MIT handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8240-L8257
+    why: This guard reads premium_user and does not implement SCIM or authenticate a caller.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1243-L1283
+    why: The fixed worker-startup hook runs before the premium flag check.
+dod:
+  - text: Eligible native-feature cases reach real MIT HTTP handlers while stock cases keep the pinned license rejection.
+    proof: [eligibility-tests, eligibility-python]
+  - text: Eligibility cannot leak into another process, bypass authentication or install enterprise code.
+    proof: [eligibility-tests, eligibility-python]
+  - text: The case decoder accepts the explicit opt-in and rejects conflicts before starting a child.
+    proof: [eligibility-tests, eligibility-corpus]
+checks:
+  optional: []
+  commands:
+    - id: eligibility-tests
+      why: The native-feature oracle modifies more than eligibility or fails to reach the actual guarded handler.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::native_feature_eligibility::/)'
+    - id: eligibility-python
+      why: The fixed startup hook is absent or not strictly checked.
+      run: test -f tools/oracle/fixtures/native-feature-oracle/startup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/fixtures/native-feature-oracle && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/native-feature-oracle/pyrightconfig.json
+    - id: eligibility-corpus
+      why: HTTP case parsing has no new native-feature eligibility regression inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/native-feature-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B064 and its route parts own SCIM behavior; this entry's scim_v2.py coverage is solely the test prerequisite for its router guard, with no production functions transferred.
+  - License removal in betterlite is the README decision, not a license implementation supplied by this test tool.
+  - Enterprise-only hooks remain unavailable even in an eligible oracle child.
+pitfalls:
+  - A global environment change in the harness would contaminate both the default oracle and betterlite, defeating the isolated comparison.
+  - A successful stock SCIM request would mean the test no longer distinguishes eligibility from the handler it is meant to exercise.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: security

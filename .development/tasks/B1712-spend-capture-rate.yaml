@@ -1,0 +1,109 @@
+id: B1712
+title: Compare captured spend with OpenAI billing and coordinate alerts
+description: >-
+  Implement spend_capture_rate.py and its records/settings, plus the low-level OpenAI
+  organization_costs.py client extracted from B073 to avoid a B073-to-B069 cycle. Put
+  client/decoder in betterlite-provider::billing, typed money/report records in models,
+  configuration in config::capture_rate and database/report/job services in
+  betterlite-server::spend::capture_rate. General setting spend_capture_rate_check is
+  absent by default; when present it rejects extra fields and defaults providers=[openai],
+  threshold=0.9, lookback_days=7, openai_project_ids=[]. Require nonempty providers,
+  0<threshold<=1 and 1<=lookback_days<=180; retain duplicate configured providers.
+  loads_capture_rate_settings must load these through B002, not merely instantiate records.
+  Resolve OPENAI_ADMIN_KEY through B129. Missing key returns a typed missing-credential
+  result before any billing or captured-spend query. Request the fixed organization costs
+  URL with Bearer admin key, UTC start midnight, exclusive midnight after end_date,
+  bucket_width=1d, limit=180 and optional project_ids[] values. Each request has a 30-second
+  deadline. Follow next_page only when has_more and next_page is non-null; aggregate all
+  returned buckets by UTC day, including repeated days, and accept only usd amounts.
+  Network errors, non-200 responses (first 300 response characters) and malformed response
+  shapes become typed billing failures. Use an iterative pagination loop with a repeated-
+  cursor error to avoid the source recursion's unbounded cycle. Never expose the admin key.
+  Captured spend sums DailyUserSpend over inclusive date strings for openai and
+  text-completion-openai; project_ids scope only the provider bill. Fill missing days with
+  zero, sum the requested days and compute captured/billed using Decimal. Billed <=0
+  produces null ratio and below_threshold=false; equality to threshold is healthy and
+  ratios above one remain above one. No currency conversion or clamp is added.
+  Check configured providers sequentially over yesterday and the preceding lookback_days
+  window, then publish every completed result. A later unexpected exception interrupts
+  before the publication loop. Missing credentials/request failures publish no ratio and
+  produce alerts; healthy or zero-bill reports do not alert. Scheduled checks run and
+  publish on every worker, then claim spend_capture_rate_check_job for 900 seconds only
+  when alerts exist. B1690's lock remains until expiry; absent Redis or unreadable/unheld
+  lock after failed acquisition allows alerting. Preserve reentrant-owner behavior and
+  alert failures rather than wrapping all checks in an invented catch-all.
+  Pure capture_rate helpers compare daily reports and alert classification, masking only
+  explanatory wording. Native tests exercise Postgres totals, mock billing pagination,
+  project query encoding, publisher/alert order and Redis claim fallbacks. Fuzz
+  decode_openai_costs_page in provider and decode_capture_rate_settings in config, with
+  normal replay tests. The three source files total exactly 400 nonblank lines including
+  imports/docstrings; budget 360 implementation, 250 tests and 190 codecs/oracle wiring.
+scope:
+  paths:
+    - crates/betterlite-provider/src/lib.rs
+    - crates/betterlite-provider/src/billing.rs
+    - crates/betterlite-provider/src/billing/**
+    - crates/betterlite-provider/fuzz/{Cargo.toml,fuzz_targets/openai_costs_page.rs,corpus/openai_costs_page/**}
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/capture_rate.rs
+    - crates/betterlite-models/src/capture_rate/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/capture_rate.rs
+    - crates/betterlite-config/src/capture_rate/**
+    - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/capture_rate_settings.rs,corpus/capture_rate_settings/**}
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/capture_rate.rs
+    - crates/betterlite-server/src/spend/capture_rate/**
+    - tools/oracle/src/helpers/{mod.rs,capture_rate.rs}
+    - tools/oracle/helpers/{dispatch.py,capture_rate.py}
+    - tools/oracle/cases/helpers/capture-rate/**
+    - tools/oracle/fuzz/corpus/helper_case/capture-rate-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_capture_rate.py#L45-L300
+    why: Inclusive captured totals, report/alert outcomes and post-check lock coordination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/spend_capture_rate.py#L15-L54
+    why: Settings constraints and nullable ratio records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L22-L135
+    why: Fixed billing endpoint, USD decoder, query window and pagination/error handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2183-L2190
+    why: Job identity, lease, maximum days and provider billing timeout/page defaults.
+dod:
+  - text: Billing and captured totals produce exact daily/aggregate ratios with source credential, currency and pagination failure semantics.
+    proof: [capture-tests, oracle, capture-python, capture-helper-corpus]
+  - text: Scheduled checks publish before attempting alert suppression and retain lock-unavailable behavior without releasing the alert-window lease.
+    proof: [capture-tests]
+  - text: Config defaults and both external decoders are exercised through their production loading/replay paths.
+    proof: [capture-tests, capture-byte-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: capture-tests
+      why: Billing transport, Decimal reports, config loading or scheduled alert sequencing is wrong.
+      run: cargo nextest run --locked -p betterlite-provider -p betterlite-models -p betterlite-config -p betterlite-server --no-tests=fail -E 'test(/^billing::/) + test(/^capture_rate::/) + test(/^spend::capture_rate::/) - test(/replays_the_/)'
+    - id: capture-python
+      why: Capture report/alert helper calls lack strict source-compatible adapters.
+      run: test -f tools/oracle/helpers/capture_rate.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: capture-helper-corpus
+      why: No capture-rate helper seed exercises the typed operation.
+      run: grep -rlq 'capture_rate:' tools/oracle/fuzz/corpus/helper_case/capture-rate-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: capture-byte-corpora
+      why: Billing-page or settings byte decoding lacks a new corpus replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/openai_costs_page)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/capture_rate_settings)" && cargo nextest run --locked -p betterlite-provider -p betterlite-config --no-tests=fail -E 'test(replays_the_openai_costs_page_corpus) + test(replays_the_capture_rate_settings_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/capture-rate/missing-days-zero-bill-and-above-one.yaml
+  - tools/oracle/cases/helpers/capture-rate/threshold-equality-and-inclusive-window.yaml
+  - tools/oracle/cases/helpers/capture-rate/credential-failure-and-alert-classification.yaml
+deviations:
+  - what: A repeated provider billing pagination cursor returns a billing-request failure instead of recursing until resource exhaustion.
+    why: External pagination must have bounded control state; the caller maps this failure to the normal billing failure response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L107-L123
+out_of_scope:
+  - B069 owns GET /spend/capture_rate and startup's 01:15 UTC schedule; B073 must consume this extracted billing client rather than duplicate organization_costs.py.
+pitfalls:
+  - Filtering OpenAI project IDs never filters the captured database spend.
+  - Every replica publishes its gauge even when another replica owns the alert-window lock.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

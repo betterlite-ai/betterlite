@@ -1,0 +1,101 @@
+id: B1746
+title: Commit daily chunks and advance independent auto-router histories
+description: >-
+  Add betterlite-db::spend_commit for the shared 60-second transaction/retry primitives,
+  daily commit state and six-table daily writer. Own _spend_update_tx,
+  _handle_spend_update_failure, _spend_commit_failure_is_requeue_safe,
+  _spend_tables_left_to_send, the fixed table order, _DailySpendCommit contract, both
+  _mark_daily_spend_commit_* functions, _start_daily_spend_commit,
+  _track_interrupted_commit/_settle_interrupted_commits, _update_daily_spend and its six
+  public table adapters. Inline the window forwarding method into B1735's existing call.
+  Track owned futures with an explicit commit phase, not context-local events or detached
+  tasks. Phase becomes committing after execute_raw succeeds and immediately before
+  transaction exit; clear it only after commit succeeds. A shutdown coordinator can
+  cancel work before this phase or wait for its definitive result afterwards.
+  Daily writes sort by date, entity id, api_key, model and provider, replacing falsey sort
+  values with empty strings, and take at most 100 input entries. Merge database conflict
+  keys and build one upsert through B1697. After success remove the original input keys
+  from the mutable pending map. For a retry-safe failure retain them; for an ambiguous
+  connection failure or SQLSTATE class 22/23 rejection remove this chunk, report it as
+  dropped and raise, so a caller can restore only untouched rows. Unknown SQLSTATE is
+  requeue-safe. Connection errors are safe only if B715 classifies them as proven not
+  applied. Retry safe connection failures and deadlocks for n_retry_times+1 attempts,
+  sleeping uniformly between 2^attempt and 2^(attempt+1); final failure calls B1749's
+  failure sink and rethrows. Preserve the outer daily failure report as well. Entity
+  suffix calculation clears committed categories and, only when unsafe, the next
+  in-flight category; return None when no increments remain.
+  Also extract the five retry/partition/drain functions from B344's
+  autorouter_session_rollup.py into betterlite-db::autorouter_drain. Reuse B1697 turn SQL.
+  Partition by key identity when api_key is nonempty, otherwise user identity, plus session
+  and router; stable-sort each partition by turn time. Retry only proven-safe connection
+  errors, default three retries, with 2^attempt plus uniform [0,1] jitter. A failed turn
+  stops that partition and is never replayed. For a key partition, other users in the
+  failed suffix may still advance their user-only histories, grouped by user id; exclude
+  the failing user's remaining turns and preserve the real API key in those projections.
+  Move this lower drain out of B344 to avoid depending on its B070-based assembly.
+  The live implementations and commit-state declarations total about 390 source lines,
+  excluding Python overload stubs. Budget 800 with PostgreSQL partial-chunk tests,
+  phase-controlled cancellation, retry classification and pure commit_remainder cases.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_commit.rs
+    - crates/betterlite-db/src/spend_commit/**
+    - crates/betterlite-db/src/autorouter_drain.rs
+    - crates/betterlite-db/src/autorouter_drain/**
+    - tools/oracle/src/helpers/{mod.rs,commit_remainder.rs}
+    - tools/oracle/helpers/{dispatch.py,commit_remainder.py}
+    - tools/oracle/cases/helpers/commit-remainder/**
+    - tools/oracle/fuzz/corpus/helper_case/commit-remainder-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L187-L259
+    why: Shared commit contract, replay classifier and remaining-table projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L275-L315
+    why: Transaction duration and owned interrupted-commit state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L1998-L2019
+    why: Entity retry classification and randomized backoff.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L2360-L2679
+    why: Daily adapters, 100-entry chunks and removal of unsafe rows before requeue.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/autorouter_session_rollup.py#L425-L520
+    why: Ordered per-session writes and independent user-history recovery.
+dod:
+  - text: Daily chunk commits remove only applied or unsafe rows and expose the true commit phase to cancellation.
+    proof: [daily-commit-tests]
+  - text: Retry and suffix rules distinguish unapplied errors from rejected or ambiguous writes.
+    proof: [commit-policy-tests, oracle, commit-remainder-python, commit-remainder-corpus]
+  - text: Auto-router drain stops dependent turns while preserving eligible other-user histories.
+    proof: [autorouter-drain-tests]
+checks:
+  optional: []
+  commands:
+    - id: daily-commit-tests
+      why: Daily chunking, pending-map mutation or commit phase is untested.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_commit::daily::/)'
+    - id: commit-policy-tests
+      why: Replay classification, suffix clearing or retry backoff is absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_commit::policy::/)'
+    - id: autorouter-drain-tests
+      why: Turn ordering and user-only suffix recovery do not have database tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^autorouter_drain::/)'
+    - id: commit-remainder-python
+      why: Exception-to-remainder helper adapters fail strict checks.
+      run: test -f tools/oracle/helpers/commit_remainder.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: commit-remainder-corpus
+      why: Typed exception variants are not seeded for helper replay.
+      run: grep -rlq 'commit_remainder:' tools/oracle/fuzz/corpus/helper_case/commit-remainder-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/commit-remainder/committed-prefix-and-unsafe-current.yaml
+  - tools/oracle/cases/helpers/commit-remainder/connection-certainty-and-sqlstate-classes.yaml
+deviations: []
+out_of_scope:
+  - B1697 owns turn records, upsert SQL and parameter binding; B1742 owns turn_cache_facts, timestamp/session normalization and build_autorouter_turn_transaction; B344 retains the repository/model-facing rollup assembly and read constants.
+  - B1745 supplies entity SQL; B1747 decides memory requeue after cancellation, while B1748 decides Redis restoration. B1749 supplies failure reporting and log-row persistence.
+  - B070/B1742/B1743/B1744 retain writer construction, request scheduling and enqueue projections; this task does not start those services.
+pitfalls:
+  - The daily pending map is intentionally mutated before an unsafe error escapes, so restoring the original snapshot would double-charge it.
+  - Auto-router turn retries do not inherit the daily writer's deadlock retry rule.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

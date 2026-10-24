@@ -1,0 +1,87 @@
+id: B1719
+title: Settle reservations around a spend write in the pinned order
+description: >-
+  Implement server::spend::settlement for the callback helpers from
+  _IncrementSpendCounters through _invalidate_budget_reservation_counters. Use B070's
+  update_database result as the charged/not-charged boundary, B124's awaited counter
+  increment and cache-prefetch operations, and B1718's request-owned batch. Define the
+  reservation settlement port beside the existing B732 reservation record, so B071 can
+  supply reconciliation/release/invalidation without making this lower coordinator depend
+  on the budget umbrella. The port receives the shared reservation state, actual Decimal
+  cost, finalize and apply_consistent flags. No-op behavior is valid only for no reservation;
+  runtime construction must reject an enabled reservation feature without its backend.
+  Before opening the post-call counter batch, reconcile with finalize=false and
+  apply_consistent=false. Failure warns, attempts invalidation, and stamps finalized=true
+  even when invalidation fails; the spend write still proceeds. Bind reserved keys plus
+  B1718 post-call keys, including project and model access groups. Reconciliation uses its
+  own read, before this snapshot. Await the database write before arming update-cache reads
+  or incrementing counters. A false charged result releases the reservation and returns
+  false. A write exception attempts release; if release fails, try invalidation, then
+  rethrow the original write error without replacing it with cleanup failures.
+  After a successful write, arm B124's cache read before the awaited counter increment so
+  both can share Redis's pipeline. Forward start time, tags, org, project and groups.
+  Counter failure attempts invalidation and always marks the reservation finalized before
+  rethrowing. Do not roll back a successful database write or replay it on this path.
+  Inline the source's one-expression release/invalidation wrappers at their call sites;
+  the interface methods themselves remain named operations for B071 to implement.
+  Extract the core_helpers reservation lookup and callback-bound stamping into
+  betterlite-auth::reservation_state. A dictionary-valued direct stamp wins over the
+  auth-object field; nonmapping values are absent. Bind/unbind updates both existing
+  metadata buckets and their shared reservation identities, without creating a bucket.
+  Pure reservation_state oracle cases cover these projections. Native fault tests drive
+  the production coordinator with typed ports and an ordered effect journal, independently
+  failing reconcile, write, release, invalidation, prefetch and increment; include a real
+  PostgreSQL/Redis success test. The roughly 220 callback and 32 extracted helper source
+  lines fit 750 changed lines, with most test space reserved for irreversible write order.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/settlement.rs
+    - crates/betterlite-server/src/spend/settlement/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/reservation_state.rs
+    - crates/betterlite-auth/src/reservation_state/**
+    - tools/oracle/src/helpers/{mod.rs,reservation_state.rs}
+    - tools/oracle/helpers/{dispatch.py,reservation_state.py}
+    - tools/oracle/cases/helpers/reservation-state/**
+    - tools/oracle/fuzz/corpus/helper_case/reservation-state-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L695-L908
+    why: Database/counter ordering and distinct reservation cleanup paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L369-L406
+    why: Shared reservation selection and ownership transfer to callbacks.
+dod:
+  - text: Each settlement failure preserves the committed database result and performs only its prescribed cleanup before returning or propagating.
+    proof: [settlement-tests]
+  - text: Callback binding reaches existing reservation records in both metadata namespaces with direct-stamp precedence.
+    proof: [reservation-tests, oracle, reservation-python, reservation-corpus]
+checks:
+  optional: []
+  commands:
+    - id: settlement-tests
+      why: The write/counter boundary or an individual cleanup path is unimplemented.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::settlement::/)'
+    - id: reservation-tests
+      why: Reservation metadata selection or callback ownership is missing.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^reservation_state::/)'
+    - id: reservation-python
+      why: Shared reservation projections are not compared with core_helpers.
+      run: test -f tools/oracle/helpers/reservation_state.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: reservation-corpus
+      why: Reservation ownership has no helper decoder seed.
+      run: grep -rlq 'reservation_state:' tools/oracle/fuzz/corpus/helper_case/reservation-state-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/reservation-state/direct-and-auth-object-precedence.yaml
+  - tools/oracle/cases/helpers/reservation-state/bind-unbind-two-existing-buckets.yaml
+deviations: []
+out_of_scope:
+  - B071 owns reservation estimates, atomic reservation algorithms and its middleware; it implements this lower settlement port when enabling reservations.
+  - B070 owns update_database, B124 the proxy counter/cache operations, B069 success callback orchestration and B1720 failure handling; B206 retains unrelated core_helpers functions and B1717 provider cost stamping.
+pitfalls:
+  - A failed reconciliation finalizes the reservation but still permits the already incurred cost to be persisted.
+  - Counter failure follows the database write, so retrying the entire callback would charge the row twice.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

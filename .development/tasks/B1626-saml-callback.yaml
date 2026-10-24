@@ -1,0 +1,99 @@
+id: B1626
+title: Validate SAML assertions, browser binding and replay state
+description: >-
+  Implement saml_callback in betterlite-server and saml_assertion in betterlite-auth. Own
+  SAMLAuthHandler.read_acs_post_data, handle_acs, _replay_guard_ttl, _response_in_response_to,
+  _enforce_response_binding, _result_from_auth, _attribute_value/_attribute_values and their
+  attribute-candidate constants, plus ui_sso.py's saml_callback. Register public POST
+  /sso/saml/callback. Check DISABLE_ADMIN_UI, DB and master key before reading the form.
+  Enforce the pinned 5 MiB cap on both declared length and accumulated chunks; decode UTF-8
+  with replacement, discard blank form values and keep the last duplicate. Missing SAMLResponse
+  is 400. Use B1625's toolkit to validate signature, issuer, audience, destination and time;
+  toolkit processing failures are 401 before any user/session writes.
+  Read InResponseTo from Response, then bearer SubjectConfirmationData. Solicited responses
+  require an existing saml_authn_request:<id> and constant-time equality with litellm_saml_authn.
+  Unsolicited responses require no browser cookie, SAML_ALLOW_UNSOLICITED=false overridden
+  true, and shared Redis. Require an assertion ID; increment saml_consumed_assertion:<id>
+  with TTL clamped between 3600 and 86400 seconds from NotOnOrAfter, or 3600 when absent.
+  Reject count>1; preserve the source's acceptance when the cache returns no count and its
+  retention of the authn-request key. Attribute overrides SAML_ATTRIBUTE_EMAIL, USER_ID,
+  FIRST_NAME, LAST_NAME, ROLE and TEAM_IDS default absent (each prefixed SAML_ATTRIBUTE_).
+  Use the first truthy candidate list, filter empty members and do not continue after that
+  list becomes empty. Email falls back to a NameID containing @; no email with configured
+  ALLOWED_EMAIL_DOMAINS is 401. User ID falls back to NameID then email; invalid CustomOpenID
+  is 401. Resolve roles with B1608. RelayState uses B1618's absolute control-plane validation,
+  then B1624 issues the UI session; do not apply generic callback relative-return behavior.
+  Expose decode_saml_post and decode_saml_response at the actual form/base64/XML boundaries,
+  fuzzed with saml_assertion_input. loads_saml_attribute_policy covers all overrides and
+  unsolicited mode. B1631 signs real browser transcripts for success, binding and replay.
+  Owned callback/helper logic is 235 source lines plus attribute constants; estimate 300
+  implementation, 240 tests and 140 decoder/config/wiring lines within 775.
+scope:
+  paths:
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/saml_assertion.rs
+    - crates/betterlite-auth/src/saml_assertion/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/saml_assertion_input.rs
+    - crates/betterlite-auth/fuzz/corpus/saml_assertion_input/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/saml_callback.rs
+    - crates/betterlite-server/src/saml_callback/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/saml_assertion.rs
+    - crates/betterlite-config/src/saml_assertion/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*
+    - tools/oracle/cases/sso/saml-callback/**
+    - tools/oracle/fixtures/multipart-oracle/saml-callback/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L70-L95
+    why: Ordered email, name, role and team attribute candidates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L284-L498
+    why: Form cap, toolkit verification, browser binding, assertion replay guard and identity mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2170-L2221
+    why: SAML callback decorator, prerequisite order and RelayState handling.
+dod:
+  - text: Signed HTTP logins succeed while invalid signatures, wrong browser binding and repeated assertions fail before session issuance.
+    proof: [saml-assertion-tests, oracle]
+  - text: Attribute precedence, unsolicited policy and replay TTL/cache effects match the source, without a free-user-count gate.
+    proof: [saml-assertion-tests, saml-assertion-config, oracle]
+  - text: Oversize forms, malformed base64 and hostile XML reach bounded production decoders and replay without panic.
+    proof: [saml-assertion-tests, saml-assertion-corpora, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: saml-assertion-tests
+      why: SAML verification, identity projection, browser binding or replay storage is missing or unsafe.
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E '(test(/^saml_assertion::/) | test(/^saml_callback::/)) - test(replays_the_saml_assertion_input_corpus)'
+    - id: saml-assertion-config
+      why: SAML attribute overrides or unsolicited-response policy cannot be loaded into the real handler.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^saml_assertion::tests::loads_saml_attribute_policy/)'
+    - id: saml-assertion-corpora
+      why: Form/XML decoder and SAML policy configuration lack branch-added corpus data.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/saml_assertion_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/saml_assertion_input)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/saml-assertion-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config --no-tests=fail -E 'test(replays_the_saml_assertion_input_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/saml-callback/signed-browser-login.yaml
+  - tools/oracle/cases/sso/saml-callback/unsigned-wrong-key-and-expired.yaml
+  - tools/oracle/cases/sso/saml-callback/wrong-audience-and-destination.yaml
+  - tools/oracle/cases/sso/saml-callback/subject-confirmation-request-id.yaml
+  - tools/oracle/cases/sso/saml-callback/wrong-browser-cookie.yaml
+  - tools/oracle/cases/sso/saml-callback/reused-assertion.yaml
+  - tools/oracle/cases/sso/saml-callback/unsolicited-disabled-without-redis.yaml
+  - tools/oracle/cases/sso/saml-callback/attribute-overrides-and-nameid-fallback.yaml
+  - tools/oracle/cases/sso/saml-callback/missing-and-oversize-form.yaml
+  - tools/oracle/cases/sso/saml-callback/relative-relay-state-ignored.yaml
+deviations:
+  - what: A valid SAML login is not refused because the database contains more users than LiteLLM's free-tier allowance.
+    why: The README explicitly removes license checks and user/team caps; prove this with native count-boundary tests outside equality cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2201-L2201
+out_of_scope:
+  - B1625 owns _saml_unavailable_error and SAMLAuthHandler._env, is_saml_configured, _bool_env, _base_url, _is_https, _acs_url, _metadata_url, _sp_entity_id, _load_idp_settings, _build_settings, _prepare_request_data, _build_auth, build_login_redirect and build_sp_metadata.
+  - SAML entry GET routes are B1625; B063's inventory assigns the non-SAML functions of ui_sso.py.
+pitfalls:
+  - The authn-request cache key is not deleted by response binding; assertion-ID consumption, not that key's removal, detects a repeated assertion.
+  - A truthy attribute list containing only empty strings stops candidate search and yields no attribute value.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

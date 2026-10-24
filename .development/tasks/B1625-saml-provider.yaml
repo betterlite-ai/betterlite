@@ -1,0 +1,103 @@
+id: B1625
+title: Configure the SAML provider and publish login metadata
+description: >-
+  Add saml_provider to betterlite-auth and saml_entrypoints to betterlite-server. Own
+  _saml_unavailable_error and SAMLAuthHandler methods _env through build_sp_metadata in
+  saml_sso.py, plus saml_login and saml_metadata in ui_sso.py. Register public GET
+  /sso/saml/login and /sso/saml/metadata once. Use samael with its xmlsec feature enabled,
+  including the native libxml2/xmlsec/OpenSSL build requirements; do not implement XML
+  signatures or canonicalization. Keep backend availability behind the existing optional
+  SAML build boundary rather than silently disabling signature checks when native support
+  is unavailable.
+  Its adapter must expose verified response/assertion facts for B1626 without letting an
+  unsigned sibling element supply identity data. SAML_IDP_METADATA_URL and SAML_IDP_METADATA_XML
+  default absent; URL takes precedence, including the source's empty-versus-absent distinction.
+  Cache parsed metadata at saml_idp_settings:<SHA256(source)> for 3600s. Fetch configured metadata
+  with timeout 10s and SAML_IDP_METADATA_VALIDATE_CERT=true; no usable IdP settings yields 502,
+  no configuration yields 501, invalid toolkit settings yield 500. Preserve the unavailable
+  toolkit 501 path for a build without the SAML backend; ordinary builds include it.
+  SAML_SP_ENTITY_ID defaults to the public metadata URL, SAML_SP_NAME_ID_FORMAT to the emailAddress
+  URN. SAML_STRICT and SAML_WANT_ASSERTIONS_SIGNED default true; SAML_WANT_MESSAGES_SIGNED and
+  SAML_AUTHN_REQUESTS_SIGNED default false. Boolean env parsing trims and accepts true/1/yes/on.
+  Keep wantNameId=true, requestedAuthnContext=false and the pinned metadata merge order.
+  The server adapter resolves public URLs through B124 and injects them into the auth
+  provider as validated values; the auth crate never imports server state. Use B743
+  for secure cookies. Login returns 303, stores
+  saml_authn_request:<id> for 600s and sets HttpOnly litellm_saml_authn with SameSite=None on
+  HTTPS or Lax otherwise. RelayState is passed to the IdP. DISABLE_ADMIN_UI uses its existing
+  boolean binding to disable login, but does not disable metadata. Metadata returns application/xml
+  only after toolkit validation. Define decode_saml_metadata on XML bytes, disable external
+  entity resolution and fuzz it with saml_metadata; reuse transport limits for remote metadata.
+  Enable LiteLLM's optional saml extra in the oracle environment for configured-provider cases.
+  loads_saml_provider_settings must exercise every listed env binding. Ownership is 167 method
+  lines plus constants and 16 route lines; allow 290 adapter/config, 230 tests, 100 fuzz and
+  80 HTTP wiring lines within 800, including native dependency declarations.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - deny.toml
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/saml_provider.rs
+    - crates/betterlite-auth/src/saml_provider/**
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/saml_metadata.rs
+    - crates/betterlite-auth/fuzz/corpus/saml_metadata/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/saml_entrypoints.rs
+    - crates/betterlite-server/src/saml_entrypoints/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/saml_provider.rs
+    - crates/betterlite-config/src/saml_provider/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/saml-provider-*
+    - tools/oracle/litellm/pyproject.toml
+    - tools/oracle/litellm/uv.lock
+    - tools/oracle/cases/sso/saml-provider/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/sso/saml_sso.py#L45-L282
+    why: Optional toolkit, settings, metadata cache, AuthnRequest and SP metadata generation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2149-L2167
+    why: Login and metadata route decorators with their different UI-disable behavior.
+  - url: https://github.com/njaremko/samael/blob/master/src/service_provider/mod.rs
+    why: ServiceProvider verifies signatures before exposing the selected assertion.
+  - url: https://github.com/njaremko/samael/blob/master/Cargo.toml
+    why: The xmlsec feature and native XML/crypto dependency requirements.
+dod:
+  - text: The two real HTTP routes emit valid SP metadata and bound AuthnRequests, with source-compatible configuration errors.
+    proof: [saml-provider-tests, oracle]
+  - text: All SAML provider env values load into the toolkit settings and metadata caching honors source precedence and TTL.
+    proof: [saml-provider-tests, saml-provider-config]
+  - text: XML metadata parsing rejects external entities and replays the added XML/config corpus safely.
+    proof: [saml-provider-tests, saml-provider-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: saml-provider-tests
+      why: SAML metadata, redirects, toolkit availability or cookie construction is not implemented.
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E '(test(/^saml_provider::/) | test(/^saml_entrypoints::/)) - test(replays_the_saml_metadata_corpus)'
+    - id: saml-provider-config
+      why: A declared SAML setting has no working production-loader binding.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^saml_provider::tests::loads_saml_provider_settings/)'
+    - id: saml-provider-corpora
+      why: Metadata XML and SAML config changes have no new replay inputs.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/saml_metadata.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/saml_metadata)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/saml-provider-*')" && cargo nextest run --locked -p betterlite-auth -p betterlite-config --no-tests=fail -E 'test(replays_the_saml_metadata_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/saml-provider/unconfigured-provider.yaml
+  - tools/oracle/cases/sso/saml-provider/inline-metadata-and-entity-id.yaml
+  - tools/oracle/cases/sso/saml-provider/remote-metadata-precedes-inline.yaml
+  - tools/oracle/cases/sso/saml-provider/authn-request-cookie-and-relay-state.yaml
+  - tools/oracle/cases/sso/saml-provider/disabled-ui-still-publishes-metadata.yaml
+deviations: []
+out_of_scope:
+  - B1626 owns read_acs_post_data, handle_acs, _replay_guard_ttl, _response_in_response_to, _enforce_response_binding, _result_from_auth, _attribute_value and _attribute_values in saml_sso.py, including their attribute constants.
+  - ui_sso.py's saml_callback is B1626; B063 lists the owners of its other functions.
+pitfalls:
+  - SAML_IDP_METADATA_URL set to an empty string still takes the remote-parser branch when inline XML supplies the cache source.
+  - SAML_AUTHN_REQUESTS_SIGNED cannot manufacture an SP signing key, so unsupported signing configuration must retain the toolkit's configuration failure.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

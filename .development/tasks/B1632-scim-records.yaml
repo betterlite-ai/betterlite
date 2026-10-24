@@ -1,0 +1,79 @@
+id: B1632
+title: Decode SCIM resources and preserve directory attribute shapes
+description: >-
+  Add scim_records to betterlite-server with the complete models in types/proxy/
+  management_endpoints/scim_v2.py, including validators and custom serializers.
+  Expose decode_scim_resource(bytes, User|Group|Patch) for the provisioning handlers.
+  User.active defaults true, but retain field presence separately because PUT distinguishes
+  omitted active from explicit true. Resource.schemas is required; userName is optional,
+  Group.displayName is required, and patch schemas defaults to the PatchOp URN.
+  Normalize operation names to lowercase add/remove/replace without trimming, rejecting
+  other strings. A non-string member type becomes absent rather than rejecting the member.
+  Model enterprise attributes under urn:ietf:params:scim:schemas:extension:enterprise:2.0:User,
+  preserving manager.$ref and the alternate field-name input accepted by populate_by_name.
+  Entitlements and roles accept bare strings as value objects and retain additional object
+  fields; these directory roles confer no proxy authority. Validate EmailStr using an existing
+  email parser if it matches the pinned Pydantic normalization, with fixtures for mixed-case
+  domains and invalid addresses. Serialization omits absent enterprise, entitlements and
+  roles blocks, but preserves empty lists. Discovery records retain their distinct nested
+  model_dump behavior, including schema_ versus schema and nullable subAttributes; compare
+  actual nested output rather than assuming recursive invocation of overridden methods.
+  Implement the pure scim_record oracle variant and a tagged scim_resource fuzz target;
+  replays_the_scim_resource_corpus exercises the same decoder as HTTP extraction.
+  The 202 nonblank source lines allow 245 record/validation lines, 190 tests, 100 oracle
+  adapter lines and 90 fuzz/seed lines within a 675-line change.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_records.rs
+    - crates/betterlite-server/src/scim_records/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/scim_resource.rs
+    - crates/betterlite-server/fuzz/corpus/scim_resource/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/scim_record.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/scim_record.py
+    - tools/oracle/cases/helpers/scim-record/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-record-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/scim_v2.py#L1-L271
+    why: Resource defaults, email validation, directory extension aliases and serialization hooks.
+  - url: https://www.rfc-editor.org/rfc/rfc7643.html#section-4.3
+    why: Enterprise-user vocabulary; the pinned models determine supported fields.
+dod:
+  - text: Every SCIM record retains the pinned defaults, aliases, coercions and optional-block output.
+    proof: [scim-record-tests, oracle, scim-record-python]
+  - text: Resource decoding distinguishes omitted active and survives malformed JSON and mixed patch values.
+    proof: [scim-record-tests, scim-record-corpus]
+checks:
+  optional: []
+  commands:
+    - id: scim-record-tests
+      why: SCIM record validation or serialization has lost a source-specific distinction.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_records::/) - test(replays_the_scim_resource_corpus)'
+    - id: scim-record-python
+      why: The model-only oracle comparison is absent or fails strict Python checks.
+      run: test -f tools/oracle/helpers/scim_record.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: scim-record-corpus
+      why: Neither the public resource decoder nor its helper envelope has regression inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/scim_resource)" && grep -rlq 'scim_record:' tools/oracle/fuzz/corpus/helper_case/scim-record-* && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-record/absent-active-versus-explicit-true.yaml
+  - tools/oracle/cases/helpers/scim-record/bare-entitlements-and-extra-fields.yaml
+  - tools/oracle/cases/helpers/scim-record/enterprise-manager-ref.yaml
+  - tools/oracle/cases/helpers/scim-record/member-type-number-is-discarded.yaml
+  - tools/oracle/cases/helpers/scim-record/nested-schema-dump.yaml
+deviations: []
+out_of_scope:
+  - SCIM HTTP operations live in B064 and its route parts; this file contains only resource models and their validation methods.
+pitfalls:
+  - Dropping model_fields_set would silently reactivate a deactivated account on a PUT that omits active.
+  - SCIM roles are stored directory attributes, not LitellmUserRoles authorization assignments.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

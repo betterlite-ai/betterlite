@@ -1,0 +1,76 @@
+id: B1606
+title: Persist discovered tools and refresh effective tool policies
+description: >-
+  Implement tool_policy_store in betterlite-db. Own batch_upsert_tools, update_tool_policy,
+  ToolPolicyRegistry and get_tool_policy_registry, add_tool_to_object_permission_blocked and
+  remove_tool_from_object_permission_blocked. Share B1605's tool records and query methods.
+  Discovery ignores empty tool names, inserts untrusted input/output policy with call_count=1,
+  and increments only counts/timestamps on conflict; origin defaults user_defined and actor
+  defaults system. Keep per-item writes and the outer catch: a failure stops the remaining
+  batch, logs, and does not roll back earlier tools. Administrative policy upsert creates an
+  undiscovered tool when necessary and preserves unspecified policies on updates.
+  Replace the Python singleton with one injected server-owned registry. Refresh tool maps first,
+  then permission blocked_tools via B715 reconnect handling. Preserve partial refresh state when
+  the second read fails, and set initialized only after both reads succeed. Effective input
+  policy unions key/team blocked lists with trimmed permission IDs, defaults unknown tools to
+  untrusted, and leaves output policy independent. Permission add is idempotent; removing a
+  missing member returns false. These read-modify-write operations have no source transaction.
+  The tool_policy helper compares pure registry lookups with the MIT class; Postgres tests drive
+  discovery and mutation failure boundaries. This task transforms typed records and adds no
+  external byte decoder. Its 230 owned source lines support a 600-line allowance: 260 production,
+  190 tests, 100 oracle glue and 50 registration lines.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/tool_policy_store.rs
+    - crates/betterlite-db/src/tool_policy_store/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/tool_policy.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/tool_policy.py
+    - tools/oracle/cases/helpers/tool-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/tool-policy-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L106-L160
+    why: Discovery writes preserve prior policies and stop on the first error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L243-L286
+    why: Administrative policy upsert followed by enriched readback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L367-L517
+    why: Registry refresh ordering, effective policy lookup and permission-list mutations.
+dod:
+  - text: Discovery and policy writes retain defaults, increment counts and expose source partial-write behavior.
+    proof: [tool-policy-tests]
+  - text: Effective policies and unknown-tool defaults agree with direct MIT registry lookups.
+    proof: [oracle, tool-policy-tests, policy-python, policy-helper-corpus]
+  - text: A permission-read failure preserves the new tool maps but does not mark a fresh registry initialized.
+    proof: [tool-policy-tests]
+checks:
+  optional: []
+  commands:
+    - id: tool-policy-tests
+      why: Policy persistence or in-memory refresh transitions are incorrect.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^tool_policy_store::/)'
+    - id: policy-python
+      why: The policy helper does not type-check against the pinned class.
+      run: test -f tools/oracle/helpers/tool_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: policy-helper-corpus
+      why: A tool_policy call has not been added to the shared parser's corpus.
+      run: grep -rlq 'tool_policy:' tools/oracle/fuzz/corpus/helper_case/tool-policy-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tool-policy/key-and-team-union.yaml
+  - tools/oracle/cases/helpers/tool-policy/trimmed-permission-ids.yaml
+  - tools/oracle/cases/helpers/tool-policy/unknown-and-empty-tools.yaml
+  - tools/oracle/cases/helpers/tool-policy/output-policy-independent.yaml
+deviations: []
+out_of_scope:
+  - B1605 owns record conversion, repository table contracts, owner lookup, list/get and override display in tool_registry_writer.py; get_tools_by_names has no caller at the pin.
+  - Tool discovery scheduling and queue draining are other B070 parts; guardrail enforcement is B106.
+pitfalls:
+  - A discovered tool's first key_hash and origin survive later discovery by a different user.
+  - Making the registry refresh atomic would hide the source's new-tool-map and old-permission-map intermediate failure state.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

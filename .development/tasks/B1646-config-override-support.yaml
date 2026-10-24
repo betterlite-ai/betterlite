@@ -1,0 +1,106 @@
+id: B1646
+title: Model encrypted secret-manager overrides and reversible runtime state
+description: >-
+  Add config_override_support in betterlite-server with all config_override_endpoints.py
+  helpers before the first route, plus the three models in config_overrides.py. Define
+  OverrideKind as HashicorpVault or CyberArk, typed optional string fields, the shared
+  schema/response records and decode_config_override(bytes, kind). Unknown request fields
+  follow Pydantic's ignored-extra behavior. decode_stored_override handles database strings
+  or parsed objects through B192's JSON fallback; malformed JSON becomes {}, while a valid
+  non-object retains the later shape failure rather than being mistaken for an empty config.
+  Map all thirteen Vault fields to HCP_VAULT_ADDR/TOKEN/APPROLE_ROLE_ID/APPROLE_SECRET_ID/
+  APPROLE_MOUNT_PATH/CLIENT_CERT/CLIENT_KEY/CERT_ROLE/NAMESPACE/LOGIN_NAMESPACE/
+  SECRET_NAMESPACE/MOUNT_NAME/PATH_PREFIX, and CyberArk fields to CYBERARK_API_BASE/ACCOUNT/
+  USERNAME/API_KEY/CLIENT_CERT/CLIENT_KEY/SSL_VERIFY/REFRESH_INTERVAL. Every override field
+  defaults None; downstream manager defaults remain B129's. The effective environment
+  projection removes missing, null or empty fields and stringifies other accepted values.
+  Export RuntimeEnvironment, an explicit boot snapshot plus runtime overlay with immutable
+  request snapshots and typed set/remove batches, for native settings consumers. Pass it to
+  native secret-manager and
+  config consumers, instead of mutating process environment while async tasks run.
+  Vault clearing removes its mapped values, drops only an active Vault manager and resets
+  its last-config marker. Capture CyberArk boot values once. Restore CyberArk by applying
+  supplied values and trying its manager when api_base is truthy; on failure log and drop
+  only an active CyberArk manager, invalidate Vault's marker and best-effort reinitialize
+  Vault when HCP_VAULT_ADDR remains set. CyberArk clearing restores boot values and clears
+  its marker. Its persistence helper encrypts every config value through B124/B1600, upserts
+  config_type=cyberark via B726, and returns the serialized encrypted payload.
+  Response masking uses B244 only for string-valued vault_token/approle_secret_id/client_key
+  or cyberark_api_key/client_key; all audit snapshot values instead become ***REDACTED***.
+  Schema fields report description and the first non-null type. Preserve this helper's
+  trusted admin litellm-changed-by attribution, which differs from B065's metadata-gated
+  object attribution. Queue the completed redacted AuditRecord through B065's owned
+  submit API, warning on failure and ignoring cancellation. Pure override_projection
+  cases cover masking/schema/JSON shapes; native tests exercise restoration and DB writes.
+  loads_override_environment loads every mapping and absence through betterlite-config.
+  Fuzz request and stored-row decoders together as config_override. The 198 helper/type
+  lines plus 95 model lines allow 320 code, 220 tests and 210 config/adapters/fuzz lines,
+  bounded by 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/config_override_support.rs
+    - crates/betterlite-server/src/config_override_support/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/config_override.rs
+    - crates/betterlite-server/fuzz/corpus/config_override/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config_override.rs
+    - crates/betterlite-config/src/config_override/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/config-override-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/override_projection.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/override_projection.py
+    - tools/oracle/cases/helpers/override-projection/**
+    - tools/oracle/fuzz/corpus/helper_case/override-projection-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L50-L322
+    why: Complete shared row/audit/masking/schema/environment/runtime helpers and their mappings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/config_overrides.py#L1-L105
+    why: Optional string fields, descriptions and response shape.
+dod:
+  - text: Override models, stored JSON, UI masking and audit redaction preserve their distinct accepted shapes.
+    proof: [override-support-tests, oracle, override-python, override-corpora]
+  - text: Loaded environment mappings and runtime rollback preserve boot values and active-manager selection.
+    proof: [override-support-tests, override-config-tests, override-corpora]
+  - text: Encrypted persistence and asynchronous audit submission retain source ordering without exposing credential values.
+    proof: [override-support-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: override-support-tests
+      why: Secret-manager override decoding, restoration, masking or persistence has diverged.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^config_override_support::/) - test(replays_the_config_override_corpus)'
+    - id: override-config-tests
+      why: An HCP_VAULT or CYBERARK binding is not loaded with its absent-string default.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^config_override::tests::loads_override_environment/)'
+    - id: override-python
+      why: The pure override projection adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/override_projection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: override-corpora
+      why: Request/database override decoders and their config/helper envelopes lack added seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/config_override)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/config-override-*')" && grep -rlq 'override_projection:' tools/oracle/fuzz/corpus/helper_case/override-projection-* && cargo nextest run --locked -p betterlite-server -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_override_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/override-projection/mask-only-selected-string-fields.yaml
+  - tools/oracle/cases/helpers/override-projection/audit-redacts-every-value.yaml
+  - tools/oracle/cases/helpers/override-projection/nullable-schema-type-selection.yaml
+  - tools/oracle/cases/helpers/override-projection/malformed-json-versus-valid-scalar.yaml
+deviations:
+  - what: Overrides change the environment view used by native gateway components, while process-level environment reads in custom Python code continue to see the boot environment.
+    why: Rust forbids safe concurrent process-environment mutation; explicit runtime state keeps native secret reads consistent without unsafe code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L242-L252
+out_of_scope:
+  - B1647 owns update_hashicorp_vault_config, get_hashicorp_vault_config, delete_hashicorp_vault_config and test_hashicorp_vault_connection at L327-L645.
+  - B1648 owns update_cyberark_config, get_cyberark_config, delete_cyberark_config and test_cyberark_connection at L650-L932.
+  - B129 supplies the Vault/CyberArk clients; B124 owns their startup/reload integration and the generic per-value encryption facade.
+pitfalls:
+  - A valid non-object JSON config_value is not the same case as malformed JSON falling back to an empty mapping.
+  - CyberArk rollback may reactivate Vault only after dropping an active CyberArk manager, not after every failed restore attempt.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

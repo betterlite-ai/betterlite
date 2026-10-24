@@ -1,0 +1,80 @@
+id: B1634
+title: Resolve SCIM members without granting access to ambiguous accounts
+description: >-
+  Build scim_member_identity in betterlite-server for the classified-member records,
+  _member_value, _normalized_member_type, _json_object_fields, provenance checks,
+  both identity lookup functions, classification/partition/admission functions and
+  _roster_entries_named_by/_member_ids_to_drop. These services determine which real
+  user a directory member names before any provisioning or membership write occurs.
+  Reject an empty or whitespace-only value with 400, but preserve a nonempty value's
+  original spelling for user_id lookup. Match trimmed sso_user_id exactly and email
+  case-insensitively; inspect up to two distinct accounts, with the extra primary-key
+  lookup when that bounded scan could have omitted the account keyed by the value.
+  Type Group, after trim/lowercase, skips without user lookup. A unique exact user_id
+  wins over other noncanonical types; an id shared with another account's subject/email
+  is ambiguous. Unknown non-User types skip. Untyped ids naming a SCIM-managed team
+  skip, where truthy metadata.scim_managed or non-null scim_data establishes provenance;
+  explicit User and unmanaged teams do not trigger that skip. Preserve request order
+  in partitions, duplicates in resolved_ids, and first-occurrence deduplication in
+  admitted ids. Removal resolves every account sharing the subject/email but intersects
+  with the current roster plus the literal id; zero matches is a no-op, two current
+  members is 400, and unrelated accounts cannot prevent a unique removal.
+  Keep database reads in service tests backed by B860. The pure scim_member_partition
+  adapter compares normalization, provenance, partition/admission and roster intersection
+  against the pinned functions without invoking async handlers. No new decoder is needed:
+  inputs are B1632 records and repository rows. The 265 owned lines, including substantial
+  explanatory docstrings, budget 260 implementation, 230 tests and 120 oracle lines, capped 700.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_member_identity.rs
+    - crates/betterlite-server/src/scim_member_identity/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/scim_member_partition.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/scim_member_partition.py
+    - tools/oracle/cases/helpers/scim-member-partition/**
+    - tools/oracle/fuzz/corpus/helper_case/scim-member-partition-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L487-L753
+    why: Member classification types, bounded identity resolution, provenance and ordered admission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L790-L851
+    why: Removal ambiguity is measured against the group's own roster.
+dod:
+  - text: Exact ids, alternate identities and declared member types produce the same classification without creating users.
+    proof: [member-identity-tests, oracle, member-partition-python]
+  - text: Removal cannot revoke two current members through one ambiguous value and ignores unrelated collisions.
+    proof: [member-identity-tests, oracle, member-partition-python]
+  - text: Partition fixtures exercise duplicate and skipped values through the helper decoder.
+    proof: [member-partition-corpus]
+checks:
+  optional: []
+  commands:
+    - id: member-identity-tests
+      why: A directory identity could be granted to the wrong account or a valid removal refused.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_member_identity::/)'
+    - id: member-partition-python
+      why: The member decision comparison does not type-check against its tagged records.
+      run: test -f tools/oracle/helpers/scim_member_partition.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: member-partition-corpus
+      why: The classification helper variant lacks committed decoder examples.
+      run: grep -rlq 'scim_member_partition:' tools/oracle/fuzz/corpus/helper_case/scim-member-partition-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/scim-member-partition/scim-data-null-is-not-provenance.yaml
+  - tools/oracle/cases/helpers/scim-member-partition/duplicates-survive-only-resolved-bucket.yaml
+  - tools/oracle/cases/helpers/scim-member-partition/one-roster-member-despite-external-collision.yaml
+  - tools/oracle/cases/helpers/scim-member-partition/literal-and-resolved-roster-ids-both-count.yaml
+deviations: []
+out_of_scope:
+  - "Other scim_v2.py helpers: B1633 L81-L157, L272-L302, L952-L963, L1145-L1168; B1635 L305-L484; B1636 L764-L787, L854-L949, L1097-L1142; B1637 L966-L1094, L2200-L2322, L2819-L2864."
+  - "SCIM routes and their remaining helpers: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - A direct user_id hit is still ambiguous when another row uses that value as sso_user_id or user_email.
+  - The explicit type Group suppresses even a historical placeholder user, while an unknown type preserves a uniquely keyed real user.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

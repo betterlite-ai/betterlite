@@ -1,0 +1,100 @@
+id: B1706
+title: Index invoked tools and bound spend-log write statements
+description: >-
+  Implement all of spend_log_tool_index.py and spend_log_batching.py. Put response tool-name
+  projection in betterlite-prompts::tool_spend and ToolUsageTransaction in
+  betterlite-models::tool_spend so collector events can use them without importing storage;
+  put statement sizing and flush logic in
+  betterlite-db::spend_batches and ::tool_spend. B226 extracts tool calls from all choices
+  and response families. Trim nonempty names, then deduplicate MCP namespaced name,
+  response calls and realtime calls in first-seen order. Declared-only tools never count.
+  Decode start_time_iso with Python-compatible ISO/Z handling; invalid time yields no
+  transaction. The day is the original string before T, while a naive timestamp gets UTC.
+  Each invoked tool receives the request's full spend/tokens, not a divided share.
+  Measure each complete row with Python json.dumps default spacing/ensure_ascii/default=str
+  semantics, including keys and escaped characters; serialization failure measures zero
+  and must not drop following rows. A statement starts with two bracket bytes and adds
+  two separator bytes per additional row. Yield consecutive slices respecting byte and
+  row limits, but keep an oversized individual row alone. Queue trimming removes oldest
+  rows until the supplied running byte total fits, always retaining the newest row even
+  if oversized. Keep pure sizing APIs separate from actual queue ownership.
+  Load SPEND_LOG_WRITE_BATCH_MAX_BYTES=2000000 and SPEND_LOG_WRITE_BATCH_MAX_ROWS=100,
+  clamping parsed integers to at least one; loads_spend_statement_limits proves both env
+  settings. Fuzz decode_spend_statement_limits in config and decode_tool_spend_time in
+  models with tagged corpus replay. Already parsed row sizing adds no JSON decoder.
+  Flush index rows first as bounded standalone inserts with conflict skipping on
+  request_id/tool_name. Then group by date/tool and increment all daily rollups in one
+  transaction, including request_count per transaction/tool occurrence. Retry only the
+  source's proven pre-send ConnectError class, at most n_retry_times+1 attempts (default
+  4), with 2^attempt plus uniform [0,1] jitter. Ambiguous post-send errors propagate with
+  no retry; prior index rows may remain while rollups roll back. Inject clock/jitter and
+  database failure classification rather than broadly retrying sqlx errors.
+  The pure tool_spend helper covers names, date buckets, measured slices and trimming;
+  native Postgres tests distinguish pre-send retries from ambiguous writes and verify
+  daily atomicity. The two files total 271 nonblank source lines; allocate 290 production,
+  270 tests and 220 config/fuzz/oracle lines, within 800.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/tool_spend.rs
+    - crates/betterlite-models/src/tool_spend/**
+    - crates/betterlite-prompts/src/lib.rs
+    - crates/betterlite-prompts/src/tool_spend.rs
+    - crates/betterlite-prompts/src/tool_spend/**
+    - crates/betterlite-models/fuzz/{Cargo.toml,fuzz_targets/tool_spend_time.rs,corpus/tool_spend_time/**}
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/{spend_batches,tool_spend}.rs
+    - crates/betterlite-db/src/{spend_batches,tool_spend}/**
+    - crates/betterlite-config/src/spend.rs
+    - crates/betterlite-config/src/spend/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_statement_limits.rs,corpus/spend_statement_limits/**}
+    - tools/oracle/src/helpers/{mod.rs,tool_spend.rs}
+    - tools/oracle/helpers/{dispatch.py,tool_spend.py}
+    - tools/oracle/cases/helpers/tool-spend/**
+    - tools/oracle/fuzz/corpus/helper_case/tool-spend-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_log_tool_index.py#L34-L165
+    why: Invoked-tool attribution and index-first, rollup-transaction flush behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_log_batching.py#L30-L143
+    why: Exact serializer-based sizes, newest-row preservation and statement splitting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1802-L1803
+    why: Statement environment defaults and minimum clamps.
+dod:
+  - text: Tool attribution and byte/row splitting preserve source ordering, full per-tool charges and oversized-row behavior.
+    proof: [tool-batch-tests, oracle, tool-batch-python, tool-batch-seeds]
+  - text: Flush retries only proven pre-send failures and keeps daily increments atomic after standalone index writes.
+    proof: [tool-batch-tests]
+  - text: Statement limits load from the exact env names and both scalar decoders replay malformed/boundary corpora.
+    proof: [tool-batch-tests, tool-batch-decoders]
+checks:
+  optional: [mutants]
+  commands:
+    - id: tool-batch-tests
+      why: Attribution, sizing, transaction or loaded-limit behavior is missing.
+      run: cargo nextest run --locked -p betterlite-models -p betterlite-prompts -p betterlite-db -p betterlite-config --no-tests=fail -E 'test(/^tool_spend::/) + test(/^spend_batches::/) + test(loads_spend_statement_limits) - test(/replays_the_/)'
+    - id: tool-batch-python
+      why: Tool/sizing oracle adapters do not invoke the typed source helpers correctly.
+      run: test -f tools/oracle/helpers/tool_spend.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: tool-batch-seeds
+      why: Tool-spend helper inputs are not represented in the replay corpus.
+      run: grep -rlq 'tool_spend:' tools/oracle/fuzz/corpus/helper_case/tool-spend-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: tool-batch-decoders
+      why: Time or statement-limit decoding lacks a newly added corpus and replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/tool_spend_time)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/spend_statement_limits)" && cargo nextest run --locked -p betterlite-models -p betterlite-config --no-tests=fail -E 'test(replays_the_tool_spend_time_corpus) + test(replays_the_spend_statement_limits_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tool-spend/all-choices-mcp-and-realtime-dedup.yaml
+  - tools/oracle/cases/helpers/tool-spend/offset-time-original-day-and-invalid-time.yaml
+  - tools/oracle/cases/helpers/tool-spend/unicode-escaping-and-exact-framing-boundary.yaml
+  - tools/oracle/cases/helpers/tool-spend/oversized-newest-and-zero-measurement.yaml
+deviations: []
+out_of_scope:
+  - B070 wires queue draining and flush-error reporting; B226 retains response-family tool extraction and B726 the pinned tool index/daily repositories.
+pitfalls:
+  - Retrying a post-send rollup error can charge the same request twice even though index inserts are idempotent.
+  - A Unicode row's serialized byte budget differs from the number of visible characters.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

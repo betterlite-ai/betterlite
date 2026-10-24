@@ -1,0 +1,116 @@
+id: B1674
+title: Price generated images from token usage, image counts or pixels
+description: >-
+  Add image_cost to betterlite-models, owning utils.py prices_tokens, flat_image_cost,
+  resolve_image_model_info and calculate_image_response_cost_from_usage, the whole OpenAI
+  and Azure AI image cost modules, and default_image_cost_calculator in cost_calculator.py.
+  Define ImageBilling as a projection of an already-decoded ImageResponse: returned image
+  count, size, quality and a tagged chat/image usage view. Keep typed usage variants distinct;
+  a raw object with similarly named fields must not silently become chat Usage.
+  Resolving image pricing without supplied model-info uses B1678's effective lookup and propagates its
+  failure. With supplied info, overlay every supplied field on the public entry; if lookup
+  fails use only supplied info. Token pricing is declared by any nonnull input/output text
+  or image-token rate, including zero. Flat cost uses output_cost_per_image times returned
+  images, or zero for no table/data. Shared usage costing requires input/output/total counts
+  all present and rejects an all-zero triple as missing metadata. A supplied table without
+  token prices requests flat fallback. Read dictionary or attribute input details through
+  B1671's integer projection, setting cached tokens to zero. Prefer completion_tokens_details
+  over output_tokens_details even when empty. With neither, all output is image tokens;
+  with a record, retain text/image/audio/reasoning counts and assign any positive unreported
+  remainder to text. Pass the resulting CostUsage to B1672 and return both costs summed.
+  OpenAI defaults a falsey provider to openai, but leaves its price table absent when the
+  caller supplied none. No usage then costs zero rather than performing a public flat-price
+  lookup. Chat Usage with completion detail goes directly through generic pricing; otherwise
+  try image usage when input_tokens is nonnull, then any chat Usage as text, then flat cost.
+  Azure AI always resolves pricing, tries usage first, then truthy output_cost_per_image
+  times explicit n or returned count, then a truthy pixel price. Pixel lookup first reads
+  the resolved table, then its key's public raw entry. Positive exact-integer width/height
+  optional parameters override size; Booleans do not. Its default-image call receives the
+  original deployment table, not the merged one. A non-ImageResponse is an error.
+  For default image cost, parse size-or-1024-x-1024 with parse_image_dimensions: convert x
+  separators only when -x- is absent, require exactly two Python-int-compatible components,
+  and preserve zero/negative dimensions rather than invent positivity checks. Search the
+  eight pinned catalog candidates in order: quality/base, provider-first-quality, base,
+  high/base, quality/last-model-segment, last-segment, model, stripped-provider model. Strip
+  all occurrences only after the model starts with provider/. The fallback is high despite
+  the source comment saying medium. No match is permitted only with supplied model-info.
+  Examine the complete supplied table before the public table, selecting its first nonnull
+  input_cost_per_image, output_cost_per_image, input_cost_per_pixel; explicit zero wins.
+  n=None means one here, unlike routing's returned-image default. Missing model and missing
+  usable price remain distinct typed failures. Native tests own catalog ordering and Azure
+  precedence; pure image_cost fixtures use explicit price tables and call source helpers,
+  without replacing globals. Add image_dimensions fuzz/replay in betterlite-models and
+  helper_case seeds. The 284 nonblank source lines budget 320 implementation, 230 tests,
+  180 adapters/cases and 70 parser/corpus wiring, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/image_cost.rs
+    - crates/betterlite-models/src/image_cost/**
+    - crates/betterlite-models/fuzz/Cargo.toml
+    - crates/betterlite-models/fuzz/fuzz_targets/image_dimensions.rs
+    - crates/betterlite-models/fuzz/corpus/image_dimensions/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/image_cost.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/image_cost.py
+    - tools/oracle/cases/helpers/image-cost/**
+    - tools/oracle/fuzz/corpus/helper_case/image-cost-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L862-L889
+    why: Declared token rates, flat counts and deployment-over-public price merging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1773-L1862
+    why: Missing image usage and asymmetric output modality inference.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_generation/cost_calculator.py#L18-L64
+    why: OpenAI's chat-usage, image-usage and flat fallback order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/cost_calculator.py#L13-L75
+    why: Azure image count and pixel pricing with width/height overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2407-L2496
+    why: Dimension grammar, candidate ordering and deployment price priority.
+dod:
+  - text: Image usage distinguishes absent output detail from empty detail, preserving token versus flat fallback and returned-image counts.
+    proof: [image-cost-tests, oracle, image-cost-python, image-cost-helper-corpus]
+  - text: OpenAI and Azure retain their different lookup, chat-usage, count and pixel precedence.
+    proof: [image-cost-tests, oracle, image-cost-python]
+  - text: Default image pricing follows the exact candidate and per-table unit order, and dimension parsing has bounded regression coverage.
+    proof: [image-cost-tests, oracle, image-cost-python, image-dimensions-corpus]
+checks:
+  optional: []
+  commands:
+    - id: image-cost-tests
+      why: Missing image metadata or competing units selects the wrong price source.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^image_cost::/) - test(replays_the_image_dimensions_corpus)'
+    - id: image-cost-python
+      why: Image pricing fixtures do not have a checked adapter using real source calculations.
+      run: test -f tools/oracle/helpers/image_cost.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: image-cost-helper-corpus
+      why: The image_cost helper tag is missing from decoder regression seeds.
+      run: grep -rlq 'image_cost:' tools/oracle/fuzz/corpus/helper_case/image-cost-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: image-dimensions-corpus
+      why: No added image-dimension input is replayed through the production scalar parser.
+      run: test -f crates/betterlite-models/fuzz/fuzz_targets/image_dimensions.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/image_dimensions)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_image_dimensions_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/image-cost/all-zero-usage-requests-flat-fallback.yaml
+  - tools/oracle/cases/helpers/image-cost/absent-output-detail-means-images-empty-means-text.yaml
+  - tools/oracle/cases/helpers/image-cost/mixed-input-image-tokens-and-output-remainder.yaml
+  - tools/oracle/cases/helpers/image-cost/openai-chat-usage-precedes-image-fields.yaml
+  - tools/oracle/cases/helpers/image-cost/supplied-free-per-image-before-public-pixels.yaml
+  - tools/oracle/cases/helpers/image-cost/default-size-signed-dimensions-and-null-count.yaml
+  - tools/oracle/cases/helpers/image-cost/non-token-table-declines-token-usage.yaml
+deviations:
+  - what: Image dimensions use checked signed integers and image charges use exact decimals; overflow returns a typed pricing error.
+    why: Extreme dimensions must not wrap or create float infinity while ordinary signed dimensions retain pinned behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2432-L2496
+out_of_scope:
+  - B068 retains CostCalculatorUtils, image grounding, non-image call dispatch and other cost_calculator.py functions except B1649 adjustments and B1673 custom flat pricing.
+  - B1669-B1673 retain utils.py's off-peak, rate, detail, generic and billed-breakdown functions; B1675 owns web-search count accessors, B1676 owns character pricing and metric selection, and B1687 owns requested-image fields, web-search price routing and CostCalculatorUtils.
+  - Provider response decoding remains in image API/provider tasks; these calculations inspect usage and counts and do not fetch request or response URLs.
+pitfalls:
+  - No output-detail object means generated image tokens, while an empty object sends the remaining output tokens to text pricing.
+  - Azure's zero output_cost_per_image falls through to pixels, but the default calculator treats that same nonnull zero as a winning price.
+  - The default quality fallback is high, regardless of the adjacent comment claiming medium.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

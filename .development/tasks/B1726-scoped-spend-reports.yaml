@@ -1,0 +1,83 @@
+id: B1726
+title: Authorize key, user, team and organization spend breakdowns
+description: >-
+  Implement GET /key/spend/report, /user/spend/report, /team/spend/report and
+  /organization/spend/report in server::spend::reports. The four handlers share database
+  prerequisites, date parsing and bound report SQL. Follow the README's removal of paid
+  tiers: retain authentication and scope checks, but omit premium_user rejection. Database
+  absence still precedes date/scope validation and returns 500. Both date strings are
+  required; parse Python %Y-%m-%d-compatible UTC dates, reject malformed or reversed ranges
+  with 400, and reject differences greater than 366 days (exactly 366 is accepted).
+  Key/user/team reports clamp a non-admin requested scope to the caller's own value. A
+  truthy different request is 403; a falsey request falls back to the caller, whose null
+  value is 400 but empty string is retained. B1704 supplies the precise admin/viewer check.
+  Key requests hash sk--prefixed input with B1715 before comparing with B1106's logged key.
+  Organization scope uses requested organization_id or caller org_id, then B826's
+  organization-access check and B724's current organization team membership. Include rows
+  explicitly stamped with that org, plus rows with null/empty organization_id on those
+  teams; never include a row stamped with a different organization merely through team ID.
+  Preserve the per-key/per-model totals and organization model_details' additional team_id.
+  Only the closed api_key/user/team_id SQL column enum can select a scoped query; values
+  are bound. Use UTC start inclusive and end-plus-one-day exclusive, aggregate Decimal
+  spend and checked token totals, order by total cost descending, and return [] for None.
+  Own get_spend_by_team and _query_raw_rows from spend_tracking_utils here as a lower
+  query service consumed by B1727: optional team filter, day/team-alias/model/key grouping,
+  Unassigned Team for a missing alias, nested teams/metadata output and day ordering.
+  Inline one-expression repository wrappers into B700's typed query interface rather
+  than inventing parallel forwarding functions. This adds 70 source lines to the scoped
+  report cohort's 339, near the split threshold; shared SQL rendering keeps production
+  below 400 changed lines within the 800 total for implementation, tests and adapters.
+  decode_scoped_report_query is the raw-query parser and fuzz target. HTTP oracle cases
+  use B1644's explicit native_feature_eligibility only to reach these MIT handlers; stock
+  OSS 403 versus betterlite's licensed-free behavior is a native deviation test. Prove
+  cross-tenant scope and organization migration rows against PostgreSQL, with no helper
+  adapter calling a FastAPI handler or replacing its database.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/reports.rs
+    - crates/betterlite-server/src/spend/reports/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/scoped_report_query.rs
+    - crates/betterlite-server/fuzz/corpus/scoped_report_query/**
+    - tools/oracle/cases/http/scoped-spend-reports/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1701-L2071
+    why: Scope/date helpers, organization fallback SQL and all four route decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L928-L999
+    why: Shared raw-query adapter and daily team report query.
+dod:
+  - text: Scoped reports reject foreign identities and apply the organization fallback only to unstamped historical rows.
+    proof: [scoped-report-tests, scoped-report-corpus, oracle]
+  - text: Date boundaries, aggregate shapes and missing-database behavior remain pinned while MIT reports work without a license.
+    proof: [scoped-report-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: scoped-report-tests
+      why: Report authorization, organization fallback or no-paid-tier behavior is absent.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::reports::/) - test(replays_the_scoped_report_query_corpus)'
+    - id: scoped-report-corpus
+      why: Scope/date query parsing has no new boundary and malformed inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/scoped_report_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_scoped_report_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/scoped-spend-reports/key-hash-and-user-team-self-scope.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/admin-viewer-and-org-admin.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/org-stamp-versus-current-team.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/missing-db-before-dates-and-scope.yaml
+  - tools/oracle/cases/http/scoped-spend-reports/date-range-366-boundary.yaml
+deviations:
+  - what: Authenticated authorized users can read these four reports without a license; stock open-source LiteLLM returns 403 when premium_user is false.
+    why: The README removes paid-tier restrictions from MIT functionality while retaining its scope authorization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1800-L1813
+out_of_scope:
+  - B1727 owns the legacy global report and team/customer query; B1600 and B1713-B1716 own other spend_tracking_utils functions.
+  - B1721-B1725, B1704, B069 and the log-list/detail/session leaves own the remaining spend endpoints and query projections.
+pitfalls:
+  - Organization membership is only a fallback for rows without an organization stamp, never an override of a different stamp.
+  - A 366-day difference spans 367 inclusive calendar dates and is nevertheless accepted.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,120 @@
+id: B1715
+title: Project trusted spend identities and deployment provenance
+description: >-
+  Build betterlite-logging::spend_metadata for SpendLogsMetadata/SpendLogsRouterMetadata,
+  key redaction, IDs, OCR usage and access-group projections; put router-dependent provider
+  attribution in betterlite-server::spend::attribution. Own spend_tracking_utils ranges
+  99-384, 396-431 and _get_status_for_spend_log, plus the two metadata records in _types.py.
+  B1600 owns raw master comparison, B1716 the standard-payload fallback and final payload.
+  Hash untrusted logged keys with SHA256 after removing one case-insensitive leading
+  Bearer-space. Empty/nonstring keys become None. already_redacted preserves a value only
+  when it is a SHA256 digest, hashed-jwt- digest, one of litellm_proxy_master_key /
+  litellm-internal-health-check / litellm-cli, or a cli-session- value exactly matching
+  its alias. A trusted hash must equal the raw metadata key before enabling that shortcut;
+  merely looking like a digest must not prevent hashing an untrusted value.
+  Own proxy.utils.hash_token as the reusable models::key_digest hashing function beside
+  B1710's validator. Extract logging's four model-access-group helpers at 5604-5637:
+  accept list/tuple nonempty strings, preserve first occurrence, prefer a nonempty
+  user_api_key_matched_model_access_groups stamp over auth-object matched groups, and
+  metadata before litellm_metadata. Spend inputs prefer nonempty standard-payload
+  request_model_access_groups before this fallback.
+  Metadata projection copies only annotated fields, excluding six proxy-stamped keys
+  router_metadata/azure_spillover/autorouter_savings/autorouter_savings_estimate/
+  autorouter_baseline_observation/used_client_oauth_token, then supplies those from trusted
+  arguments. Explicit arguments also replace guardrails, usage/model-map, batch, cold
+  storage, overhead, cost-breakdown and call-ID fields. Reuse B1713 guardrail sanitation
+  and B1714 vector content policy. Preserve the separate metadata=None constructor:
+  status is success, optional agent/routing fields are absent and most explicit enrichment
+  arguments are ignored; cold-storage, savings/provenance and call-ID arguments survive
+  exactly where listed in the source. An empty metadata mapping follows the other branch.
+  ID precedence is response nonempty string id, standard id, kwargs call ID; append
+  _batch_cost only for aretrieve_batch. OCR prefers truthy dumped usage_info then an
+  attribute/model-dump projection, starts token counters at zero but allows supplied fields
+  to overwrite them, inserts missing pages_processed=0, returns {} for absent usage and
+  zero counters/pages for a present nonmapping value.
+  A deployment's provider first honors USE_LITELLM_PROXY=true, deployment use_litellm_proxy
+  is true or litellm_settings.use_litellm_proxy=true, then B209's declared provider, then
+  B174 resolution with BadRequest fallback None. Extract that proxy-selection predicate
+  from its provider class into provider::identity; config defaults are false and
+  loads_spend_proxy_selection must load both global keys and deployment values. Group
+  inference uses B844 deployments and succeeds only for one unique non-null provider.
+  Recognized catalog groups or team public names exempt configured names from malformed
+  model checks. A model-looking string strips one MCP-space prefix, is at most 256 Unicode
+  characters and contains no Python-isspace character. Router provenance is emitted only
+  for internal_router_model exactly true; status is failure only for the exact failure string.
+  Pure spend_attribution cases cover trust, None/empty metadata, usage and supplied catalog
+  snapshots. Fuzz decode_spend_proxy_selection in config. Counted ownership is 396 nonblank
+  source lines; reserve 380 implementation and 420 tests/config/oracle integration.
+scope:
+  paths:
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/spend_metadata.rs
+    - crates/betterlite-logging/src/spend_metadata/**
+    - crates/betterlite-models/src/key_digest.rs
+    - crates/betterlite-models/src/key_digest/**
+    - crates/betterlite-provider/src/identity.rs
+    - crates/betterlite-provider/src/identity/spend_proxy.rs
+    - crates/betterlite-provider/src/identity/spend_proxy/**
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/attribution.rs
+    - crates/betterlite-server/src/spend/attribution/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/spend_attribution.rs
+    - crates/betterlite-config/src/spend_attribution/**
+    - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_proxy_selection.rs,corpus/spend_proxy_selection/**}
+    - tools/oracle/src/helpers/{mod.rs,spend_attribution.rs}
+    - tools/oracle/helpers/{dispatch.py,spend_attribution.py}
+    - tools/oracle/cases/helpers/spend-attribution/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-attribution-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L99-L431
+    why: Identity/metadata/OCR/provider helpers; _sl_attribution_fallback is B1716.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1720-L1731
+    why: Exact failure-status predicate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4151-L4217
+    why: Spend metadata field inventory and optional agent fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5604-L5637
+    why: Shared access-group coercion and metadata/auth-object fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7119-L7125
+    why: SHA256 key hashing extracted below report and logging consumers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/chat/transformation.py#L56-L78
+    why: Exact proxy-selection predicate used by deployment attribution.
+dod:
+  - text: Metadata and key identities preserve trusted-hash rules, stamped-field authority, None/empty distinctions and access-group precedence.
+    proof: [attribution-projection-tests, oracle, attribution-projection-python, attribution-projection-corpus]
+  - text: OCR, provider inference and router provenance preserve typed response and unique-provider behavior with loaded proxy-selection settings.
+    proof: [attribution-projection-tests, oracle, attribution-projection-python, attribution-config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: attribution-projection-tests
+      why: A trusted identity, metadata field or provider selection is altered or its settings loader is absent.
+      run: cargo nextest run --locked -p betterlite-logging -p betterlite-models -p betterlite-provider -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/^spend_metadata::/) + test(/^key_digest::hashing::/) + test(/^identity::spend_proxy::/) + test(/^spend::attribution::/) + test(/^spend_attribution::/) - test(replays_the_spend_proxy_selection_corpus)'
+    - id: attribution-projection-python
+      why: Spend attribution helper calls fail strict source-adapter checks.
+      run: test -f tools/oracle/helpers/spend_attribution.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: attribution-projection-corpus
+      why: Spend attribution records have no helper variant seed.
+      run: grep -rlq 'spend_attribution:' tools/oracle/fuzz/corpus/helper_case/spend-attribution-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: attribution-config-corpus
+      why: Proxy-selection settings have no new production-decoder replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/spend_proxy_selection)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_spend_proxy_selection_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-attribution/trusted-digest-versus-untrusted-key.yaml
+  - tools/oracle/cases/helpers/spend-attribution/none-empty-and-forged-stamped-fields.yaml
+  - tools/oracle/cases/helpers/spend-attribution/access-group-payload-stamp-and-auth-fallback.yaml
+  - tools/oracle/cases/helpers/spend-attribution/ocr-mapping-object-and-token-overrides.yaml
+  - tools/oracle/cases/helpers/spend-attribution/unique-provider-and-forced-proxy.yaml
+deviations: []
+out_of_scope:
+  - B1713 owns raw-model/error sanitation, B1714 body/session projections, B1716 payload assembly and B1600 _is_master_key; B1726/B1727 own team/customer SQL.
+  - B124 and its existing contract leaves retain all other _types.py records; B1716 owns SpendLogsPayload. Other proxy/utils.py functions remain with their repository/job owners.
+  - B044 retains every other litellm_proxy provider method; B253 must consume the extracted access-group helpers, while B1710 owns the shared digest validator.
+pitfalls:
+  - A hash-shaped untrusted key is hashed again unless the trusted metadata hash equals it.
+  - metadata=None and metadata={} have different status/default-field projections.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

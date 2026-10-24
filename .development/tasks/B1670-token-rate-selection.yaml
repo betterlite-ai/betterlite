@@ -1,0 +1,105 @@
+id: B1670
+title: Select service-tier, threshold and batch token rates
+description: >-
+  Build betterlite-models::token_rates around B204 prices, B1666 whole-request tiers and
+  B1669 off-peak replacements. Own utils.py L95-L96, L253-L398, L616-L859 and L1251-L1288:
+  service-key selection, threshold helpers, BatchCostRates, base-rate selection, component
+  multiplication, deployment-pricing extraction and reasoning-rate resolution. Expose
+  typed price dimensions and effective rate records to callers; Python helper entry points
+  may project those records but must not require production string-to-float maps.
+  Service tier matching is case-insensitive: fast maps to priority, flex/balanced/priority/
+  ultrafast retain their suffix, and unknown tiers use standard prices. A missing/null
+  suffixed rate falls back by removing the first longest matching service suffix anywhere
+  in the key. An invalid nonnull string warns and uses the supplied default without that
+  fallback. Numeric strings and Booleans retain the source coercion into finite Decimal.
+  deployment_pricing returns only the recognized custom-pricing fields that parse, or None
+  if none do; an explicit zero is sufficient. calculate_cost_component multiplies only
+  positive usage, leaving direct base-token multiplication to its caller.
+  A priced tier requires a nonempty tier list, a selected tier and presence of its input
+  rate key. It overrides service-tier/threshold prices for the whole request. Missing output
+  falls back to the model's output price; cache rates fall back within the tier, and the
+  one-hour tier rate uses ordinary creation when its parsed value is zero. Otherwise start
+  with service-aware base rates, substituting output_cost_per_image_token when ordinary
+  output is zero or absent. Inspect input_cost_per_token_above_* keys, excluding unrelated
+  service and batch suffixes. Sort thresholds descending before the guarded selection loop;
+  malformed threshold syntax that fails that sort remains a typed error. Select the first
+  crossed nonnull threshold, using >= only for exact provider xai and > elsewhere; apply
+  its input/output/read/write/one-hour keys independently with existing-rate fallback.
+  Missing cache prices inherit the resolved off-peak input rate, then apply off-peak
+  replacements; explicit free cache prices survive. A provided one-hour price survives
+  replacement, while absence follows final ordinary creation.
+  Batch rates independently discover each of the four *_batches key families, so an output
+  threshold can differ from input. Accept only the anchored decimal-digit thresholds with
+  optional lowercase k, select the largest crossed one and fall back to that family's
+  flat batch rate if its selected tier rate is malformed. Do not fall back to a lower
+  threshold after selecting it. Reasoning first uses an open off-peak explicit rate, then
+  a selected tier's reasoning/output rate, then service-tier reasoning. A present service
+  output price suppresses the standard reasoning rate; otherwise use standard reasoning
+  or completion rate. Pure token_rates cases pass parsed model-info and usage objects
+  directly to the pinned helpers, without registering a global model. Native tests cover
+  exact arithmetic, all custom-field extraction and checked overflow. These 351 nonblank
+  source lines fit 340 rate logic, 260 tests and 200 adapters/cases within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/token_rates.rs
+    - crates/betterlite-models/src/token_rates/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/token_rates.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/token_rates.py
+    - tools/oracle/cases/helpers/token-rates/**
+    - tools/oracle/fuzz/corpus/helper_case/token-rates-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L63-L96
+    why: Tier suffix aliases, batch-key grammar and xAI's inclusive boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L253-L398
+    why: Independent batch families and whole-request tier fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L616-L859
+    why: Base rates, dynamic thresholds, cache defaults and custom deployment fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1251-L1288
+    why: Ordered reasoning-rate decisions reuse the same selected tier and billing instant.
+dod:
+  - text: Tier tables, service aliases and provider-specific boundaries choose the correct five base prices without discarding explicit zeros.
+    proof: [token-rate-tests, oracle, token-rates-python]
+  - text: Each batch family selects its own crossed threshold, and malformed selected prices use only their documented fallback.
+    proof: [token-rate-tests, oracle, token-rates-python, token-rates-corpus]
+  - text: Reasoning precedence and deployment-price extraction preserve typed decimal rates and the source's missing-value distinctions.
+    proof: [token-rate-tests, oracle, token-rates-python]
+checks:
+  optional: []
+  commands:
+    - id: token-rate-tests
+      why: A service alias, cache default or threshold comparison changes billed money.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^token_rates::/)'
+    - id: token-rates-python
+      why: The rate-selection adapter is absent or violates the strict helper contracts.
+      run: test -f tools/oracle/helpers/token_rates.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: token-rates-corpus
+      why: No token_rates operation exercises the typed helper parser.
+      run: grep -rlq 'token_rates:' tools/oracle/fuzz/corpus/helper_case/token-rates-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/token-rates/xai-equality-versus-openai-strict-threshold.yaml
+  - tools/oracle/cases/helpers/token-rates/fast-priority-and-invalid-nonnull-rate.yaml
+  - tools/oracle/cases/helpers/token-rates/tier-table-output-fallback-and-one-hour-zero.yaml
+  - tools/oracle/cases/helpers/token-rates/off-peak-input-defaults-for-missing-cache.yaml
+  - tools/oracle/cases/helpers/token-rates/batch-families-cross-different-thresholds.yaml
+  - tools/oracle/cases/helpers/token-rates/malformed-sort-key-versus-malformed-tier-price.yaml
+  - tools/oracle/cases/helpers/token-rates/reasoning-off-peak-tier-and-service-precedence.yaml
+  - tools/oracle/cases/helpers/token-rates/custom-fields-zero-and-scientific-notation.yaml
+deviations:
+  - what: Prices and products are exact finite decimals; nonfinite values, excess precision and overflow return a typed pricing failure.
+    why: B204 money rules prohibit binary-float billing, without changing the source's ordinary malformed-string fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L804-L842
+out_of_scope:
+  - The other utils.py regions are off-peak L401-L613 (B1669), token details L105-L110/L162-L168/L892-L1173/L1495-L1496 (B1671), generic/uplift L99-L102/L1176-L1248/L1291-L1492 (B1672), billed breakdown L1499-L1770 (B1673), image math L862-L889/L1773-L1862 (B1674), web counters L126-L153 (B1675), character pricing L156-L159/L171-L250 (B1676), and image dispatch L113-L123/L1865-L2093 (B1687).
+  - Catalog decoding stays in B204/B193; this task consumes records and extends helper_case seeds rather than defining a second price-file parser.
+pitfalls:
+  - A malformed nonnull service-tier price does not take the missing-key fallback to the ordinary price.
+  - Batch output thresholds are discovered from output keys, not borrowed from the input threshold selected for the request.
+  - The tier-table one-hour cache fallback uses truthiness, so zero there behaves differently from an ordinary model one-hour zero.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

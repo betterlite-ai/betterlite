@@ -1,0 +1,96 @@
+id: B1677
+title: Charge the Foundry model-router fee exactly once
+description: >-
+  Add pricing to betterlite-foundry for every function in azure_ai/cost_calculator.py,
+  AzureModelRouterConfig.calculate_additional_costs and cost_calculator.py _get_additional_costs.
+  Reuse B562's model-router configuration selection, B1672 generic token pricing and the
+  B1678 PriceLookup effective operation, whose production implementation is B205.
+  Keep response/request model identity separate:
+  a routed response's own token price and the requested router's fee are different inputs.
+  Router-shaped detection lowercases and accepts either model-router or model_router
+  anywhere. Fee-entry detection instead removes one leading azure_ai/ after lowercasing
+  and requires the remaining name to equal model-router or model_router. Fee lookup uses
+  that exact entry spelling when recognized, otherwise model_router, always with provider
+  azure_ai. A non-router name has zero fee without a lookup; a positive input token rate
+  multiplies prompt tokens, while missing/zero/negative rates yield zero. Lookup failure
+  propagates from the fee calculation.
+  First price response tokens through generic azure_ai pricing with service tier. Catch
+  any pricing error only for a router-shaped response model, log at debug and start from
+  zero; ordinary response model errors propagate. A response priced as the exact fee entry
+  gets no extra fee even if request_model is router-shaped. Otherwise choose the response
+  name when router-shaped, then the request name when router-shaped, else none, and add
+  the fee only to prompt cost. response_time_ms has no effect here. Completion integration
+  passes only its selected priced name; it separately asks for additional costs when a
+  concrete routed model was priced, so it must not also pass request_model and double bill.
+  The configuration method reports only positive fees as the exact additional-cost label
+  Azure Model Router Flat Cost, otherwise None. Do not hard-code the docstring's $0.14
+  per million: the current catalog owns the rate. The shared additional-cost dispatcher
+  returns None for an absent provider or any provider other than azure_ai; select B562's
+  configuration and invoke its additional-cost hook when supported. Catch selection/hook
+  failures, log debug and return None. Keep these two error boundaries distinct from the
+  direct flat-fee call, which raises.
+  Pure foundry_router_cost fixtures cover name classification and fee-name selection by
+  calling the actual source helpers. Native fixtures inject effective model lookup and
+  generic-pricing failures, then assert normal model, exact fee entry, unknown router
+  deployment and routed-response paths. B068 owns the terminal breakdown integration and
+  its HTTP cost assertions; B562 already owns request/response transforms. For 149 nonblank
+  source lines, budget 210 implementation, 220 native tests and 150 oracle/wiring lines,
+  capped at 650. Existing helper_case handles parsed model names; no new byte parser is needed.
+scope:
+  paths:
+    - crates/betterlite-foundry/Cargo.toml
+    - crates/betterlite-foundry/src/lib.rs
+    - crates/betterlite-foundry/src/pricing.rs
+    - crates/betterlite-foundry/src/pricing/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/foundry_router_cost.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/foundry_router_cost.py
+    - tools/oracle/cases/helpers/foundry-router-cost/**
+    - tools/oracle/fuzz/corpus/helper_case/foundry-router-cost-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/cost_calculator.py#L14-L125
+    why: Broad router-name detection versus exact fee entries and response/request fee selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/azure_model_router/transformation.py#L111-L134
+    why: Positive-only additional-cost label and catalog-derived rate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L255-L298
+    why: Best-effort azure_ai configuration hook dispatch.
+dod:
+  - text: Router-shaped names and exact fee entries remain distinct, selecting response then request fee identity without duplication.
+    proof: [foundry-router-price-tests, oracle, foundry-router-cost-python, foundry-router-cost-corpus]
+  - text: Unknown routed deployments retain the fee-only fallback while ordinary pricing failures and direct fee lookup failures propagate.
+    proof: [foundry-router-price-tests]
+  - text: Additional-cost reporting uses the exact positive-fee label and absorbs only the dispatcher/configuration failures specified by the source.
+    proof: [foundry-router-price-tests]
+checks:
+  optional: []
+  commands:
+    - id: foundry-router-price-tests
+      why: Model Router fees are duplicated, omitted or hidden by an overbroad error handler.
+      run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^pricing::/)'
+    - id: foundry-router-cost-python
+      why: Router-name decisions have no checked adapter against the pinned helpers.
+      run: test -f tools/oracle/helpers/foundry_router_cost.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: foundry-router-cost-corpus
+      why: foundry_router_cost does not appear as a parsed call variant in a replay seed.
+      run: grep -rlq 'foundry_router_cost:' tools/oracle/fuzz/corpus/helper_case/foundry-router-cost-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/foundry-router-cost/case-insensitive-fee-entry-prefix.yaml
+  - tools/oracle/cases/helpers/foundry-router-cost/router-shaped-substring-is-not-fee-entry.yaml
+  - tools/oracle/cases/helpers/foundry-router-cost/exact-response-fee-entry-blocks-request-fee.yaml
+  - tools/oracle/cases/helpers/foundry-router-cost/response-router-name-before-request-name.yaml
+deviations:
+  - what: Foundry router fees preserve exact Decimal values and reject nonfinite/overflowing money at the same source error boundary as other pricing failures.
+    why: A fee must reconcile with spend without changing which callers receive fallback versus failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/cost_calculator.py#L46-L77
+out_of_scope:
+  - B562 owns AzureModelRouterConfig.transform_request and transform_response, including selected-model hidden metadata; this task owns only calculate_additional_costs in that file.
+  - The central cost_calculator.py keeps custom flat prices in B1673, adjustments in B1649, image defaults in B1674, seconds/transcription/video in B1676, OCR in B1678, batches in B1679, usage merging in B1680 and realtime in B1681. Context/storage is B1682, usage diagnostics B1683, token/vector/rerank dispatch B1686, preparation B1688 and replicate/early completion charges B1689; the outer completion/response functions are B068.
+pitfalls:
+  - Model-router substring detection is broader than the exact fee-entry check used to prevent double charging.
+  - The additional-cost hook reports only a positive fee, even though a direct fee calculation can return a negative amount for negative prompt counts.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security
