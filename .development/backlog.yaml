@@ -1921,10 +1921,10 @@ tasks:
     - B008
     - B010
     - B301
+    - B361
     file: tasks/B302-deployment-catalog.yaml
     covers:
     - litellm/router_utils/pattern_match_deployments.py
-
   - id: B303
     milestone: M2 routing
     title: Deployment client reuse and parallel request guards

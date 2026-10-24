@@ -4,22 +4,22 @@ description: Extend the B008 router with an immutable deployment catalog, stable
   ordered duplicate-name pools, aliases, wildcard substitution and transactional add/upsert/remove operations.
   Preserve catalog snapshots held by in-flight requests. Wire the catalog into existing chat and embeddings
   selection; do not rebuild providers in the selector. Put team authorization behind an explicit server-supplied
-  candidate view, implemented in B319, rather than trusting request metadata. Use the existing Rust crate
-  boundaries from B004 and B008; integrate through the server when the provider dispatcher or callbacks
-  live in another core crate. This task's source slices are the linked ranges, not a port of their Python
-  classes. Add the listed oracle cases and the matching adapters to B301's component runner where state
-  is not observable over HTTP; adapters call production logic and never reproduce it. Use deterministic
-  candidate sets or supplied random samples for comparisons, and separate seeded distribution tests for
-  random choices. Extend the existing config_yaml fuzz target and committed corpus for every newly accepted
-  config form; unsupported keys still fail by full path. Keep the implementation, adapters and tests within
-  800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+  candidate view, populated by the later B052/B060 authorization layer, rather than trusting request metadata.
+  Use the existing Rust crate boundaries from B004 and B008; integrate through the server when the provider
+  dispatcher or callbacks live in another core crate. This task's source slices are the linked ranges,
+  not a port of their Python classes. Add the listed oracle cases and the matching adapters to B301's
+  component runner where state is not observable over HTTP; adapters call production logic and never reproduce
+  it. Use deterministic candidate sets or supplied random samples for comparisons, and separate seeded
+  distribution tests for random choices. Extend the existing config_yaml fuzz target and committed corpus
+  for every newly accepted config form; unsupported keys still fail by full path. Keep the implementation,
+  adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
 scope:
   paths:
   - crates/betterlite-router/**
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/deployment-catalog/**
-  - tools/oracle/src/router_probes/deployment-catalog/**
+  - tools/oracle/src/router_probes/deployment_catalog/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/deployment_catalog.py
   - tools/oracle/litellm/probes/registry.py
@@ -37,7 +37,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the deployment_catalog prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -80,7 +81,7 @@ pitfalls:
 - Only stars are expanded by the wildcard compiler; do not substitute a general regex router.
 - Generated IDs must not expose credentials.
 - Do not enable a config field before its consumer exists.
-review_level: standard
+review_level: security
 budget:
   max_changed_lines: 800
   max_new_expects: 0
