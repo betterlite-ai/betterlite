@@ -73,3 +73,38 @@ fn helper_output_limit_is_enforced(#[case] size: usize, #[case] excess: bool) {
     assert_eq!(output.len(), 0x0010_0000.min(size));
     assert_eq!(observed_excess, excess);
 }
+
+#[rstest::rstest]
+#[case::forward("https://api.example.com", "{HTTPS_PROXY: 'http://u%40x:p@proxy.local:3128'}", r#"{"ok":true,"value":{"proxy":{"credentials":"u@x:p","host":"proxy.local","port":3128,"scheme":"http"}}}"#)]
+#[case::direct(
+    "https://api.example.com",
+    "{}",
+    r#"{"ok":true,"value":{"proxy":null}}"#
+)]
+#[case::unsupported(
+    "https://api.example.com",
+    "{HTTPS_PROXY: 'socks5://proxy.local:1080'}",
+    "socks5 proxies are not supported"
+)]
+#[case::invalid_proxy(
+    "https://api.example.com",
+    "{HTTPS_PROXY: 'http://proxy.local:99999'}",
+    "the https proxy URL is not valid"
+)]
+#[case::invalid_target("no scheme", "{}", "relative URL without a base")]
+fn proxy_policy_helper_renders_the_pick(
+    #[case] url: &str,
+    #[case] environment: &str,
+    #[case] expected: &str,
+) {
+    let call: super::HelperCall = serde_saphyr::from_str(&format!(
+        "proxy_policy: {{url: '{url}', environment: {environment}, aiohttp_trust_env: false, disable_aiohttp_trust_env: false}}"
+    ))
+    .unwrap();
+    let output = super::invoke(&call);
+    let rendered = match output.error {
+        Some(error) => error.message,
+        None => serde_json::to_string(&output).unwrap(),
+    };
+    assert_eq!(rendered, expected);
+}

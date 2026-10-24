@@ -25,10 +25,10 @@ pub(crate) fn invoke(
         disable_aiohttp_trust_env: input.disable_aiohttp_trust_env,
     };
     let policy = ProxyPolicy::resolve(&settings, &input.environment);
-    let url = Url::parse(&input.url).map_err(|error| Box::new(helper_error(error.to_string())))?;
-    let message = match policy.route(&url) {
-        None => return Ok(serde_json::json!({"proxy": null})),
-        Some(ProxyRoute::Forward(server)) => {
+    let message = match Url::parse(&input.url).map(|url| policy.route(&url)) {
+        Err(error) => error.to_string(),
+        Ok(None) => return Ok(serde_json::json!({"proxy": null})),
+        Ok(Some(ProxyRoute::Forward(server))) => {
             let credentials = server
                 .credentials
                 .as_ref()
@@ -41,19 +41,17 @@ pub(crate) fn invoke(
             });
             return Ok(serde_json::json!({ "proxy": proxy }));
         }
-        Some(ProxyRoute::Unsupported { scheme }) => format!("{scheme} proxies are not supported"),
-        Some(ProxyRoute::Invalid { name }) => format!("the {name} proxy URL is not valid"),
+        Ok(Some(ProxyRoute::Unsupported { scheme })) => {
+            format!("{scheme} proxies are not supported")
+        }
+        Ok(Some(ProxyRoute::Invalid { name })) => format!("the {name} proxy URL is not valid"),
     };
-    Err(Box::new(helper_error(message)))
-}
-
-fn helper_error(message: String) -> super::HelperError {
-    super::HelperError {
+    Err(Box::new(super::HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message,
-    }
+    }))
 }
