@@ -111,7 +111,10 @@ fn log_config_error(error: &ConfigError, location: &Path) {
                 "failed to load configuration"
             );
         }
-        _ => {
+        ConfigError::Yaml { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::InvalidScalar { .. } => {
             tracing::error!(
                 category = config_error_category(error),
                 location = %location.display(),

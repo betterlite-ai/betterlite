@@ -21,7 +21,7 @@ impl BoundedListener {
         Self { listener, permits }
     }
 
-    pub(crate) async fn accept(&mut self) -> io::Result<(BoundedStream, SocketAddr)> {
+    pub(crate) async fn accept(&self) -> io::Result<(BoundedStream, SocketAddr)> {
         loop {
             let (stream, address) = self.listener.accept().await?;
             match Arc::clone(&self.permits).try_acquire_owned() {

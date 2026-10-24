@@ -7,7 +7,7 @@ use tokio::fs;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::process::{Child, Command};
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 const STANDARD_CONFIG: &str = "general_settings:\n  master_key: test-master\n";
 #[derive(serde::Deserialize)]
 struct LogEvent {
@@ -159,7 +159,7 @@ async fn partial_headers_are_closed_after_the_read_deadline() {
         .await
         .unwrap();
     let mut response = Vec::new();
-    tokio::time::timeout(
+    timeout(
         Duration::from_secs(5),
         connection.read_to_end(&mut response),
     )
