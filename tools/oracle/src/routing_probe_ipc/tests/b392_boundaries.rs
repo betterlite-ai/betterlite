@@ -35,15 +35,11 @@ fn parser_stops_at_one_mebibyte(#[case] size: usize, #[case] accepted: bool) {
 #[case::limit(1_u64 << 53_u32, false)]
 fn samples_stay_below_two_to_the_53(#[case] value: u64, #[case] accepted: bool) {
     let sample = ProbeSample::try_from(value);
-    assert_eq!(sample.is_ok(), accepted);
-    assert!(
-        accepted || matches!(sample, Err(OracleError::ProbeSample(rejected)) if rejected == value)
-    );
     let text = REQUEST.replace("9007199254740991", &value.to_string());
-    assert_eq!(
-        parse_message::<ProbeRequest>(text.as_bytes()).is_ok(),
-        accepted
-    );
+    let parsed = parse_message::<ProbeRequest>(text.as_bytes());
+    assert_eq!((sample.is_ok(), parsed.is_ok()), (accepted, accepted));
+    let named = matches!(sample, Err(OracleError::ProbeSample(rejected)) if rejected == value);
+    assert!(accepted || named);
 }
 
 #[rstest]
@@ -75,27 +71,13 @@ fn replies_outside_the_schema_are_malformed(#[case] text: &str) {
 }
 
 #[rstest]
-#[case::oversized_reply(
-    "cat > /dev/null; head -c 1048577 /dev/zero",
-    |error: &OracleError| matches!(error, OracleError::ProbeTooLarge)
-)]
-#[case::garbage_reply(
-    "cat > /dev/null; printf 'not json'",
-    |error: &OracleError| matches!(error, OracleError::ProbeMalformed(_))
-)]
-#[case::crashed(
-    "cat > /dev/null; printf 'Traceback\n' >&2; exit 1",
-    |error: &OracleError| matches!(error, OracleError::ProbeExited { status, stderr } if status.code() == Some(1_i32) && stderr == b"Traceback\n")
-)]
+#[case::oversized_reply("cat > /dev/null; head -c 1048577 /dev/zero", |error: &OracleError| matches!(error, OracleError::ProbeTooLarge))]
+#[case::garbage_reply("cat > /dev/null; printf 'not json'", |error: &OracleError| matches!(error, OracleError::ProbeMalformed(_)))]
+#[case::crashed("cat > /dev/null; printf 'Traceback\n' >&2; exit 1", |error: &OracleError| matches!(error, OracleError::ProbeExited { status, stderr } if status.code() == Some(1_i32) && stderr == b"Traceback\n"))]
 #[tokio::test]
-async fn child_failures_are_typed(
-    #[case] script: &str,
-    #[case] expected: fn(&OracleError) -> bool,
-) {
-    let error = probe(&shell(script, &[]), &request(), OPERATION_DEADLINE)
-        .await
-        .unwrap_err();
-    assert!(expected(&error), "{error:?}");
+async fn child_failures_are_typed(#[case] script: &str, #[case] check: fn(&OracleError) -> bool) {
+    let outcome = probe(&shell(script, &[]), &request(), OPERATION_DEADLINE).await;
+    assert!(check(&outcome.unwrap_err()));
 }
 
 #[tokio::test]
@@ -108,31 +90,23 @@ async fn oversized_request_never_starts_the_child() {
     assert!(!marker.exists());
 }
 
+#[rstest]
+#[case::deadline("deadline", Duration::from_millis(300), Duration::from_secs(10))]
+#[case::owner_drops_the_probe("dropped", OPERATION_DEADLINE, Duration::from_millis(500))]
 #[tokio::test]
-async fn deadline_kills_the_child() {
-    let pid_path = scratch("deadline");
-    let command = shell(
-        r#"echo $$ > "$1"; exec sleep 30"#,
-        &[pid_path.to_str().unwrap()],
-    );
-    let deadline = Duration::from_millis(300);
-    let outcome = probe(&command, &request(), deadline).await;
-    assert!(matches!(outcome, Err(OracleError::ProbeTimeout(elapsed)) if elapsed == deadline));
-    assert_gone(&read_pid(&pid_path).await).await;
-    fs::remove_file(pid_path).unwrap();
-}
-
-#[tokio::test]
-async fn dropping_the_probe_kills_the_child() {
-    let pid_path = scratch("cancelled");
-    let command = shell(
-        r#"echo $$ > "$1"; exec sleep 30"#,
-        &[pid_path.to_str().unwrap()],
-    );
+async fn the_child_dies_with_its_probe(
+    #[case] name: &str,
+    #[case] deadline: Duration,
+    #[case] patience: Duration,
+) {
+    let pid_path = scratch(name);
+    let pid_argument = pid_path.to_str().unwrap();
+    let command = shell(r#"echo $$ > "$1"; exec sleep 30"#, &[pid_argument]);
     let echo = request();
-    let probing = probe(&command, &echo, OPERATION_DEADLINE);
-    let cancelled = time::timeout(Duration::from_secs(2), probing).await;
-    cancelled.unwrap_err();
+    let outcome = time::timeout(patience, probe(&command, &echo, deadline)).await;
+    let timed_out =
+        matches!(&outcome, Ok(Err(OracleError::ProbeTimeout(elapsed))) if *elapsed == deadline);
+    assert!(timed_out || (outcome.is_err() && deadline == OPERATION_DEADLINE));
     assert_gone(&read_pid(&pid_path).await).await;
     fs::remove_file(pid_path).unwrap();
 }

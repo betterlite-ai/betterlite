@@ -15,7 +15,6 @@ SAMPLE_LIMIT = 1 << 53
 
 Failure = Literal["invalid_request", "unknown_operation", "samples_exhausted"]
 Millis = Annotated[int, Field(ge=0, lt=1 << 64)]
-Sample = Annotated[int, Field(ge=0, lt=SAMPLE_LIMIT)]
 
 
 class ProbeError(Exception):
@@ -46,7 +45,7 @@ class Clock(Strict):
 
 class Request(Strict):
     clock: Clock
-    samples: list[Sample]
+    samples: list[Annotated[int, Field(ge=0, lt=SAMPLE_LIMIT)]]
     operation: Annotated[dict[str, JsonValue], Field(min_length=1, max_length=1)]
 
 

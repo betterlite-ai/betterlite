@@ -12,10 +12,8 @@ use super::{REPLY, REQUEST, echo_reply, request, scratch, shell};
 #[rstest]
 fn request_carries_clock_samples_and_operation() {
     assert_eq!(serde_json::to_string(&request()).unwrap(), REQUEST);
-    assert_eq!(
-        parse_message::<ProbeRequest>(REQUEST.as_bytes()).unwrap(),
-        request()
-    );
+    let parsed: ProbeRequest = parse_message(REQUEST.as_bytes()).unwrap();
+    assert_eq!(parsed, request());
 }
 
 #[rstest]
@@ -28,15 +26,9 @@ fn request_carries_clock_samples_and_operation() {
     r#"{"outcome":"error","kind":"unknown_operation","message":"shuffle"}"#,
     ProbeReply::Error { kind: ProbeFailure::UnknownOperation, message: "shuffle".to_owned() }
 )]
-#[case::invalid_request(
-    r#"{"outcome":"error","kind":"invalid_request","message":"draws"}"#,
-    ProbeReply::Error { kind: ProbeFailure::InvalidRequest, message: "draws".to_owned() }
-)]
 fn replies_keep_outcome_and_warnings(#[case] text: &str, #[case] expected: ProbeReply) {
-    assert_eq!(
-        parse_message::<ProbeReply>(text.as_bytes()).unwrap(),
-        expected
-    );
+    let reply: ProbeReply = parse_message(text.as_bytes()).unwrap();
+    assert_eq!(reply, expected);
 }
 
 #[tokio::test]

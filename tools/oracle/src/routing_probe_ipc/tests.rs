@@ -19,24 +19,14 @@ mod b392_boundaries;
 const REQUEST: &str = r#"{"clock":{"unix_millis":1700000000123,"monotonic_millis":42000},"samples":[0,9007199254740991],"operation":{"echo":{"text":"ping","draws":2,"warnings":["stale health snapshot"]}}}"#;
 const REPLY: &str = r#"{"outcome":"ok","output":{"echo":{"text":"ping","clock":{"unix_millis":1700000000123,"monotonic_millis":42000},"samples":[0,9007199254740991]}},"warnings":["stale health snapshot"]}"#;
 
-fn clock() -> ProbeClock {
-    ProbeClock {
-        unix_millis: 1_700_000_000_123,
-        monotonic_millis: 42_000,
-    }
-}
-
-fn samples() -> Vec<ProbeSample> {
-    vec![
-        ProbeSample::try_from(0).unwrap(),
-        ProbeSample::try_from((1_u64 << 53_u32) - 1).unwrap(),
-    ]
-}
-
 fn request() -> ProbeRequest {
+    let largest = ProbeSample::try_from((1_u64 << 53_u32) - 1).unwrap();
     ProbeRequest {
-        clock: clock(),
-        samples: samples(),
+        clock: ProbeClock {
+            unix_millis: 1_700_000_000_123,
+            monotonic_millis: 42_000,
+        },
+        samples: vec![ProbeSample::try_from(0).unwrap(), largest],
         operation: ProbeOperation::Echo(EchoInput {
             text: "ping".to_owned(),
             draws: 2,
@@ -46,11 +36,12 @@ fn request() -> ProbeRequest {
 }
 
 fn echo_reply() -> ProbeReply {
+    let echo = request();
     ProbeReply::Ok {
         output: ProbeOutput::Echo(EchoOutput {
             text: "ping".to_owned(),
-            clock: clock(),
-            samples: samples(),
+            clock: echo.clock,
+            samples: echo.samples,
         }),
         warnings: vec!["stale health snapshot".to_owned()],
     }
