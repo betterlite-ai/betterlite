@@ -12,7 +12,7 @@ description: 'Compose B339''s adaptive model sampler with B334''s tier selection
   adaptive_weights, tier_distance_penalty, adaptive_eligible. Pinned declaration defaults: adaptive=False;
   adaptive_weights=lambda: AdaptiveRouterWeights(quality=0.3, cost=0.7); tier_distance_penalty=DEFAULT_TIER_DISTANCE_PENALTY;
   adaptive_eligible=''all''. Resolve env values once in betterlite-config, never in router code. Implement
-  the owned native service in crates/betterlite-router/src/complexity_adaptive_placement.rs. Add ProbeOperation::B354
+  the owned native service in crates/betterlite-router/src/complexity_adaptive_placement.rs. Add ProbeOperation::ComplexityAdaptivePlacement
   in tools/oracle/src/router_probes/mod.rs and the corresponding B354 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -52,7 +52,7 @@ scope:
   - crates/betterlite-config/src/complexity_adaptive_placement.rs
   - crates/betterlite-config/src/complexity_adaptive_placement/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b354-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/complexity-adaptive-placement-*
   - crates/betterlite-router/src/soft_floor_math.rs
   - crates/betterlite-router/src/soft_floor_math/**
   - crates/betterlite-config/fuzz/Cargo.toml
@@ -63,13 +63,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3150-L3154
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b354_behaviors and b354_boundaries under complexity_adaptive_placement::tests.
+- text: Write tests named complexity_adaptive_placement_behaviors and complexity_adaptive_placement_boundaries under complexity_adaptive_placement::tests.
     The first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b354-behaviors
-  - b354-boundaries
+  - complexity-adaptive-placement-behaviors
+  - complexity-adaptive-placement-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -80,12 +80,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b354-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b354-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/complexity-adaptive-placement-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/complexity-adaptive-placement-invalid.yaml;
     the valid seed contains adaptive. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b354-boundaries
+  - complexity-adaptive-placement-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -93,13 +93,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b354-behaviors
+  - id: complexity-adaptive-placement-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b354_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_adaptive_placement_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b354-boundaries
+  - id: complexity-adaptive-placement-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b354_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::complexity_adaptive_placement_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -109,9 +109,9 @@ checks:
       tools/oracle/litellm basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b354-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b354-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-adaptive-placement-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/complexity-adaptive-placement-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b354-" && grep -Fq 'adaptive' crates/betterlite-config/fuzz/corpus/config_yaml/b354-valid.yaml
+      | grep -Fq "/complexity-adaptive-placement-" && grep -Fq 'adaptive' crates/betterlite-config/fuzz/corpus/config_yaml/complexity-adaptive-placement-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

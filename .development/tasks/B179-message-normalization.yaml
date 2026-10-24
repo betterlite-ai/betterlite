@@ -6,7 +6,7 @@ description: >-
   projections, B219 fields/media/system helpers, B220 reasoning helpers and B221 system placement. Keep transforms
   explicit per provider and source requests unchanged; B004 already owns the named provider_specific_fields passthrough.
   This task does not call tool-schema helpers and has no B178 dependency. Budget 220 continuation/composition, 90
-  adapters, 300 behavior/corpus tests and 60 wiring (670 total). Write the behavior rstest functions b179_message_tests_behavior
+  adapters, 300 behavior/corpus tests and 60 wiring (670 total). Write the behavior rstest functions message_normalization_message_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations message_normalization in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -67,7 +67,7 @@ checks:
   - id: message-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b179_message_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::message_normalization_message_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: chat-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

@@ -7,7 +7,7 @@ description: >-
   and already-mapped/guardrail identity. B186 extends the same dispatch.rs with native families. Integrate B004/B005
   error handling before the first stream chunk, retaining typed causes and B187 redaction. Extend provider_error
   seeds for these branches. Budget 290 OpenAI/preamble, 100 adapters, 290 tests/fuzz and 100 integration (780 total).
-  Write the behavior rstest functions b185_openai_error_tests_behavior in adjacent tests.rs files, with a named
+  Write the behavior rstest functions openai_errors_openai_error_tests_behavior in adjacent tests.rs files, with a named
   case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
   provider_error in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
   own Rust and Python adapter file and corpus seed.
@@ -76,7 +76,7 @@ checks:
     why: the required tests fail or the filter selects no tests
     run: >-
       cargo nextest run --locked -p betterlite-error -p betterlite-openai -p betterlite-server --no-tests=fail -E
-      'test(/::b185_openai_error_tests_behavior($|::)/) - test(/replays_the_/)'
+      'test(/::openai_errors_openai_error_tests_behavior($|::)/) - test(/replays_the_/)'
   - id: provider-error-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-

@@ -15,7 +15,7 @@ description: >-
   the common typed parser. Request-supplied blocked callback params (gcs_bucket_name, gcs_path_service_account,
   dd_api_key, dd_site, dd_agent_host, dd_agent_port, newrelic_api_key, newrelic_region, signoz_ingestion_endpoint,
   signoz_ingestion_key) are skipped for export with a warning naming the field, matching LiteLLM. os.environ/ references
-  in allowed dynamic fields still fail before lookup. Write the behavior rstest functions b188_logging_privacy_tests_behavior
+  in allowed dynamic fields still fail before lookup. Write the behavior rstest functions logging_privacy_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations logging_privacy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed. Budget 270 privacy transforms, 110 adapters,
@@ -77,7 +77,7 @@ checks:
   - id: logging-privacy-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/::b188_logging_privacy_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/::logging_privacy_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: chat-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

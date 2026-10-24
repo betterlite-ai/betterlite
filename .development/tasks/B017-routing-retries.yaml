@@ -7,7 +7,7 @@ description: 'Use B305 and B306 to add the attempt state machine around B016 dis
   Return the final mapped error with attempt metadata and install retry response headers on ordinary and
   streaming successes. Restrict stream retries to an uncommitted response boundary; B311/B312 handle fallback
   after stream acquisition. Implement the owned native service in crates/betterlite-router/src/routing_retries.rs.
-  Add ProbeOperation::B017 in tools/oracle/src/router_probes/mod.rs and the corresponding B017 entry in
+  Add ProbeOperation::RoutingRetries in tools/oracle/src/router_probes/mod.rs and the corresponding B017 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -57,13 +57,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L14635-L14641
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b017_behaviors and b017_boundaries under routing_retries::tests. The first asserts
+- text: Write tests named routing_retries_behaviors and routing_retries_boundaries under routing_retries::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b017-behaviors
-  - b017-boundaries
+  - routing-retries-behaviors
+  - routing-retries-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -81,13 +81,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b017-behaviors
+  - id: routing-retries-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b017_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_retries_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b017-boundaries
+  - id: routing-retries-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b017_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_retries_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

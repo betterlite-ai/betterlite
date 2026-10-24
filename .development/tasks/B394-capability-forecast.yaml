@@ -13,7 +13,7 @@ description: 'Implement CapabilityForecast, CapabilityPolicy and finite f64 prob
   declaration defaults: threshold_step=0.0; efficient_tier=''SIMPLE''; capable_tier=''REASONING''; calibration=None;
   max_output_tokens=4096; response_format=''json_schema''. Resolve env values once in betterlite-config,
   never in router code. Implement the owned native service in crates/betterlite-router/src/capability_forecast.rs.
-  Add ProbeOperation::B394 in tools/oracle/src/router_probes/mod.rs and the corresponding B394 entry in
+  Add ProbeOperation::CapabilityForecast in tools/oracle/src/router_probes/mod.rs and the corresponding B394 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -61,13 +61,13 @@ scope:
   - crates/betterlite-config/src/capability_forecast.rs
   - crates/betterlite-config/src/capability_forecast/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b394-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/capability-forecast-*
   - crates/betterlite-router/src/capability_math.rs
   - crates/betterlite-router/src/capability_math/**
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/cap_reply.rs
-  - crates/betterlite-router/fuzz/corpus/cap_reply/b394-*
+  - crates/betterlite-router/fuzz/corpus/cap_reply/capability-forecast-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L17-L227
@@ -75,13 +75,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L605-L675
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b394_behaviors and b394_boundaries under capability_forecast::tests. The first
+- text: Write tests named capability_forecast_behaviors and capability_forecast_boundaries under capability_forecast::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b394-behaviors
-  - b394-boundaries
+  - capability-forecast-behaviors
+  - capability-forecast-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -92,18 +92,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b394-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b394-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/capability-forecast-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/capability-forecast-invalid.yaml;
     the valid seed contains base_threshold. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b394-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/cap_reply/b394-valid.json and crates/betterlite-router/fuzz/corpus/cap_reply/b394-invalid.json;
+  - capability-forecast-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/cap_reply/capability-forecast-valid.json and crates/betterlite-router/fuzz/corpus/cap_reply/capability-forecast-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target cap_reply and normal replays_the_cap_reply_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b394-boundaries
+  - capability-forecast-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -111,13 +111,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b394-behaviors
+  - id: capability-forecast-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b394_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::capability_forecast_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b394-boundaries
+  - id: capability-forecast-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b394_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::capability_forecast_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -127,16 +127,16 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b394-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b394-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/capability-forecast-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/capability-forecast-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b394-" && grep -Fq 'base_threshold' crates/betterlite-config/fuzz/corpus/config_yaml/b394-valid.yaml
+      | grep -Fq "/capability-forecast-" && grep -Fq 'base_threshold' crates/betterlite-config/fuzz/corpus/config_yaml/capability-forecast-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/cap_reply/b394-valid.json && test -f crates/betterlite-router/fuzz/corpus/cap_reply/b394-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/cap_reply/capability-forecast-valid.json && test -f crates/betterlite-router/fuzz/corpus/cap_reply/capability-forecast-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/cap_reply
-      | grep -Fq "/b394-" && test -f crates/betterlite-router/fuzz/fuzz_targets/cap_reply.rs && cargo
+      | grep -Fq "/capability-forecast-" && test -f crates/betterlite-router/fuzz/fuzz_targets/cap_reply.rs && cargo
       nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_cap_reply_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/capability-forecast/supported-threshold.yaml

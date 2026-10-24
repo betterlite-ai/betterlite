@@ -37,7 +37,7 @@ scope:
   - tools/oracle/cases/routing/probes/**
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/route_probe.rs
-  - tools/oracle/fuzz/corpus/route_probe/b361-*
+  - tools/oracle/fuzz/corpus/route_probe/oracle-comparison-contracts-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L200-L224
@@ -45,40 +45,40 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L43-L112
   why: The bounded scheduler cleanup deviation needs independently asserted outcomes.
 dod:
-- text: Write tests named b361_behaviors and b361_boundaries under oracle_comparison_contracts::tests.
+- text: Write tests named oracle_comparison_contracts_behaviors and oracle_comparison_contracts_boundaries under oracle_comparison_contracts::tests.
     The first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b361-behaviors
-  - b361-boundaries
+  - oracle-comparison-contracts-behaviors
+  - oracle-comparison-contracts-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Add tools/oracle/fuzz/corpus/route_probe/b361-valid.json and tools/oracle/fuzz/corpus/route_probe/b361-invalid.json;
+- text: Add tools/oracle/fuzz/corpus/route_probe/oracle-comparison-contracts-valid.json and tools/oracle/fuzz/corpus/route_probe/oracle-comparison-contracts-invalid.json;
     the valid seed contains expected_difference. The cargo-fuzz target route_probe and normal replays_the_route_probe_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b361-boundaries
+  - oracle-comparison-contracts-boundaries
 checks:
   optional: []
   commands:
-  - id: b361-behaviors
+  - id: oracle-comparison-contracts-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b361_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::oracle_comparison_contracts_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b361-boundaries
+  - id: oracle-comparison-contracts-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b361_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::oracle_comparison_contracts_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f tools/oracle/fuzz/corpus/route_probe/b361-valid.json && test -f tools/oracle/fuzz/corpus/route_probe/b361-invalid.json
+    run: test -f tools/oracle/fuzz/corpus/route_probe/oracle-comparison-contracts-valid.json && test -f tools/oracle/fuzz/corpus/route_probe/oracle-comparison-contracts-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/route_probe | grep
-      -Fq "/b361-" && grep -Fq 'expected_difference' tools/oracle/fuzz/corpus/route_probe/b361-valid.json
+      -Fq "/oracle-comparison-contracts-" && grep -Fq 'expected_difference' tools/oracle/fuzz/corpus/route_probe/oracle-comparison-contracts-valid.json
       && test -f tools/oracle/fuzz/fuzz_targets/route_probe.rs && cargo nextest run --locked -p betterlite-oracle
       --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
 oracle_cases:

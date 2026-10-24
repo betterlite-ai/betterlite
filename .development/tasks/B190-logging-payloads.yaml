@@ -8,7 +8,7 @@ description: >-
   assembling independent per-callback snapshots. Preserve Decimal seconds/numbers for startTime/endTime/completionStartTime/response_time,
   optional cost fields, service tier from B212 and absent unimplemented auth/spend fields. Classifier audit belongs
   to B021. Budget 280 final assembly/privacy, 110 adapters, 300 tests and 60 wiring (750 total). Write the behavior
-  rstest functions b190_logging_payload_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  rstest functions logging_payloads_logging_payload_tests_behavior in adjacent tests.rs files, with a named case for each behavior
   and failure in the DoD; corpus replay tests have separate names. Register helper operations logging_payload in
   tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
   adapter file and corpus seed.
@@ -75,7 +75,7 @@ checks:
   - id: logging-payload-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b190_logging_payload_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::logging_payloads_logging_payload_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks

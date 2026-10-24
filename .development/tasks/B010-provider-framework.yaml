@@ -17,7 +17,7 @@ description: >-
   copied into the response (no upstream usage). B010 wires B176 ControlOptions constructors from config/server.
   Expose the provider transform-on-422 hook with explicit bounded attempt count; default is disabled and B026 Azure
   AI is its first user. This hook is separate from B017 router retry. Budget 300 framework/variant, 130 server integration,
-  340 tests (770 total). Write the behavior rstest functions b010_provider_framework_tests_behavior in adjacent
+  340 tests (770 total). Write the behavior rstest functions provider_framework_tests_behavior in adjacent
   tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
   names.
 
@@ -72,7 +72,7 @@ checks:
   commands:
   - id: provider-framework-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-provider -p betterlite-server --no-tests=fail -E 'test(/::b010_provider_framework_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-server --no-tests=fail -E 'test(/::provider_framework_tests_behavior($|::)/)
       - test(/replays_the_/)'
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml

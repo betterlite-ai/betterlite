@@ -8,7 +8,7 @@ description: 'Add typed cooldown records and health snapshots to B304''s store, 
   boundary keys introduced or consumed here: enable_health_check_routing, health_check_staleness_threshold,
   health_check_ignore_transient_errors, DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS. DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS
   defaults to 1 second from the environment; corrected local cooldown TTL is capped at 60 seconds by the
-  source. Implement the owned native service in crates/betterlite-router/src/cooldown_state.rs. Add ProbeOperation::B307
+  source. Implement the owned native service in crates/betterlite-router/src/cooldown_state.rs. Add ProbeOperation::CooldownState
   in tools/oracle/src/router_probes/mod.rs and the corresponding B307 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -53,7 +53,7 @@ scope:
   - crates/betterlite-config/src/cooldown_state.rs
   - crates/betterlite-config/src/cooldown_state/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b307-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-*
   - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -72,13 +72,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11769-L11818
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b307_behaviors and b307_boundaries under cooldown_state::tests. The first asserts
+- text: Write tests named cooldown_state_behaviors and cooldown_state_boundaries under cooldown_state::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b307-behaviors
-  - b307-boundaries
+  - cooldown-state-behaviors
+  - cooldown-state-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -89,13 +89,13 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b307-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b307-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-invalid.yaml;
     the valid seed contains enable_health_check_routing. The cargo-fuzz target config_yaml and normal
     replays_the_config_yaml_corpus test call the production bounded parser. Both new files must be added
     relative to GATE_BASE.
   proof:
   - config-corpus
-  - b307-boundaries
+  - cooldown-state-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -103,13 +103,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b307-behaviors
+  - id: cooldown-state-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b307_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::cooldown_state_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b307-boundaries
+  - id: cooldown-state-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b307_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::cooldown_state_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -119,9 +119,9 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b307-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b307-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b307-" && grep -Fq 'enable_health_check_routing' crates/betterlite-config/fuzz/corpus/config_yaml/b307-valid.yaml
+      | grep -Fq "/cooldown-state-" && grep -Fq 'enable_health_check_routing' crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:

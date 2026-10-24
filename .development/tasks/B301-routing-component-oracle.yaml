@@ -37,7 +37,7 @@ scope:
   - deny.toml
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/route_probe.rs
-  - tools/oracle/fuzz/corpus/route_probe/b301-*
+  - tools/oracle/fuzz/corpus/route_probe/routing-component-oracle-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
@@ -45,13 +45,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L32-L70
   why: An example of internal decisions future tasks need to observe.
 dod:
-- text: Write tests named b301_behaviors and b301_boundaries under routing_component_oracle::tests. The
+- text: Write tests named routing_component_oracle_behaviors and routing_component_oracle_boundaries under routing_component_oracle::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b301-behaviors
-  - b301-boundaries
+  - routing-component-oracle-behaviors
+  - routing-component-oracle-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -62,12 +62,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add tools/oracle/fuzz/corpus/route_probe/b301-valid.json and tools/oracle/fuzz/corpus/route_probe/b301-invalid.json;
+- text: Add tools/oracle/fuzz/corpus/route_probe/routing-component-oracle-valid.json and tools/oracle/fuzz/corpus/route_probe/routing-component-oracle-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target route_probe and normal replays_the_route_probe_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b301-boundaries
+  - routing-component-oracle-boundaries
 - text: The oracle is the only new tool consumer of router and server; existing product consumer restrictions
     remain.
   proof:
@@ -76,13 +76,13 @@ dod:
 checks:
   optional: []
   commands:
-  - id: b301-behaviors
+  - id: routing-component-oracle-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b301_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_component_oracle_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b301-boundaries
+  - id: routing-component-oracle-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b301_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_component_oracle_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -92,9 +92,9 @@ checks:
       tools/oracle/litellm/probes
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f tools/oracle/fuzz/corpus/route_probe/b301-valid.json && test -f tools/oracle/fuzz/corpus/route_probe/b301-invalid.json
+    run: test -f tools/oracle/fuzz/corpus/route_probe/routing-component-oracle-valid.json && test -f tools/oracle/fuzz/corpus/route_probe/routing-component-oracle-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/route_probe | grep
-      -Fq "/b301-" && test -f tools/oracle/fuzz/fuzz_targets/route_probe.rs && cargo nextest run --locked
+      -Fq "/routing-component-oracle-" && test -f tools/oracle/fuzz/fuzz_targets/route_probe.rs && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
   - id: probe-layering
     why: the router tool exception is missing from dependency policy

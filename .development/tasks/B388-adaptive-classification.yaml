@@ -11,7 +11,7 @@ description: 'Implement AdaptiveConfig, AdaptivePreferences and the pinned reque
   with one module-level #[expect(clippy::float_arithmetic, reason = "pinned statistical routing arithmetic")],
   counted in max_new_expects. Keep every price/spend/budget Decimal and compare selected model/tier exactly;
   diagnostic score tolerances cannot hide a selection difference. Implement the owned native service in
-  crates/betterlite-router/src/adaptive_classification.rs. Add ProbeOperation::B388 in tools/oracle/src/router_probes/mod.rs
+  crates/betterlite-router/src/adaptive_classification.rs. Add ProbeOperation::AdaptiveClassification in tools/oracle/src/router_probes/mod.rs
   and the corresponding B388 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -49,12 +49,12 @@ scope:
   - crates/betterlite-config/src/adaptive_classification.rs
   - crates/betterlite-config/src/adaptive_classification/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b388-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/adaptive-classification-*
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
   - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
-  - crates/betterlite-openai/fuzz/corpus/chat_request/b388-*
+  - crates/betterlite-openai/fuzz/corpus/chat_request/adaptive-classification-*
   - crates/betterlite-router/src/preference_math.rs
   - crates/betterlite-router/src/preference_math/**
   - crates/betterlite-config/fuzz/Cargo.toml
@@ -68,13 +68,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1227-L1231
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b388_behaviors and b388_boundaries under adaptive_classification::tests. The
+- text: Write tests named adaptive_classification_behaviors and adaptive_classification_boundaries under adaptive_classification::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b388-behaviors
-  - b388-boundaries
+  - adaptive-classification-behaviors
+  - adaptive-classification-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -85,18 +85,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b388-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b388-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/adaptive-classification-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/adaptive-classification-invalid.yaml;
     the valid seed contains adaptive_router_config. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b388-boundaries
-- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b388-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b388-invalid.json;
+  - adaptive-classification-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/adaptive-classification-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/adaptive-classification-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - chat-corpus
-  - b388-boundaries
+  - adaptive-classification-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -104,13 +104,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b388-behaviors
+  - id: adaptive-classification-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b388_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_classification_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b388-boundaries
+  - id: adaptive-classification-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b388_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_classification_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -120,16 +120,16 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b388-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b388-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/adaptive-classification-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/adaptive-classification-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b388-" && grep -Fq 'adaptive_router_config' crates/betterlite-config/fuzz/corpus/config_yaml/b388-valid.yaml
+      | grep -Fq "/adaptive-classification-" && grep -Fq 'adaptive_router_config' crates/betterlite-config/fuzz/corpus/config_yaml/adaptive-classification-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: chat-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b388-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b388-invalid.json
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/adaptive-classification-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/adaptive-classification-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
-      | grep -Fq "/b388-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      | grep -Fq "/adaptive-classification-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/adaptive-classification/request-type-precedence.yaml

@@ -11,7 +11,7 @@ description: 'Add classifier_type llm_v2 to B331''s classifier transport and B33
   tolerance is for diagnostic scores only, never a different selection. Configuration boundary keys introduced
   or consumed here: llm_v2_config. Pinned declaration defaults: llm_v2_config=None. Resolve env values
   once in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/two_solver_classifier.rs.
-  Add ProbeOperation::B353 in tools/oracle/src/router_probes/mod.rs and the corresponding B353 entry in
+  Add ProbeOperation::TwoSolverClassifier in tools/oracle/src/router_probes/mod.rs and the corresponding B353 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -56,13 +56,13 @@ scope:
   - crates/betterlite-config/src/two_solver_classifier.rs
   - crates/betterlite-config/src/two_solver_classifier/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b353-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/two-solver-classifier-*
   - crates/betterlite-router/src/solver_math.rs
   - crates/betterlite-router/src/solver_math/**
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/solver_json.rs
-  - crates/betterlite-router/fuzz/corpus/solver_json/b353-*
+  - crates/betterlite-router/fuzz/corpus/solver_json/two-solver-classifier-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/llm_v2.py#L21-L231
@@ -76,13 +76,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1707-L1740
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b353_behaviors and b353_boundaries under two_solver_classifier::tests. The first
+- text: Write tests named two_solver_classifier_behaviors and two_solver_classifier_boundaries under two_solver_classifier::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b353-behaviors
-  - b353-boundaries
+  - two-solver-classifier-behaviors
+  - two-solver-classifier-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -93,18 +93,18 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b353-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b353-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/two-solver-classifier-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/two-solver-classifier-invalid.yaml;
     the valid seed contains llm_v2_config. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b353-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/solver_json/b353-valid.json and crates/betterlite-router/fuzz/corpus/solver_json/b353-invalid.json;
+  - two-solver-classifier-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/solver_json/two-solver-classifier-valid.json and crates/betterlite-router/fuzz/corpus/solver_json/two-solver-classifier-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target solver_json and normal replays_the_solver_json_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b353-boundaries
+  - two-solver-classifier-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -112,13 +112,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b353-behaviors
+  - id: two-solver-classifier-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b353_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::two_solver_classifier_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b353-boundaries
+  - id: two-solver-classifier-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b353_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::two_solver_classifier_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -128,16 +128,16 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b353-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b353-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/two-solver-classifier-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/two-solver-classifier-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b353-" && grep -Fq 'llm_v2_config' crates/betterlite-config/fuzz/corpus/config_yaml/b353-valid.yaml
+      | grep -Fq "/two-solver-classifier-" && grep -Fq 'llm_v2_config' crates/betterlite-config/fuzz/corpus/config_yaml/two-solver-classifier-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/solver_json/b353-valid.json && test -f crates/betterlite-router/fuzz/corpus/solver_json/b353-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/solver_json/two-solver-classifier-valid.json && test -f crates/betterlite-router/fuzz/corpus/solver_json/two-solver-classifier-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/solver_json
-      | grep -Fq "/b353-" && test -f crates/betterlite-router/fuzz/fuzz_targets/solver_json.rs && cargo
+      | grep -Fq "/two-solver-classifier-" && test -f crates/betterlite-router/fuzz/fuzz_targets/solver_json.rs && cargo
       nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_solver_json_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/two-solver-classifier/efficient-at-quality-gap-boundary.yaml

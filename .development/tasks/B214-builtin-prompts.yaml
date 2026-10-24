@@ -6,7 +6,7 @@ description: >-
   Own factory.py lines 62-63, 99-373, 614-712 and 3156-3179; preserve whitespace and role delimiters exactly. Ollama
   inline-image handling consumes supplied data only; no new URL-fetch behavior before the open B177/B183 decisions.
   Inject model/roles and return owned bounded strings. Budget 300 renderers, 90 adapters, 300 tests and 60 wiring
-  (750 total). Write the behavior rstest functions b214_behavior_tests_behavior in adjacent tests.rs files, with
+  (750 total). Write the behavior rstest functions builtin_prompts_behavior_tests_behavior in adjacent tests.rs files, with
   a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper
   operations builtin_prompts in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
   has its own Rust and Python adapter file and corpus seed.
@@ -56,7 +56,7 @@ checks:
   - id: behavior-tests
     why: new behavior tests are missing or fail
     run: >-
-      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b214_behavior_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::builtin_prompts_behavior_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: helper-python
     why: strict adapters fail

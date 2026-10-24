@@ -12,7 +12,7 @@ description: >-
   corpus with every added operation and replay it through the common typed parser. Reject unknown fields only in
   bundled-map inventory tests. At runtime accept unknown catalog fields with warnings listing their complete paths,
   so a remote refresh remains forward compatible; do not silently discard their existence. Known fields still enforce
-  type/depth/duplicate checks. Write the behavior rstest functions b205_model_field_tests_behavior in adjacent tests.rs
+  type/depth/duplicate checks. Write the behavior rstest functions model_metadata_types_model_field_tests_behavior in adjacent tests.rs
   files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names. Register
   helper operations model_fields in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation
   has its own Rust and Python adapter file and corpus seed. Budget 260 metadata projection, 100 adapters, 280 tests
@@ -76,7 +76,7 @@ checks:
   - id: model-field-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::b205_model_field_tests_behavior($|::)/)
+      cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::model_metadata_types_model_field_tests_behavior($|::)/)
       - test(/replays_the_/)'
   - id: model-fields-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails

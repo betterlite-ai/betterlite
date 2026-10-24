@@ -8,7 +8,7 @@ description: 'Finish router settings compatibility with typed scoped weights and
   add an endpoint absent from the pin. Fuzz the weights payload parser and seed the config and management
   corpora. Configuration boundary keys introduced or consumed here: weights. Pinned declaration defaults:
   weights=None. Resolve env values once in betterlite-config, never in router code. Implement the owned
-  native service in crates/betterlite-server/src/router_weights.rs. Add ProbeOperation::B023 in tools/oracle/src/router_probes/mod.rs
+  native service in crates/betterlite-server/src/router_weights.rs. Add ProbeOperation::RouterWeights in tools/oracle/src/router_probes/mod.rs
   and the corresponding B023 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
   production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
@@ -43,16 +43,16 @@ scope:
   - crates/betterlite-config/src/router_weights.rs
   - crates/betterlite-config/src/router_weights/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b023-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/router-weights-*
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
   - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
-  - crates/betterlite-openai/fuzz/corpus/chat_request/b023-*
+  - crates/betterlite-openai/fuzz/corpus/chat_request/router-weights-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/weights.rs
-  - crates/betterlite-server/fuzz/corpus/weights/b023-*
+  - crates/betterlite-server/fuzz/corpus/weights/router-weights-*
   - crates/betterlite-openai/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -75,13 +75,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L60-L87
   why: B2301 owns reference rejection and canonical group comparison.
 dod:
-- text: Write tests named b023_behaviors and b023_boundaries under router_weights::tests. The first asserts
+- text: Write tests named router_weights_behaviors and router_weights_boundaries under router_weights::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b023-behaviors
-  - b023-boundaries
+  - router-weights-behaviors
+  - router-weights-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -92,24 +92,24 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b023-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b023-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/router-weights-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/router-weights-invalid.yaml;
     the valid seed contains weights. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b023-boundaries
-- text: Add crates/betterlite-server/fuzz/corpus/weights/b023-valid.json and crates/betterlite-server/fuzz/corpus/weights/b023-invalid.json;
+  - router-weights-boundaries
+- text: Add crates/betterlite-server/fuzz/corpus/weights/router-weights-valid.json and crates/betterlite-server/fuzz/corpus/weights/router-weights-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target weights and normal replays_the_weights_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b023-boundaries
-- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b023-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b023-invalid.json;
+  - router-weights-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/router-weights-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/router-weights-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - chat-corpus
-  - b023-boundaries
+  - router-weights-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -117,13 +117,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b023-behaviors
+  - id: router-weights-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b023_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::router_weights_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b023-boundaries
+  - id: router-weights-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b023_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::router_weights_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -133,22 +133,22 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b023-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b023-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-weights-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/router-weights-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b023-" && grep -Fq 'weights' crates/betterlite-config/fuzz/corpus/config_yaml/b023-valid.yaml
+      | grep -Fq "/router-weights-" && grep -Fq 'weights' crates/betterlite-config/fuzz/corpus/config_yaml/router-weights-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-server/fuzz/corpus/weights/b023-valid.json && test -f crates/betterlite-server/fuzz/corpus/weights/b023-invalid.json
+    run: test -f crates/betterlite-server/fuzz/corpus/weights/router-weights-valid.json && test -f crates/betterlite-server/fuzz/corpus/weights/router-weights-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/weights
-      | grep -Fq "/b023-" && test -f crates/betterlite-server/fuzz/fuzz_targets/weights.rs && cargo nextest
+      | grep -Fq "/router-weights-" && test -f crates/betterlite-server/fuzz/fuzz_targets/weights.rs && cargo nextest
       run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_weights_corpus)'
   - id: chat-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b023-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b023-invalid.json
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/router-weights-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/router-weights-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
-      | grep -Fq "/b023-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      | grep -Fq "/router-weights-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/router-weights/negative-nonfinite-bool-weight.yaml

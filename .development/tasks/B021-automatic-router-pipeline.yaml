@@ -4,7 +4,7 @@ description: 'Compose B362 registry selection and B366 ComplexityDecision with t
   adaptive pre-routing services through B016. Adapt Chat, Responses and Messages using B080/B081 public
   service inputs at the server boundary. Enforce one authorized final dispatch and one final decision
   attribution; classifier, session and placement algorithms remain in their component tasks. Implement
-  the owned native service in crates/betterlite-router/src/automatic_router_pipeline.rs. Add ProbeOperation::B021
+  the owned native service in crates/betterlite-router/src/automatic_router_pipeline.rs. Add ProbeOperation::AutomaticRouterPipeline
   in tools/oracle/src/router_probes/mod.rs and the corresponding B021 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -38,13 +38,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13796-L13980
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b021_behaviors and b021_boundaries under automatic_router_pipeline::tests. The
+- text: Write tests named automatic_router_pipeline_behaviors and automatic_router_pipeline_boundaries under automatic_router_pipeline::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b021-behaviors
-  - b021-boundaries
+  - automatic-router-pipeline-behaviors
+  - automatic-router-pipeline-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -62,13 +62,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b021-behaviors
+  - id: automatic-router-pipeline-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b021_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::automatic_router_pipeline_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b021-boundaries
+  - id: automatic-router-pipeline-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b021_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::automatic_router_pipeline_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

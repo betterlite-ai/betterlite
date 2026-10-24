@@ -33,40 +33,40 @@ scope:
   - deny.toml
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/probe_ipc.rs
-  - tools/oracle/fuzz/corpus/probe_ipc/b392-*
+  - tools/oracle/fuzz/corpus/probe_ipc/routing-probe-ipc-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b392_behaviors and b392_boundaries under routing_probe_ipc::tests. The first
+- text: Write tests named routing_probe_ipc_behaviors and routing_probe_ipc_boundaries under routing_probe_ipc::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b392-behaviors
-  - b392-boundaries
+  - routing-probe-ipc-behaviors
+  - routing-probe-ipc-boundaries
 - text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
     suppressions.
   proof:
   - probe-python
-  - b392-behaviors
-- text: Add tools/oracle/fuzz/corpus/probe_ipc/b392-valid.json and tools/oracle/fuzz/corpus/probe_ipc/b392-invalid.json;
+  - routing-probe-ipc-behaviors
+- text: Add tools/oracle/fuzz/corpus/probe_ipc/routing-probe-ipc-valid.json and tools/oracle/fuzz/corpus/probe_ipc/routing-probe-ipc-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target probe_ipc and normal replays_the_probe_ipc_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b392-boundaries
+  - routing-probe-ipc-boundaries
 checks:
   optional: []
   commands:
-  - id: b392-behaviors
+  - id: routing-probe-ipc-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b392_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_probe_ipc_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b392-boundaries
+  - id: routing-probe-ipc-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b392_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_probe_ipc_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -76,9 +76,9 @@ checks:
       tools/oracle/litellm/probes
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f tools/oracle/fuzz/corpus/probe_ipc/b392-valid.json && test -f tools/oracle/fuzz/corpus/probe_ipc/b392-invalid.json
+    run: test -f tools/oracle/fuzz/corpus/probe_ipc/routing-probe-ipc-valid.json && test -f tools/oracle/fuzz/corpus/probe_ipc/routing-probe-ipc-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/probe_ipc | grep
-      -Fq "/b392-" && test -f tools/oracle/fuzz/fuzz_targets/probe_ipc.rs && cargo nextest run --locked
+      -Fq "/routing-probe-ipc-" && test -f tools/oracle/fuzz/fuzz_targets/probe_ipc.rs && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(replays_the_probe_ipc_corpus)'
 oracle_cases: []
 deviations: []

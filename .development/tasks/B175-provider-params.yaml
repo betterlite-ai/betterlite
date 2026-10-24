@@ -15,7 +15,7 @@ description: >-
   thinking, service_tier, drop_params, additional_drop_params and allowed_openai_params; support litellm_params.drop_params/additional_drop_params
   and litellm_settings.drop_params. allowed_openai_params extends the supported list before unsupported-field rejection,
   without altering credential provenance. B176 exclusively owns trusted ControlOptions. Budget 250 mapping/types,
-  100 wire/config, 100 adapters and 300 tests/fuzz (750 total). Write the behavior rstest functions b175_provider_params_tests_behavior
+  100 wire/config, 100 adapters and 300 tests/fuzz (750 total). Write the behavior rstest functions provider_params_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Register helper operations provider_params in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
   each operation has its own Rust and Python adapter file and corpus seed.
@@ -80,7 +80,7 @@ checks:
   - id: provider-params-tests
     why: the required tests fail or the filter selects no tests
     run: cargo nextest run --locked -p betterlite-models -p betterlite-openai -p betterlite-config --no-tests=fail
-      -E 'test(/::b175_provider_params_tests_behavior($|::)/) - test(/replays_the_/)'
+      -E 'test(/::provider_params_tests_behavior($|::)/) - test(/replays_the_/)'
   - id: chat-request-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request)"

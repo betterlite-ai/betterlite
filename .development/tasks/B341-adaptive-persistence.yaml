@@ -15,7 +15,7 @@ description: 'Implement B051 repository adapters for LiteLLM_AdaptiveRouterState
   posterior statistics may use f64. Monetary columns stay Decimal. Use a 5-second shutdown drain deadline
   matching CACHE_WRITE_SHUTDOWN_FLUSH_TIMEOUT_SECONDS for owned cache writes; a remaining failed batch
   is warned and discarded. Implement the owned native service in crates/betterlite-router/src/adaptive_persistence.rs.
-  Add ProbeOperation::B341 in tools/oracle/src/router_probes/mod.rs and the corresponding B341 entry in
+  Add ProbeOperation::AdaptivePersistence in tools/oracle/src/router_probes/mod.rs and the corresponding B341 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -66,13 +66,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4469-L4500
   why: Adaptive flush interval and failure logging.
 dod:
-- text: Write tests named b341_behaviors and b341_boundaries under adaptive_persistence::tests. The first
+- text: Write tests named adaptive_persistence_behaviors and adaptive_persistence_boundaries under adaptive_persistence::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b341-behaviors
-  - b341-boundaries
+  - adaptive-persistence-behaviors
+  - adaptive-persistence-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -90,13 +90,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b341-behaviors
+  - id: adaptive-persistence-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b341_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_persistence_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b341-boundaries
+  - id: adaptive-persistence-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b341_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::adaptive_persistence_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

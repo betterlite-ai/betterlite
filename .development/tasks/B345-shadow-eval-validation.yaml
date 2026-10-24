@@ -5,7 +5,7 @@ description: 'Add the typed shadow-evaluation request model and pure validation 
   Enforce direction-specific model scope and reject judge/candidate overlap before any work is queued.
   Keep Decimal budgets and explicit target kinds throughout, and fuzz the management request parser. This
   part creates no jobs and runs no judge calls. Implement the owned native service in crates/betterlite-server/src/shadow_eval_validation.rs.
-  Add ProbeOperation::B345 in tools/oracle/src/router_probes/mod.rs and the corresponding B345 entry in
+  Add ProbeOperation::ShadowEvalValidation in tools/oracle/src/router_probes/mod.rs and the corresponding B345 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -45,7 +45,7 @@ scope:
   - tools/oracle/cases/routing/shadow-eval-validation/**
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/shadow_req.rs
-  - crates/betterlite-server/fuzz/corpus/shadow_req/b345-*
+  - crates/betterlite-server/fuzz/corpus/shadow_req/shadow-eval-validation-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/auto_router_endpoints.py#L329-L513
@@ -53,13 +53,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/auto_router_endpoints.py#L970-L1173
   why: Admin roles, model scopes and judge collision checks.
 dod:
-- text: Write tests named b345_behaviors and b345_boundaries under shadow_eval_validation::tests. The
+- text: Write tests named shadow_eval_validation_behaviors and shadow_eval_validation_boundaries under shadow_eval_validation::tests. The
     first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
     bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
     cannot satisfy either check.
   proof:
-  - b345-behaviors
-  - b345-boundaries
+  - shadow-eval-validation-behaviors
+  - shadow-eval-validation-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -70,12 +70,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-server/fuzz/corpus/shadow_req/b345-valid.json and crates/betterlite-server/fuzz/corpus/shadow_req/b345-invalid.json;
+- text: Add crates/betterlite-server/fuzz/corpus/shadow_req/shadow-eval-validation-valid.json and crates/betterlite-server/fuzz/corpus/shadow_req/shadow-eval-validation-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target shadow_req and normal replays_the_shadow_req_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b345-boundaries
+  - shadow-eval-validation-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -83,13 +83,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b345-behaviors
+  - id: shadow-eval-validation-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b345_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_eval_validation_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b345-boundaries
+  - id: shadow-eval-validation-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b345_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::shadow_eval_validation_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -99,9 +99,9 @@ checks:
       basedpyright tools/oracle/litellm/probes
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-server/fuzz/corpus/shadow_req/b345-valid.json && test -f crates/betterlite-server/fuzz/corpus/shadow_req/b345-invalid.json
+    run: test -f crates/betterlite-server/fuzz/corpus/shadow_req/shadow-eval-validation-valid.json && test -f crates/betterlite-server/fuzz/corpus/shadow_req/shadow-eval-validation-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/shadow_req
-      | grep -Fq "/b345-" && test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_req.rs && cargo
+      | grep -Fq "/shadow-eval-validation-" && test -f crates/betterlite-server/fuzz/fuzz_targets/shadow_req.rs && cargo
       nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_shadow_req_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/shadow-eval-validation/admin-writer-required.yaml

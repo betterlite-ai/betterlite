@@ -27,41 +27,41 @@ scope:
   - tools/oracle/Cargo.toml
   - tools/oracle/fuzz/Cargo.toml
   - tools/oracle/fuzz/fuzz_targets/mock_script.rs
-  - tools/oracle/fuzz/corpus/mock_script/b391-*
+  - tools/oracle/fuzz/corpus/mock_script/routing-mock-scripts-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7677-L7873
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b391_behaviors and b391_boundaries under routing_mock_scripts::tests. The first
+- text: Write tests named routing_mock_scripts_behaviors and routing_mock_scripts_boundaries under routing_mock_scripts::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b391-behaviors
-  - b391-boundaries
-- text: Add tools/oracle/fuzz/corpus/mock_script/b391-valid.json and tools/oracle/fuzz/corpus/mock_script/b391-invalid.json;
+  - routing-mock-scripts-behaviors
+  - routing-mock-scripts-boundaries
+- text: Add tools/oracle/fuzz/corpus/mock_script/routing-mock-scripts-valid.json and tools/oracle/fuzz/corpus/mock_script/routing-mock-scripts-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target mock_script and normal replays_the_mock_script_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b391-boundaries
+  - routing-mock-scripts-boundaries
 checks:
   optional: []
   commands:
-  - id: b391-behaviors
+  - id: routing-mock-scripts-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b391_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_mock_scripts_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b391-boundaries
+  - id: routing-mock-scripts-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::b391_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::routing_mock_scripts_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f tools/oracle/fuzz/corpus/mock_script/b391-valid.json && test -f tools/oracle/fuzz/corpus/mock_script/b391-invalid.json
+    run: test -f tools/oracle/fuzz/corpus/mock_script/routing-mock-scripts-valid.json && test -f tools/oracle/fuzz/corpus/mock_script/routing-mock-scripts-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/mock_script | grep
-      -Fq "/b391-" && test -f tools/oracle/fuzz/fuzz_targets/mock_script.rs && cargo nextest run --locked
+      -Fq "/routing-mock-scripts-" && test -f tools/oracle/fuzz/fuzz_targets/mock_script.rs && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(replays_the_mock_script_corpus)'
 oracle_cases: []
 deviations: []

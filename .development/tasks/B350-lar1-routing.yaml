@@ -9,7 +9,7 @@ description: 'Add the typed LAR-1 metadata parser and async deployment selector 
   default to 0.3/0.5/0.7. Non-numeric arguments fall back to defaults; normalized numeric thresholds must
   satisfy 0 < low < medium < high < 1. metadata.lar1 defaults act=INF, time=NOW, mind=REF, confidence=0.5,
   evidence=[]. Malformed metadata warns and uses defaults. Implement the owned native service in crates/betterlite-router/src/lar1_routing.rs.
-  Add ProbeOperation::B350 in tools/oracle/src/router_probes/mod.rs and the corresponding B350 entry in
+  Add ProbeOperation::Lar1Routing in tools/oracle/src/router_probes/mod.rs and the corresponding B350 entry in
   tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
   and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -50,16 +50,16 @@ scope:
   - crates/betterlite-config/src/lar1_routing.rs
   - crates/betterlite-config/src/lar1_routing/**
   - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
-  - crates/betterlite-config/fuzz/corpus/config_yaml/b350-*
+  - crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-*
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/chat.rs
   - crates/betterlite-openai/src/request.rs
   - crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs
-  - crates/betterlite-openai/fuzz/corpus/chat_request/b350-*
+  - crates/betterlite-openai/fuzz/corpus/chat_request/lar1-routing-*
   - crates/betterlite-config/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/lar1_meta.rs
-  - crates/betterlite-router/fuzz/corpus/lar1_meta/b350-*
+  - crates/betterlite-router/fuzz/corpus/lar1_meta/lar1-routing-*
   - crates/betterlite-openai/fuzz/Cargo.toml
   lint_tables: false
 references:
@@ -70,13 +70,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lar1_routing.py#L176-L179
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b350_behaviors and b350_boundaries under lar1_routing::tests. The first asserts
+- text: Write tests named lar1_routing_behaviors and lar1_routing_boundaries under lar1_routing::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation
     and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either
     check.
   proof:
-  - b350-behaviors
-  - b350-boundaries
+  - lar1-routing-behaviors
+  - lar1-routing-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -87,24 +87,24 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b350-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b350-invalid.yaml;
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-invalid.yaml;
     the valid seed contains routing_strategy. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - b350-boundaries
-- text: Add crates/betterlite-router/fuzz/corpus/lar1_meta/b350-valid.json and crates/betterlite-router/fuzz/corpus/lar1_meta/b350-invalid.json;
+  - lar1-routing-boundaries
+- text: Add crates/betterlite-router/fuzz/corpus/lar1_meta/lar1-routing-valid.json and crates/betterlite-router/fuzz/corpus/lar1_meta/lar1-routing-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target lar1_meta and normal replays_the_lar1_meta_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b350-boundaries
-- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/b350-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/b350-invalid.json;
+  - lar1-routing-boundaries
+- text: Add crates/betterlite-openai/fuzz/corpus/chat_request/lar1-routing-valid.json and crates/betterlite-openai/fuzz/corpus/chat_request/lar1-routing-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target chat_request and normal replays_the_chat_request_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - chat-corpus
-  - b350-boundaries
+  - lar1-routing-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -112,13 +112,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b350-behaviors
+  - id: lar1-routing-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b350_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::lar1_routing_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b350-boundaries
+  - id: lar1-routing-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b350_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::lar1_routing_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
@@ -128,22 +128,22 @@ checks:
       tools/oracle/litellm/probes
   - id: config-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b350-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b350-invalid.yaml
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-invalid.yaml
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
-      | grep -Fq "/b350-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/b350-valid.yaml
+      | grep -Fq "/lar1-routing-" && grep -Fq 'routing_strategy' crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-valid.yaml
       && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
       -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/lar1_meta/b350-valid.json && test -f crates/betterlite-router/fuzz/corpus/lar1_meta/b350-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/lar1_meta/lar1-routing-valid.json && test -f crates/betterlite-router/fuzz/corpus/lar1_meta/lar1-routing-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/lar1_meta
-      | grep -Fq "/b350-" && test -f crates/betterlite-router/fuzz/fuzz_targets/lar1_meta.rs && cargo
+      | grep -Fq "/lar1-routing-" && test -f crates/betterlite-router/fuzz/fuzz_targets/lar1_meta.rs && cargo
       nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_lar1_meta_corpus)'
   - id: chat-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/b350-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/b350-invalid.json
+    run: test -f crates/betterlite-openai/fuzz/corpus/chat_request/lar1-routing-valid.json && test -f crates/betterlite-openai/fuzz/corpus/chat_request/lar1-routing-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/chat_request
-      | grep -Fq "/b350-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
+      | grep -Fq "/lar1-routing-" && test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/lar1-routing/threshold-equalities.yaml

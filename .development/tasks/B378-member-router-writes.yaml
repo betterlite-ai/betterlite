@@ -3,7 +3,7 @@ title: Member-owned automatic router writes
 description: 'Implement MemberRouterAccess using B052 principal, B057 team membership and B060 model write
   services. Validate ownership metadata, team opt-in, allowed member config fields and each B377 model
   dependency before create/update. Preserve old state on repository failure. No license quota is enforced.
-  Implement the owned native service in crates/betterlite-server/src/member_router_writes.rs. Add ProbeOperation::B378
+  Implement the owned native service in crates/betterlite-server/src/member_router_writes.rs. Add ProbeOperation::MemberRouterWrites
   in tools/oracle/src/router_probes/mod.rs and the corresponding B378 entry in tools/oracle/litellm/probes/registry.py;
   the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
@@ -36,13 +36,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_permissions.py#L109-L370
   why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Write tests named b378_behaviors and b378_boundaries under member_router_writes::tests. The first
+- text: Write tests named member_router_writes_behaviors and member_router_writes_boundaries under member_router_writes::tests. The first
     asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
     cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
     satisfy either check.
   proof:
-  - b378-behaviors
-  - b378-boundaries
+  - member-router-writes-behaviors
+  - member-router-writes-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
     provider requests, status, code and state changes; only /error/message may be ignored for betterlite
     wording. Every declared deviation asserts independent exact reference/Rust values through B361.
@@ -60,13 +60,13 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b378-behaviors
+  - id: member-router-writes-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b378_behaviors(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::member_router_writes_behaviors(::|$)/)
       - test(/replays_the_.*_corpus/)'
-  - id: b378-boundaries
+  - id: member-router-writes-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::b378_boundaries(::|$)/)
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::member_router_writes_boundaries(::|$)/)
       - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint

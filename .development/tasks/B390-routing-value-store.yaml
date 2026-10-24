@@ -7,7 +7,7 @@ description: >-
   transport over this interface. Use InMemoryCache defaults: 200 items, 600-second default TTL and 1024 KiB per
   item, with earliest-expiry eviction after expired entries. Retain exact TTL equality behavior. Bound serialized
   RouteKey to 1024 bytes and reject oversized typed values before allocation. Implement the owned native service
-  in crates/betterlite-router/src/routing_value_store.rs. Add ProbeOperation::B390 in tools/oracle/src/router_probes/mod.rs
+  in crates/betterlite-router/src/routing_value_store.rs. Add ProbeOperation::RoutingValueStore in tools/oracle/src/router_probes/mod.rs
   and the corresponding B390 entry in tools/oracle/litellm/probes/registry.py; the adapters only call production
   services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation
   lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -46,7 +46,7 @@ scope:
   - tools/oracle/cases/routing/routing-value-store/**
   - crates/betterlite-router/fuzz/Cargo.toml
   - crates/betterlite-router/fuzz/fuzz_targets/route_value.rs
-  - crates/betterlite-router/fuzz/corpus/route_value/b390-*
+  - crates/betterlite-router/fuzz/corpus/route_value/routing-value-store-*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L1-L236
@@ -54,12 +54,12 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L230-L236
   why: Previously uncovered helper owned by this task.
 dod:
-- text: Write tests named b390_behaviors and b390_boundaries under routing_value_store::tests. The first asserts
+- text: Write tests named routing_value_store_behaviors and routing_value_store_boundaries under routing_value_store::tests. The first asserts
     the listed successful and warning/fallback outcomes; the second asserts error fields, bounds, cancellation and
     the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot satisfy either check.
   proof:
-  - b390-behaviors
-  - b390-boundaries
+  - routing-value-store-behaviors
+  - routing-value-store-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier, provider
     requests, status, code and state changes; only /error/message may be ignored for betterlite wording. Every declared
     deviation asserts independent exact reference/Rust values through B361.
@@ -69,12 +69,12 @@ dod:
   proof:
   - probe-python
   - oracle
-- text: Add crates/betterlite-router/fuzz/corpus/route_value/b390-valid.json and crates/betterlite-router/fuzz/corpus/route_value/b390-invalid.json;
+- text: Add crates/betterlite-router/fuzz/corpus/route_value/routing-value-store-valid.json and crates/betterlite-router/fuzz/corpus/route_value/routing-value-store-invalid.json;
     the valid seed contains the new operation data. The cargo-fuzz target route_value and normal replays_the_route_value_corpus
     test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - parser-corpus
-  - b390-boundaries
+  - routing-value-store-boundaries
 - text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
@@ -82,12 +82,12 @@ checks:
   optional:
   - mutants
   commands:
-  - id: b390-behaviors
+  - id: routing-value-store-behaviors
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b390_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
-  - id: b390-boundaries
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_value_store_behaviors(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: routing-value-store-boundaries
     why: the task-specific behavior test is absent or fails
-    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b390_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::routing_value_store_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
     run: test -f tools/oracle/litellm/probes/routing_value_store.py && test -n "$(git diff --name-only "$GATE_BASE"
@@ -95,9 +95,9 @@ checks:
       ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
   - id: parser-corpus
     why: new task-specific parser seeds, operation/key or replay are missing
-    run: test -f crates/betterlite-router/fuzz/corpus/route_value/b390-valid.json && test -f crates/betterlite-router/fuzz/corpus/route_value/b390-invalid.json
+    run: test -f crates/betterlite-router/fuzz/corpus/route_value/routing-value-store-valid.json && test -f crates/betterlite-router/fuzz/corpus/route_value/routing-value-store-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-router/fuzz/corpus/route_value |
-      grep -Fq "/b390-" && test -f crates/betterlite-router/fuzz/fuzz_targets/route_value.rs && cargo nextest run
+      grep -Fq "/routing-value-store-" && test -f crates/betterlite-router/fuzz/fuzz_targets/route_value.rs && cargo nextest run
       --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_route_value_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/routing-value-store/typed-store-expiry.yaml
