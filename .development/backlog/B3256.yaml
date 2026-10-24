@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Local aviation and published EU PII catalog records
 status: todo
 depends_on: []
-file: null
+file: tasks/B3256-policy-catalog-aviation-eu-pii.yaml
 covers:
   - "litellm/policy_templates_backup.json"
   - "policy_templates.json"

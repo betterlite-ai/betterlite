@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Local Singapore privacy and published financial AI catalog records
 status: todo
 depends_on: []
-file: null
+file: tasks/B3261-policy-catalog-singapore.yaml
 covers:
   - "litellm/policy_templates_backup.json"
   - "policy_templates.json"
