@@ -2193,15 +2193,16 @@ tasks:
     status: todo
     depends_on:
     - B016
-    - B304
-    - B052
+    - B372
     - B080
     - B323
+    - B052
+    - B301
+    - B002
     file: tasks/B324-deployment-affinity.yaml
     covers:
     - litellm/router_utils/pre_call_checks/deployment_affinity_check.py
     - litellm/caching/affinity_cache.py
-
   - id: B325
     milestone: M2 routing
     title: Prompt cache prefix affinity
@@ -2827,6 +2828,19 @@ tasks:
     file: tasks/B371-usage-v2-accounting.yaml
     covers:
     - litellm/router_strategy/lowest_tpm_rpm_v2.py
+  - id: B372
+    milestone: M2 routing
+    title: Affinity identity and atomic pin claims
+    status: todo
+    depends_on:
+    - B360
+    - B052
+    - B301
+    - B361
+    file: tasks/B372-affinity-claims.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/deployment_affinity_check.py
+    - litellm/caching/affinity_cache.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
