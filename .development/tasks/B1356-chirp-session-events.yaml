@@ -1,0 +1,76 @@
+id: B1356
+title: Chirp session constraints, transcript deltas and billed turns
+description: >-
+  Implement api::vertex_chirp_protocol in betterlite-core, where B1123's transcription protocol
+  and event constructors already live. Own realtime_transformation.py L1-L317 except the
+  SpeechStreamingTarget transport record, 269 nonblank noncomment lines before that exclusion,
+  plus streaming event records from vertex_ai_speech_to_text.py L72-L105. Use B193 metadata to
+  recognize only audio_transcription models supporting both /v1/audio/transcriptions and
+  /v1/realtime; metadata lookup errors mean false. Defaults are unprefixed model, no language,
+  24000 Hz and server VAD enabled. Decode session updates through B1123: session type absent,
+  transcription or realtime is accepted, model cannot change, unsupported transcription fields
+  log debug and are ignored. Permit mono PCM16 at 8000 through 48000 Hz inclusive; absent rate
+  means 24000. Turn detection accepts absent/server_vad or disabled null. Reuse B1001 language
+  normalization. Represent ChirpSessionConfig and ChirpEventTransformer with injected IDs and
+  exact decimal billing. new_words compares whitespace-separated words after retaining Unicode
+  alphanumerics and case folding, emits from the first differing word, and adds a leading space
+  when a prefix matched. Each response updates cumulative billing by max, then emits begin,
+  finals, interim and end in that order. VAD mode completes each final immediately; manual mode
+  accumulates until finish. Completion uses committed text or preview, resets the turn and
+  reports only positive unbilled seconds. Discard drops the turn while retaining max billing;
+  taking usage twice returns None the second time. Configured events require both session and
+  config. Implement chirp_events pure oracle traces for punctuation_rewrite, final_before_interim,
+  vad_final_completes, manual_commit_preview, discard_still_billed, sample_rate_bounds and
+  model_update_rejected. Consume decoded event/session records; new byte boundaries belong to
+  B1357. Budget 320 core code, 205 tests and 165 oracle lines, cap 775.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/vertex_chirp_protocol.rs
+    - crates/betterlite-core/src/api/vertex_chirp_protocol/**
+    - tools/oracle/src/helpers/{mod,chirp_events}.rs
+    - tools/oracle/helpers/{dispatch,chirp_events}.py
+    - tools/oracle/cases/helpers/chirp-events/**
+    - tools/oracle/fuzz/corpus/helper_case/chirp_events*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L60-L317
+    why: Chirp session policy, normalized word deltas and stateful event emission.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L72-L105
+    why: Streaming response and turn event discriminants.
+dod:
+  - text: Chirp sessions enforce their audio constraints and produce ordered transcript events with nonduplicated billing.
+    proof: [chirp-events-tests, chirp-events-python, oracle]
+  - text: Transcript trace fixtures participate in HelperCase decoding.
+    proof: [chirp-events-seeds]
+checks:
+  optional: []
+  commands:
+    - id: chirp-events-tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vertex_chirp_protocol::/)'
+      why: Turn traces assert every emitted event and billed duration, including discard and repeated usage reads.
+    - id: chirp-events-python
+      run: test -f tools/oracle/helpers/chirp_events.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: A deterministic item-ID source makes the pinned event transformer directly comparable.
+    - id: chirp-events-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_events*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::chirp_events::/)'
+      why: New event-sequence fixtures must deserialize through call.chirp_events.
+oracle_cases:
+  - tools/oracle/cases/helpers/chirp-events/punctuation-rewrite.yaml
+  - tools/oracle/cases/helpers/chirp-events/final-before-interim.yaml
+  - tools/oracle/cases/helpers/chirp-events/vad-final-completes.yaml
+  - tools/oracle/cases/helpers/chirp-events/manual-commit-preview.yaml
+  - tools/oracle/cases/helpers/chirp-events/discard-still-billed.yaml
+  - tools/oracle/cases/helpers/chirp-events/sample-rate-bounds.yaml
+  - tools/oracle/cases/helpers/chirp-events/model-update-rejected.yaml
+deviations: []
+out_of_scope:
+  - B1357 owns _default_backend_factory, every VertexChirpRealtimeConfig method and _api_endpoint at L320-L446.
+  - B1358 owns SpeechStreamingTarget at L70-L74 and the SDK stream event records; B1359 owns backend command records at speech types L45-L69.
+  - B1354 owns the recognize-only types at speech types L8-L42.
+pitfalls:
+  - Punctuation and case changes inside a shared word prefix do not emit a correction delta.
+  - With server_vad, a final result can complete a turn before an interim result in the same frame starts another.
+  - Discarded audio can still contribute billable duration reported at session close.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,114 @@
+id: B1389
+title: Scope Discovery Engine searches and project document or chunk hits
+description: >-
+  Implement vertex_discovery_search for search_api/transformation.py, 358 nonblank
+  noncomment lines, using B1058's vector contracts and native extra-body records. Resolve
+  deployment vertex_collection_id default default_collection, vertex_engine_id default
+  absent and vector_store_id default absent through named config tests loads_vertex_collection_id,
+  loads_vertex_engine_id and loads_vertex_search_store_id. A truthy api_base wins and is
+  rstripped; otherwise use discoveryengine.googleapis.com/v1 with B1301 project/location,
+  encoded collection and either engines/id/servingConfigs/default_serving_config or
+  dataStores/id/servingConfigs/default_config. Require vector_store_id only without an
+  engine. B1302 auth overwrites Authorization/Content-Type. Publish read POST :search and
+  an empty write map; both create methods remain unsupported.
+  Search joins query lists with spaces, starts pageSize at 10 and preserves non-None
+  max_num_results including 0. Accept only dictionary extra_body and drop its None values
+  before validation. Reject branch, servingConfig and entity before checking unsupported
+  names, using sorted error lists and BadRequestError 400 with model vertex_ai/search_api.
+  The data-store allowlist is exactly query, pageSize, pageToken, offset, oneBoxPageSize,
+  pageCategories, imageQuery, filter, canonicalFilter, orderBy, userInfo, languageCode,
+  facetSpecs, boostSpec, params, queryExpansionSpec, spellCorrectionSpec, userPseudoId,
+  contentSearchSpec, rankingExpression, rankingExpressionBackend, safeSearch, userLabels,
+  naturalLanguageQueryUnderstandingSpec, searchAsYouTypeSpec, displaySpec, crowdingSpecs,
+  relevanceThreshold, relevanceScoreSpec and customRankingParams. Engine mode additionally
+  permits dataStoreSpecs and numResultsPerDataStore. Allowed values override query/pageSize,
+  and the response query records the final merged query. Generic filters/ranking_options
+  are not forwarded automatically.
+  decode_vertex_search_payload reads bounded response JSON. A non-None chunk takes
+  precedence over document, including an empty chunk. Document text prefers joined
+  extractive_segments, extractive_answers, snippets, then title; join extractive text with
+  two newlines, snippets with spaces, and use htmlSnippet only when snippet is absent.
+  Document scores are exact 1/(position+1); chunk relevanceScore overrides that fallback
+  even when zero. Derive chunk document_id from the first /documents/ segment. file_id is
+  link/URI then document_id, filename title then Unknown Document. Keep document_id even
+  empty and add other attributes only when truthy. Cost is the catalog's
+  vertex_ai/search_api input_cost_per_query or zero, with zero output cost, independent of
+  result count. Helper vertex_discovery_search cases engine_target, encoded_datastore,
+  target_override_rejected, engine_fields_rejected, null_target_ignored, native_query_wins,
+  extractive_priority, html_fallback_presence, empty_chunk_precedence, zero_chunk_score and
+  query_cost cover pure policy/projection. Native auth tests check identity and header
+  replacement. Budget 315 implementation, 65 loader, 180 tests, 100 adapters and 90 fuzz
+  lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_discovery_search}.rs
+    - crates/betterlite-vertex/src/vertex_discovery_search/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_search_payload.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_search_payload/**
+    - crates/betterlite-config/src/{config,settings,model,providers,tests}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/tests/vertex_search_settings.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_search*
+    - tools/oracle/src/helpers/{mod,vertex_discovery_search}.rs
+    - tools/oracle/helpers/{dispatch,vertex_discovery_search}.py
+    - tools/oracle/cases/helpers/vertex-discovery-search/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_discovery_search*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/search_api/transformation.py#L1-L460
+    why: Complete Discovery Engine adapter, target protection, hit projection and per-query pricing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L127-L184
+    why: B1058's native request types define the exact two allowlists.
+dod:
+  - text: Search targeting and native-field validation cannot redirect a deployment through extra_body.
+    proof: [discovery-tests, discovery-python, oracle]
+  - text: Document/chunk results, merged query and per-query cost preserve the pinned projections.
+    proof: [discovery-tests, discovery-python, oracle]
+  - text: Deployment target fields load with exact defaults and auth preserves identity isolation.
+    proof: [discovery-config, discovery-auth]
+  - text: New Discovery Engine response and helper seeds exercise their registered decoders.
+    proof: [discovery-corpus, discovery-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: discovery-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_discovery_search::records::/) - test(replays_the_vertex_search_payload_corpus)'
+      why: The named fixtures include rejection precedence, result-field precedence and billing.
+    - id: discovery-auth
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_discovery_search::authorization::/)'
+      why: Read-only endpoint declarations and token/header handling are asserted independently.
+    - id: discovery-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_search_settings::loads_vertex_/)'
+      why: Real loader cases cover collection, engine and data-store fields with missing/default values.
+    - id: discovery-python
+      run: test -f tools/oracle/helpers/vertex_discovery_search.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Source allowlist, target and hit functions run against explicit settings/catalog fixtures.
+    - id: discovery-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_search_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_search_payload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_search_payload_corpus)'
+      why: decode_vertex_search_payload receives malformed nested result and numeric-field cases.
+    - id: discovery-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_discovery_search*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_discovery_search::/)'
+      why: Shared HelperCase decoding must select call.vertex_discovery_search on each added fixture.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-discovery-search/engine-target.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/encoded-datastore.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/target-override-rejected.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/engine-fields-rejected.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/null-target-ignored.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/native-query-wins.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/extractive-priority.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/html-fallback-presence.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/empty-chunk-precedence.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/zero-chunk-score.yaml
+  - tools/oracle/cases/helpers/vertex-discovery-search/query-cost.yaml
+deviations: []
+out_of_scope:
+  - B1058 owns the shared vector request/result types; B034 binds this read-only provider to B1064 search execution.
+  - RAG corpus creation is B1388, not an alternative implementation of this provider's unsupported create methods.
+pitfalls:
+  - A None target-selecting value is dropped before rejection, while an empty string is rejected.
+  - A present empty snippet suppresses htmlSnippet fallback for that snippet.
+  - Native extra_body.query changes both the upstream query and returned search_query.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

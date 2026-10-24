@@ -1,0 +1,80 @@
+id: B1360
+title: Vertex Discovery Engine rerank records and search-unit billing
+description: >-
+  Implement vertex_rerank from the 194 nonblank noncomment lines in the configuration file;
+  handler.py contains only a four-line documentation string. Resolve project and credentials
+  from copies of optional_params through B1301/B1302. URL construction always authenticates
+  to obtain the resolved project, falls back to VERTEXAI_PROJECT then module vertex_project,
+  and ignores api_base and model when constructing the global Discovery Engine default ranking
+  config :rank URL. Header construction supplies Bearer, JSON and X-Goog-User-Project, then
+  lets every caller header override defaults. Require query/documents by presence, not truthiness.
+  Number records with zero-based string IDs. A string document uses itself as content and its
+  first three whitespace-delimited words as title; a mapping prefers text and title, otherwise
+  uses Python-compatible mapping string representation and the same title extraction. Emit
+  topN for non-None top_n, invert return_documents default true, and attach B1306 userLabels
+  only when nonempty. The parameter mapper returns query/documents/top_n/return_documents
+  then overlays every non_default_params entry. Decode bounded response JSON with
+  decode_vertex_rerank, parse integer record IDs, use score when present or exact decimal 1
+  when missing, and stable-sort descending. Response records contain index/score only, even
+  if document details were returned. Inject UUIDs for vertex_ai_rerank_ IDs and bill ceil of
+  request record count divided by 100, independent of returned count. Add vertex_rerank
+  fixtures ignored_custom_base, caller_auth_override, title_first_three_words, zero_top_n,
+  labels_from_metadata, missing_score_stable_order and search_units_101. Reserve 230 code,
+  175 tests, 120 oracle and 90 fuzz lines under 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_rerank}.rs
+    - crates/betterlite-vertex/src/vertex_rerank/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rerank.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_rerank/**
+    - tools/oracle/src/helpers/{mod,vertex_rerank}.rs
+    - tools/oracle/helpers/{dispatch,vertex_rerank}.py
+    - tools/oracle/cases/helpers/vertex-rerank/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_rerank*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/transformation.py#L31-L254
+    why: Fixed Discovery Engine target, record shaping, score ordering and input-count billing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rerank/handler.py#L1-L5
+    why: There is no separate rerank transport implementation in this module.
+dod:
+  - text: Discovery Engine rerank retains fixed targeting, caller header precedence and input-based billed units.
+    proof: [discovery-rerank-tests, discovery-rerank-python, oracle]
+  - text: Rerank response bytes and integer IDs are covered by bounded decoder replay.
+    proof: [discovery-rerank-corpus]
+  - text: New rerank fixtures are wired into helper case dispatch.
+    proof: [discovery-rerank-seeds]
+checks:
+  optional: []
+  commands:
+    - id: discovery-rerank-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_rerank::/) - test(replays_the_vertex_rerank_corpus)'
+      why: Stable ties and 100-record billing boundaries expose mistakes hidden by ordinary ranking examples.
+    - id: discovery-rerank-python
+      run: test -f tools/oracle/helpers/vertex_rerank.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Fixed UUID and token inputs make the pure ranking projections comparable.
+    - id: discovery-rerank-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rerank.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_rerank)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_rerank_corpus)'
+      why: Invalid IDs, scores and envelopes replay through decode_vertex_rerank.
+    - id: discovery-rerank-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rerank*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_rerank::/)'
+      why: Vertex rerank records must be accepted as a distinct helper call variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-rerank/ignored-custom-base.yaml
+  - tools/oracle/cases/helpers/vertex-rerank/caller-auth-override.yaml
+  - tools/oracle/cases/helpers/vertex-rerank/title-first-three-words.yaml
+  - tools/oracle/cases/helpers/vertex-rerank/zero-top-n.yaml
+  - tools/oracle/cases/helpers/vertex-rerank/labels-from-metadata.yaml
+  - tools/oracle/cases/helpers/vertex-rerank/missing-score-stable-order.yaml
+  - tools/oracle/cases/helpers/vertex-rerank/search-units-101.yaml
+deviations: []
+out_of_scope:
+  - All rerank configuration functions are assigned here; B1014 owns generic execution and B033 binds B1013 records to this adapter.
+  - B085 registers rerank route aliases and B1306 handles Vertex label extraction.
+pitfalls:
+  - return_documents controls provider details but the transformed result still omits document content.
+  - A missing score means relevance_score 1 rather than zero.
+  - Search units count the submitted records, so top_n does not reduce billed units.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,82 @@
+id: B1326
+title: Decode Gemini complete responses and served model metadata
+description: >-
+  Create decode_generate_content in gemini_response, accepting bounded HTTP JSON bytes and
+  returning typed candidates, prompt feedback, usage and optional provider fields. Own the
+  shared Gemini configuration's _served_model_name at L130-L134 and response entry points at
+  L2372-L2511, plus response envelope declarations at vertex_ai.py L453-L476. These cover
+  116 nonblank noncomment lines plus response declarations. Reuse B1314 blocked/candidate
+  construction and B1322 accounting. A nonempty string modelVersion selects its prefix before
+  the first @; absent, empty or nonstring values keep the requested model. A truthy responseId
+  replaces the generated id. Prompt filtering precedes first-candidate filtering and bypasses
+  normal enrichment. For ordinary replies, reset choices, include empty hidden grounding,
+  URL-context, safety_results and citation arrays, retain trafficType under hidden
+  provider_specific_fields. The complete-response path does not invent visible safety_ratings.
+  Read x-gemini-service-tier case-insensitively: standard becomes default, other values lowercase.
+  JSON conversion and later assembly failures become Vertex 422 with upstream headers retained
+  for the existing safe error projection. Keep modelVersion even though the pinned TypedDict
+  omits its declaration. Helper gemini_response compares served_revision, malformed_version,
+  absent_usage, empty_candidates, response_id, blocked_bypass and tier_standard. Add
+  generate_content fuzz target and replay cases for truncated JSON, wrong-root, deep parts and
+  invalid usage shapes. Split the bounded decoder from pure envelope assembly for reuse in
+  streaming. Budget 230 implementation, 190 tests, 120 adapters and 90 fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_response}.rs
+    - crates/betterlite-vertex/src/gemini_response/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/generate_content.rs
+    - crates/betterlite-vertex/fuzz/corpus/generate_content/**
+    - tools/oracle/src/helpers/{mod,gemini_response}.rs
+    - tools/oracle/helpers/{dispatch,gemini_response}.py
+    - tools/oracle/cases/helpers/gemini-response/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_response*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L130-L134
+    why: Served model revision removal without coercing arbitrary values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2372-L2511
+    why: Decode failure status, early filtering and complete response enrichment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L453-L476
+    why: Candidate, prompt feedback and response records.
+dod:
+  - text: Complete responses preserve served model identity, usage requirements and header-derived tiers.
+    proof: [response-tests, response-python, oracle]
+  - text: Bounded response decoding handles malformed and nested upstream bytes without panics.
+    proof: [response-corpus]
+  - text: The new envelope helper is reachable from shared oracle fixture parsing.
+    proof: [response-seeds]
+checks:
+  optional: []
+  commands:
+    - id: response-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_response::/) - test(replays_the_generate_content_corpus)'
+      why: Normal and blocked responses must take observably different enrichment paths.
+    - id: response-python
+      run: test -f tools/oracle/helpers/gemini_response.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The fixture adapter exercises the pinned raw-response entry point and headers.
+    - id: response-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/generate_content.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/generate_content)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_generate_content_corpus)'
+      why: Decoder seeds must be new on this branch and replay through decode_generate_content.
+    - id: response-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_response*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_response::/)'
+      why: A fixture must invoke the response-envelope helper rather than only parse JSON.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-response/served-revision.yaml
+  - tools/oracle/cases/helpers/gemini-response/malformed-version.yaml
+  - tools/oracle/cases/helpers/gemini-response/absent-usage.yaml
+  - tools/oracle/cases/helpers/gemini-response/empty-candidates.yaml
+  - tools/oracle/cases/helpers/gemini-response/response-id.yaml
+  - tools/oracle/cases/helpers/gemini-response/blocked-bypass.yaml
+  - tools/oracle/cases/helpers/gemini-response/tier-standard.yaml
+deviations: []
+out_of_scope:
+  - B1315 adds the fragmented streaming decoder and B1316 executes HTTP calls.
+  - In the shared configuration file B1305/B1308-B1310 own options, B1313 parts, B1314 candidates, B1322 usage and B1323 metadata.
+  - Other vertex_ai.py declarations follow their consumers in B1307-B1312/B1317/B1318/B1324 and the fine-tuning, embeddings and Live parts of B033/B034.
+pitfalls:
+  - Empty ordinary replies still require usageMetadata and still receive empty hidden metadata arrays.
+  - modelVersion is an accepted runtime field despite its absence from GenerateContentResponseBody's TypedDict.
+  - Content-filter early returns do not receive the later service_tier mapping.
+budget: {max_changed_lines: 675, max_new_expects: 1}
+review_level: standard

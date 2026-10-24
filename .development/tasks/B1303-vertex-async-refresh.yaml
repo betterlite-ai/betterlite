@@ -1,0 +1,66 @@
+id: B1303
+title: Vertex stale-token refresh coordination
+description: >-
+  Extend CredentialCache with the asynchronous Vertex token algorithm in token_refresh.rs.
+  FRESH returns immediately; STALE returns the usable token and schedules one refresh; INVALID
+  waits for an existing background refresh before doing a blocking refresh itself. Recheck after
+  taking the per-key lease. A stale record with a malformed token enters the invalid path.
+  Cache writes from a background completion require the same credential identity still to occupy
+  the slot, and task cleanup removes only its own task identity. Background errors warn without
+  failing the caller that already received a usable token. Async reauthentication overwrites the
+  resolved project alias, unlike B1302's synchronous alias rule. Implement both ensure-token
+  wrappers as native mode selection: gemini returns empty token/project without credential IO.
+  All work belongs to the server's injected TaskTracker or JoinSet and is drained on shutdown;
+  a bounded actor/lease protocol must provide single-flight semantics without a mutex held over
+  await. No new configuration switches or token parser are introduced.
+  Native refresh_cases drive get_access_token_async semantics with event-controlled credentials;
+  assert responses, refresh attempts and final identities for stale_returns_now,
+  invalid_joins_refresh, failed_background_retry, replaced_handle_survives, reauth_alias_replaced
+  and gemini_skips_auth. Additional tests cancel waiters and shut down an active refresh.
+  These methods own asynchronous effects and therefore have no helper adapter. B031's HTTP
+  auth-reuse fixture observes the composed credential exchange through actual chat calls;
+  B1302 compares the pure token-state/cache probes used by this orchestration.
+  These source slices contain 228 nonblank noncomment lines; reserve 270 coordination,
+  250 tests and 45 task wiring lines, with a 600-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/lib.rs
+    - crates/betterlite-vertex/src/token_cache.rs
+    - crates/betterlite-vertex/src/token_refresh.rs
+    - crates/betterlite-vertex/src/token_refresh/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L523-L619
+    why: Background refresh identity guards, scheduling and Gemini token bypass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L817-L870
+    why: Async reload replaces both cache aliases and retains the first error on retry failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L993-L1136
+    why: Full async lookup including invalid-token drain and finally lease release.
+dod:
+  - text: Event-controlled async lookups enforce immediate stale returns, invalid-token waits and identity-guarded cache writes.
+    proof: [refresh-behavior]
+  - text: Shutdown and cancelled waiters leave neither a detached refresh nor a live lease.
+    proof: [refresh-lifetime]
+checks:
+  optional: []
+  commands:
+    - id: refresh-behavior
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^token_refresh::tests::refresh_cases/)'
+      why: Async credential state transitions or alias replacement differ.
+    - id: refresh-lifetime
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^token_refresh::tests::shutdown_drains_refresh$/)' && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^token_refresh::tests::cancelled_waiter_releases_key$/)'
+      why: Refresh ownership must be proven independently of successful token requests.
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1301 retains load_auth and configuration accessors; B1302 retains initialization, cache primitives, refresh_auth and synchronous token lookup.
+  - B1304 owns vertex_llm_base.py's endpoint, location and header methods outside the token ranges cited here.
+pitfalls:
+  - An INVALID request must drain the previous STALE refresh before invoking refresh_auth on the same handle.
+  - Cleanup from an older refresh task cannot remove its replacement from the in-flight map.
+  - Returning a STALE token is valid only after verifying both token type and resolved project.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

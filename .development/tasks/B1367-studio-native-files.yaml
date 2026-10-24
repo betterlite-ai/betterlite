@@ -1,0 +1,88 @@
+id: B1367
+title: Studio native file uploads and encoded file identifiers
+description: >-
+  Implement studio_files for all 335 nonblank noncomment lines of GoogleAIStudioFilesHandler
+  and the 23 metadata/enum lines at types/llms/gemini.py L15-L41. Use B235 supplied file extraction and B516 file response
+  records. Capability mapping advertises no OpenAI optional params and returns existing options
+  unchanged. B1331 resolves key/base; validation overwrites x-goog-api-key only, while upload
+  URL construction additionally accepts litellm_params.api_key and requires a truthy key.
+  Produce a typed two-step resumable plan: upload/v1beta/files start headers include byte length
+  and MIME, then extracted custom headers override them; metadata display_name is filename or
+  injected integer epoch time. Final upload sends raw bytes, Content-Length, offset 0 and
+  command upload, finalize. B035 executes this plan through the common file operation.
+  Normalize full http/https file IDs by taking their path from the first files/ occurrence,
+  otherwise the whole path; strip boundary slashes and one files/ prefix, then encode the
+  entire remaining identifier as one URL segment. Always target the configured API host,
+  never the host embedded in a file ID. Retrieve trims base slashes; delete preserves the base
+  helper's result. Both use /v1beta/files/encoded-id and empty query params. Decode bounded
+  metadata with decode_studio_file_metadata: create reads the file envelope with required
+  uri/sizeBytes/createTime/displayName; retrieve reads the root, defaulting uri/name/size and
+  mapping ACTIVE to processed, FAILED to error, everything else to uploaded. Use fractional
+  timestamp parsing and B1306's injected local-time context to preserve time.mktime behavior,
+  including ignoring the parsed numeric timezone offset. Purpose is user_data. FAILED details
+  use Python-compatible string representation of error. Delete accepts status 200 only and
+  derives files/id from the final /files/ segment of request URL before query, else deleted.
+  Listing/content remain explicitly unsupported. Helpers studio_files compare start_header_override,
+  clock_display_name, foreign_host_identifier, slash_encoded_id, create_uri_id,
+  failed_status_details and delete_id_from_url. Fuzz metadata/timestamps and file-ID bytes via
+  studio_file_metadata; cap 800 for 340 code, 190 tests, 130 oracle and 90 fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-vertex/src/{lib,error,studio_files}.rs
+    - crates/betterlite-vertex/src/studio_files/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_metadata.rs
+    - crates/betterlite-vertex/fuzz/corpus/studio_file_metadata/**
+    - tools/oracle/src/helpers/{mod,studio_files}.rs
+    - tools/oracle/helpers/{dispatch,studio_files}.py
+    - tools/oracle/cases/helpers/studio-files/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_files*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L15-L41
+    why: Native file states, sources and create-result metadata belong to the file decoder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L35-L416
+    why: Resumable upload records, file ID normalization, metadata response conversion and unsupported methods.
+dod:
+  - text: Studio native file plans retain upload header precedence, configured-host targeting and metadata status mapping.
+    proof: [studio-files-tests, studio-files-python, oracle]
+  - text: File ID and metadata parsers replay fresh malformed and boundary seeds.
+    proof: [studio-files-replay]
+  - text: Native-file fixture records are registered in the helper parser.
+    proof: [studio-files-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-files-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_files::/) - test(replays_the_studio_file_metadata_corpus)'
+      why: Tests cover percent-encoded nested IDs, timezone parsing and create/retrieve field requirement differences.
+    - id: studio-files-python
+      run: test -f tools/oracle/helpers/studio_files.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference file configuration runs only on supplied bytes and frozen time/identity values.
+    - id: studio-files-replay
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_metadata.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_file_metadata)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_file_metadata_corpus)'
+      why: Encoded identifiers and timestamp-bearing metadata enter the production bounded decoders.
+    - id: studio-files-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_files*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_files::/)'
+      why: call.studio_files must be recognized in newly committed fixture bytes.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-files/start-header-override.yaml
+  - tools/oracle/cases/helpers/studio-files/clock-display-name.yaml
+  - tools/oracle/cases/helpers/studio-files/foreign-host-identifier.yaml
+  - tools/oracle/cases/helpers/studio-files/slash-encoded-id.yaml
+  - tools/oracle/cases/helpers/studio-files/create-uri-id.yaml
+  - tools/oracle/cases/helpers/studio-files/failed-status-details.yaml
+  - tools/oracle/cases/helpers/studio-files/delete-id-from-url.yaml
+deviations: []
+out_of_scope:
+  - Remaining Gemini declarations describe Live frames, images and video and belong to B1378/B1379, B1350 and B1363/B1364.
+  - This task owns the entire Studio files configuration; B235 extracts supplied file records and B035 connects the resumable plan to file execution.
+  - B087 and its file-route leaves own proxy access checks and enterprise managed-file rejection; this adapter is the native provider Files API.
+pitfalls:
+  - A full URL file ID contributes only an encoded identifier, never a destination host.
+  - File creation returns the provider uri as its OpenAI file ID rather than the name field.
+  - HTTP 204 is not treated as a successful delete by this transformer.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

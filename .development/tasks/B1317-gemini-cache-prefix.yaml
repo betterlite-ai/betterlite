@@ -1,0 +1,88 @@
+id: B1317
+title: Gemini cache prefixes, TTL and system instructions
+description: >-
+  Add cache_prefix and system_instruction to betterlite-vertex. Port all six context-caching
+  transformation functions and the two system-message helpers at the end of Gemini transformation.py.
+  Select only the first continuous run of cache-marked messages, retain the rest in original order,
+  and refuse cache eligibility when its last non-system role is assistant/tool/function. A run
+  containing only system messages is eligible. Recognize message-level ephemeral cache_control
+  or ephemeral text parts, observing litellm_settings.disable_anthropic_gemini_context_caching_transform
+  (false by default). TTL search precedes system extraction and uses the first valid ephemeral
+  content-part ttl; message-level ttl alone is not read. parse_cache_ttl accepts bytes for the
+  pinned decimal-number plus s/m/h grammar, rounds seconds to nine places and rejects nonpositive
+  values or expiry after 9999-12-31T23:59:59Z using an injected clock and checked decimal arithmetic.
+  Supported system messages become ordered system_instruction parts; a system-only request gains
+  user content '.', while unsupported system messages stay in history. Construct cached request
+  model as models/{model} on Studio or the full projects/locations/publishers/google path on Vertex.
+  Preserve displayName and optional ttl, and delegate content conversion to B1312.
+  Oracle gemini_cache_prefix compares disjoint_markers, terminal_roles, ttl_first_valid,
+  ttl_fraction_and_horizon, system_only_period and provider_model_path. Add config-loader tests
+  cache_prefix_settings::loads_disable_transform and a TTL fuzz target/replay. Use a separate
+  helper seed to verify the new call tag. Source transformation.py has 147 nonblank noncomment
+  lines; system helpers add 44. With the marker projection, plan 240 production, 170 tests,
+  100 adapters and 140 config/fuzz/wiring lines within 725.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,cache_prefix,system_instruction}.rs
+    - crates/betterlite-vertex/src/cache_prefix/**
+    - crates/betterlite-vertex/src/system_instruction/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/cache_ttl.rs
+    - crates/betterlite-vertex/fuzz/corpus/cache_ttl/**
+    - crates/betterlite-config/src/settings.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/cache.rs
+    - crates/betterlite-config/src/providers/vertex/cache/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/gemini_cache_prefix.rs
+    - tools/oracle/src/helpers/gemini_cache_prefix/**
+    - tools/oracle/helpers/{dispatch,gemini_cache_prefix}.py
+    - tools/oracle/cases/helpers/gemini-cache-prefix/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_cache_prefix*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L24-L202
+    why: Entire prefix/TTL/terminal-turn/cache-body implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1399-L1451
+    why: Extract these low-level system helpers here so cache creation does not depend on request orchestration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8055-L8101
+    why: Cache-marker predicate consumed by the prefix transformation.
+dod:
+  - text: Prefix selection, terminal-turn policy, TTL normalization and system extraction match the source.
+    proof: [prefix-tests, oracle, prefix-python]
+  - text: The global cache-transform switch is loaded and suppresses otherwise marked messages.
+    proof: [prefix-config]
+  - text: TTL parsing and helper operation decoding replay new committed inputs.
+    proof: [prefix-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: prefix-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^cache_prefix::/) - test(replays_the_cache_ttl_corpus)' && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^system_instruction::/)'
+      why: Prefix and system helpers require separate behavior suites.
+    - id: prefix-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/cache_prefix_settings::/)'
+      why: Disabling context transformation must work from config rather than a test-only flag.
+    - id: prefix-python
+      run: test -f tools/oracle/helpers/gemini_cache_prefix.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python prefix fixtures must control the clock and retain source message order.
+    - id: prefix-corpora
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/cache_ttl)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/cache_ttl.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_cache_ttl_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_cache_prefix*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_cache_prefix::/)'
+      why: Both the TTL decoder and cache-prefix helper must consume new corpus files.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-cache-prefix/disjoint-markers.yaml
+  - tools/oracle/cases/helpers/gemini-cache-prefix/terminal-roles.yaml
+  - tools/oracle/cases/helpers/gemini-cache-prefix/ttl-first-valid.yaml
+  - tools/oracle/cases/helpers/gemini-cache-prefix/ttl-fraction-and-horizon.yaml
+  - tools/oracle/cases/helpers/gemini-cache-prefix/system-only-period.yaml
+  - tools/oracle/cases/helpers/gemini-cache-prefix/provider-model-path.yaml
+deviations: []
+out_of_scope:
+  - Cache list IO is B1318 and automatic creation B1324; this part does not register cachedContents routes.
+  - Gemini transformation.py media routines are B1311, history traversal B1312, and the remaining body/async/sync wrappers B1321.
+pitfalls:
+  - A second separated marked run stays in the uncached messages rather than being combined with the first.
+  - System extraction must happen after TTL lookup or a system-block TTL disappears.
+  - A terminal tool response is rejected for caching even though conversation conversion emits it with role user.
+budget: {max_changed_lines: 725, max_new_expects: 0}
+review_level: standard

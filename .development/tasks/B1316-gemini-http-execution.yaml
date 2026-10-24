@@ -1,0 +1,73 @@
+id: B1316
+title: Execute Gemini HTTP calls with Vertex or Studio authentication
+description: >-
+  Add gemini_http async execution, owning L1341-L1347 and L2513-L2868 of the Gemini
+  configuration (324 nonblank noncomment lines). Supply the thin message-conversion
+  and error constructors, validate_environment, make_call/make_sync_call, VertexLLM constructor,
+  async_streaming and async_completion. Authentication uses B1303; target selection uses B1304;
+  requests use B1321; complete and stream replies use B1326/B1315. Header construction starts
+  Content-Type=application/json, accepts an auth-header map or Bearer token, and applies supplied
+  headers last. use_psc_endpoint_format defaults false. A supplied compatible HTTP client wins;
+  otherwise use B173's pool and caller timeout. Ordinary HTTP failures retain status/headers,
+  and complete-call timeout becomes 408. Streaming accepts only 200/201 after status checking;
+  opening it stays lazy until consumption. Preserve the literal malformed-function-schema
+  exception translation before the existing Vertex error classifier. Logs receive sanitized
+  request facts, never credentials or source credential JSON. Expose a pure request-header
+  projection as helper gemini_http_headers for map_auth, bearer_auth, header_override and psc_flag;
+  fixture transport tests verify one token resolution, custom-client selection, 201 stream,
+  202 rejection, 408 complete timeout and lazy stream opening. Do not introduce an HTTP route.
+  B031 will test the booted proxy dispatch. These functions consume already decoded requests
+  and delegate all response parsing. Budget 340 implementation, 210 transport tests and 120
+  header-adapter/wiring lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_http}.rs
+    - crates/betterlite-vertex/src/gemini_http/**
+    - tools/oracle/src/helpers/{mod,gemini_http_headers}.rs
+    - tools/oracle/helpers/{dispatch,gemini_http_headers}.py
+    - tools/oracle/cases/helpers/gemini-http-headers/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_http_headers*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1341-L1347
+    why: One targeted malformed function-schema exception rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2513-L2868
+    why: Header precedence, streamed opening and asynchronous complete-call error handling.
+dod:
+  - text: Authenticated Gemini calls use the selected client, correct body and response adapter exactly once.
+    proof: [http-execution]
+  - text: Header projections preserve the pinned map/string auth behavior and caller overrides.
+    proof: [http-header-tests, http-python, oracle]
+  - text: Header helper fixtures are registered and secrets never enter diagnostics.
+    proof: [http-header-seeds, http-execution]
+checks:
+  optional: []
+  commands:
+    - id: http-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_http::tests::execution/)'
+      why: Instrumented transport assertions detect eager streams, duplicate refreshes and timeout remapping.
+    - id: http-header-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_http::tests::headers/)'
+      why: Auth-map and caller-header precedence must be asserted independently of successful HTTP calls.
+    - id: http-python
+      run: test -f tools/oracle/helpers/gemini_http_headers.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Only pure validate_environment inputs are passed through the helper adapter.
+    - id: http-header-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_http_headers*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_http_headers::/)'
+      why: Added header fixture tags must reach production header construction.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-http-headers/map-auth.yaml
+  - tools/oracle/cases/helpers/gemini-http-headers/bearer-auth.yaml
+  - tools/oracle/cases/helpers/gemini-http-headers/header-override.yaml
+  - tools/oracle/cases/helpers/gemini-http-headers/psc-flag.yaml
+deviations: []
+out_of_scope:
+  - B1327 owns completion at L2870-L3070 and B031 owns main.py provider dispatch.
+  - The transform_request method at L2529-L2537 only raises NotImplementedError; retain that explicit unsupported entry rather than substituting the custom pipeline.
+  - Remaining functions in the shared file are allocated to B1305/B1308-B1310/B1313-B1315/B1322/B1323/B1326.
+pitfalls:
+  - A successful HTTP 202 still fails the streaming helper's explicit 200/201 gate.
+  - validate_environment applies extra headers after the Bearer header, so silently reversing that order is incompatible.
+  - async_completion uses the timeout only when truthy, whereas the synchronous caller distinguishes None.
+budget: {max_changed_lines: 725, max_new_expects: 1}
+review_level: security

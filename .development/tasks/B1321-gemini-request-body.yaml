@@ -1,0 +1,94 @@
+id: B1321
+title: Gemini request bodies after cache and system extraction
+description: >-
+  Build gemini_request's common body transformer and sync/async orchestration adapters, owning
+  transformation.py L1082-L1312 and L1330-L1398. Call B1324 cache preparation before B1317 system
+  extraction, then B1312 Vertex or B1325 Studio message conversion. When a legacy response_schema
+  is unsupported, append B177's response-schema prompt and remove that option. Move litellm_param_*
+  values into call metadata, remove output_config, and select only GenerationConfig fields using
+  B1311's spelling-equivalence predicate without renaming the supplied keys. Gemini-2 models
+  derive global mediaResolution from message detail. Map service_tier=default to standard and
+  otherwise lowercase string tiers; labels are emitted only for Vertex, not gemini.
+  Cached content suppresses system_instruction/tools/toolConfig only when modify_params is true;
+  false preserves the source's incompatible fields. Load litellm_settings.modify_params and
+  LITELLM_MODIFY_PARAMS fallback (default false, source bool of the environment string). Merge
+  extra_body last, ignoring cache/tags, merging object values one level deep and replacing
+  scalar values. After that merge, a googleMaps tool plus application/json converts MIME/schema
+  into responseFormat.text with mimeType APPLICATION_JSON. response_json_schema wins over
+  response_schema. Carry the bounded typed passthrough field from the shared request contract.
+  The async inlining call obeys the no-fetch deviation and delegates classification to B1311;
+  it neither downloads media nor schedules GCS metadata work. Compare helper gemini_request
+  cases cache_modify_false, cache_modify_true, maps_after_extra_body, legacy_schema_prompt,
+  internal_extra_body_keys, global_media_resolution and studio_omits_labels. Add real config
+  tests gemini_request_settings and a Rust inline_policy_no_io assertion. This is a transformation
+  of decoded records; its helper input reuses B171's corpus parser. The owned ranges contain
+  242 nonblank noncomment lines; budget 260 production, 180 tests, 110 adapters and 125
+  configuration/dispatch wiring, capped at 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_request}.rs
+    - crates/betterlite-vertex/src/gemini_request/**
+    - crates/betterlite-config/src/{env,settings}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/request.rs
+    - crates/betterlite-config/src/providers/vertex/request/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/gemini_request.rs
+    - tools/oracle/src/helpers/gemini_request/**
+    - tools/oracle/helpers/{dispatch,gemini_request}.py
+    - tools/oracle/cases/helpers/gemini-request/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_request*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1082-L1312
+    why: Extra-body merge, Maps format rewrite, common body and synchronous cache wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1330-L1398
+    why: Async cache and remote-media path whose fetch behavior is explicitly unavailable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L250-L250
+    why: modify_params uses the truthiness of LITELLM_MODIFY_PARAMS at initialization.
+dod:
+  - text: Final Google request bodies preserve cache mutation policy, field filtering and post-merge Maps rewriting.
+    proof: [body-tests, oracle, body-python]
+  - text: modify_params loads with source precedence and async media handling performs no remote IO.
+    proof: [body-config, body-no-fetch]
+  - text: New request-body helper seeds are decoded into the registered call variant.
+    proof: [body-seed]
+checks:
+  optional: [mutants]
+  commands:
+    - id: body-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_request::tests::body_cases/)'
+      why: Body assembly must assert omissions, merge order and final native field names.
+    - id: body-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/gemini_request_settings::/)'
+      why: Cached-field mutation policy must be derived from loaded settings.
+    - id: body-no-fetch
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_request::tests::inline_policy_no_io$/)'
+      why: The asynchronous wrapper must not bypass media restrictions.
+    - id: body-python
+      run: test -f tools/oracle/helpers/gemini_request.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Request adapters must compare final data after extra_body and Maps rewriting.
+    - id: body-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_request*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_request::/)'
+      why: Parsed request seeds must prove the production helper is wired.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-request/cache-modify-false.yaml
+  - tools/oracle/cases/helpers/gemini-request/cache-modify-true.yaml
+  - tools/oracle/cases/helpers/gemini-request/maps-after-extra-body.yaml
+  - tools/oracle/cases/helpers/gemini-request/legacy-schema-prompt.yaml
+  - tools/oracle/cases/helpers/gemini-request/internal-extra-body-keys.yaml
+  - tools/oracle/cases/helpers/gemini-request/global-media-resolution.yaml
+  - tools/oracle/cases/helpers/gemini-request/studio-omits-labels.yaml
+deviations:
+  - what: Async chat requests whose media policy requires inlining return 400 invalid_request_error with code unsupported_remote_media and param identifying that media input; the gateway performs no URL retrieval.
+    why: The async_inline_remote_media call reaches the unresolved download choice and must remain disabled pending Max's decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1373-L1396
+out_of_scope:
+  - B1311 owns media predicates including L1313-L1328; B1312 owns role conversion; B1317 owns the two final system helpers and cache-prefix transformation.
+  - Response decoding is B1326 and actual generation HTTP execution is B1316.
+pitfalls:
+  - extra_body can introduce googleMaps, so rewriting before the merge misses a reachable request shape.
+  - LITELLM_MODIFY_PARAMS=false is a nonempty environment string and therefore truthy in the pinned initialization.
+  - Removing cached-incompatible fields with modify_params=false would silently change the source's opt-in mutation contract.
+budget: {max_changed_lines: 750, max_new_expects: 1}
+review_level: standard

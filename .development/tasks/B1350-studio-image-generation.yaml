@@ -1,0 +1,85 @@
+id: B1350
+title: Studio image generation usage and token-first pricing
+description: >-
+  Add studio_image_generation for all 201 nonblank noncomment transformation lines, 52 usage
+  lines and 41 pricing lines, with the Gemini image request types at gemini.py L158-L210.
+  Include the package's two-line get_gemini_image_generation_config factory, which always
+  selects GoogleImageGenConfig regardless of model; distinguish it from the common-utils
+  function with the same name that builds a generationConfig object.
+  Use B1334's image model predicate and parameter map. Imagen supports n/size; Gemini adds
+  imageConfig, tools and web_search_options. Resolve explicit base, GEMINI_API_BASE, then
+  https://generativelanguage.googleapis.com/v1beta; trim trailing slashes and append models/model
+  with generateContent or predict. Authentication deliberately uses explicit api_key then
+  GEMINI_API_KEY only, not GOOGLE_API_KEY, and overwrites x-goog-api-key and Content-Type.
+  These settings already come from B1331's loader. Gemini contents omit role and request
+  IMAGE/TEXT through the shared generation config. Imagen parameters are typed optional
+  fields, default None, ignore unknown keys and omit None when serialized. Reuse B1345 and
+  B1346 decoders: Gemini appends every present inlineData.data and optional thought_signature;
+  Imagen appends even a prediction without bytesBase64Encoded, with null image data. Presence
+  of usageMetadata creates usage even for an empty object. Implement modality usage with
+  camel-before-snake list aliases, integer counts only and case-insensitive TEXT/IMAGE.
+  Missing output details assign all output tokens to images; a positive unexplained remainder
+  goes to text, without clamping overreported details. Preserve both image and completion
+  usage aliases. Search counts are attached only to existing usage. Price with B1349's injected
+  image pricing interface using provider gemini, validating response type after model lookup,
+  token cost when present, otherwise per-image cost, and add search. Add helper studio_images
+  for imagen_null_prediction, gemini_empty_image, empty_usage_metadata, output_remainder_text,
+  absent_details_image, lowercase_modality, google_key_ignored and zero_token_cost. Allocate
+  350 code, 190 tests and 160 oracle lines under 775.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_image_generation}.rs
+    - crates/betterlite-vertex/src/studio_image_generation/**
+    - tools/oracle/src/helpers/{mod,studio_images}.rs
+    - tools/oracle/helpers/{dispatch,studio_images}.py
+    - tools/oracle/cases/helpers/studio-images/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_images*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_generation/transformation.py#L38-L234
+    why: Studio image auth, request branching and differing sparse prediction handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_generation/__init__.py#L12-L13
+    why: The public image factory always returns the Studio configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_usage_transformation.py#L6-L65
+    why: Token detail aliases and output remainder allocation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_generation/cost_calculator.py#L15-L49
+    why: Gemini image billing delegates usage/search and falls back to image count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L158-L210
+    why: Imagen request fields default to None and omit nulls on output.
+dod:
+  - text: Studio images preserve their auth precedence, response sparsity and modality accounting.
+    proof: [studio-image-behavior, studio-image-python, oracle]
+  - text: The oracle accepts the image-generation call variant and newly added usage fixtures.
+    proof: [studio-image-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-image-behavior
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_image_generation::/)'
+      why: Image conversion and cost assertions cover empty usage and explicit zero prices.
+    - id: studio-image-python
+      run: test -f tools/oracle/helpers/studio_images.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pure Studio image methods are exercised with injected catalog and secret values.
+    - id: studio-image-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_images*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_images::/)'
+      why: Seed decoding must reach the new Studio generation and usage projections.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-images/factory-ignores-model.yaml
+  - tools/oracle/cases/helpers/studio-images/imagen-null-prediction.yaml
+  - tools/oracle/cases/helpers/studio-images/gemini-empty-image.yaml
+  - tools/oracle/cases/helpers/studio-images/empty-usage-metadata.yaml
+  - tools/oracle/cases/helpers/studio-images/output-remainder-text.yaml
+  - tools/oracle/cases/helpers/studio-images/absent-details-image.yaml
+  - tools/oracle/cases/helpers/studio-images/lowercase-modality.yaml
+  - tools/oracle/cases/helpers/studio-images/google-key-ignored.yaml
+  - tools/oracle/cases/helpers/studio-images/zero-token-cost.yaml
+deviations: []
+out_of_scope:
+  - All functions in the three claimed implementation files belong here; B1334 supplies common_utils image helpers and B1351 owns the image-edit consumer.
+  - Gemini types outside L158-L210 follow the operation owners assembled by B035.
+pitfalls:
+  - An empty camel-case detail list prevents falling back to a populated snake-case list.
+  - Studio Imagen can return an image record with null b64_json for a prediction lacking image bytes.
+  - GOOGLE_API_KEY alone does not satisfy this image adapter's validation.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

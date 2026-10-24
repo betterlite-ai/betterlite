@@ -1,0 +1,73 @@
+id: B1338
+title: Vertex Model Garden OpenAI endpoint selection
+description: >-
+  Implement model_garden for create_vertex_url and VertexAIModelGardenModels in main.py,
+  114 nonblank noncomment source lines. B1305 strips the provider prefix and validates the
+  regional hostname; B1306 decides whether the model belongs in the JSON body. Publisher/catalog
+  model names use /v1/projects/{project}/locations/{location}/endpoints/openapi and retain model;
+  single-segment endpoint ids use /v1beta1/projects/{project}/locations/{location}/endpoints/{id}
+  and send an empty model. An explicitly supplied api_base is preserved without custom-proxy
+  colon-verb rewriting. Without it, default location is us-central1 and requested project wins
+  over the project resolved by B1302 authentication. Normalize stream to false when falsey and
+  pass the resulting OpenAI-compatible call to B038's existing handler seam, which appends
+  /chat/completions. The pure leaf returns ModelGardenTarget; executable composition belongs
+  in betterlite-provider/model_garden_call.rs so the leaf cannot import provider/core. All
+  exceptions inside the main try become Vertex 500, even an inner exception carrying status.
+  Python package availability checks remain outside the native path. Helper model_garden_target
+  compares endpoint_id_empty_body, publisher_model_body, explicit_dedicated_base, default_region,
+  resolved_project and beta_endpoint_path. Provider fixture-executor tests garden_call assert
+  one appended chat path, Bearer credential handoff and the outer 500 boundary. Budget 160
+  planning/composition, 140 tests and 100 oracle lines, maximum 450.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,model_garden}.rs
+    - crates/betterlite-vertex/src/model_garden/**
+    - crates/betterlite-provider/src/{lib,model_garden_call}.rs
+    - crates/betterlite-provider/src/model_garden_call/**
+    - crates/betterlite-provider/Cargo.toml
+    - tools/oracle/src/helpers/{mod,model_garden_target}.rs
+    - tools/oracle/helpers/{dispatch,model_garden_target}.py
+    - tools/oracle/cases/helpers/model-garden-target/**
+    - tools/oracle/fuzz/corpus/helper_case/model_garden_target*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_model_garden/main.py#L35-L142
+    why: Default and custom endpoint behavior, body model placement and exception wrapping.
+dod:
+  - text: Model Garden targets preserve custom bases and distinguish endpoint ids from catalog models.
+    proof: [garden-target-tests, garden-python, oracle]
+  - text: Provider execution delegates one OpenAI-compatible call and preserves the source's outer error boundary.
+    proof: [garden-call-tests]
+  - text: Newly added model-target fixtures are selected by shared oracle parsing.
+    proof: [garden-seeds]
+checks:
+  optional: []
+  commands:
+    - id: garden-target-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^model_garden::/) - test(replays_)'
+      why: Target assertions must distinguish v1 openapi from v1beta1 deployed endpoints.
+    - id: garden-call-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^model_garden_call::tests::garden_call/)'
+      why: The executable delegate must receive the empty or retained model exactly once.
+    - id: garden-python
+      run: test -f tools/oracle/helpers/model_garden_target.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pure target fixtures invoke the source URL and body-model selection.
+    - id: garden-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/model_garden_target*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::model_garden_target::/)'
+      why: The model_garden_target tag must reach the leaf planner.
+oracle_cases:
+  - tools/oracle/cases/helpers/model-garden-target/endpoint-id-empty-body.yaml
+  - tools/oracle/cases/helpers/model-garden-target/publisher-model-body.yaml
+  - tools/oracle/cases/helpers/model-garden-target/explicit-dedicated-base.yaml
+  - tools/oracle/cases/helpers/model-garden-target/default-region.yaml
+  - tools/oracle/cases/helpers/model-garden-target/resolved-project.yaml
+  - tools/oracle/cases/helpers/model-garden-target/beta-endpoint-path.yaml
+deviations: []
+out_of_scope:
+  - B038 owns OpenAILikeChatHandler; B032 installs the Model Garden dispatcher branch without duplicating that handler.
+pitfalls:
+  - create_vertex_url accepts api_base and stream arguments but does not use either.
+  - A custom dedicated base must not acquire :predict or another colon verb.
+  - Empty model in the body is deliberate for a single-segment endpoint id.
+budget: {max_changed_lines: 450, max_new_expects: 0}
+review_level: security

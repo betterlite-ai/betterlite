@@ -1,0 +1,99 @@
+id: B1379
+title: Translate Live client audio, turn boundaries and tool replies
+description: >-
+  Add gemini_live_client with per-connection LiveSessionState containing the ordered
+  256-entry call-id/name map, pending provider usage and unbilled input-audio byte count.
+  Own realtime/transformation.py L138-L162, L244-L275 and L524-L640, 138 nonblank
+  noncomment lines, plus common_utils.py L432-L467's 33-line SDK-value encoder and
+  gemini.py L44-L99's server/input records. decode_gemini_live_client_event parses bounded
+  incoming JSON bytes, retaining missing versus null fields and reporting Invalid JSON
+  message on syntax failure. Delegate session.update to B1378. response.create,
+  input_audio_buffer.clear and unknown event types return no provider messages; clear
+  deliberately does not reset the audio accounting counter. Audio append requires audio,
+  forwards it under realtimeInput.audio, and for strings adds max(character_count*3/4
+  minus terminal base64 padding,0) to unbilled bytes without validating base64. Default
+  MIME is audio/pcm;rate=24000, with pcmu/pcma aliases for explicit g711 formats and
+  application/octet-stream fallback. Commit/end sends activityEnd only when decoded setup
+  has automaticActivityDetection.disabled literally true; malformed setup falls back to
+  audioStreamEnd. Neither operation emits a synthetic response.create.
+  conversation.item.create dispatches function_call_output or user text. Join truthy
+  input_text parts with spaces and emit one user clientContent turnComplete=true; no text
+  returns no messages. Parse string tool output as JSON where possible, retain malformed
+  text, and wrap every non-object as result. Look up call_id without removing it, refresh
+  its LRU position on a truthy name and warn on a miss; include id only for Studio when
+  truthy, omit it for the B1365 Vertex override, and include name only when known.
+  Keep the source SDK encoder's behavior: dictionary bytes use URL-safe base64, datetimes
+  use ISO text, recursion stops only beyond B1307's DEFAULT_MAX_RECURSE_DEPTH. The list's
+  two independent if statements overwrite the attempted all-bytes conversion; bytes in
+  lists remain unsupported for final JSON serialization, while all-datetime lists work.
+  Helper gemini_live_client cases invalid_json, audio_padding_estimate, clear_keeps_usage,
+  manual_commit, malformed_setup_commit, joined_user_text, scalar_tool_result,
+  retried_tool_name, unknown_tool_warning and sdk_list_encoding cover transitions on
+  supplied state without IO. Budget 250 implementation/types, 190 tests, 100 adapters and
+  95 fuzz/seed lines within 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_live_client}.rs
+    - crates/betterlite-vertex/src/gemini_live_client/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_client.rs
+    - crates/betterlite-vertex/fuzz/corpus/gemini_live_client/**
+    - tools/oracle/src/helpers/{mod,gemini_live_client}.rs
+    - tools/oracle/helpers/{dispatch,gemini_live_client}.py
+    - tools/oracle/cases/helpers/gemini-live-client/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_live_client*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L138-L162
+    why: Audio-size estimate, connection-local state and setup/content predicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L244-L275
+    why: Audio MIME defaults and manual-versus-automatic turn termination.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L524-L640
+    why: Client event dispatch, tool response correlation and ignored events.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L432-L467
+    why: SDK bytes/datetime conversion and the all-bytes-list overwrite behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L44-L99
+    why: Shared Live provider frame and realtime input wire records.
+dod:
+  - text: Client events preserve turn boundaries, audio estimates and retryable tool-name correlation.
+    proof: [live-client-tests, live-client-python, oracle]
+  - text: SDK value projection retains the source's depth cutoff and list serialization behavior.
+    proof: [live-client-tests, live-client-python, oracle]
+  - text: Client-event bytes and helper envelopes have fresh replay cases at their actual parser boundaries.
+    proof: [live-client-corpus, live-client-seeds]
+checks:
+  optional: []
+  commands:
+    - id: live-client-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_live_client::/) - test(replays_the_gemini_live_client_corpus)'
+      why: Stateful fixtures assert returned messages and the resulting connection-local counters/LRU order.
+    - id: live-client-python
+      run: test -f tools/oracle/helpers/gemini_live_client.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Source client transforms run on fixture session state and tagged SDK scalar values.
+    - id: live-client-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_client.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemini_live_client)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemini_live_client_corpus)'
+      why: decode_gemini_live_client_event receives malformed event JSON, missing audio and nested tool output.
+    - id: live-client-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_client*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_client::/)'
+      why: Every added envelope must parse as call.gemini_live_client.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-live-client/invalid-json.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/audio-padding-estimate.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/clear-keeps-usage.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/manual-commit.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/malformed-setup-commit.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/joined-user-text.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/scalar-tool-result.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/retried-tool-name.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/unknown-tool-warning.yaml
+  - tools/oracle/cases/helpers/gemini-live-client/sdk-list-encoding.yaml
+deviations: []
+out_of_scope:
+  - B1378 owns setup parsing/mapping and session-created events; B1380 owns content lifecycle events; B1381 owns tool-call insertion and usage consumption; B1382 dispatches server frames.
+  - The remaining Studio common_utils helpers belong to B1331/B1334/B1330, with provider pricing in B1319/B1350.
+pitfalls:
+  - input_audio_buffer.clear is ignored without clearing accumulated billable audio bytes.
+  - A tool reply updates LRU recency but retains its call-id/name entry for retries.
+  - Invalid base64 audio still contributes the source's length estimate and is forwarded unchanged.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

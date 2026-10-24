@@ -1,0 +1,66 @@
+id: B1323
+title: Gemini grounding annotations and streamed metadata
+description: >-
+  Implement gemini_metadata from L2034-L2187 of the shared Gemini configuration (129 source
+  lines excluding blanks/comments). Candidate extraction flattens a groundingMetadata list but
+  wraps scalar groundingMetadata, appends safetyRatings as one nested value, and separately
+  collects citationMetadata and urlContextMetadata. Populate all five visible metadata fields;
+  only nonempty lists are copied to hidden fields, with safety_results aliasing safety_ratings.
+  Stream assembly reads a top-level field first, then model_extra, then _hidden_params, accepting
+  falsey-but-non-None values at each lookup; accumulation itself skips falsey values. Preserve
+  chunk ordering and duplicate entries. Build url_citation annotations only from the first
+  groundingChunkIndices element when it addresses a web chunk and both segment indices exist;
+  missing URI/title become empty strings. The unused content_text argument does not justify
+  clipping or recalculating offsets. Use B1306's metadata-field constant and typed extension
+  records, and expose extraction without requiring a full ModelResponse so usage accounting
+  can depend on it. Helper gemini_metadata compares scalar_vs_list, nested_safety, hidden_fallback,
+  empty_visible_shadow, duplicate_chunks, first_nonweb_index and citation_empty_title. These
+  functions transform decoded structures; byte validation remains at the response boundary.
+  Allocate 160 production, 160 tests and 130 helper lines within a 475-line cap.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_metadata}.rs
+    - crates/betterlite-vertex/src/gemini_metadata/**
+    - tools/oracle/src/helpers/{mod,gemini_metadata}.rs
+    - tools/oracle/helpers/{dispatch,gemini_metadata}.py
+    - tools/oracle/cases/helpers/gemini-metadata/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_metadata*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2034-L2187
+    why: Candidate extraction, three-level stream lookup, ordered merging and URL citations.
+dod:
+  - text: Candidate and assembled-stream metadata agree on visible fields, hidden copies and nested safety values.
+    proof: [metadata-cases, metadata-adapter, oracle]
+  - text: Oracle fixture calls include the metadata operation and exercise its production serializer.
+    proof: [metadata-fixtures]
+checks:
+  optional: []
+  commands:
+    - id: metadata-cases
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_metadata::/) - test(replays_)'
+      why: Metadata tests distinguish omission, empty fields and accumulated duplicates.
+    - id: metadata-adapter
+      run: test -f tools/oracle/helpers/gemini_metadata.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The pinned adapter must expose hidden metadata as well as the public fields.
+    - id: metadata-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_metadata*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_metadata::/)'
+      why: New corpus files must deserialize as metadata calls, not generic JSON values.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-metadata/scalar-vs-list.yaml
+  - tools/oracle/cases/helpers/gemini-metadata/nested-safety.yaml
+  - tools/oracle/cases/helpers/gemini-metadata/hidden-fallback.yaml
+  - tools/oracle/cases/helpers/gemini-metadata/empty-visible-shadow.yaml
+  - tools/oracle/cases/helpers/gemini-metadata/duplicate-chunks.yaml
+  - tools/oracle/cases/helpers/gemini-metadata/first-nonweb-index.yaml
+  - tools/oracle/cases/helpers/gemini-metadata/citation-empty-title.yaml
+deviations: []
+out_of_scope:
+  - B1313 owns part extraction, B1314 candidate construction, B1322 grounding billing and B1326 response decoding in this file.
+  - Request options belong to B1305/B1308/B1309/B1310, transport to B1316 and stream framing to B1315.
+pitfalls:
+  - An empty top-level metadata list shadows a populated hidden field because lookup tests None, not truthiness.
+  - Only the first groundingChunkIndices entry participates even when a later entry is a usable web citation.
+  - Safety metadata is a list of candidate rating lists, not a flattened rating list.
+budget: {max_changed_lines: 475, max_new_expects: 0}
+review_level: standard

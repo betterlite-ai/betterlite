@@ -350,48 +350,47 @@ tasks:
     milestone: M3 providers
     title: Vertex AI Gemini, context caching and token counting
     status: todo
-    depends_on: [B010, B011, B182, B186]
-    file: null
+    depends_on: [B010, B678, B002, B004, B005, B1301, B1331, B1306, B1327, B1320, B032, B1386, B1387, B1330, B1319, B206, B196, B125]
+    file: tasks/B031-vertex-gemini-provider.yaml
     covers:
-      - "litellm/llms/vertex_ai/*.py"
-      - "litellm/llms/vertex_ai/{gemini,context_caching,count_tokens}/**"
-      - "litellm/types/llms/vertex_ai.py"
       - "litellm/main.py"
   - id: B032
     milestone: M3 providers
     title: Vertex AI partner models, Gemma and Model Garden
     status: todo
-    depends_on: [B031]
-    file: null
+    depends_on: [B010, B678, B1302, B1304, B1306, B1332, B1333, B1335, B1336, B1337, B1338, B1339, B582, B036, B038, B081, B004, B005, B171]
+    file: tasks/B032-vertex-partner-provider.yaml
     covers:
-      - "litellm/llms/vertex_ai/{vertex_ai_partner_models,vertex_gemma_models,vertex_model_garden}/**"
-      - "litellm/types/llms/vertex_ai_gemma.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/{__init__,main}.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/__init__.py"
+      - "litellm/llms/vertex_ai/vertex_gemma_models/__init__.py"
+      - "litellm/types/llms/vertex_ai.py"
   - id: B033
     milestone: M3 providers
     title: Vertex AI embeddings, images, speech, transcription, video, realtime and rerank
     status: todo
-    depends_on: [B031]
-    file: null
+    depends_on: [B010, B678, B1301, B1395, B1349, B1345, B1346, B1347, B1348, B1352, B1353, B1354, B1355, B1357, B1360, B1361, B1362, B1365, B1379, B1381, B1382, B006, B082, B083, B085, B1125, B998, B999, B1135, B1122, B1001, B1003, B1120, B1115, B1008, B1014, B901]
+    file: tasks/B033-vertex-multimodal-provider.yaml
     covers:
-      - "litellm/llms/vertex_ai/{gemini_embeddings,multimodal_embeddings,vertex_embeddings,image_generation,image_edit,text_to_speech,audio_transcription,videos,realtime,rerank}/**"
-      - "litellm/types/llms/{vertex_ai_speech_to_text,vertex_ai_text_to_speech,vertex_ai_gemini_transcription}.py"
+      - "litellm/llms/vertex_ai/text_to_speech/transformation.py"
   - id: B034
     milestone: M3 providers
     title: Vertex AI batches, files, fine-tuning, RAG engine, agent engine, vector stores and GenAI
     status: todo
-    depends_on: [B031, B2214, B2208]
-    file: null
+    depends_on: [B010, B678, B1372, B1373, B1375, B1376, B1377, B1383, B1384, B1385, B1386, B1388, B1389, B1393, B1368, B1369, B206, B1015, B1025, B1058, B1064, B1032, B1033, B1034, B087, B1050, B1051, B1133, B086, B088, B1067, B900]
+    file: tasks/B034-vertex-native-services.yaml
     covers:
-      - "litellm/llms/vertex_ai/{batches,files,fine_tuning,rag_engine,agent_engine,vector_stores,google_genai,interactions}/**"
+      - "litellm/llms/vertex_ai/{agent_engine,interactions,vector_stores}/__init__.py"
+      - "litellm/llms/vertex_ai/batches/Readme.md"
   - id: B035
     milestone: M3 providers
     title: Gemini through Google AI Studio
     status: todo
-    depends_on: [B031, B186]
-    file: null
+    depends_on: [B031, B010, B678, B1325, B1330, B1331, B1341, B1350, B1351, B1363, B1364, B1366, B1367, B1368, B1370, B1378, B1379, B1381, B1382, B1390, B1391, B1392, B998, B999, B1120, B1122, B1001, B1028, B1029, B1064, B1115, B1008, B206, B173, B009, B004, B005, B006, B082, B083, B1032, B1034, B087, B1067, B1125, B900, B901]
+    file: tasks/B035-google-ai-studio-provider.yaml
     covers:
-      - "litellm/llms/gemini/**"
-      - "litellm/types/llms/{gemini,gemini_audio_transcription}.py"
+      - "litellm/llms/gemini/context_caching/README.md"
+      - "litellm/main.py"
   - id: B036
     milestone: M3 providers
     title: xAI, Mistral and Codestral
@@ -551,9 +550,6 @@ tasks:
       - "litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py"
       - "migrations/run.py"
       - "litellm/proxy/prisma_migration.py"
-      - "litellm-proxy-extras/litellm_proxy_extras/migrations/migration_lock.toml"
-      - "litellm-proxy-extras/litellm_proxy_extras/py.typed"
-      - "migrations/Dockerfile"
   - id: B052
     milestone: M4 keys, spend and management
     title: Wire virtual key authentication into the server
@@ -9669,3 +9665,825 @@ tasks:
     covers:
       - "litellm/main.py"
       - "litellm/utils.py"
+  - id: B1300
+    milestone: M3 providers
+    title: Vertex federation with rotating AWS credentials
+    status: todo
+    depends_on: [B594, B595, B171]
+    file: tasks/B1300-vertex-aws-federation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/aws_credentials_supplier.py"
+      - "litellm/llms/vertex_ai/vertex_ai_aws_wif.py"
+  - id: B1301
+    milestone: M3 providers
+    title: Vertex credential sources and configuration precedence
+    status: todo
+    depends_on: [B002, B009, B171, B1300]
+    file: tasks/B1301-vertex-credential-sources.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+  - id: B1302
+    milestone: M3 providers
+    title: Vertex credential cache and reauthentication
+    status: todo
+    depends_on: [B1301, B171]
+    file: tasks/B1302-vertex-token-cache.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+  - id: B1303
+    milestone: M3 providers
+    title: Vertex stale-token refresh coordination
+    status: todo
+    depends_on: [B1301, B1302]
+    file: tasks/B1303-vertex-async-refresh.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+  - id: B1305
+    milestone: M3 providers
+    title: Google model identifiers and native endpoint URLs
+    status: todo
+    depends_on: [B1300, B009, B193, B171]
+    file: tasks/B1305-vertex-model-urls.yaml
+    covers:
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1304
+    milestone: M3 providers
+    title: Vertex custom proxy paths and partner endpoints
+    status: todo
+    depends_on: [B009, B193, B171, B1305]
+    file: tasks/B1304-vertex-custom-endpoints.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+      - "litellm/llms/vertex_ai/common_utils.py"
+  - id: B1306
+    milestone: M3 providers
+    title: Vertex model routing, labels and catalog metadata
+    status: todo
+    depends_on: [B1305, B193, B205, B240, B171]
+    file: tasks/B1306-vertex-model-policy.yaml
+    covers:
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/main.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1307
+    milestone: M3 providers
+    title: Vertex structured-output schema shaping
+    status: todo
+    depends_on: [B217, B1301, B171]
+    file: tasks/B1307-vertex-schema-shaping.yaml
+    covers:
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1308
+    milestone: M3 providers
+    title: Gemini function tools, search and Maps retrieval
+    status: todo
+    depends_on: [B1307, B171]
+    file: tasks/B1308-gemini-tool-mapping.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1309
+    milestone: M3 providers
+    title: Gemini thinking controls and response formats
+    status: todo
+    depends_on: [B1301, B1305, B1306, B1307, B171]
+    file: tasks/B1309-gemini-thinking-format.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1310
+    milestone: M3 providers
+    title: Gemini option assembly and sampling defaults
+    status: todo
+    depends_on: [B1301, B1305, B1308, B1309, B193, B171]
+    file: tasks/B1310-gemini-options.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1311
+    milestone: M3 providers
+    title: Gemini media references and MIME hints
+    status: todo
+    depends_on: [B1305, B183, B1128, B171]
+    file: tasks/B1311-gemini-media.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1312
+    milestone: M3 providers
+    title: Gemini conversation history and signature replay
+    status: todo
+    depends_on: [B1311, B1305, B232, B233, B179, B171]
+    file: tasks/B1312-gemini-message-history.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1317
+    milestone: M3 providers
+    title: Gemini cache prefixes, TTL and system instructions
+    status: todo
+    depends_on: [B1301, B1306, B1312, B171]
+    file: tasks/B1317-gemini-cache-prefix.yaml
+    covers:
+      - "litellm/llms/vertex_ai/context_caching/transformation.py"
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1318
+    milestone: M3 providers
+    title: Google cached-content endpoint and paginated lookup
+    status: todo
+    depends_on: [B1304, B1305, B173, B171]
+    file: tasks/B1318-gemini-cache-lookup.yaml
+    covers:
+      - "litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1324
+    milestone: M3 providers
+    title: Automatic Gemini cached-content creation
+    status: todo
+    depends_on: [B1317, B1318, B173, B193, B196, B125, B002]
+    file: tasks/B1324-gemini-cache-create.yaml
+    covers:
+      - "litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1325
+    milestone: M3 providers
+    title: Google AI Studio chat capabilities and media input
+    status: todo
+    depends_on: [B1310, B1311, B1312, B1305, B193, B171]
+    file: tasks/B1325-studio-chat-input.yaml
+    covers:
+      - "litellm/llms/gemini/chat/transformation.py"
+  - id: B1321
+    milestone: M3 providers
+    title: Gemini request bodies after cache and system extraction
+    status: todo
+    depends_on: [B1310, B1311, B1312, B1317, B1324, B1325, B1306, B177, B171]
+    file: tasks/B1321-gemini-request-body.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+      - "litellm-proxy-extras/litellm_proxy_extras/migrations/migration_lock.toml"
+      - "litellm-proxy-extras/litellm_proxy_extras/py.typed"
+      - "migrations/Dockerfile"
+  - id: B1313
+    milestone: M3 providers
+    title: Gemini response text, signatures and media parts
+    status: todo
+    depends_on: [B1300, B232, B171]
+    file: tasks/B1313-gemini-response-parts.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1323
+    milestone: M3 providers
+    title: Gemini grounding annotations and streamed metadata
+    status: todo
+    depends_on: [B1306, B171]
+    file: tasks/B1323-gemini-response-metadata.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1322
+    milestone: M3 providers
+    title: Gemini modality usage and grounding request accounting
+    status: todo
+    depends_on: [B1323, B171]
+    file: tasks/B1322-gemini-usage.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/{vertex_and_google_ai_studio_gemini,grounding_requests}.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1314
+    milestone: M3 providers
+    title: Gemini candidate choices and content filtering
+    status: todo
+    depends_on: [B1313, B1323, B171]
+    file: tasks/B1314-gemini-candidates.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1326
+    milestone: M3 providers
+    title: Decode Gemini complete responses and served model metadata
+    status: todo
+    depends_on: [B1314, B1322, B171]
+    file: tasks/B1326-gemini-response-envelope.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1315
+    milestone: M3 providers
+    title: Gemini fragmented stream reader and tool-call continuity
+    status: todo
+    depends_on: [B1314, B1322, B1323, B1326, B171]
+    file: tasks/B1315-gemini-stream-reader.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1316
+    milestone: M3 providers
+    title: Execute Gemini HTTP calls with Vertex or Studio authentication
+    status: todo
+    depends_on: [B1303, B1304, B1312, B1321, B1315, B1326, B173, B171]
+    file: tasks/B1316-gemini-http-execution.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1327
+    milestone: M3 providers
+    title: Select Gemini complete and streaming execution paths
+    status: todo
+    depends_on: [B1302, B1304, B1321, B1316, B1326]
+    file: tasks/B1327-gemini-call-selection.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1319
+    milestone: M3 providers
+    title: Google character pricing and grounded-request charges
+    status: todo
+    depends_on: [B1300, B193, B171]
+    file: tasks/B1319-google-pricing.yaml
+    covers:
+      - "litellm/llms/vertex_ai/cost_calculator.py"
+      - "litellm/llms/vertex_ai/gemini/cost_calculator.py"
+      - "litellm/llms/gemini/cost_calculator.py"
+  - id: B1328
+    milestone: M3 providers
+    title: Legacy Vertex prediction results and asynchronous execution
+    status: todo
+    depends_on: [B1303, B173, B195, B171]
+    file: tasks/B1328-vertex-legacy-results.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_non_gemini.py"
+  - id: B1320
+    milestone: M3 providers
+    title: Legacy Vertex model selection and synchronous predictions
+    status: todo
+    depends_on: [B1301, B1302, B1310, B1328, B193, B596, B171]
+    file: tasks/B1320-vertex-legacy-selection.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_non_gemini.py"
+  - id: B1331
+    milestone: M3 providers
+    title: Google AI Studio credentials and model discovery
+    status: todo
+    depends_on: [B1300, B002, B009, B173, B171]
+    file: tasks/B1331-studio-identity.yaml
+    covers:
+      - "litellm/llms/gemini/common_utils.py"
+      - "litellm/llms/gemini/google_genai/transformation.py"
+  - id: B1329
+    milestone: M3 providers
+    title: Google and Vertex countTokens endpoint adapters
+    status: todo
+    depends_on: [B1301, B1303, B1304, B1331, B173, B171]
+    file: tasks/B1329-google-count-endpoints.yaml
+    covers:
+      - "litellm/llms/{gemini,vertex_ai}/count_tokens/handler.py"
+  - id: B1332
+    milestone: M3 providers
+    title: Vertex partner rawPredict token counting
+    status: todo
+    depends_on: [B1301, B1303, B1305, B173, B002, B171]
+    file: tasks/B1332-vertex-partner-count.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/main.py"
+  - id: B1330
+    milestone: M3 providers
+    title: Select Google token counters and preserve wrapper differences
+    status: todo
+    depends_on: [B1306, B1312, B1329, B1332, B1331, B171]
+    file: tasks/B1330-google-token-counter-selection.yaml
+    covers:
+      - "litellm/llms/{gemini,vertex_ai}/common_utils.py"
+  - id: B1333
+    milestone: M3 providers
+    title: Vertex Claude chat policy and output sanitization
+    status: todo
+    depends_on: [B1300, B568, B569, B576, B577, B580, B688, B183, B171]
+    file: tasks/B1333-vertex-claude-chat.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/{transformation,output_params_utils}.py"
+  - id: B1339
+    milestone: M3 providers
+    title: Vertex Claude native Messages adaptation
+    status: todo
+    depends_on: [B1301, B1302, B1304, B1333, B568, B960, B961, B962, B171]
+    file: tasks/B1339-vertex-native-messages.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py"
+  - id: B1335
+    milestone: M3 providers
+    title: Vertex OpenAI partner policies and Llama stream repair
+    status: todo
+    depends_on: [B1306, B668, B504, B005, B193, B002, B171]
+    file: tasks/B1335-vertex-openai-partners.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/{ai21,gpt_oss,llama3,mistral}/transformation.py"
+  - id: B1336
+    milestone: M3 providers
+    title: Vertex Gemma prediction envelopes and embedded errors
+    status: todo
+    depends_on: [B1306, B668, B503, B173, B171]
+    file: tasks/B1336-vertex-gemma-envelope.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_gemma_models/transformation.py"
+      - "litellm/types/llms/vertex_ai_gemma.py"
+  - id: B1337
+    milestone: M3 providers
+    title: Execute Vertex Gemma predictions and synthetic streams
+    status: todo
+    depends_on: [B1302, B1304, B1305, B1336, B504]
+    file: tasks/B1337-vertex-gemma-calls.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_gemma_models/{main,transformation}.py"
+  - id: B1338
+    milestone: M3 providers
+    title: Vertex Model Garden OpenAI endpoint selection
+    status: todo
+    depends_on: [B1302, B1305, B1306, B038, B010, B171]
+    file: tasks/B1338-vertex-model-garden.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_model_garden/main.py"
+  - id: B1334
+    milestone: M3 providers
+    title: Gemini image dimensions, generation options and search tools
+    status: todo
+    depends_on: [B1308, B1322, B193, B171]
+    file: tasks/B1334-gemini-image-policy.yaml
+    covers:
+      - "litellm/llms/gemini/common_utils.py"
+  - id: B1340
+    milestone: M3 providers
+    title: Gemini text and multimodal embedding transformations
+    status: todo
+    depends_on: [B1300, B006, B196, B171]
+    file: tasks/B1340-gemini-embedding-records.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1341
+    milestone: M3 providers
+    title: Execute Google embedding requests and resolve native file references
+    status: todo
+    depends_on: [B1302, B1304, B1340, B173, B171]
+    file: tasks/B1341-gemini-embedding-calls.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py"
+  - id: B1342
+    milestone: M3 providers
+    title: Vertex text, tuned and BGE embedding records
+    status: todo
+    depends_on: [B1306, B006, B002, B171]
+    file: tasks/B1342-vertex-text-embeddings.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_embeddings/{transformation,bge,types}.py"
+  - id: B1343
+    milestone: M3 providers
+    title: Vertex multimodal embedding pairing and media usage
+    status: todo
+    depends_on: [B1300, B006, B171]
+    file: tasks/B1343-vertex-multimodal-embeddings.yaml
+    covers:
+      - "litellm/llms/vertex_ai/multimodal_embeddings/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1344
+    milestone: M3 providers
+    title: Execute Vertex text and multimodal embedding predictions
+    status: todo
+    depends_on: [B1302, B1303, B1304, B1342, B1343, B173]
+    file: tasks/B1344-vertex-predict-embeddings.yaml
+    covers:
+      - "litellm/llms/vertex_ai/{vertex_embeddings,multimodal_embeddings}/embedding_handler.py"
+  - id: B1345
+    milestone: M3 providers
+    title: Vertex Gemini image generation and image credential fallback
+    status: todo
+    depends_on: [B1301, B1302, B1305, B1334, B997, B171]
+    file: tasks/B1345-vertex-gemini-images.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_generation/{vertex_gemini_transformation,vertex_imagen_transformation}.py"
+      - "litellm/llms/vertex_ai/image_edit/{vertex_gemini_transformation,vertex_imagen_transformation}.py"
+  - id: B1346
+    milestone: M3 providers
+    title: Vertex Imagen generation requests and prediction images
+    status: todo
+    depends_on: [B1345, B1301, B1302, B1305, B1306, B997, B171]
+    file: tasks/B1346-vertex-imagen-generation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_generation/vertex_imagen_transformation.py"
+  - id: B1347
+    milestone: M3 providers
+    title: Vertex Gemini image edit JSON and local image records
+    status: todo
+    depends_on: [B1345, B1302, B1120, B1128, B997, B171]
+    file: tasks/B1347-vertex-gemini-image-edit.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py"
+  - id: B1348
+    milestone: M3 providers
+    title: Imagen edit references, masks and recursive file inputs
+    status: todo
+    depends_on: [B1345, B1346, B1302, B1305, B1307, B1128, B997, B171]
+    file: tasks/B1348-vertex-imagen-edit.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py"
+  - id: B1349
+    milestone: M3 providers
+    title: Vertex image configuration selection and billing policy
+    status: todo
+    depends_on: [B1306, B1345, B1346, B1347, B1348, B193, B171]
+    file: tasks/B1349-vertex-image-selection-cost.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_generation/{__init__,image_generation_handler,cost_calculator}.py"
+      - "litellm/llms/vertex_ai/image_edit/{__init__,cost_calculator}.py"
+  - id: B1350
+    milestone: M3 providers
+    title: Studio image generation usage and token-first pricing
+    status: todo
+    depends_on: [B1331, B1334, B1345, B1346, B1349, B193, B997, B171]
+    file: tasks/B1350-studio-image-generation.yaml
+    covers:
+      - "litellm/llms/gemini/image_generation/**"
+      - "litellm/llms/gemini/image_usage_transformation.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1351
+    milestone: M3 providers
+    title: Studio image edits with shared Gemini image usage
+    status: todo
+    depends_on: [B1334, B1345, B1347, B1350, B1120, B997, B171]
+    file: tasks/B1351-studio-image-edit.yaml
+    covers:
+      - "litellm/llms/gemini/image_edit/**"
+  - id: B1352
+    milestone: M3 providers
+    title: Cloud speech synthesis voices, SSML and audio decoding
+    status: todo
+    depends_on: [B1301, B1302, B1304, B171]
+    file: tasks/B1352-vertex-speech-synthesis.yaml
+    covers:
+      - "litellm/llms/vertex_ai/text_to_speech/**"
+      - "litellm/types/llms/vertex_ai_text_to_speech.py"
+  - id: B1353
+    milestone: M3 providers
+    title: Lyria predict and interactions audio synthesis
+    status: todo
+    depends_on: [B1301, B1302, B1304, B1306, B1352, B1369, B175, B171]
+    file: tasks/B1353-vertex-lyria-speech.yaml
+    covers:
+      - "litellm/llms/vertex_ai/text_to_speech/transformation.py"
+  - id: B1369
+    milestone: M3 providers
+    title: Vertex native interactions targets and authentication
+    status: todo
+    depends_on: [B1301, B1302, B1304, B1305, B1370, B171]
+    file: tasks/B1369-vertex-native-interactions.yaml
+    covers:
+      - "litellm/llms/vertex_ai/interactions/transformation.py"
+  - id: B1354
+    milestone: M3 providers
+    title: Vertex Speech-to-Text recognition and duration metadata
+    status: todo
+    depends_on: [B1301, B1302, B1305, B175, B171]
+    file: tasks/B1354-vertex-speech-recognition.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/transformation.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1355
+    milestone: M3 providers
+    title: Vertex Gemini native audio transcription and token usage
+    status: todo
+    depends_on: [B1354, B1301, B1302, B1305, B175, B171]
+    file: tasks/B1355-vertex-gemini-transcription.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/gemini_transcribe_transformation.py"
+      - "litellm/types/llms/vertex_ai_gemini_transcription.py"
+  - id: B1356
+    milestone: M3 providers
+    title: Chirp session constraints, transcript deltas and billed turns
+    status: todo
+    depends_on: [B1123, B1001, B1004, B193, B171]
+    file: tasks/B1356-chirp-session-events.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1358
+    milestone: M3 providers
+    title: Chirp native gRPC stream and bounded request relay
+    status: todo
+    depends_on: [B1300, B171]
+    file: tasks/B1358-chirp-recognize-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_backend.py"
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1359
+    milestone: M3 providers
+    title: Chirp stream rotation, turn discard and backend shutdown
+    status: todo
+    depends_on: [B1358, B171]
+    file: tasks/B1359-chirp-stream-rotation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_backend.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1357
+    milestone: M3 providers
+    title: Connect Chirp realtime commands and backend event decoding
+    status: todo
+    depends_on: [B1354, B1356, B1358, B1359, B1123, B1004, B171]
+    file: tasks/B1357-chirp-realtime-adapter.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"
+  - id: B1360
+    milestone: M3 providers
+    title: Vertex Discovery Engine rerank records and search-unit billing
+    status: todo
+    depends_on: [B1301, B1302, B1306, B171]
+    file: tasks/B1360-vertex-discovery-rerank.yaml
+    covers:
+      - "litellm/llms/vertex_ai/rerank/**"
+  - id: B1361
+    milestone: M3 providers
+    title: Vertex Veo create and edit request preparation
+    status: todo
+    depends_on: [B1301, B1302, B1305, B193, B525, B672, B171]
+    file: tasks/B1361-vertex-veo-requests.yaml
+    covers:
+      - "litellm/llms/vertex_ai/videos/transformation.py"
+  - id: B1362
+    milestone: M3 providers
+    title: Vertex Veo operation results, content and usage defaults
+    status: todo
+    depends_on: [B1361, B1306, B1301, B002, B525, B672, B171]
+    file: tasks/B1362-vertex-veo-operations.yaml
+    covers:
+      - "litellm/llms/vertex_ai/videos/**"
+      - "litellm/constants.py"
+  - id: B1363
+    milestone: M3 providers
+    title: Studio Veo input mapping and API-key precedence
+    status: todo
+    depends_on: [B1331, B1361, B525, B171]
+    file: tasks/B1363-studio-veo-input.yaml
+    covers:
+      - "litellm/llms/gemini/videos/transformation.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1364
+    milestone: M3 providers
+    title: Studio Veo operation decoding and generated video retrieval
+    status: todo
+    depends_on: [B1362, B1363, B525, B672, B173, B171]
+    file: tasks/B1364-studio-veo-results.yaml
+    covers:
+      - "litellm/llms/gemini/videos/**"
+      - "litellm/types/llms/gemini.py"
+  - id: B1365
+    milestone: M3 providers
+    title: Vertex Live setup policy and Chirp backend selection
+    status: todo
+    depends_on: [B1304, B1356, B1357, B1378, B1379, B171]
+    file: tasks/B1365-vertex-live-session.yaml
+    covers:
+      - "litellm/llms/vertex_ai/realtime/**"
+  - id: B1378
+    milestone: M3 providers
+    title: Gemini Live setup options and modality defaults
+    status: todo
+    depends_on: [B1308, B1309, B1331, B193, B1004, B002, B171]
+    file: tasks/B1378-gemini-live-setup.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1379
+    milestone: M3 providers
+    title: Gemini Live client messages and function response records
+    status: todo
+    depends_on: [B1378, B1307, B1004, B171]
+    file: tasks/B1379-gemini-live-client.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+      - "litellm/llms/gemini/common_utils.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1366
+    milestone: M3 providers
+    title: Studio interactions transcription with word timestamps
+    status: todo
+    depends_on: [B1331, B1354, B171]
+    file: tasks/B1366-studio-transcription.yaml
+    covers:
+      - "litellm/llms/gemini/audio_transcription/**"
+      - "litellm/types/llms/gemini_audio_transcription.py"
+  - id: B1367
+    milestone: M3 providers
+    title: Studio native file uploads and encoded file identifiers
+    status: todo
+    depends_on: [B1331, B1306, B235, B516, B171]
+    file: tasks/B1367-studio-native-files.yaml
+    covers:
+      - "litellm/llms/gemini/files/**"
+      - "litellm/types/llms/gemini.py"
+  - id: B1368
+    milestone: M3 providers
+    title: Native Google GenAI content preparation for Studio and Vertex
+    status: todo
+    depends_on: [B1301, B1302, B1303, B1304, B1306, B1307, B1326, B1331, B171]
+    file: tasks/B1368-google-native-content.yaml
+    covers:
+      - "litellm/llms/vertex_ai/google_genai/**"
+      - "litellm/llms/gemini/google_genai/**"
+  - id: B1370
+    milestone: M3 providers
+    title: Studio interactions revision migration and lifecycle records
+    status: todo
+    depends_on: [B1331, B171]
+    file: tasks/B1370-studio-interactions.yaml
+    covers:
+      - "litellm/llms/gemini/interactions/**"
+  - id: B1371
+    milestone: M3 providers
+    title: Vertex batch job records, GCS model paths and row accounting
+    status: todo
+    depends_on: [B1306, B1319, B1322, B1326, B517, B171]
+    file: tasks/B1371-vertex-batch-records.yaml
+    covers:
+      - "litellm/llms/vertex_ai/batches/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1372
+    milestone: M3 providers
+    title: Create Vertex batches and resolve tuned endpoint models
+    status: todo
+    depends_on: [B1302, B1304, B1305, B1371, B009, B173, B171]
+    file: tasks/B1372-vertex-batch-create.yaml
+    covers:
+      - "litellm/llms/vertex_ai/batches/handler.py"
+  - id: B1373
+    milestone: M3 providers
+    title: Retrieve, list and cancel native Vertex batch jobs
+    status: todo
+    depends_on: [B1302, B1304, B1371, B1372, B009, B173, B171]
+    file: tasks/B1373-vertex-batch-lifecycle.yaml
+    covers:
+      - "litellm/llms/vertex_ai/batches/handler.py"
+  - id: B1374
+    milestone: M3 providers
+    title: Vertex batch label correlation and embedding regrouping
+    status: todo
+    depends_on: [B1371, B006, B171]
+    file: tasks/B1374-vertex-batch-row-correlation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+  - id: B1393
+    milestone: M3 providers
+    title: Native GCS object authorization and trusted legacy access
+    status: todo
+    depends_on: [B002, B643, B1300, B171]
+    file: tasks/B1393-vertex-gcs-access.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+      - "litellm/litellm_core_utils/cloud_storage_security.py"
+  - id: B1375
+    milestone: M3 providers
+    title: Vertex batch input conversion and rewindable upload streams
+    status: todo
+    depends_on: [B1374, B1340, B1310, B1321, B1025, B010, B1128, B517, B171]
+    file: tasks/B1375-vertex-batch-upload-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+  - id: B1376
+    milestone: M3 providers
+    title: Vertex native file upload targets and GCS metadata records
+    status: todo
+    depends_on: [B1393, B1375, B1302, B1306, B235, B1015, B516, B171]
+    file: tasks/B1376-vertex-native-files.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1377
+    milestone: M3 providers
+    title: Vertex batch output detection and streaming file conversion
+    status: todo
+    depends_on: [B1374, B1375, B1326, B002, B171]
+    file: tasks/B1377-vertex-batch-download-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+  - id: B1383
+    milestone: M3 providers
+    title: Vertex native GCS file content execution
+    status: todo
+    depends_on: [B1393, B1377, B1303, B173, B002, B171]
+    file: tasks/B1383-vertex-file-content-executor.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/handler.py"
+  - id: B1384
+    milestone: M3 providers
+    title: Vertex supervised tuning creation and result conversion
+    status: todo
+    depends_on: [B1302, B1304, B1305, B1306, B518, B173, B171]
+    file: tasks/B1384-vertex-fine-tuning.yaml
+    covers:
+      - "litellm/llms/vertex_ai/fine_tuning/**"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1385
+    milestone: M3 providers
+    title: Vertex RAG corpus file ingestion and chunking
+    status: todo
+    depends_on: [B1376, B1393, B1301, B002, B171]
+    file: tasks/B1385-vertex-rag-ingestion.yaml
+    covers:
+      - "litellm/llms/vertex_ai/rag_engine/**"
+  - id: B1386
+    milestone: M3 providers
+    title: Vertex Agent Engine query preparation and buffered answers
+    status: todo
+    depends_on: [B1301, B1302, B1305, B218, B196, B171]
+    file: tasks/B1386-vertex-agent-engine-records.yaml
+    covers:
+      - "litellm/llms/vertex_ai/agent_engine/transformation.py"
+  - id: B1387
+    milestone: M3 providers
+    title: Vertex Agent Engine streamed chunks and wrapper binding
+    status: todo
+    depends_on: [B1386, B010, B173, B171]
+    file: tasks/B1387-vertex-agent-engine-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/agent_engine/transformation.py"
+      - "litellm/llms/vertex_ai/agent_engine/sse_iterator.py"
+  - id: B1388
+    milestone: M3 providers
+    title: Vertex RAG vector search and corpus creation
+    status: todo
+    depends_on: [B1058, B1301, B1302, B1305, B1384, B171]
+    file: tasks/B1388-vertex-rag-vector-store.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py"
+  - id: B1389
+    milestone: M3 providers
+    title: Vertex Discovery Engine scoped vector search
+    status: todo
+    depends_on: [B1058, B1301, B1302, B193, B002, B171]
+    file: tasks/B1389-vertex-discovery-search.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vector_stores/search_api/transformation.py"
+  - id: B1390
+    milestone: M3 providers
+    title: Studio File Search vector records and creation
+    status: todo
+    depends_on: [B1058, B1331, B1384, B171]
+    file: tasks/B1390-studio-file-search.yaml
+    covers:
+      - "litellm/llms/gemini/vector_stores/**"
+  - id: B1391
+    milestone: M3 providers
+    title: Google GenAI native guardrail text translation
+    status: todo
+    depends_on: [B1368, B171]
+    file: tasks/B1391-google-genai-guardrail-text.yaml
+    covers:
+      - "litellm/llms/gemini/google_genai/guardrail_translation/**"
+  - id: B1392
+    milestone: M3 providers
+    title: Studio native agent lifecycle records and credential scoping
+    status: todo
+    depends_on: [B1331, B171]
+    file: tasks/B1392-studio-native-agents.yaml
+    covers:
+      - "litellm/llms/gemini/agents/**"
+  - id: B1380
+    milestone: M3 providers
+    title: Gemini Live content lifecycle events and state projections
+    status: todo
+    depends_on: [B1378, B1379, B1004, B171]
+    file: tasks/B1380-gemini-live-content-events.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1381
+    milestone: M3 providers
+    title: Gemini Live tool correlation and usage accounting
+    status: todo
+    depends_on: [B1378, B1379, B1322, B1115, B1004, B171]
+    file: tasks/B1381-gemini-live-accounting.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1394
+    milestone: M3 providers
+    title: Gemini Live tool turn event sequence
+    status: todo
+    depends_on: [B1378, B1379, B1381, B1322, B1115, B1004, B171]
+    file: tasks/B1394-gemini-live-tool-turn.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1382
+    milestone: M3 providers
+    title: Gemini Live server frame dispatch and cross-frame state
+    status: todo
+    depends_on: [B1378, B1379, B1380, B1381, B1394, B1004, B171]
+    file: tasks/B1382-gemini-live-server-frames.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1395
+    milestone: M3 providers
+    title: Vertex embedding alias resolution and native API selection
+    status: todo
+    depends_on: [B010, B678, B1301, B1341, B1344, B193, B002, B006]
+    file: tasks/B1395-vertex-embedding-dispatch.yaml
+    covers:
+      - "litellm/main.py"

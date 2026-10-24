@@ -1,0 +1,88 @@
+id: B1381
+title: Correlate Live tool calls and consume response or transcription usage
+description: >-
+  Implement gemini_live_accounting for realtime/transformation.py L118-L128, L165-L189,
+  L915-L965, L1034-L1097 and L1214-L1232, 156 nonblank noncomment lines. Operate on
+  B1379's connection-local state and B1378 setup/catalog policy. Incoming functionCalls
+  produce one function_call_arguments.done each with shared resolved response/item IDs,
+  item_id suffixed _tool_index, output_index=index and JSON arguments using Python's
+  default spaces/ASCII escapes. Missing/falsy ids become call_ plus 16 UUID hex digits.
+  Store only truthy call-id/name pairs, refresh recency and evict the oldest until at most
+  256 remain; B1379 tool replies consult this same map.
+  Consume a dict usageMetadata from the supplied frame by removing it and clearing pending
+  usage, including an empty dictionary; otherwise drain the pending buffer once. Ordinary
+  response.done uses B1322 chat usage and grounding counters from serverContent.
+  groundingMetadata, or zero usage when absent. Inject B1115's chat-to-Responses usage
+  projection at the upper composition seam, never import core into this leaf. Add singular
+  input_token_details/output_token_details aliases only when absent, filling cached/text/
+  audio defaults and overlaying non-None plural detail values while preserving extensions;
+  existing aliases, even None, win. response.done is completed with generated missing
+  resp_/conv_ IDs, lowered modalities, output item bodies and optional temperature/
+  max_output_tokens only when non-None.
+  For catalog mode audio_transcription, consume positive unbilled audio bytes into a token
+  usage estimate: 48000 PCM16 bytes/sec, 25 input audio tokens/sec and 175 output text
+  tokens/minute, with Python ties-to-even rounding implemented in exact rational arithmetic.
+  Reset bytes only when estimating; other models retain them. Session close drains the
+  same estimate without double billing. Register gemini_live_accounting helpers for
+  generated_call_id, lru_eviction_after_retry, empty_frame_usage_wins, pending_usage_once,
+  grounding_counts, alias_defaults, existing_alias_null, transcript_rounding and
+  close_usage_once. Adapters call the source methods with fixed UUID/catalog/usage seams;
+  all inputs are decoded records, so no additional byte fuzz target is needed. Budget
+  220 code, 190 tests and 130 adapters/shared-corpus lines within 600.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_live_accounting}.rs
+    - crates/betterlite-vertex/src/gemini_live_accounting/**
+    - tools/oracle/src/helpers/{mod,gemini_live_accounting}.rs
+    - tools/oracle/helpers/{dispatch,gemini_live_accounting}.py
+    - tools/oracle/cases/helpers/gemini-live-accounting/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_live_accounting*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L118-L189
+    why: Frame grounding metadata and Pipecat usage aliases; client state/byte counting remain B1379.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L915-L965
+    why: Destructive usage consumption and bounded tool-name LRU updates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1034-L1097
+    why: Completed-response usage and setup-field projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1214-L1232
+    why: Audio-duration billing estimates and session-close drain.
+dod:
+  - text: Tool correlation retains retryable names and enforces the 256-entry recency cap.
+    proof: [live-accounting-tests, live-accounting-python, oracle]
+  - text: Response usage, grounding fees and transcript estimates are consumed with their exact precedence and rounding.
+    proof: [live-accounting-tests, live-accounting-python, oracle]
+  - text: Newly added helper corpus cases select the accounting operation and exercise real production transitions.
+    proof: [live-accounting-seeds]
+checks:
+  optional: []
+  commands:
+    - id: live-accounting-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_live_accounting::/)'
+      why: Named transitions check LRU state, pending usage, detail aliases and session-close billing.
+    - id: live-accounting-python
+      run: test -f tools/oracle/helpers/gemini_live_accounting.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pinned accounting methods provide the oracle, including destructive frame consumption and repeated close.
+    - id: live-accounting-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_accounting*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_accounting::/)'
+      why: Shared-parser tests require call.gemini_live_accounting in the new seed set.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-live-accounting/generated-call-id.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/lru-eviction-after-retry.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/empty-frame-usage-wins.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/pending-usage-once.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/grounding-counts.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/alias-defaults.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/existing-alias-null.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/transcript-rounding.yaml
+  - tools/oracle/cases/helpers/gemini-live-accounting/close-usage-once.yaml
+deviations: []
+out_of_scope:
+  - B1378 controls setup/catalog defaults, B1379 owns state/client writes, B1380 builds content events and B1382 decides when these accounting functions run.
+  - B1115 retains the generic Responses usage conversion; B033/B035 inject that implementation when composing Live operations.
+pitfalls:
+  - An empty in-frame usage dictionary overrides a nonempty pending usage buffer.
+  - Existing singular usage aliases are preserved even if their value is null.
+  - A non-transcription model leaves the unbilled audio counter untouched when close usage is requested.
+budget: {max_changed_lines: 600, max_new_expects: 1}
+review_level: security

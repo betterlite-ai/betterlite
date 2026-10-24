@@ -1,0 +1,75 @@
+id: B1322
+title: Gemini modality usage and grounding request accounting
+description: >-
+  Add gemini_usage and grounding_requests records to betterlite-vertex. Own the shared Gemini
+  configuration's L1699-L1917 and L1984-L1995 (187 nonblank noncomment lines) and all 42 such
+  lines of grounding_requests.py. Consume B1323 candidate metadata. Sum modality details
+  case-insensitively, accept tokenCount before token_count, ignore noninteger counts and fold
+  DOCUMENT into TEXT. Response and candidate details accumulate together; infer absent text
+  detail from candidatesTokenCount minus image/audio/video, without clamping negative results.
+  Subtract cacheTokensDetails by modality. Only when that field is entirely absent may implicit
+  cachedContentTokenCount reduce prompt text. Retain cached counts separately. responseTokenCount
+  wins when truthy; add thoughtsTokenCount only when prompt+candidates+toolUse differs from total.
+  Require usageMetadata. Include toolUsePromptTokenCount in prompt billing except for billable
+  Search/Maps grounding, while retaining tool_use_tokens in details. Deduplicate nonempty string
+  queries across candidates; maps-only metadata attributes queries to Maps, mixed web/maps
+  attributes them to Search, and a maps chunk or widget token floors Maps requests at one.
+  Zero request counts become None. Keep reported total_tokens unchanged even when components
+  differ. Project the consumed UsageMetadata and modality declarations from vertex_ai.py into
+  typed records shared with Live. The helper gemini_usage must compare inclusive_thinking,
+  explicit_empty_cache_details, implicit_text_cache, document_modality, live_and_candidates,
+  negative_text_remainder, url_context_billable_tokens and mixed_maps_search. Budget 270 code,
+  200 assertions and 150 oracle lines; integer accounting must not introduce floating arithmetic.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_usage,grounding_requests}.rs
+    - crates/betterlite-vertex/src/{gemini_usage,grounding_requests}/**
+    - tools/oracle/src/helpers/{mod,gemini_usage}.rs
+    - tools/oracle/helpers/{dispatch,gemini_usage}.py
+    - tools/oracle/cases/helpers/gemini-usage/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_usage*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1699-L1917
+    why: Complete and Live token detail normalization and billable input selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1984-L1995
+    why: Grounding request counts added to prompt details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/grounding_requests.py#L1-L56
+    why: Cross-candidate deduplication and Maps attribution rules.
+dod:
+  - text: Usage retains modality and cache distinctions while calculating billable tools and grounding requests.
+    proof: [usage-tests, usage-python, oracle]
+  - text: Newly registered usage fixtures invoke the same accounting used by response assembly.
+    proof: [usage-seeds]
+checks:
+  optional: []
+  commands:
+    - id: usage-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E '(test(/^gemini_usage::/) | test(/^grounding_requests::/)) - test(replays_)'
+      why: Both integer token accounting and deduplicated request counts need independent assertions.
+    - id: usage-python
+      run: test -f tools/oracle/helpers/gemini_usage.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter preserves None and negative derived details from the pinned functions.
+    - id: usage-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_usage*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_usage::/)'
+      why: Corpus calls must deserialize into the new usage variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-usage/inclusive-thinking.yaml
+  - tools/oracle/cases/helpers/gemini-usage/explicit-empty-cache-details.yaml
+  - tools/oracle/cases/helpers/gemini-usage/implicit-text-cache.yaml
+  - tools/oracle/cases/helpers/gemini-usage/document-modality.yaml
+  - tools/oracle/cases/helpers/gemini-usage/live-and-candidates.yaml
+  - tools/oracle/cases/helpers/gemini-usage/negative-text-remainder.yaml
+  - tools/oracle/cases/helpers/gemini-usage/url-context-billable-tokens.yaml
+  - tools/oracle/cases/helpers/gemini-usage/mixed-maps-search.yaml
+deviations: []
+out_of_scope:
+  - B1323 owns metadata extraction and B1326 reads response JSON; this task receives decoded metadata.
+  - B1314 owns choices, B1313 parts, B1315 the iterator, B1316 transport, and B1305/B1308-B1310 configuration methods in the shared file.
+  - Vertex request/cache/media declarations are consumed by B1307-B1312/B1317/B1318/B1324; remaining response declarations are B1326.
+pitfalls:
+  - Presence of cacheTokensDetails=[] disables the implicit-cache text subtraction fallback.
+  - web grounding chunks without webSearchQueries do not exempt tool tokens from input billing.
+  - The inclusive-thinking equality includes toolUsePromptTokenCount even when grounding makes those tokens nonbillable.
+budget: {max_changed_lines: 675, max_new_expects: 0}
+review_level: security

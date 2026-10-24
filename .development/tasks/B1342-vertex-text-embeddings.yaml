@@ -1,0 +1,81 @@
+id: B1342
+title: Vertex text, tuned and BGE embedding records
+description: >-
+  Implement vertex_text_embeddings for every function in vertex_embeddings/transformation.py
+  and bge.py plus types.py (234+132+36 nonblank noncomment lines). Reuse B006 embedding records
+  and B1306 label extraction. Numeric model names select fine-tuned input before BGE detection;
+  BGE is case-insensitive bge anywhere or bge/ prefix. Standard instances use content, BGE uses
+  prompt, and numeric endpoints use inputs. Optional task_type/title are included whenever
+  non-None, even a title with a non-document task. Parameters retain the TypedDict constructor's
+  runtime keys rather than being filtered to annotations; only the tuned path removes
+  shared_session. Labels are popped before branch selection and attached only when truthy.
+  Map dimensions to outputDimensionality and pop input_type from kwargs into task_type; auth
+  aliases are project=>vertex_project and region_name=>vertex_location. Config defaults
+  auto_truncate/task_type/title are all None despite the docstring's RETRIEVAL_QUERY wording;
+  vertex_text_embedding_settings must load explicit and absent values. Standard replies sum
+  predictions[].embeddings.statistics.token_count. Numeric replies unwrap each prediction's
+  first nested vector and report zero usage. BGE requires predictions and list-valued vectors,
+  keeps vectors unwrapped, and also reports zero usage. Ordered result indices are never
+  inferred from upstream fields. Pure helper vertex_text_embeddings compares numeric_before_bge,
+  bge_case_insensitive, input_type_consumed, title_preserved, tuned_shared_session,
+  labels_each_branch, standard_token_sum and bge_vector_shape. JSON bytes are decoded in B1344.
+  Budget 330 records/transforms, 200 tests, 115 adapters and 80 config wiring, cap 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_text_embeddings}.rs
+    - crates/betterlite-vertex/src/vertex_text_embeddings/**
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/embeddings.rs
+    - crates/betterlite-config/src/providers/vertex/embeddings/**
+    - tools/oracle/src/helpers/{mod,vertex_text_embeddings}.rs
+    - tools/oracle/helpers/{dispatch,vertex_text_embeddings}.py
+    - tools/oracle/cases/helpers/vertex-text-embeddings/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_text_embeddings*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/transformation.py#L12-L281
+    why: Text/tuned request selection, label placement, auth aliases and token statistics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/bge.py#L25-L171
+    why: BGE model detection, prompt instances and direct vector predictions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/types.py#L1-L57
+    why: Task enums and instance/parameter declarations whose runtime dictionaries retain extra keys.
+dod:
+  - text: Each text embedding family retains its input key, vector nesting and source usage calculation.
+    proof: [text-embedding-tests, text-embedding-python, oracle]
+  - text: Embedding options load with absent defaults and explicit task/title/truncation values.
+    proof: [text-embedding-config]
+  - text: Family-specific embedding fixtures select the production transformation helper.
+    proof: [text-embedding-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: text-embedding-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_text_embeddings::/) - test(replays_)'
+      why: Standard, tuned and BGE records must not share an incorrect vector or parameter projection.
+    - id: text-embedding-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_text_embedding_settings::/)'
+      why: Defaults must come from source fields rather than its contradictory docstring.
+    - id: text-embedding-python
+      run: test -f tools/oracle/helpers/vertex_text_embeddings.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference adapter exposes actual TypedDict runtime parameters and response shapes.
+    - id: text-embedding-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_text_embeddings*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_text_embeddings::/)'
+      why: The shared parser must identify new standard, BGE and tuned embedding calls.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-text-embeddings/numeric-before-bge.yaml
+  - tools/oracle/cases/helpers/vertex-text-embeddings/bge-case-insensitive.yaml
+  - tools/oracle/cases/helpers/vertex-text-embeddings/input-type-consumed.yaml
+  - tools/oracle/cases/helpers/vertex-text-embeddings/title-preserved.yaml
+  - tools/oracle/cases/helpers/vertex-text-embeddings/tuned-shared-session.yaml
+  - tools/oracle/cases/helpers/vertex-text-embeddings/labels-each-branch.yaml
+  - tools/oracle/cases/helpers/vertex-text-embeddings/standard-token-sum.yaml
+  - tools/oracle/cases/helpers/vertex-text-embeddings/bge-vector-shape.yaml
+deviations: []
+out_of_scope:
+  - B1344 owns embedding_handler.py and byte decoding; B1343 owns multimodalembedding records.
+pitfalls:
+  - EmbeddingParameters annotations say output_dimensionality but runtime construction retains outputDimensionality.
+  - title is not restricted to RETRIEVAL_DOCUMENT by this transformation.
+  - Fine-tuned vectors use prediction[0], whereas BGE predictions are already the vectors themselves.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: standard

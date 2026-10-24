@@ -1,0 +1,82 @@
+id: B1358
+title: Chirp native gRPC stream and bounded request relay
+description: >-
+  Implement chirp_stream in betterlite-vertex for realtime_backend.py L1-L237, 195 nonblank
+  noncomment lines, and SpeechStreamingTarget from realtime_transformation.py L70-L74. Use
+  google-cloud-speech-v2's streaming_recognize API with explicit resolved-token credentials
+  and the configured endpoint; the SDK now provides bidirectional streaming, so do not
+  generate a second protobuf client. Keep external protocol decoding inside the SDK and
+  project results into typed ChirpStreamEvent records. The first request carries recognizer
+  and streaming_config only: LINEAR16, one channel, chosen sample rate/model/languages,
+  interim_results and voice activity enabled. Later requests contain audio only. Own a
+  64-item request queue; half-close appends the terminator behind pending audio. A stream
+  records open time and turn index, starts inactive, and tracks max billed duration in exact
+  seconds/nanos. SPEECH_ACTIVITY_BEGIN makes it active; SPEECH_ACTIVITY_END and
+  END_OF_SINGLE_UTTERANCE make it inactive. Result projection selects the first alternative
+  or empty text and retains is_final. Forward cumulative billed_before plus stream maximum.
+  Relay owns its forwarding task, joins cancellation and closes the client once in all paths;
+  an already-cancelled stream closes without starting and contributes zero billing. Forward
+  failures warn and enqueue a typed failure rather than leaving receivers blocked. Model
+  Python's protocols as injected Rust client/transport traits backed by the SDK. The pure
+  chirp_stream_records helper compares config_first_request, no_alternative, activity_end,
+  cumulative_billed and unknown_activity. Native tests separately prove queue_backpressure,
+  half_close_order, cancelled_before_relay and close_after_failure with controlled clients.
+  Budget 280 implementation and SDK wiring, 220 lifecycle tests and 120 helper lines; cap 700.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - deny.toml
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,chirp_stream}.rs
+    - crates/betterlite-vertex/src/chirp_stream/**
+    - tools/oracle/src/helpers/{mod,chirp_stream_records}.rs
+    - tools/oracle/helpers/{dispatch,chirp_stream_records}.py
+    - tools/oracle/cases/helpers/chirp-stream-records/**
+    - tools/oracle/fuzz/corpus/helper_case/chirp_stream_records*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L38-L237
+    why: Client construction, stream queue, activity/billing projection and cancellation ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L70-L74
+    why: Target carries endpoint, recognizer and an asynchronous token resolver.
+  - url: https://docs.rs/google-cloud-speech-v2/latest/google_cloud_speech_v2/client/struct.Speech.html#method.streaming_recognize
+    why: Maintained SDK supports a sender and response stream with half-close by dropping the sender.
+dod:
+  - text: A native Chirp stream sends configuration before bounded audio and closes on completion, cancellation or failure.
+    proof: [chirp-stream-lifecycle]
+  - text: SDK record projection preserves activity names, alternatives and cumulative billing.
+    proof: [chirp-stream-record-tests, chirp-stream-python, oracle]
+  - text: Added record fixtures are parsed through the Chirp stream helper variant.
+    proof: [chirp-stream-seeds]
+checks:
+  optional: []
+  commands:
+    - id: chirp-stream-lifecycle
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^chirp_stream::lifecycle::/)'
+      why: Controlled SDK clients expose backpressure, half-close ordering and exactly-once close.
+    - id: chirp-stream-record-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^chirp_stream::records::/)'
+      why: Typed protobuf projections are tested independently from queue mechanics.
+    - id: chirp-stream-python
+      run: test -f tools/oracle/helpers/chirp_stream_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python builds local speech SDK records and calls only pure projection functions.
+    - id: chirp-stream-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_stream_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::chirp_stream_records::/)'
+      why: New SDK-record cases must pass through shared fixture deserialization.
+oracle_cases:
+  - tools/oracle/cases/helpers/chirp-stream-records/config-first-request.yaml
+  - tools/oracle/cases/helpers/chirp-stream-records/no-alternative.yaml
+  - tools/oracle/cases/helpers/chirp-stream-records/activity-end.yaml
+  - tools/oracle/cases/helpers/chirp-stream-records/cumulative-billed.yaml
+  - tools/oracle/cases/helpers/chirp-stream-records/unknown-activity.yaml
+deviations: []
+out_of_scope:
+  - B1359 owns SpeechStreamingBackend L244-L418 and command JSON decoding; this task supplies its stream and outbox record contracts.
+  - B1356 owns Chirp transcript/session transformation and B1357 bridges those events to public realtime contracts.
+pitfalls:
+  - A half-close must wait behind queued audio rather than cancel its sender immediately.
+  - A stream's billed duration is a maximum, not the sum of each response's metadata.
+  - Failure forwarding must complete even when the SDK response stream ends before producing any transcript.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

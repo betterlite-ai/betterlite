@@ -1,0 +1,91 @@
+id: B1304
+title: Vertex custom proxy paths and partner endpoints
+description: >-
+  Implement endpoint_target in betterlite-vertex over B1305's native URLs. This layer owns
+  VertexBase's region selection, get_api_base, create_vertex_url, get_complete_vertex_url,
+  _check_custom_proxy, _get_token_and_url, set_headers and _graft_default_vertex_path, plus
+  common_utils' URL extraction/replacement and construct_target_url helpers. The model catalog's
+  first supported_regions item replaces an unsupported configured region with a warning;
+  otherwise an absent region defaults to us-central1. Partner paths distinguish llama's
+  openapi/chat/completions from mistralai, ai21 v1beta1 and anthropic rawPredict variants.
+  Preserve custom host-only bases, version-root path grafting, full-model proxy bases and PSC
+  endpoint format (off by default); PSC requires project, location and model and strips only
+  known route prefixes. A custom Gemini base requires both model and API key and carries
+  x-goog-api-key. Streaming appends alt=sse to an existing query instead of discarding it.
+  Header extras override Content-Type and Authorization exactly where set_headers does.
+  For passthrough paths, retain explicit v1/v1beta1, select v1beta1 for cachedContent, and
+  replace project/location only when both trusted replacements exist. B009 validates the
+  configured origin and URL bytes; request path text cannot choose a destination authority.
+  Expose a typed EndpointTarget and keep credentials as secret headers. Helper vertex_endpoint
+  compares pinned methods for unsupported_region_warning, llama_openapi, ai21_stream,
+  host_and_version_grafts, psc_required_fields, gemini_custom_key, query_preserved,
+  header_override and cache_passthrough_path. Add fixture-backed endpoint_target tests and a
+  helper seed whose call selects vertex_endpoint. There is no additional HTTP route here.
+  Count 239 nonblank noncomment lines in vertex_llm_base plus 74 in common_utils; allocate
+  280 target construction, 180 tests, 110 adapters and 45 wiring, maximum 700 changed lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/lib.rs
+    - crates/betterlite-vertex/src/error.rs
+    - crates/betterlite-vertex/src/endpoint_target.rs
+    - crates/betterlite-vertex/src/endpoint_target/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/vertex_endpoint.rs
+    - tools/oracle/src/helpers/vertex_endpoint/**
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/vertex_endpoint.py
+    - tools/oracle/cases/helpers/vertex-endpoint/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_endpoint*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L31-L36
+    why: Version-root graft preserves the configured base's URL components.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L96-L121
+    why: Region fallback and warning behavior are part of endpoint selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L284-L366
+    why: Default location, partner endpoint shapes and custom-proxy call edge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L621-L765
+    why: Full custom-base, PSC, API-version and auth-header selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L1138-L1147
+    why: Explicit extra headers are merged last.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1067-L1169
+    why: Own all seven extraction, replacement and passthrough target functions in this range.
+dod:
+  - text: Custom and partner targets preserve the source's URL components, headers and warning fallback.
+    proof: [target-tests, oracle, target-python]
+  - text: Endpoint helper input is exercised by newly added parser seeds.
+    proof: [target-corpus]
+checks:
+  optional: []
+  commands:
+    - id: target-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^endpoint_target::/)'
+      why: A target-building branch or its credential-bearing header result is wrong.
+    - id: target-python
+      run: test -f tools/oracle/helpers/vertex_endpoint.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The target oracle adapter cannot safely call the pinned methods.
+    - id: target-corpus
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_endpoint*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_endpoint::/)'
+      why: The new endpoint operation must have parsed seeds rather than only saved YAML.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-endpoint/unsupported-region-warning.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/llama-openapi.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/ai21-stream.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/host-and-version-grafts.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/psc-required-fields.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/gemini-custom-key.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/query-preserved.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/header-override.yaml
+  - tools/oracle/cases/helpers/vertex-endpoint/cache-passthrough-path.yaml
+deviations: []
+out_of_scope:
+  - The other vertex_llm_base functions are credential loading/settings B1301, cache operations B1302 and asynchronous refresh B1303.
+  - common_utils L1-L351 and L388-L408 are model/metadata policy B1306; L352-L387 and L409-L602 are URL primitives B1305; L603-L1066 is schema conversion B1307; L1170 onward is token/model-info adaptation B1319.
+pitfalls:
+  - A custom base already ending in a model path gets :endpoint rather than a second projects path.
+  - Location override emits a warning even when the supplied region is syntactically valid.
+  - The cachedContent test is case-sensitive and also matches cachedContents.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

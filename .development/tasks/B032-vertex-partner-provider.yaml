@@ -1,0 +1,112 @@
+id: B032
+title: Compose Vertex partner, Gemma and Model Garden calls
+description: >-
+  Install the executable Vertex partner operations in betterlite-provider/vertex_partner_dispatch,
+  using B010/B678's closed operation contract. Own VertexAIPartnerModels.completion at main.py
+  L90-L265, its constructor/error class, package exports and VertexPartnerProvider enum. The
+  completion branch is about 160 nonblank noncomment lines; prefixes and count_tokens are
+  already B1306/B1332. Acquire B1302 credentials once, normalize stream=False, then select
+  OpenAI-like partners first, mistral/codestral, jamba and claude. B1304 forms the URL before
+  stripping @ suffixes from Mistral/Codestral models. Codestral with litellm_params.text_completion
+  true sets optional_params.model and executes B036's FIM text adapter. Claude copies headers,
+  forces Bearer auth, sets anthropic_version=vertex-2023-10-16 and is_vertex_request=true, then
+  uses B1333 with B582's Anthropic execution. OpenAI-like partners run B1335 via the base HTTP
+  executor; remaining Jamba/Mistral calls use B038's OpenAILike handler with custom_endpoint=true.
+  Preserve status-bearing errors and wrap other failures as Vertex 500. Install B1337 Gemma,
+  B1338 Model Garden, B1339 native Messages and B1332 counts as distinct operation arms.
+  Direct calls to currently unsplit B036/B038 are the only dependencies on those entries;
+  retarget them to their owning leaves when those batches are planned, without changing this
+  source ownership. Compose routes through their existing owners, registering none here.
+  Own the package's get_vertex_ai_partner_model_config factory too: anthropic selects B1333,
+  ai21 selects B1335's AI21 config, openapi or mistralai selects its Llama config, and every
+  other publisher raises ValueError. The model argument does not influence a successful
+  choice. Export this closed response-config selector for B091 passthrough logging. Its 13
+  nonblank noncomment function lines are tested through pure helper vertex_partner_factory,
+  comparing returned config kind for claude, ai21, openapi, mistralai and unsupported publisher.
+  Add booted-proxy HTTP fixtures for POST /v1/chat/completions and /chat/completions with
+  vertex_ai/claude-sonnet-4-6, vertex_ai/meta/llama-3.3-70b-instruct-maas, vertex_ai/jamba-1.5-large,
+  vertex_ai/gemma/gemma-3-12b-it-1222199011122 and a vertex_ai/openai/123 endpoint. Native
+  POST /v1/messages and /claude_code_gateway/v1/messages use B081 with its gateway flag enabled.
+  Assert captured upstream URL/body/auth, caller header immutability, status/type/param/code and
+  response headers, including a failed partner call. Rust unsupported_operation and
+  codestral_fim_selection tests cover the dispatch contract separately. Core's
+  api::vertex_partner_bindings constructs the native Messages adapter and supplies B010's
+  single-response iterator to B1336 through its factory; test native_messages_binding and
+  gemma_stream_factory there. No server handler is changed. Budget 260 composition,
+  260 HTTP/unit assertions and 240 helpers/wiring/fixtures, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_partner_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_partner_dispatch/**
+    - crates/betterlite-core/src/{dispatch,operation}.rs
+    - crates/betterlite-core/src/api/{mod,vertex_partner_bindings}.rs
+    - crates/betterlite-core/src/api/vertex_partner_bindings/**
+    - crates/betterlite-vertex/src/lib.rs
+    - tools/oracle/cases/chat/vertex-partner/**
+    - tools/oracle/cases/api/vertex-partner-messages/**
+    - tools/oracle/fixtures/vertex-partner/**
+    - tools/oracle/src/helpers/{mod,vertex_partner_factory}.rs
+    - tools/oracle/helpers/{dispatch,vertex_partner_factory}.py
+    - tools/oracle/cases/helpers/vertex-partner-factory/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/__init__.py#L4-L19
+    why: Live passthrough response-config factory dispatches by publisher, not model name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/main.py#L20-L265
+    why: Partner completion selection and error boundary; prefix helpers are B1306.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L774-L779
+    why: Partner enum values carried by target selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L125-L286
+    why: Existing Messages routes exercised through B081's booted proxy.
+dod:
+  - text: Vertex partner chat and native Messages requests reach their selected adapters with correct credentials and wire fields.
+    proof: [partner-dispatch, oracle]
+  - text: Gemma and Model Garden dispatch remain separate and unsupported operations fail explicitly.
+    proof: [partner-dispatch]
+  - text: Integration fixtures are new on this branch and cover both canonical and gateway aliases.
+    proof: [partner-http-fixtures, oracle]
+  - text: The pure partner response-config factory preserves all accepted publisher spellings and unsupported-publisher failure.
+    proof: [partner-dispatch, partner-factory-python, partner-factory-seeds, oracle]
+checks:
+  optional: []
+  commands:
+    - id: partner-dispatch
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^vertex_partner_dispatch::/) - test(replays_)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vertex_partner_bindings::/)'
+      why: Executable matching must invoke the installed leaves and reject missing operation arms.
+    - id: partner-http-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat/vertex-partner tools/oracle/cases/api/vertex-partner-messages)" && test -f tools/oracle/cases/api/vertex-partner-messages/gateway.yaml
+      why: The provider must be verified through booted HTTP routes rather than a handler helper.
+    - id: partner-factory-python
+      run: test -f tools/oracle/helpers/vertex_partner_factory.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Factory comparisons call the pinned package selector and project its returned config kind without HTTP.
+    - id: partner-factory-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_factory*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_partner_factory::/)'
+      why: New HelperCase seeds must select call.vertex_partner_factory and reach the production selector.
+oracle_cases:
+  - tools/oracle/cases/chat/vertex-partner/claude.yaml
+  - tools/oracle/cases/chat/vertex-partner/llama-stream.yaml
+  - tools/oracle/cases/chat/vertex-partner/jamba.yaml
+  - tools/oracle/cases/chat/vertex-partner/gemma.yaml
+  - tools/oracle/cases/chat/vertex-partner/model-garden.yaml
+  - tools/oracle/cases/chat/vertex-partner/upstream-error.yaml
+  - tools/oracle/cases/api/vertex-partner-messages/native.yaml
+  - tools/oracle/cases/api/vertex-partner-messages/gateway.yaml
+  - tools/oracle/cases/helpers/vertex-partner-factory/claude.yaml
+  - tools/oracle/cases/helpers/vertex-partner-factory/ai21.yaml
+  - tools/oracle/cases/helpers/vertex-partner-factory/openapi.yaml
+  - tools/oracle/cases/helpers/vertex-partner-factory/mistralai.yaml
+  - tools/oracle/cases/helpers/vertex-partner-factory/unsupported-publisher.yaml
+deviations: []
+out_of_scope:
+  - B031 owns _complete_vertex_ai and _complete_vertex_ai_beta in litellm/main.py and calls this installed partner operation.
+  - B1306 owns PartnerModelPrefixes and both partner predicates; B1332 owns count_tokens; B1333/B1335/B1337/B1338/B1339 own every concrete partner/Gemma/Garden transformation.
+  - B036 and B038 retain generic Codestral/Mistral/OpenAILike implementations; B081/B004/B005 retain route registration.
+  - vertex_ai.py declarations outside VertexPartnerProvider belong to the consuming tasks in B031/B033/B034; this composition adds no byte decoder.
+pitfalls:
+  - The partner URL uses the versioned model before Mistral/Codestral body model suffix removal.
+  - Claude Authorization must be written into a fresh header map because deployments share extra_headers.
+  - The native gateway alias is enabled by B081's existing flag, not a second Vertex route.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

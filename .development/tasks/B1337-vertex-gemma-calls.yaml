@@ -1,0 +1,63 @@
+id: B1337
+title: Execute Vertex Gemma predictions and synthetic streams
+description: >-
+  Complete gemma_call from all VertexAIGemmaModels methods in main.py and VertexGemmaConfig
+  L240-L484 in transformation.py, approximately 310 nonblank noncomment lines. Strip the
+  Vertex model prefix with B1305, acquire B1302 credentials, and require api_base even when
+  project/location are known. Use a base already ending :predict unchanged; otherwise B1304
+  appends the predict endpoint with the source stream handling. Normalize missing/falsey stream
+  to false. Select only a matching sync/async caller client and use B1336's post adapters.
+  Transform a copy of options, send Bearer and JSON content type, accept only status 200, decode
+  via decode_gemma_reply, unwrap B1336 predictions, and use B504's OpenAI reply records. Set
+  response.model back to the requested stripped model and deliberately pass empty response
+  headers to normalized conversion. Requested streams are synthesized after the full response;
+  the source does not call a streaming upstream endpoint. Preserve exceptions with status_code
+  in the outer handler and convert other failures to Vertex 500. Native code does not reproduce
+  Python package-install checks. Add gemma_reply fuzz/replay for malformed JSON and container
+  errors embedded in HTTP 200. Native plans tests compare required_base,
+  predict_suffix_preserved, matching_client_kind, false_stream_default and restored_model.
+  Fixture HTTP tests assert a single nonstreaming POST, header secrecy, synthetic-stream order,
+  and upstream 201 rejection. B032's Gemma HTTP case supplies differential coverage; this
+  effectful facade has no helper adapter. Budget 290 call code, 300 tests and 100 parser/fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemma_call}.rs
+    - crates/betterlite-vertex/src/gemma_call/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/gemma_reply.rs
+    - crates/betterlite-vertex/fuzz/corpus/gemma_reply/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_gemma_models/main.py#L34-L139
+    why: Required deployment base, auth and outer error preservation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_gemma_models/transformation.py#L240-L484
+    why: Sync/async client selection, HTTP 200 requirement and post-response stream synthesis.
+dod:
+  - text: Gemma call planning preserves required bases, client kinds and stripped response models.
+    proof: [gemma-call-plans]
+  - text: Requested streams are synthesized from one successful complete prediction with the pinned errors and headers.
+    proof: [gemma-call-http]
+  - text: Gemma response decoding replays new malformed JSON and embedded-error corpus inputs.
+    proof: [gemma-call-corpus]
+checks:
+  optional: []
+  commands:
+    - id: gemma-call-plans
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemma_call::tests::plans/)'
+      why: Planning must not invent a base URL for dedicated Gemma deployments.
+    - id: gemma-call-http
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemma_call::tests::http/)'
+      why: Transport assertions distinguish synthetic streaming from an upstream stream request.
+    - id: gemma-call-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemma_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemma_reply)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemma_reply_corpus)'
+      why: Embedded-error and malformed-reply bytes must pass the actual Gemma decoder.
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1336 owns transformation.py L35-L239 and container-error record validation; B032 connects Gemma to provider dispatch.
+pitfalls:
+  - HTTP 201 is rejected even when its JSON contains valid predictions.
+  - The complete response's upstream headers are not passed to convert_to_model_response_object.
+  - The outer handler preserves a container's embedded status rather than replacing it with 500.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

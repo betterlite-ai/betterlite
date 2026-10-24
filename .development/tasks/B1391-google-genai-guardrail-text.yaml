@@ -1,0 +1,93 @@
+id: B1391
+title: Extract and replace native Google GenAI guardrail text
+description: >-
+  Build google_genai_guardrail in betterlite-vertex for the 216 nonblank noncomment
+  handler lines and 16 registration lines under gemini/google_genai/guardrail_translation.
+  Expose provider-local text locations, rewrite results and an injected guardrail callback;
+  B104 will bind its guardrail policy/user-metadata service without a reverse crate import.
+  Advertise generate_content, agenerate_content, generate_content_stream and
+  agenerate_content_stream. Use B1368 native records and an SDK-object projection seam
+  rather than requiring Python. Request extraction checks root then config, camelCase then
+  snake_case system instruction, choosing the first non-None value even when empty. Gather
+  its nonempty string text parts before contents; contents may be one dictionary or a list,
+  not an arbitrary iterable. Response extraction visits every candidate's content parts.
+  Ignore images, empty strings and non-string text. For request/response records call the
+  injected guardrail once with ordered texts, input_type and model only when it is a string;
+  write back only when returned texts is nonempty and has exactly the same length. Rewrites
+  target only the located text fields and preserve surrounding records. No text skips the
+  callback with the source debug message.
+  Response context retains supplied response/responses_so_far and litellm_metadata keys;
+  only absent keys receive the current object or nonempty, already transformed user metadata.
+  Streaming concatenates all object-chunk texts first, then all raw SSE texts regardless
+  of their interleaving. decode_google_guardrail_sse decodes each byte chunk with UTF-8
+  replacement, joins raw chunks, scans lines beginning exactly data:, ignores empty/[DONE]/
+  invalid/non-object JSON payloads and extracts candidate text. Apply the guardrail to one
+  accumulated text with no model field, propagate blocking errors, but return original
+  frames unchanged and ignore replacement texts/stream_transform_sink. This is detection
+  only on raw streams. Helper google_guardrail_text cases system_precedence,
+  dictionary_contents, text_locations, length_mismatch_no_write, existing_context_keys,
+  object_before_sse, split_sse_frame and per_chunk_utf8_replacement call pure extractors
+  or write-back functions. Native callback tests cover empty_skip, model_string_only,
+  block_propagates and stream_replacement_ignored. Allocate 270 code, 180 tests,
+  95 adapters and 95 fuzz/seed lines within 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,google_genai_guardrail}.rs
+    - crates/betterlite-vertex/src/google_genai_guardrail/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/google_guardrail_sse.rs
+    - crates/betterlite-vertex/fuzz/corpus/google_guardrail_sse/**
+    - tools/oracle/src/helpers/{mod,google_guardrail_text}.rs
+    - tools/oracle/helpers/{dispatch,google_guardrail_text}.py
+    - tools/oracle/cases/helpers/google-guardrail-text/**
+    - tools/oracle/fuzz/corpus/helper_case/google_guardrail_text*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/handler.py#L1-L255
+    why: Text locations, guarded rewrite rules, context precedence and detection-only raw SSE processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/__init__.py#L1-L20
+    why: The four native generateContent call types using this translator.
+dod:
+  - text: Native request/response extraction and write-back preserve field order and reject mismatched replacement lengths.
+    proof: [google-guardrail-records, google-guardrail-python, oracle]
+  - text: Callback execution skips empty input, propagates blocking and leaves streamed frames unchanged.
+    proof: [google-guardrail-callbacks]
+  - text: Raw SSE text and helper envelopes have new fuzz/replay inputs for their production decoders.
+    proof: [google-guardrail-corpus, google-guardrail-seeds]
+checks:
+  optional: []
+  commands:
+    - id: google-guardrail-records
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_genai_guardrail::records::/) - test(replays_the_google_guardrail_sse_corpus)'
+      why: Pure fixtures check extraction, rewrite and accumulated-stream ordering.
+    - id: google-guardrail-callbacks
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_genai_guardrail::callbacks::/)'
+      why: A recording callback proves invocation inputs, blocking behavior and ignored stream replacements.
+    - id: google-guardrail-python
+      run: test -f tools/oracle/helpers/google_guardrail_text.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Helpers invoke source extraction/write-back routines without executing apply_guardrail.
+    - id: google-guardrail-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_guardrail_sse.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_guardrail_sse)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_guardrail_sse_corpus)'
+      why: decode_google_guardrail_sse sees chunk boundaries, invalid UTF-8 and non-object payloads.
+    - id: google-guardrail-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_guardrail_text*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_guardrail_text::/)'
+      why: Shared-reader tests require call.google_guardrail_text in the added fixture set.
+oracle_cases:
+  - tools/oracle/cases/helpers/google-guardrail-text/system-precedence.yaml
+  - tools/oracle/cases/helpers/google-guardrail-text/dictionary-contents.yaml
+  - tools/oracle/cases/helpers/google-guardrail-text/text-locations.yaml
+  - tools/oracle/cases/helpers/google-guardrail-text/length-mismatch-no-write.yaml
+  - tools/oracle/cases/helpers/google-guardrail-text/existing-context-keys.yaml
+  - tools/oracle/cases/helpers/google-guardrail-text/object-before-sse.yaml
+  - tools/oracle/cases/helpers/google-guardrail-text/split-sse-frame.yaml
+  - tools/oracle/cases/helpers/google-guardrail-text/per-chunk-utf8-replacement.yaml
+deviations: []
+out_of_scope:
+  - B104 owns guardrail selection/execution policy and BaseTranslation user-metadata normalization; this leaf receives the resolved callback and metadata.
+  - B098 owns native GenAI routes and B160 SDK object exposure; neither route registration nor Python runtime integration is introduced here.
+pitfalls:
+  - Existing context keys are preserved even when their value is None.
+  - Raw SSE replacement text is discarded after detection, so rewriting a stream would change the pinned behavior.
+  - Byte chunks are individually decoded with replacement before concatenation, which matters for a split multibyte character.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

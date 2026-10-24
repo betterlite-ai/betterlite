@@ -1,0 +1,95 @@
+id: B1382
+title: Dispatch Live server frames while preserving event and usage order
+description: >-
+  Implement gemini_live_frames for transform_realtime_response L1234-L1644 excluding
+  B1394's L1365-L1538 tool branch, 207 nonblank noncomment lines. decode_gemini_live_frame
+  consumes one websocket text/binary JSON frame using B1379's typed server records while
+  retaining top-level insertion order and missing/null distinctions. Invalid syntax raises
+  Invalid JSON message; valid non-object values retain the source failure instead of being
+  treated as empty frames. Use an explicit caller-state value for response/item/conversation
+  IDs, delta/item chunks, delta type and setup, alongside connection-local B1379 accounting
+  state. Process inputTranscription before the main loop, emitting one completed input
+  transcript with B1381's estimate if applicable. outputTranscription starts an audio
+  content item through B1380 when needed and emits output_audio_transcript.delta with both
+  transcript and delta fields; it does not independently set current_delta_type.
+  With no prior delta type and no modelTurn key, remove generationComplete. Mark a
+  transcription-only serverContent handled, then iterate a snapshot of top-level entries
+  in source order. Ignore unknown sibling keys. setupComplete uses B1378; content/modality
+  events use B1380 with locally updated IDs; toolCall uses B1394. A normal turn close calls
+  B1381 with a shallow copy of the frame and output_items=None, emits completed response.done
+  and clears response/item IDs. If those IDs are already absent and prior item chunks
+  contain a function_call, suppress that trailing close and buffer any dict usageMetadata
+  for the next real response. Preserve the copy distinction: normal close consumes usage
+  from its copy, while a tool turn removes it from the original frame; mixed-key ordering
+  can therefore change which done events carry usage. Do not claim global deduplication.
+  When no events were emitted, buffer dict usageMetadata and return unchanged caller
+  state if all known keys were handled; otherwise raise Unknown message type. A frame
+  that emits transcription events does not take that no-events buffering branch. After
+  emitted events, B1380 replaces delta/item chunk lists from this frame. Register
+  gemini_live_frames helper sequences standalone_usage, transcription_and_tool_sibling,
+  output_transcript_start, transcription_usage_not_buffered, tool_then_turn,
+  turn_then_tool, trailing_tool_turn_suppressed, next_content_after_tool,
+  unknown_metadata_only and generation_without_delta. Assert every event and both state
+  objects after each frame with fixed IDs. Fuzz the production decoder plus bounded frame
+  sequences, including reordered keys and empty known payloads. Budget 250 code, 220 tests,
+  110 adapters and 100 fuzz/seed lines within 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_live_frames}.rs
+    - crates/betterlite-vertex/src/gemini_live_frames/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_frames.rs
+    - crates/betterlite-vertex/fuzz/corpus/gemini_live_frames/**
+    - tools/oracle/src/helpers/{mod,gemini_live_frames}.rs
+    - tools/oracle/helpers/{dispatch,gemini_live_frames}.py
+    - tools/oracle/cases/helpers/gemini-live-frames/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_live_frames*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1234-L1364
+    why: Frame parsing, transcript events, generation-complete removal and ordered top-level dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1539-L1644
+    why: Trailing tool-turn suppression, shallow-copy usage, empty-frame handling and state-list updates.
+dod:
+  - text: Live frame sequences preserve transcript ordering, tool/content ID transitions and trailing-close suppression.
+    proof: [live-frame-tests, live-frame-python, oracle]
+  - text: Usage follows the source's original-versus-copy mutation and no-events buffering branches.
+    proof: [live-frame-tests, live-frame-python, oracle]
+  - text: New raw-frame sequences and HelperCases replay through production parsers with key order retained.
+    proof: [live-frame-corpus, live-frame-seeds]
+checks:
+  optional: []
+  commands:
+    - id: live-frame-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_live_frames::/) - test(replays_the_gemini_live_frames_corpus)'
+      why: Multi-frame cases assert complete event order and both forms of state after every transition.
+    - id: live-frame-python
+      run: test -f tools/oracle/helpers/gemini_live_frames.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python invokes transform_realtime_response with ordered raw JSON and retains the same session instance across frames.
+    - id: live-frame-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_frames.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemini_live_frames)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemini_live_frames_corpus)'
+      why: decode_gemini_live_frame and its production transition consume malformed, reordered and sequential server frames.
+    - id: live-frame-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_frames*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_frames::/)'
+      why: Shared-reader tests require call.gemini_live_frames on each new sequence fixture.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-live-frames/standalone-usage.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/transcription-and-tool-sibling.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/output-transcript-start.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/transcription-usage-not-buffered.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/tool-then-turn.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/turn-then-tool.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/trailing-tool-turn-suppressed.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/next-content-after-tool.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/unknown-metadata-only.yaml
+  - tools/oracle/cases/helpers/gemini-live-frames/generation-without-delta.yaml
+deviations: []
+out_of_scope:
+  - B1394 owns the extracted tool-turn branch; B1378 through B1381 own setup, client state, content events and accounting primitives.
+  - B033 and B035 attach these transforms to B1008's websocket relay; this task adds no network handler or route.
+pitfalls:
+  - Top-level key sorting would change mixed toolCall/serverContent behavior.
+  - Ordinary turn completion passes a shallow frame copy and always supplies output_items=None.
+  - Usage accompanying an emitted transcription event is not buffered by the final empty-event branch.
+budget: {max_changed_lines: 750, max_new_expects: 1}
+review_level: security

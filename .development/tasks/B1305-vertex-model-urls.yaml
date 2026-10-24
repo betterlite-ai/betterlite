@@ -1,0 +1,87 @@
+id: B1305
+title: Google model identifiers and native endpoint URLs
+description: >-
+  Add model_urls to betterlite-vertex as the dependency-free Google URL vocabulary, using
+  B193's catalog only for uses_embed_content. Own common_utils.get_vertex_base_model_name,
+  get_vertex_ai_fine_tuned_endpoint_id, validate_vertex_location, get_vertex_base_url,
+  _get_embedding_url, _get_vertex_url and _get_gemini_url. Extract the five VertexGeminiConfig
+  model predicates named in the references into this layer so URL helpers never depend on chat.
+  Keep the route-prefix list from VertexAIModelRoute as a closed enum shared with B1306.
+  Validate location before constructing a host: global uses aiplatform.googleapis.com,
+  a geography without a hyphen uses aiplatform.{geo}.rep.googleapis.com, and a region uses
+  {region}-aiplatform.googleapis.com. Preserve fine-tuned numeric endpoints, publisher paths,
+  forced v1 embedding/image publisher URLs, countTokens and unsupported mode failures.
+  Gemini 3-or-newer selects v1alpha for chat only; other Gemini calls use v1beta. That predicate
+  deliberately treats unrecognized nonempty names as new except numeric, gemma and pinned
+  older-name patterns. Keys belong in headers, never in returned URLs. Query alt=sse is added
+  only for streaming chat. Inputs are parsed model/config strings; B009 owns URL byte parsing.
+  Add helper vertex_model_urls and rstest endpoint_cases covering regional_and_global,
+  geography_host, numeric_embedding, embed_content_catalog, gemini_version_aliases,
+  fine_tuned_gemini, invalid_location and unsupported_mode. Compare URL plus endpoint tuple
+  against the Python helpers, and require a new call.vertex_model_urls corpus seed.
+  Source ownership is 180 lines from common_utils plus 57 from the Gemini class, counting
+  nonblank noncomment source including docstrings; plan 225 implementation, 170 tests,
+  110 adapters and 55 exports/seed lines, with 625 allowed.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/lib.rs
+    - crates/betterlite-vertex/src/error.rs
+    - crates/betterlite-vertex/src/model_urls.rs
+    - crates/betterlite-vertex/src/model_urls/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/vertex_model_urls.rs
+    - tools/oracle/src/helpers/vertex_model_urls/**
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/vertex_model_urls.py
+    - tools/oracle/cases/helpers/vertex-model-urls/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_model_urls*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L352-L387
+    why: Remove only the first matching routing prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L409-L602
+    why: Fine-tuned recognition, location checks and every native operation URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L285-L309
+    why: Own _is_gemini_3_or_newer and _forward_gemini_function_call_id here to break the URL/chat cycle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1270-L1312
+    why: Own get_model_for_vertex_ai_url, _is_model_gemini_spec_model and _get_model_name_from_gemini_spec_model.
+dod:
+  - text: Model aliases and all five URL modes select the same paths, versions and failures as LiteLLM.
+    proof: [endpoint-tests, oracle, endpoint-python]
+  - text: New model URL helper seeds parse into the intended operation.
+    proof: [endpoint-seeds]
+checks:
+  optional: []
+  commands:
+    - id: endpoint-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^model_urls::/)'
+      why: A route mode, model alias or location-validation outcome is missing.
+    - id: endpoint-python
+      run: test -f tools/oracle/helpers/vertex_model_urls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: URL comparison must execute the pinned helper rather than reconstruct its expected result.
+    - id: endpoint-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_model_urls*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_model_urls::/)'
+      why: Endpoint seed assertions must fail when the new operation is not decoded.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-model-urls/regional-and-global.yaml
+  - tools/oracle/cases/helpers/vertex-model-urls/geography-host.yaml
+  - tools/oracle/cases/helpers/vertex-model-urls/numeric-embedding.yaml
+  - tools/oracle/cases/helpers/vertex-model-urls/embed-content-catalog.yaml
+  - tools/oracle/cases/helpers/vertex-model-urls/gemini-version-aliases.yaml
+  - tools/oracle/cases/helpers/vertex-model-urls/fine-tuned-gemini.yaml
+  - tools/oracle/cases/helpers/vertex-model-urls/invalid-location.yaml
+  - tools/oracle/cases/helpers/vertex-model-urls/unsupported-mode.yaml
+deviations: []
+out_of_scope:
+  - B1306 owns common_utils model routing, capability checks and metadata helpers through L351 plus L388-L408.
+  - Schema conversion at common_utils L603-L1066 belongs to B1307; passthrough route helpers L1067-L1169 belong to B1304 and model-info/token-counter methods L1170-L1317 to B1319.
+  - The Gemini class's request options are B1308-B1310, message conversion B1311-B1312, responses B1313-B1314, iterator B1315 and HTTP execution B1316; B031 composes them.
+pitfalls:
+  - gemini-flash-latest follows the newer-model branch although gemini-flash does not.
+  - The native Vertex helper rejects batch_embedding even though the Gemini helper supports batchEmbedContents.
+  - Publisher embeddings keep v1 when a numeric endpoint would use the supplied v1beta1 version.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

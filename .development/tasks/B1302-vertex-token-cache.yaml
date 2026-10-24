@@ -1,0 +1,90 @@
+id: B1302
+title: Vertex credential cache and reauthentication
+description: >-
+  Build CredentialCache in betterlite-vertex/token_cache with identity keyed by the serialized
+  credential value and requested project, never by model name. Port VertexBase initialization,
+  refresh_auth, lock accounting, cache probes/unpacking, token-state fallback, load-and-cache,
+  synchronous get_access_token and its one-shot reauthentication branch. B1301 loads and refreshes
+  new credential handles. Preserve the unresolved and resolved project aliases, including the
+  synchronous rule that an existing resolved alias is retained. Legacy cache records recover the
+  project from quota_project_id before project_id. Missing/non-string token and unresolved project
+  remain errors. Only an error containing Reauthentication is needed clears and reloads once;
+  failed reload returns the original refresh error. Keep SDK handles and secrets private and
+  serialize refresh of the same handle without holding a Rust mutex guard over network await.
+  Expose typed cache primitives for B1303; a request-scoped refresh lease accounts for waiters and
+  releases identity entries on cancellation. Clock and credential executor are injected.
+  Pure vertex_token_cache helpers call _get_token_state, _unpack_cached_credentials,
+  _try_get_cached_token and _try_get_usable_cached_token against immutable credential/map
+  snapshots. Compare legacy_quota_project, fresh_probe, stale_usable, invalid_token and
+  explicit_project_wins using safe token labels. Native cache_cases cover project_alias_retained,
+  reload_once and original_error_survives with an injected refresh executor; no helper performs
+  refresh or cache writes. Rust-only tests cover cancellation and secret Debug.
+  The new parser seed is checked under helpers::vertex_token_cache. Owned source totals
+  289 nonblank noncomment lines; plan 300 state/lease code, 190 tests, 110 adapters and 50 wiring
+  lines, capped at 725. SDK response decoding stays in the selected auth library.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/lib.rs
+    - crates/betterlite-vertex/src/error.rs
+    - crates/betterlite-vertex/src/token_cache.rs
+    - crates/betterlite-vertex/src/token_cache/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/vertex_token_cache.rs
+    - tools/oracle/src/helpers/vertex_token_cache/**
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/vertex_token_cache.py
+    - tools/oracle/cases/helpers/vertex-token-cache/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_token_cache*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L50-L94
+    why: Cached credential representation and refresh coordination state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L368-L521
+    why: Every refresh, probe, lease and load/cache primitive in this range belongs here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L767-L815
+    why: Reauthentication retries once and restores the original failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L872-L991
+    why: Synchronous lookup semantics and resolved project alias handling.
+dod:
+  - text: Native lookup tests preserve credential reuse, alias writes and the original error after failed reauthentication.
+    proof: [cache-behavior]
+  - text: Read-only cache probes and token-state projection agree with the source on typed credential snapshots.
+    proof: [cache-behavior, oracle, cache-adapter]
+  - text: Cancellation frees refresh bookkeeping and neither credential values nor tokens appear in diagnostics.
+    proof: [cache-invariants]
+  - text: The cache operation is selected by a new valid helper seed.
+    proof: [cache-seed]
+checks:
+  optional: []
+  commands:
+    - id: cache-behavior
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^token_cache::tests::cache_cases/)'
+      why: Token lookup and reauthentication case tables have no passing assertions.
+    - id: cache-invariants
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^token_cache::tests::cancellation_releases_lease$/)' && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^token_cache::tests::credentials_are_redacted$/)'
+      why: Refresh coordination may leak entries or expose a credential.
+    - id: cache-adapter
+      run: test -f tools/oracle/helpers/vertex_token_cache.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The cache trace adapter is missing or has an unchecked Python interface.
+    - id: cache-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_token_cache*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_token_cache::/)'
+      why: Tests must reject a wrong call tag and require at least one cache seed.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-token-cache/legacy-quota-project.yaml
+  - tools/oracle/cases/helpers/vertex-token-cache/fresh-probe.yaml
+  - tools/oracle/cases/helpers/vertex-token-cache/invalid-token.yaml
+  - tools/oracle/cases/helpers/vertex-token-cache/stale-usable.yaml
+  - tools/oracle/cases/helpers/vertex-token-cache/explicit-project-wins.yaml
+deviations: []
+out_of_scope:
+  - Source creation and trailing settings getters in vertex_llm_base.py are B1301; they are invoked without duplicate implementations.
+  - B1303 owns L523-L619, L817-L870 and L993-L1136, which add stale-token scheduling and the asynchronous orchestration.
+  - URL construction, region choice and headers in the remaining ranges are B1304.
+pitfalls:
+  - expired=false alone is insufficient for the fresh probe when the fallback valid flag is false.
+  - A quota project recovered from a legacy cache value must not override an explicit project argument.
+  - Retrying every refresh error would change the source's literal Reauthentication is needed predicate.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

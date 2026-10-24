@@ -1,0 +1,91 @@
+id: B1310
+title: Gemini option assembly and sampling defaults
+description: >-
+  Assemble GeminiOptions in betterlite-vertex/gemini_options from B1308 tools, B1309 thinking
+  and response formats, and B1305 model predicates. Own VertexAIBaseConfig, VertexGeminiConfig
+  initialization/get_config/schema-object projection, penalty support, supported-parameter list,
+  map_openai_params and its auth/region helpers. Native schema-object projection receives the
+  class name and JSON Schema from the Python bridge, preserving references and strict=true;
+  the proxy dictionary form passes through. Class-level generation defaults are absent, despite
+  numeric examples in the docstring. Resolve configured temperature, max_output_tokens, top_p,
+  top_k, response_mime_type, candidate_count, stop_sequences, frequency_penalty, presence_penalty
+  and seed once and merge only supplied values. Map n, stop, max_tokens/max_completion_tokens,
+  logprobs/top_logprobs and project/region_name with their pinned precedence. Gemini 3 gets
+  temperature=1 only when absent, logs one sampling deprecation warning for any combination of
+  temperature/top_p/top_k, and retains those values. Its penalties are not advertised or mapped;
+  gemini-2.5-pro-preview-06-05 has the same penalty exclusion. stream=false is omitted.
+  Apply includeServerSideToolInvocations before any tool insertion; append AUDIO when speechConfig
+  is present. parallel_tool_calls=false with multiple tools is dropped. Load
+  litellm_settings.vertex_ai_safety_settings (default absent), which replaces request safety_settings.
+  Oracle gemini_options cases exercise sampling_once, explicit_zero_temperature, penalty_model,
+  max_token_order, audio_adds_modality, false_parallel_drop, server_flag_after_tools and safety_override.
+  Config tests under gemini_option_settings load all declared defaults and the safety module key.
+  Keep the source's EU/US region lists as data; validate parsed options, without a new byte parser.
+  The owned class slices total 323 nonblank noncomment lines; include generation/safety records
+  in 330 production lines, 160 tests, 100 adapters and 150 configuration/wiring, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_options}.rs
+    - crates/betterlite-vertex/src/gemini_options/**
+    - crates/betterlite-config/src/{model,settings}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/options.rs
+    - crates/betterlite-config/src/providers/vertex/options/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/gemini_options.rs
+    - tools/oracle/src/helpers/gemini_options/**
+    - tools/oracle/helpers/{dispatch,gemini_options}.py
+    - tools/oracle/cases/helpers/gemini-options/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_options*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L136-L284
+    why: Base auth aliases, geographic lists, absent class defaults and nonflattened schema projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L310-L354
+    why: Penalty exclusions and supported parameter names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1086-L1270
+    why: Ordered mapping, module safety override, sampling warnings and auth/region overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L598-L598
+    why: vertex_ai_safety_settings starts unset.
+dod:
+  - text: Ordered option assembly preserves sampling warnings, aliases, explicit zero and omitted fields.
+    proof: [option-tests, oracle, option-python]
+  - text: Generation defaults and the module safety override are read by the real config loader.
+    proof: [option-config]
+  - text: A parsed seed selects the Gemini option adapter.
+    proof: [option-seed]
+checks:
+  optional: [mutants]
+  commands:
+    - id: option-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_options::/)'
+      why: The composed mapping must retain request order and per-model option behavior.
+    - id: option-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/gemini_option_settings::/)'
+      why: Safety and generation values must not exist solely as oracle inputs.
+    - id: option-python
+      run: test -f tools/oracle/helpers/gemini_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Class state and warning capture must be reset independently for each oracle execution.
+    - id: option-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_options::/)'
+      why: Option helper registration needs a nonempty seed set selected through call.gemini_options.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-options/sampling-once.yaml
+  - tools/oracle/cases/helpers/gemini-options/explicit-zero-temperature.yaml
+  - tools/oracle/cases/helpers/gemini-options/penalty-model.yaml
+  - tools/oracle/cases/helpers/gemini-options/max-token-order.yaml
+  - tools/oracle/cases/helpers/gemini-options/audio-adds-modality.yaml
+  - tools/oracle/cases/helpers/gemini-options/false-parallel-drop.yaml
+  - tools/oracle/cases/helpers/gemini-options/server-flag-after-tools.yaml
+  - tools/oracle/cases/helpers/gemini-options/safety-override.yaml
+deviations: []
+out_of_scope:
+  - B1305 retains the extracted model predicates, B1308 the tool/service-tier functions and B1309 format/thinking functions in this shared class.
+  - B1313 and B1314 implement the output methods from L1313-L2512; B1315 covers ModelResponseIterator; B1316 covers VertexLLM and config request/auth adapters.
+  - Dynamic Pydantic introspection runs in B157's Python bridge; this task provides the typed name/schema projection it calls.
+pitfalls:
+  - max_tokens and max_completion_tokens overwrite the same field in input order rather than having a fixed winner.
+  - The source has no actual default max_output_tokens=256 even though its class documentation suggests one.
+  - The final search conflict pass is necessary when web_search_options and functions were mapped separately.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: standard

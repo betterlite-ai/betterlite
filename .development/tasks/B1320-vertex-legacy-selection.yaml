@@ -1,0 +1,76 @@
+id: B1320
+title: Legacy Vertex model selection and synchronous predictions
+description: >-
+  Implement legacy_vertex::complete from vertex_ai_non_gemini.py L58-L424, excluding the unused
+  cache setter (approximately 300 nonblank noncomment lines). Read clients by the exact key
+  model-project-location; do not add a write-back absent from the source. Credentials are the
+  legacy service-account JSON-string path or ADC with quota_project_id, resolved by B1301/B1302.
+  Merge B1310 VertexAIConfig defaults only for missing options. safety_settings must be a list,
+  and a nonempty list's first item must be a mapping; remove it before model invocation. Join
+  only string message contents with a single space. Select language/vision, chat, text, code-text,
+  code-chat, literal private, then custom endpoint using B193 model groups in that order.
+  Code-text enables fake_stream. private pops model_id and puts remaining options plus prompt
+  in one instance; custom builds the same instance without popping model_id. Preserve the
+  source's vision selection without inventing an execution branch. Async selections delegate
+  B1328; synchronous chat/text invoke the corresponding prediction operations, custom requires
+  project and location, and private requires instances/client. Real sync streams return the SDK
+  stream; fake code streams use B596's existing model-response iterator. Reuse B1328 first-result
+  projection and encoding fallback, keeping sync response_obj absent. Non-Vertex failures become
+  APIConnectionError; retain existing Vertex status. Native plan tests compare string_only_prompt,
+  model_group_order, defaults_only_missing, safety_shape, private_model_id, custom_requires_location
+  and code_fake_stream. Pure helper legacy_vertex_plan calls only _get_client_cache_key, covering
+  none_fields, empty_fields and hyphen_ambiguity; model construction and prediction stay outside
+  the helper. Add fixture-client tests sync_error_mapping and
+  cache_read_without_write. No additional parser is introduced; B1301 and B1328 decode inputs.
+  Budget 320 routing/facade, 180 tests and 140 helper lines, maximum 725.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,legacy_vertex}.rs
+    - crates/betterlite-vertex/src/legacy_vertex/**
+    - tools/oracle/src/helpers/{mod,legacy_vertex_plan}.rs
+    - tools/oracle/helpers/{dispatch,legacy_vertex_plan}.py
+    - tools/oracle/cases/helpers/legacy-vertex-plan/**
+    - tools/oracle/fuzz/corpus/helper_case/legacy_vertex_plan*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_non_gemini.py#L58-L424
+    why: Cache reads, model classification, option removal and synchronous prediction branches.
+dod:
+  - text: Legacy request selection preserves default merging, model precedence and endpoint instance shapes.
+    proof: [legacy-plans]
+  - text: Legacy cache keys retain Python None spelling and the unescaped hyphen concatenation.
+    proof: [legacy-plans, legacy-plan-python, oracle]
+  - text: Synchronous calls preserve cache-read-only behavior and the legacy error boundary.
+    proof: [legacy-sync]
+  - text: Newly committed legacy selection seeds reach the native plan builder.
+    proof: [legacy-plan-seeds]
+checks:
+  optional: []
+  commands:
+    - id: legacy-plans
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^legacy_vertex::tests::plans/)'
+      why: The fixture plans distinguish private, custom and fake-stream options.
+    - id: legacy-sync
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^legacy_vertex::tests::sync_execution/)'
+      why: Read-only cache traces and sync error facts must be asserted against injected clients.
+    - id: legacy-plan-python
+      run: test -f tools/oracle/helpers/legacy_vertex_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference adapter calls the cache-key formatter with supplied model, project and location values.
+    - id: legacy-plan-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/legacy_vertex_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::legacy_vertex_plan::/)'
+      why: Cache-key inputs must parse as call.legacy_vertex_plan and reach the formatter.
+oracle_cases:
+  - tools/oracle/cases/helpers/legacy-vertex-plan/none-fields.yaml
+  - tools/oracle/cases/helpers/legacy-vertex-plan/empty-fields.yaml
+  - tools/oracle/cases/helpers/legacy-vertex-plan/hyphen-ambiguity.yaml
+deviations: []
+out_of_scope:
+  - _set_client_in_cache at L67-L72 has no caller at the pin and receives no cache-writing implementation.
+  - B1328 owns VertexAIError, TextStreamer, async_completion and async_streaming; B031 owns the main.py wrapper.
+  - SDK installation/version checks are Python packaging concerns in B157, not native cloud failure statuses.
+pitfalls:
+  - The source prepares a vision model but has no synchronous vision invocation branch.
+  - The private instance is copied after model_id is popped, while a custom instance retains all options.
+  - Sync response_obj stays None, so copying async server-usage extraction into this branch changes usage.
+budget: {max_changed_lines: 725, max_new_expects: 1}
+review_level: security

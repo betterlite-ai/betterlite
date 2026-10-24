@@ -1,0 +1,89 @@
+id: B1331
+title: Google AI Studio credentials and model discovery
+description: >-
+  Add StudioSettings and studio_identity. Own GeminiError/GeminiModelInfo at common_utils.py
+  L350-L419, excluding the later get_token_counter factory owned by B1330, and
+  get_api_key_from_env at L470-L472, plus GoogleGenAIConfig.validate_environment
+  and _get_google_ai_studio_api_key at google_genai/transformation.py L146-L176. The owned
+  methods total about 100 nonblank noncomment lines. Resolve explicit api_key before GOOGLE_API_KEY
+  before GEMINI_API_KEY; native GenAI additionally accepts litellm_params.api_key, then
+  gemini_api_key and finally litellm_settings.api_key. Native header construction starts JSON
+  content type, merges an auth map or x-goog-api-key value, then caller headers. Model discovery
+  resolves explicit api_base, GEMINI_API_BASE, then https://generativelanguage.googleapis.com;
+  GET /v1beta/models requires a key and exactly status 200. Preserve returned order and replace
+  every models/ occurrence before prefixing gemini/. get_base_model similarly replaces gemini/
+  occurrences. No paging is performed. Its validate_environment method itself returns headers
+  unchanged. Config tests studio_identity_settings load keys, absent defaults and precedence
+  without runtime getenv. Decode model-list JSON through decode_studio_models, with fuzz target
+  studio_models and replay; only expose names to diagnostics. Pure helper studio_identity covers
+  google_key_first, request_key_first, native_header_override, base_default, repeated_prefix and
+  missing_key. Rust model_list_http tests assert one GET, returned name order, prefix removal
+  and preserved non-200 status; get_models is never called from a helper. Budget 170
+  policy/decoder, 160 tests, 110 adapters and 100 config/fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_identity}.rs
+    - crates/betterlite-vertex/src/studio_identity/**
+    - crates/betterlite-config/src/{lib,config,model,settings,env,providers}.rs
+    - crates/betterlite-config/src/providers/{vertex,gemini}.rs
+    - crates/betterlite-config/src/providers/gemini/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/studio_models.rs
+    - crates/betterlite-vertex/fuzz/corpus/studio_models/**
+    - tools/oracle/src/helpers/{mod,studio_identity}.rs
+    - tools/oracle/helpers/{dispatch,studio_identity}.py
+    - tools/oracle/cases/helpers/studio-identity/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_identity*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L350-L430
+    why: Studio model information, model listing and unchanged-header validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L470-L472
+    why: GOOGLE_API_KEY precedes GEMINI_API_KEY.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L146-L176
+    why: Native GenAI key extraction and final header overrides.
+dod:
+  - text: Studio key/base resolution, native headers and discovered names match the pinned pure functions.
+    proof: [identity-tests, identity-python, oracle]
+  - text: Loaded Studio settings and model-list HTTP behavior are exercised without ambient credentials.
+    proof: [identity-config, identity-http]
+  - text: Model-list byte decoding and new helper fixtures replay through their respective parsers.
+    proof: [identity-corpus, identity-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: identity-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_identity::tests::projection/)'
+      why: Key precedence and string replacement need independent output assertions.
+    - id: identity-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/studio_identity_settings::/)'
+      why: Supported key and base settings must be loaded by the real configuration parser.
+    - id: identity-http
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_identity::tests::model_list_http/)'
+      why: Discovery must use x-goog-api-key and reject non-200 responses.
+    - id: identity-python
+      run: test -f tools/oracle/helpers/studio_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Studio settings fixtures invoke the actual pinned precedence functions.
+    - id: identity-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_models.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_models)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_models_corpus)'
+      why: Model-list JSON parsing must withstand malformed and oversized names.
+    - id: identity-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_identity::/)'
+      why: Identity corpus records must reach the newly registered helper.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-identity/google-key-first.yaml
+  - tools/oracle/cases/helpers/studio-identity/request-key-first.yaml
+  - tools/oracle/cases/helpers/studio-identity/native-header-override.yaml
+  - tools/oracle/cases/helpers/studio-identity/base-default.yaml
+  - tools/oracle/cases/helpers/studio-identity/repeated-prefix.yaml
+  - tools/oracle/cases/helpers/studio-identity/missing-key.yaml
+deviations: []
+out_of_scope:
+  - Image helpers in common_utils.py are B1334; encode_unserializable_types belongs to B1379; GoogleAIStudioTokenCounter and GeminiModelInfo.get_token_counter belong to B1330.
+  - B1368 owns the remaining native GenAI methods, including request and response transformations.
+pitfalls:
+  - Model discovery does not follow nextPageToken even when Google returns one.
+  - GeminiModelInfo.validate_environment does not add x-goog-api-key; its caller does.
+  - litellm_params key extraction uses pop on a copied map in validate_environment and must not erase deployment secrets.
+budget: {max_changed_lines: 600, max_new_expects: 1}
+review_level: security

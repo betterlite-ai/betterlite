@@ -1,0 +1,95 @@
+id: B1309
+title: Gemini thinking controls and response formats
+description: >-
+  Add gemini_thinking and gemini_format in betterlite-vertex for the class helpers L767-L1085,
+  excluding the unused parallel-tool validator if the caller search remains empty. Map response
+  formats to response_mime_type and either response_schema or response_json_schema according to
+  B1306's capability predicate. Preserve response_schema precedence over json_schema.schema,
+  omit empty schemas and remove strict without flattening modern $defs. B1307 supplies both
+  schema builders. Thinking effort accepts minimal/low/medium/high/none/disable; unsupported
+  strings use the 400 UnsupportedParamsError helper at L118-L128. Gemini 3 uses thinkingLevel;
+  older models use thinkingBudget. Minimal budgets are flash-lite 512, pro 128, flash 1, generic
+  128; low/medium/high are 1024/2048/4096 and disable is 0. Load each corresponding
+  DEFAULT_REASONING_EFFORT_*_THINKING_BUDGET environment variable through config: MINIMAL,
+  LOW, MEDIUM, HIGH and DISABLE, plus the MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH,
+  MINIMAL_THINKING_BUDGET_GEMINI_2_5_PRO and MINIMAL_THINKING_BUDGET_GEMINI_2_5_FLASH_LITE
+  suffixes under DEFAULT_REASONING_EFFORT_. none remains literal zero when disable is overridden.
+  litellm_settings.enable_gemini_default_thinking_level_low defaults false and only affects
+  explicit enabled thinking on Gemini 3; flash minimal also respects supports_minimal_reasoning_effort.
+  Reject a budget-mapped input when thinkingLevel already exists. Convert modalities including
+  unknown values to MODALITY_UNSPECIFIED; audio permits absent format or pcm16, maps voice and
+  language_code, and rejects mp3. Preapply both server-tool flag spellings before tool conversion.
+  The gemini_thinking helper invokes these pure methods with fixture catalog/settings. Cases:
+  model_minimums, effort_none_vs_disable, flash_minimal_opt_out, thinking_zero_and_default,
+  level_budget_conflicts, legacy_vs_json_schema, pcm16_voice and server_flag_order. Use
+  gemini_thinking_settings::tests::loads_thinking_controls for all environment names and the
+  module flag. The cited functions contain 277 nonblank noncomment lines before excluding the
+  dead validator; allow 260 production, 190 tests, 105 adapters and 140 config/wiring, cap 780.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_thinking,gemini_format}.rs
+    - crates/betterlite-vertex/src/gemini_thinking/**
+    - crates/betterlite-vertex/src/gemini_format/**
+    - crates/betterlite-config/src/{env,settings}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/thinking.rs
+    - crates/betterlite-config/src/providers/vertex/thinking/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/gemini_thinking.rs
+    - tools/oracle/src/helpers/gemini_thinking/**
+    - tools/oracle/helpers/{dispatch,gemini_thinking}.py
+    - tools/oracle/cases/helpers/gemini-thinking/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_thinking*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L767-L1085
+    why: Format selection, effort budgets/levels, conflicts, modalities, audio and early flag application.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L118-L128
+    why: Unsupported reasoning effort retains the source error category and status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L234-L287
+    why: Model-specific and general budget environment defaults; disable is defined at L154.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L390-L392
+    why: Default-low thinking behavior is an opt-in module setting.
+dod:
+  - text: Effort, conflict, format and speech-control mappings preserve source omissions and errors.
+    proof: [thinking-tests, oracle, thinking-python]
+  - text: Model minimums and the default-low switch are loaded with their pinned defaults and overrides.
+    proof: [thinking-config]
+  - text: The thinking helper has valid newly added corpus input.
+    proof: [thinking-seed]
+checks:
+  optional: [mutants]
+  commands:
+    - id: thinking-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_thinking::/)' && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_format::/)'
+      why: Both thinking and format branches need executable behavior tests.
+    - id: thinking-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/gemini_thinking_settings::/)'
+      why: Hardcoded budgets cannot substitute for the environment-backed settings.
+    - id: thinking-python
+      run: test -f tools/oracle/helpers/gemini_thinking.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Thinking helper comparisons require the independently configured Python implementation.
+    - id: thinking-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_thinking*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_thinking::/)'
+      why: The corpus must contain a parsed call.gemini_thinking seed.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-thinking/model-minimums.yaml
+  - tools/oracle/cases/helpers/gemini-thinking/effort-none-vs-disable.yaml
+  - tools/oracle/cases/helpers/gemini-thinking/flash-minimal-opt-out.yaml
+  - tools/oracle/cases/helpers/gemini-thinking/thinking-zero-and-default.yaml
+  - tools/oracle/cases/helpers/gemini-thinking/level-budget-conflicts.yaml
+  - tools/oracle/cases/helpers/gemini-thinking/legacy-vs-json-schema.yaml
+  - tools/oracle/cases/helpers/gemini-thinking/pcm16-voice.yaml
+  - tools/oracle/cases/helpers/gemini-thinking/server-flag-order.yaml
+deviations: []
+out_of_scope:
+  - validate_parallel_tool_calls L1006-L1017 has no caller at the pin; map_openai_params handles false with multiple tools by dropping it in B1310.
+  - _validate_thinking_level_conflicts L939-L956 has no caller at the pin; do not invent a reverse-order rejection path or cases for it.
+  - B1308 owns tool mapping, B1305 the model-name predicates and B1310 the remaining option/class-default methods before L1313.
+  - Output parts/usage and candidates are B1313-B1314; streaming is B1315; request transport is B1316.
+pitfalls:
+  - thinking.type=enabled with budget_tokens=0 suppresses thoughts without forcing a Gemini 3 thinkingLevel.
+  - Gemini 3 none selects low or minimal with includeThoughts=false rather than an invalid zero thinkingBudget.
+  - Response schema cleanup removes only false additionalProperties on the older path.
+budget: {max_changed_lines: 780, max_new_expects: 0}
+review_level: standard

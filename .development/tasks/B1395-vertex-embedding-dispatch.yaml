@@ -1,0 +1,89 @@
+id: B1395
+title: Resolve Vertex embedding aliases and select its native API
+description: >-
+  Implement core vertex_embedding_dispatch and the provider embedding operation binding for
+  main.py L6837-L6929, 90 nonblank noncomment lines. This dispatch has more environment aliases
+  than Vertex chat. Pop vertex_project, then vertex_ai_project by truthiness; fall back through
+  litellm_settings.vertex_project, VERTEXAI_PROJECT and VERTEX_PROJECT. Location similarly uses
+  vertex_location, vertex_ai_location, litellm_settings.vertex_location, VERTEXAI_LOCATION and
+  VERTEX_LOCATION. Credentials use vertex_credentials, vertex_ai_credentials,
+  VERTEXAI_CREDENTIALS and VERTEX_CREDENTIALS; base uses explicit api_base,
+  litellm_settings.api_base, VERTEXAI_API_BASE and VERTEX_API_BASE. Defaults are None at this
+  boundary. Reuse B1301 fields and add only missing environment inputs in betterlite-config.
+  Named embedding_dispatch_settings tests must load every alias, absent/empty fallback and
+  precedence pair through the real loader. A truthy first option leaves the second alias in
+  optional_params; do not eagerly remove both.
+  Look up B193 model metadata with provider vertex_ai. A lookup exception selects
+  uses_embed_content=false without a new warning. A truthy flag selects B1341 even if image
+  or video keys are present. Otherwise key presence for image/video, including null, or either
+  B1344-supported multimodal model selects multimodal prediction; remaining requests use text
+  prediction. Forward client and resolved project/location/credentials in all three arms.
+  EmbedContent receives extra_headers and api_key=None; text receives timeout and api_key;
+  multimodal receives litellm_params but no explicit timeout. Do not repair these signature
+  differences by passing every available argument to every handler. B033 consumes this installed
+  operation without installing it again.
+  Native tests record selected adapter arguments for catalog_before_media, null_image_selects_media,
+  unknown_model_text_fallback, alias_pop_short_circuit and branch_specific_arguments. Booted
+  B006 fixtures POST /v1/embeddings, /embeddings, /engines/{model:path}/embeddings and
+  /openai/deployments/{model:path}/embeddings with Vertex deployments. Compare provider endpoint,
+  auth, body, returned model/index/usage and x-litellm-* headers; include one upstream failure
+  with status, type, param and code. Use configured model-map fixtures for uses_embed_content,
+  not an invented name heuristic. This accepts typed requests and catalog records; B002 and
+  the embedding leaves retain byte decoders. Budget 170 dispatch, 160 native/config tests,
+  160 HTTP fixtures and 70 wiring lines, maximum 650.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-core/src/{lib,dispatch,operation,vertex_embedding_dispatch}.rs
+    - crates/betterlite-core/src/vertex_embedding_dispatch/**
+    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_embedding_binding}.rs
+    - crates/betterlite-provider/src/vertex_embedding_binding/**
+    - crates/betterlite-config/src/env.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/embedding/**
+    - tools/oracle/cases/embeddings/vertex-dispatch/**
+    - tools/oracle/fixtures/vertex-embedding-dispatch/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6837-L6929
+    why: Owned embedding branch resolves four settings and selects three distinct call signatures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12315
+    why: Existing embedding route decorators used by this provider binding's HTTP fixtures.
+dod:
+  - text: Catalog capability takes priority over media and the three embedding arms receive their exact argument sets.
+    proof: [embedding-core-dispatch, embedding-provider-binding, oracle]
+  - text: Vertex embedding environment aliases load with the source's truthy fallback order.
+    proof: [embedding-dispatch-config]
+  - text: All four existing embedding aliases reach the installed Vertex operation and preserve upstream error fields.
+    proof: [embedding-dispatch-fixtures, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: embedding-core-dispatch
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^vertex_embedding_dispatch::/)'
+      why: Dispatch tests must distinguish absent media from present null and preserve short-circuit option mutation.
+    - id: embedding-provider-binding
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^vertex_embedding_binding::/)'
+      why: The executable operation must invoke all three underlying adapters with their prepared inputs.
+    - id: embedding-dispatch-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/embedding_dispatch_settings::/)'
+      why: Legacy VERTEX_* fallbacks must enter the injected settings snapshot through actual loading.
+    - id: embedding-dispatch-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/embeddings/vertex-dispatch)" && test -f tools/oracle/cases/embeddings/vertex-dispatch/catalog-before-media.yaml
+      why: New fixture coverage must prove that catalog capability can override an image-bearing request.
+oracle_cases:
+  - tools/oracle/cases/embeddings/vertex-dispatch/aliases-and-env.yaml
+  - tools/oracle/cases/embeddings/vertex-dispatch/catalog-before-media.yaml
+  - tools/oracle/cases/embeddings/vertex-dispatch/null-media-key.yaml
+  - tools/oracle/cases/embeddings/vertex-dispatch/provider-error.yaml
+deviations: []
+out_of_scope:
+  - B031 owns the Vertex completion dispatch functions, B035 the adjacent Gemini embedding branch, and each other provider retains its main.py arm.
+  - B1341/B1344 own embedding transport and transforms; B006 owns all embedding route registration.
+pitfalls:
+  - An image key whose value is null still selects multimodal prediction when uses_embed_content is false.
+  - Failed model-info lookup falls back to prediction without emitting a warning that the source does not emit.
+  - VERTEX_CREDENTIALS is an embedding fallback and must not silently become a new fallback for chat credentials.
+budget: {max_changed_lines: 650, max_new_expects: 0}
+review_level: security

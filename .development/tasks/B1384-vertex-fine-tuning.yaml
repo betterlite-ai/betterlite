@@ -1,0 +1,87 @@
+id: B1384
+title: Create Vertex supervised tuning jobs and map their results
+description: >-
+  Add vertex_fine_tuning for handler.py L1-L275, 237 nonblank noncomment lines, and
+  the 38-line tuning records in vertex_ai.py L478-L524. Reuse B518's OpenAI job contracts.
+  Construct supervisedTuningSpec with training_dataset_uri, truthy validation_dataset and
+  optional hyperParameters; preserve baseModel and tunedModelDisplayName, including a null
+  suffix. Map truthy n_epochs to integer epoch_count, truthy learning_rate_multiplier to an
+  external numeric value represented internally by exact decimal, and truthy adapter_size
+  from original_hyperparameters. Zero-valued inputs are omitted. Response state maps pending,
+  running, succeeded, failed and cancelled; unknown or null state defaults queued, while a
+  missing state remains an error. Read trainingDatasetUri from supervisedTuningSpec, map
+  epoch_count back to n_epochs default 0 and preserve other hyperparameters. Emit empty
+  organization_id/result_files/integrations, seed 0 and the source's null completion fields.
+  Parse createTime as ISO-8601 after replacing Z with +00:00, truncate Unix seconds and use
+  0 on failure; naive timestamps use B1306's injected local-time context.
+  Execute create through B1302 token resolution and B1304 token/URL preparation, then
+  construct the actual v1 tuningJobs target using B1305 regional base URL. api_base affects
+  preparation but not the final POST target. The caller timeout is ignored: sync uses 600s
+  with 5s connect and async uses its 600s client. Require status 200; other statuses retain
+  the source error text with status/body. decode_vertex_tuning_job owns response JSON and
+  timestamp validation. Pure helper vertex_fine_tuning cases request_names, zero_hyperparameters,
+  adapter_size, response_defaults, unknown_state, absent_state, offset_timestamp and bad_time
+  call record conversions; native tests assert token_before_post, fixed_timeout,
+  ignores_custom_target, error_status_body and cancel_create. Reserve 275 implementation,
+  170 tests, 90 adapters and 90 fuzz lines within 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_fine_tuning}.rs
+    - crates/betterlite-vertex/src/vertex_fine_tuning/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_tuning_job.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_tuning_job/**
+    - tools/oracle/src/helpers/{mod,vertex_fine_tuning}.rs
+    - tools/oracle/helpers/{dispatch,vertex_fine_tuning}.py
+    - tools/oracle/cases/helpers/vertex-fine-tuning/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_fine_tuning*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/fine_tuning/handler.py#L1-L275
+    why: Live tuning creation, request/response spellings and fixed transport timeouts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L478-L524
+    why: Supervised-tuning records and adapter-size literals.
+dod:
+  - text: Tuning records retain truthiness-based hyperparameter mapping and the source's queued/default fields.
+    proof: [tuning-record-tests, tuning-python, oracle]
+  - text: Create resolves authentication before a fixed-timeout regional POST and propagates unsuccessful status bodies.
+    proof: [tuning-execution]
+  - text: Tuning JSON/time decoding and helper dispatch are exercised by branch-added corpora.
+    proof: [tuning-corpus, tuning-seeds]
+checks:
+  optional: []
+  commands:
+    - id: tuning-record-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_fine_tuning::records::/) - test(replays_the_vertex_tuning_job_corpus)'
+      why: The fixture matrix independently checks mapping, missing state and timestamp failures.
+    - id: tuning-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_fine_tuning::execution::/)'
+      why: Captured auth/transport calls expose ignored options and cleanup.
+    - id: tuning-python
+      run: test -f tools/oracle/helpers/vertex_fine_tuning.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The Python adapter invokes conversion methods without constructing a real HTTP client.
+    - id: tuning-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_tuning_job.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_tuning_job)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_tuning_job_corpus)'
+      why: decode_vertex_tuning_job receives malformed dates, states and nested hyperparameters.
+    - id: tuning-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_fine_tuning*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_fine_tuning::/)'
+      why: Every new fixture must parse as call.vertex_fine_tuning.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-fine-tuning/request-names.yaml
+  - tools/oracle/cases/helpers/vertex-fine-tuning/zero-hyperparameters.yaml
+  - tools/oracle/cases/helpers/vertex-fine-tuning/adapter-size.yaml
+  - tools/oracle/cases/helpers/vertex-fine-tuning/response-defaults.yaml
+  - tools/oracle/cases/helpers/vertex-fine-tuning/unknown-state.yaml
+  - tools/oracle/cases/helpers/vertex-fine-tuning/absent-state.yaml
+  - tools/oracle/cases/helpers/vertex-fine-tuning/offset-timestamp.yaml
+  - tools/oracle/cases/helpers/vertex-fine-tuning/bad-time.yaml
+deviations: []
+out_of_scope:
+  - pass_through_vertex_ai_POST_request at L276-L344 has no caller at the pin, so its duplicated path construction and cases are not implemented.
+  - B034 connects creation to the B088 fine-tuning routes; lifecycle operations absent from this provider remain unsupported.
+pitfalls:
+  - The create request uses training_dataset_uri but the response reader expects trainingDatasetUri.
+  - tunedModelDisplayName is the returned fine_tuned_model, not a synthesized endpoint resource.
+  - The final tuning URL does not use the URL returned by token preparation.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

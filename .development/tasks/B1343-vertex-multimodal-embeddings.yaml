@@ -1,0 +1,84 @@
+id: B1343
+title: Vertex multimodal embedding pairing and media usage
+description: >-
+  Implement multimodal_embedding_records from all methods in multimodal_embeddings/transformation.py
+  (255 nonblank noncomment lines) and vertex_ai.py L526-L568 instance/prediction declarations.
+  Reuse B006 embedding output types. Media detection uses substring gs://, substring mp4 for
+  video and the pinned data:-only base64 predicate: decode split(',')[1] strictly and require
+  canonical re-encoding equality; it is not a URL or file-extension parser.
+  A text element merges only with the immediately following media string, consuming both;
+  leading media remains standalone. Mapping-valued inputs pass through as native instances.
+  Explicit optional_params.instances wins over input. A scalar string replaces the optional
+  instance fields; dimensions becomes parameters.dimension through outputDimensionality.
+  Image base64 strings with commas use split(',')[1], not the full remainder. Headers force
+  Content-Type=application/json; charset=utf-8 and Authorization after caller headers.
+  Complete replies require status 200 and predictions, with missing predictions producing
+  InternalServerError. Choose textEmbedding before imageEmbedding before videoEmbeddings;
+  each video segment keeps its prediction's index. Usage tokens stay zero; character_count
+  counts non-whitespace characters in concatenated truthy text, image_count counts truthy image
+  objects, and video_length_seconds sums every endOffsetSec-startOffsetSec using exact decimals.
+  Empty text leaves character_count absent. Use decode_multimodal_embedding for bounded response
+  JSON and classify_embedding_media for bounded base64 recognition, both exercised by the
+  multimodal_embedding fuzz target. Pure helper multimodal_embedding_records compares
+  text_then_image, image_then_text, substring_video, explicit_instances, text_vector_precedence,
+  repeated_video_index and whitespace_character_usage. Budget 290 mapping/decoder, 180 tests,
+  110 adapters and 90 fuzz lines, maximum 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,multimodal_embedding_records}.rs
+    - crates/betterlite-vertex/src/multimodal_embedding_records/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/multimodal_embedding.rs
+    - crates/betterlite-vertex/fuzz/corpus/multimodal_embedding/**
+    - tools/oracle/src/helpers/{mod,multimodal_embedding_records}.rs
+    - tools/oracle/helpers/{dispatch,multimodal_embedding_records}.py
+    - tools/oracle/cases/helpers/multimodal-embedding-records/**
+    - tools/oracle/fuzz/corpus/helper_case/multimodal_embedding_records*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/transformation.py#L29-L308
+    why: Adjacent text/media pairing, native overrides, vector preference and media usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L526-L568
+    why: Multimodal instance and video-segment records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8104-L8120
+    why: Existing base64 recognition semantics used by the media classifier.
+dod:
+  - text: Multimodal instances and responses preserve pairing order, vector preference and media usage fields.
+    proof: [multimodal-record-tests, multimodal-record-python, oracle]
+  - text: Media classification and upstream JSON decoding replay bounded malformed inputs without panics.
+    proof: [multimodal-record-corpus]
+  - text: New multimodal fixture seeds select the mapper used by production calls.
+    proof: [multimodal-record-seeds]
+checks:
+  optional: []
+  commands:
+    - id: multimodal-record-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^multimodal_embedding_records::/) - test(replays_the_multimodal_embedding_corpus)'
+      why: Pairing and usage assertions must detect reordering or character-count substitutions.
+    - id: multimodal-record-python
+      run: test -f tools/oracle/helpers/multimodal_embedding_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter compares actual source media detection and repeated video indices.
+    - id: multimodal-record-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/multimodal_embedding.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/multimodal_embedding)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_multimodal_embedding_corpus)'
+      why: Decoder and media-classifier seeds must be added and replayed on this branch.
+    - id: multimodal-record-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/multimodal_embedding_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::multimodal_embedding_records::/)'
+      why: The new helper operation must be recognized in shared fixture inputs.
+oracle_cases:
+  - tools/oracle/cases/helpers/multimodal-embedding-records/text-then-image.yaml
+  - tools/oracle/cases/helpers/multimodal-embedding-records/image-then-text.yaml
+  - tools/oracle/cases/helpers/multimodal-embedding-records/substring-video.yaml
+  - tools/oracle/cases/helpers/multimodal-embedding-records/explicit-instances.yaml
+  - tools/oracle/cases/helpers/multimodal-embedding-records/text-vector-precedence.yaml
+  - tools/oracle/cases/helpers/multimodal-embedding-records/repeated-video-index.yaml
+  - tools/oracle/cases/helpers/multimodal-embedding-records/whitespace-character-usage.yaml
+deviations: []
+out_of_scope:
+  - B1344 owns multimodal_embeddings/embedding_handler.py; this task only transforms and decodes its records.
+  - Generic utils.py helpers remain B157; preserve their observed predicate/count behavior at this caller without building the Python utility module.
+pitfalls:
+  - A string containing gs:// anywhere is treated as GCS media by this older adapter.
+  - Text and image vectors in one prediction yield only the text vector because selection uses elif.
+  - Video usage sums segment durations even when textEmbedding wins the returned-vector selection.
+budget: {max_changed_lines: 750, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,74 @@
+id: B1351
+title: Studio image edits with shared Gemini image usage
+description: >-
+  Own the two-line package get_gemini_image_edit_config factory as well: it returns
+  GeminiImageEditConfig for every model. Exercise factory_ignores_model in the existing helper.
+  Implement studio_image_edit using the complete 169-line transformation and 23-line pricing
+  wrapper. Advertise n, size and imageConfig; call B1334's mapping with imageConfig string
+  parsing enabled. Reuse B1350's explicit-key/GEMINI_API_KEY auth precedence and base setting,
+  always appending models/model:generateContent. Declare JSON transport rather than multipart.
+  Accept B1347's bytes and seekable-stream image forms, preserving cursor positions and
+  obtaining MIME through an injected B1120 MIME function; the leaf crate must not import
+  betterlite-core. Skip None list members, reject a falsey scalar or an empty resulting list,
+  and place images before a prompt only when the prompt is neither None nor empty. Here
+  contents is an array whose object has parts and no role. Return a typed request object
+  with an empty files list and B1334's IMAGE/TEXT generation configuration. Apply B1345's
+  decoded response records, replacing images with truthy inlineData.data and omitting thought
+  signatures. Reuse B1350 usage conversion whenever usageMetadata exists; unlike generation,
+  do not add search request counts in this edit adapter. Delegate cost directly to B1350's
+  gemini image calculator. The studio_image_edit helper needs no_files_json, role_omitted,
+  image_config_json_string, prompt_after_images, empty_image_dropped, usage_without_images
+  and edit_price_delegate. Keep the implementation near 180 lines, tests 140 and oracle 110,
+  within a 500-line budget.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_image_edit}.rs
+    - crates/betterlite-vertex/src/studio_image_edit/**
+    - tools/oracle/src/helpers/{mod,studio_image_edit}.rs
+    - tools/oracle/helpers/{dispatch,studio_image_edit}.py
+    - tools/oracle/cases/helpers/studio-image-edit/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_image_edit*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/__init__.py#L9-L10
+    why: Package-level edit selection is unconditional at this pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/transformation.py#L39-L197
+    why: JSON-only edit body, narrow image readers and shared image usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/image_edit/cost_calculator.py#L12-L28
+    why: Edit pricing is an unmodified call to generation pricing.
+dod:
+  - text: Studio edit input and response records retain role omission, image filtering and shared usage.
+    proof: [studio-edit-tests, studio-edit-python, oracle]
+  - text: Shared helper decoding admits newly authored Studio edit fixtures.
+    proof: [studio-edit-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-edit-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_image_edit::/)'
+      why: Tests assert the edit-specific body and response choices after shared helper calls.
+    - id: studio-edit-python
+      run: test -f tools/oracle/helpers/studio_image_edit.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: In-memory file fixtures compare edit records without making provider requests.
+    - id: studio-edit-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_image_edit*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_image_edit::/)'
+      why: The call enum and corpus must both include studio_image_edit.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-image-edit/factory-ignores-model.yaml
+  - tools/oracle/cases/helpers/studio-image-edit/no-files-json.yaml
+  - tools/oracle/cases/helpers/studio-image-edit/role-omitted.yaml
+  - tools/oracle/cases/helpers/studio-image-edit/image-config-json-string.yaml
+  - tools/oracle/cases/helpers/studio-image-edit/prompt-after-images.yaml
+  - tools/oracle/cases/helpers/studio-image-edit/empty-image-dropped.yaml
+  - tools/oracle/cases/helpers/studio-image-edit/usage-without-images.yaml
+  - tools/oracle/cases/helpers/studio-image-edit/edit-price-delegate.yaml
+deviations: []
+out_of_scope:
+  - This task owns every image-edit function; imageConfig JSON parsing stays in B1334 and provider response byte decoding stays in B1345.
+  - B999 and B035 connect this configuration to the existing edit operation and routes.
+pitfalls:
+  - A thoughtSignature returned on an edit image is not copied into provider_specific_fields.
+  - usageMetadata is retained even when all inline image strings are empty.
+  - use_multipart_form_data returns false although the proxy accepts a multipart image edit request.
+budget: {max_changed_lines: 500, max_new_expects: 1}
+review_level: security

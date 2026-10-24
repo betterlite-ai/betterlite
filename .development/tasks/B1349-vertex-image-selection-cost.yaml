@@ -1,0 +1,78 @@
+id: B1349
+title: Vertex image configuration selection and billing policy
+description: >-
+  Expose VertexImageConfig selection and VertexImagePricing in the Vertex crate. The two
+  package selectors, both image cost functions, and the live process_image_generation_response
+  and is_image_generation_response methods contribute approximately 150 nonblank noncomment
+  source lines. Select Gemini only when B1306 returns GEMINI; every other route chooses Imagen,
+  separately for generation and edit. Keep generation billing token-first: resolve model info,
+  compute web-search charge, use a present token price even when zero, otherwise multiply returned
+  image count by output_cost_per_image or zero. Edit billing resolves model info before checking
+  ImageResponse type and charges per image only. Inject the shared image usage/search pricing
+  operations owned by B068 through a typed pricing interface; use B193 exact decimal metadata,
+  never floating arithmetic or provider-to-core imports. Retain the old handler's two live
+  prediction helpers for passthrough logging: detection reads predictions[0] and requires its
+  image key, and conversion requires predictions and every bytesBase64Encoded key, replacing
+  existing response data. Empty predictions and missing inner keys retain their distinct error
+  paths instead of becoming an empty successful response. Register vertex_image_policy with
+  non_gemini_uses_imagen, zero_token_price, search_without_images, edit_ignores_tokens,
+  missing_predictions, first_prediction_only and replaces_existing_images. Use decoded records
+  from B1346; this slice introduces no byte parser. Budget 145 policy, 140 tests and 100 fixtures,
+  with a 450-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_image_policy}.rs
+    - crates/betterlite-vertex/src/vertex_image_policy/**
+    - tools/oracle/src/helpers/{mod,vertex_image_policy}.rs
+    - tools/oracle/helpers/{dispatch,vertex_image_policy}.py
+    - tools/oracle/cases/helpers/vertex-image-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_image_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L21-L69
+    why: The prediction transformer is called by Vertex passthrough logging; the adjacent old option mapper is unreachable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L275-L279
+    why: First-prediction image detection remains live.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/cost_calculator.py#L15-L46
+    why: Token usage takes precedence over per-image billing, with search added separately.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/cost_calculator.py#L11-L32
+    why: Editing uses only the returned image count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/__init__.py#L21-L44
+    why: Generation selects Gemini by the shared route enum.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/__init__.py#L21-L44
+    why: Edit configuration follows the same model classifier.
+dod:
+  - text: Image selection, passthrough prediction recognition and exact billing retain their separate policies.
+    proof: [image-policy-tests, image-policy-python, oracle]
+  - text: Added image-policy cases are discoverable by the helper corpus reader.
+    proof: [image-policy-seeds]
+checks:
+  optional: []
+  commands:
+    - id: image-policy-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_image_policy::/)'
+      why: Zero token prices and edit-only image billing cannot be covered by one generic price test.
+    - id: image-policy-python
+      run: test -f tools/oracle/helpers/vertex_image_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Catalog and generic pricing inputs are fixtures for these pure policy functions.
+    - id: image-policy-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_image_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_image_policy::/)'
+      why: New seed files must select vertex_image_policy under call.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-image-policy/non-gemini-uses-imagen.yaml
+  - tools/oracle/cases/helpers/vertex-image-policy/zero-token-price.yaml
+  - tools/oracle/cases/helpers/vertex-image-policy/search-without-images.yaml
+  - tools/oracle/cases/helpers/vertex-image-policy/edit-ignores-tokens.yaml
+  - tools/oracle/cases/helpers/vertex-image-policy/missing-predictions.yaml
+  - tools/oracle/cases/helpers/vertex-image-policy/first-prediction-only.yaml
+  - tools/oracle/cases/helpers/vertex-image-policy/replaces-existing-images.yaml
+deviations: []
+out_of_scope:
+  - image_generation_handler.py image_generation has no caller at the pin; aimage_generation, transform_optional_params and its nested snake_to_camel are reachable only from that dead method and are not implemented.
+  - B1345 through B1348 implement the selected adapters; B068 owns generic image cost utilities and B091 owns passthrough logging consumers.
+pitfalls:
+  - A present token cost of zero suppresses the per-image fallback.
+  - The legacy prediction detector inspects only element zero and does not scan later predictions.
+  - Vertex edit billing ignores both usageMetadata and web-search charges.
+budget: {max_changed_lines: 450, max_new_expects: 1}
+review_level: security

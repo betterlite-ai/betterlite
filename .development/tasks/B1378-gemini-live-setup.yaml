@@ -1,0 +1,113 @@
+id: B1378
+title: Configure Gemini Live sessions and normalize GA client options
+description: >-
+  Implement gemini_live_setup owning realtime/transformation.py L84-L98, L112-L115,
+  L191-L211, L277-L522, L642-L677 and L1646-L1693: 307 nonblank noncomment lines,
+  plus setup/activity types at gemini.py L102-L151. Resolve gemini_live_defer_setup from
+  litellm_settings or LITELLM_GEMINI_LIVE_DEFER_SETUP, default false; environment parsing
+  is lower-case equality to true without whitespace trimming. Config test
+  loads_gemini_live_defer_setup must exercise both forms. requires_session_configuration
+  returns its inverse. Studio Live defaults base to wss://generativelanguage.googleapis.com
+  only for None, converts http(s) schemes and appends the v1beta GenerativeService RPC
+  path plus raw key query; only None triggers B1331 key fallback or missing-key error.
+  Preserve empty explicit values and redact the key from diagnostics. Headers are unchanged.
+  Map instructions, temperature, max_response_output_tokens, modalities, tools via B1308,
+  input_audio_transcription, turn_detection and voice via B1309. Tools sit outside
+  generationConfig; transcription is enabled by any non-None value. Drop OpenAI voices
+  alloy/ash/ballad/cedar/coral/echo/marin/sage/shimmer/verse case-insensitively with the
+  source warning. semantic_vad without create_response is omitted; an explicit boolean
+  create_response controls disabled inversely, server_vad defaults enabled, other forms
+  disabled. Preserve integer prefix/silence durations, including Python bool-as-int.
+  Normalize output_modalities only when modalities is absent, nested audio.input.transcription
+  only when its flat key is absent, nested turn detection only without a flat dict, and
+  truthy audio.output.voice over the flat voice. Catalog lookup tries exact model then the
+  first-prefix-stripped model and gemini/variant. Default output is TEXT for mode
+  audio_transcription, AUDIO otherwise; remove TEXT for audio-only models and AUDIO for
+  text-only models, supplying the compatible modality when removal leaves none.
+  First session.update sends one setup with model=models/model, default modality and input
+  transcription; later updates send nothing, warning specifically for create_response=false.
+  Automatic setup sends the same default modality/transcription but no output transcription.
+  decode_gemini_live_setup reads setup JSON for consumers. session.created lowers setup
+  modalities, strips the final /models/ prefix, copies instructions only when a string and
+  uses injected event UUID plus logging session ID. Helper gemini_live_setup cases ga_aliases,
+  nested_voice_wins, stock_voice_warning, semantic_vad_override, native_audio_coercion,
+  transcription_model_default, first_setup, later_guardrail_update, created_model_name and
+  empty_explicit_key cover these branches. Budget 310 implementation, 65 config, 180 tests,
+  100 adapters and 95 fuzz lines, cap 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_live_setup}.rs
+    - crates/betterlite-vertex/src/gemini_live_setup/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_setup.rs
+    - crates/betterlite-vertex/fuzz/corpus/gemini_live_setup/**
+    - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/tests/gemini_live_settings.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/gemini_live_setup*
+    - tools/oracle/src/helpers/{mod,gemini_live_setup}.rs
+    - tools/oracle/helpers/{dispatch,gemini_live_setup}.py
+    - tools/oracle/cases/helpers/gemini-live-setup/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_live_setup*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L84-L115
+    why: Voice compatibility policy and setup-envelope reader.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L191-L211
+    why: Studio websocket endpoint and None-only API-key fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L277-L522
+    why: Option/VAD mapping, GA normalization, catalog modalities and one-setup rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L642-L677
+    why: Session-created projection does not stringify systemInstruction objects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1646-L1693
+    why: Deferred setup switch and automatic setup defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L102-L151
+    why: Setup and automatic activity-detection wire fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L271-L273
+    why: Exact deferred-setup environment default and boolean interpretation.
+dod:
+  - text: Live setup preserves GA precedence, VAD overrides, voice warnings and model-specific modalities.
+    proof: [live-setup-tests, live-setup-python, oracle]
+  - text: The defer setting loads from both supported sources and changes automatic setup requirements.
+    proof: [live-setup-config, live-setup-tests]
+  - text: Setup JSON and helper envelopes replay new malformed and valid corpus entries.
+    proof: [live-setup-corpus, live-setup-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: live-setup-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_live_setup::/) - test(replays_the_gemini_live_setup_corpus)'
+      why: Setup, later-update and session-created assertions each exercise their production branch.
+    - id: live-setup-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/gemini_live_settings::loads_gemini_live_defer_setup/)'
+      why: The loader distinguishes true, TRUE, whitespace and absent values with module-setting precedence.
+    - id: live-setup-python
+      run: test -f tools/oracle/helpers/gemini_live_setup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Source setup helpers receive deterministic catalog, IDs and environment snapshots.
+    - id: live-setup-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_setup.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemini_live_setup)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemini_live_setup_corpus)'
+      why: decode_gemini_live_setup sees missing setup, invalid JSON and nested generation/VAD values.
+    - id: live-setup-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_setup*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_setup::/)'
+      why: Newly added HelperCases must decode the gemini_live_setup call variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-live-setup/ga-aliases.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/nested-voice-wins.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/stock-voice-warning.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/semantic-vad-override.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/native-audio-coercion.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/transcription-model-default.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/first-setup.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/later-guardrail-update.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/created-model-name.yaml
+  - tools/oracle/cases/helpers/gemini-live-setup/empty-explicit-key.yaml
+deviations: []
+out_of_scope:
+  - B1379 owns client events, session state and SDK-value encoding; B1380 owns content-event helpers; B1381 owns tool/usage accounting; B1382 owns server-frame dispatch.
+  - B1365 overrides Vertex setup/URL policy and B035 composes the Studio websocket adapter.
+pitfalls:
+  - A second session.update is discarded even when it contains new tools or instructions.
+  - semantic_vad with create_response=false must not be omitted by the semantic-VAD shortcut.
+  - session.created copies only a string systemInstruction, although setup normally stores it as a content object.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

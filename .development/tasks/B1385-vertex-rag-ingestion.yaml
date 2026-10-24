@@ -1,0 +1,100 @@
+id: B1385
+title: Upload and import files into an existing Vertex RAG corpus
+description: >-
+  Implement vertex_rag_ingest with provider-local RagIngestOptions and an injected native
+  file-upload operation; B097 will consume this contract when its API is planned. Own
+  ingestion.py's 221 nonblank noncomment lines and the 43 live constructor/chunking lines
+  in transformation.py. Require vector_store.vector_store_id, gcs_bucket and vertex_project;
+  project/location fall back to B1301 VERTEXAI_PROJECT/VERTEXAI_LOCATION, location then
+  us-central1, and bucket to B1393 GCS_BUCKET_NAME. Credentials are taken only from the
+  vector_store record. wait_for_import defaults true; import_timeout uses integer conversion
+  with None default 600. Chunking reads ingest_options.chunking_strategy, ignores custom
+  separators with the pinned warning, and defaults chunk_size/chunk_overlap from
+  DEFAULT_CHUNK_SIZE=1000 and DEFAULT_CHUNK_OVERLAP=200. Add both environment defaults to
+  config with loads_default_chunk_size and loads_default_chunk_overlap tests; preserve
+  present zero values. embed returns None because the corpus embeds internally.
+  store returns corpus-id-or-None and no file ID after warning when content or filename is
+  empty. Otherwise upload bytes first with purpose assistants, filename/MIME tuple, default
+  application/octet-stream and the resolved Vertex credentials/bucket. Then build the full
+  ragCorpora resource and the SDK chunking record. Use google-cloud-aiplatform-v1's
+  VertexRagDataService with its vertex-rag-data-service feature, injected endpoint/auth and
+  SDK stub. Import uses application-default credentials, matching vertexai.init(project,
+  location), which does not pass the upload credentials. When wait_for_import is true,
+  submit and await the operation with import_timeout; wrap import failures as Failed to
+  import file into RAG corpus and leave the uploaded object intact. At the pin, false calls
+  the SDK's async def import_files_async without awaiting it: preserve the resulting
+  upload-only success and Import started asynchronously log, with no import RPC or detached
+  work. existing_file_id, chunks and supplied embeddings do not replace the byte upload.
+  Pure helper vertex_rag_chunking cases defaults, explicit_zero, custom_separators_warning
+  and partial_strategy call the live chunk mapper. Native tests missing_corpus,
+  empty_source_warning, upload_then_import, upload_identity_vs_adc, import_error_keeps_file,
+  false_wait_no_rpc and import_timeout prove execution. Budget 290 implementation/SDK adapter,
+  80 config, 200 tests and 100 oracle/seed wiring, maximum 750; SDK owns transport decoding.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,vertex_rag_ingest}.rs
+    - crates/betterlite-vertex/src/vertex_rag_ingest/**
+    - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/tests/vertex_rag_settings.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_rag*
+    - tools/oracle/src/helpers/{mod,vertex_rag_chunking}.rs
+    - tools/oracle/helpers/{dispatch,vertex_rag_chunking}.py
+    - tools/oracle/cases/helpers/vertex-rag-chunking/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_rag_chunking*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L29-L286
+    why: Required fields, upload-before-import order and the unawaited non-wait branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L26-L102
+    why: Only construction and transform_chunking_strategy_to_vertex_format have live callers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2033-L2034
+    why: Environment-backed chunk defaults.
+  - url: https://github.com/googleapis/python-aiplatform/blob/v1.133.0/vertexai/rag/rag_data.py
+    why: The locked Google SDK defines import_files_async as async def, so an unawaited call sends nothing.
+  - url: https://docs.rs/google-cloud-aiplatform-v1/1.6.0/google_cloud_aiplatform_v1/client/struct.VertexRagDataService.html#method.import_rag_files
+    why: Official Rust SDK import operation and injectable stub avoid a handwritten Google RPC implementation.
+dod:
+  - text: RAG ingestion preserves upload/import order, separate import identity and the pinned non-wait no-op.
+    proof: [rag-ingest-execution]
+  - text: Chunk conversion retains explicit values and warns when separators are ignored.
+    proof: [rag-chunk-tests, rag-chunk-python, oracle]
+  - text: Both chunk environment defaults load and shared helper seeds select the new operation.
+    proof: [rag-settings, rag-chunk-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: rag-ingest-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_rag_ingest::execution::/)'
+      why: Upload and SDK stubs record side effects, remaining objects and deadline outcomes.
+    - id: rag-chunk-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_rag_ingest::chunking::/)'
+      why: Chunk records and ignored-separator warnings are checked without external services.
+    - id: rag-settings
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_rag_settings::loads_default_chunk/)'
+      why: Each named loader test proves its own environment setting and default.
+    - id: rag-chunk-python
+      run: test -f tools/oracle/helpers/vertex_rag_chunking.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python calls the source chunk transformer and captures its warning.
+    - id: rag-chunk-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rag_chunking*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_rag_chunking::/)'
+      why: Added seeds must identify call.vertex_rag_chunking through the existing HelperCase decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-rag-chunking/defaults.yaml
+  - tools/oracle/cases/helpers/vertex-rag-chunking/explicit-zero.yaml
+  - tools/oracle/cases/helpers/vertex-rag-chunking/custom-separators-warning.yaml
+  - tools/oracle/cases/helpers/vertex-rag-chunking/partial-strategy.yaml
+deviations: []
+out_of_scope:
+  - get_import_rag_files_url, get_retrieve_contexts_url, build_import_rag_files_request and get_auth_headers in transformation.py have no caller at the pin.
+  - B097 owns generic ingestion orchestration and routes; this task exports a provider contract and does not register them.
+  - Native file upload preparation is B1376, and arbitrary file-URL acquisition is outside these byte-only store methods.
+pitfalls:
+  - A failed corpus import does not delete the GCS object already uploaded.
+  - The source's wait_for_import=false branch never awaits the SDK coroutine and therefore performs no import.
+  - Explicit upload credentials do not replace the application-default identity used by vertexai.init.
+budget: {max_changed_lines: 750, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,99 @@
+id: B1307
+title: Vertex structured-output schema shaping
+description: >-
+  Port the reachable schema functions of common_utils into vertex_schema in betterlite-vertex,
+  consuming B217's bounded definition expansion and ordered schema representation. Implement
+  _build_vertex_schema's exact pipeline: remove and expand $defs; normalize nullable anyOf;
+  convert type arrays; fix empty-string and non-string enums; repair array items; add object
+  structure; filter Schema fields; optionally add propertyOrdering. _build_json_schema returns
+  the input unchanged, retaining $ref, additionalProperties and lowercase type strings.
+  The actual _convert_schema_types code preserves string spelling despite its uppercase claim
+  in the docstring. Preserve single-item type arrays, moving object/array constraints into
+  anyOf branches, metadata copied onto anyOf members, permitted enum/date-time formats and
+  caller-supplied propertyOrdering. Match the source's iteration behavior for adjacent null
+  members; do not replace it with a more aggressive normalization. Null-only anyOf errors.
+  Bind DEFAULT_MAX_RECURSE_DEPTH through betterlite-config, default 100; the comparison is
+  depth greater than the limit. Configuration tests must load a nondefault environment value
+  and the absent default. The schema field is the bounded opaque extension already owned by
+  B217, with a justified expect only if its existing type cannot be reused. This task transforms
+  parsed nodes and adds no second schema decoder or fuzzer.
+  Register vertex_schema helpers for structured_order, json_schema_untouched, recursive_defs,
+  array_type_union, nullable_enum, adjacent_nulls, unknown_fields_and_format and depth_limit.
+  Python calls the referenced helpers directly; each Rust table asserts output and unchanged
+  input ownership. Add a valid call.vertex_schema seed and parser-dispatch test. Of 332
+  nonblank noncomment lines in L603-L1066, text detection, timestamp conversion and dead
+  strip_field are excluded; Schema contributes 24 declaration lines. Reserve 300 transform,
+  180 tests, 100 adapters and 100 config/wiring lines, maximum 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/lib.rs
+    - crates/betterlite-vertex/src/error.rs
+    - crates/betterlite-vertex/src/vertex_schema.rs
+    - crates/betterlite-vertex/src/vertex_schema/**
+    - crates/betterlite-config/src/env.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/schema.rs
+    - crates/betterlite-config/src/providers/vertex/schema/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/vertex_schema.rs
+    - tools/oracle/src/helpers/vertex_schema/**
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/vertex_schema.py
+    - tools/oracle/cases/helpers/vertex-schema/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_schema*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L618-L958
+    why: Enum handling, schema builders, anyOf filtering, arrays, ordering and object repair.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L987-L1066
+    why: Exact type-array transformation, including its retained type spelling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L124-L147
+    why: Whitelisted Schema fields, with ordered property names and decimal bounds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L86
+    why: Recursion limit environment spelling and default.
+dod:
+  - text: The OpenAPI-style builder and unchanged JSON Schema path match all listed normalization cases.
+    proof: [schema-tests, oracle, schema-python]
+  - text: DEFAULT_MAX_RECURSE_DEPTH is loaded and controls the production recursion boundary.
+    proof: [schema-settings, schema-tests]
+  - text: A new schema helper seed reaches the correct variant through the shared parser.
+    proof: [schema-seed]
+checks:
+  optional: [mutants]
+  commands:
+    - id: schema-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_schema::/)'
+      why: Schema normalization or its depth boundary lacks behavior coverage.
+    - id: schema-settings
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_schema_settings::/)'
+      why: The environment setting must be tested through configuration resolution.
+    - id: schema-python
+      run: test -f tools/oracle/helpers/vertex_schema.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The schema oracle cannot rely on a duplicate Rust-derived expected value.
+    - id: schema-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_schema*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_schema::/)'
+      why: Schema helper seed presence and the call tag must both be asserted.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-schema/structured-order.yaml
+  - tools/oracle/cases/helpers/vertex-schema/json-schema-untouched.yaml
+  - tools/oracle/cases/helpers/vertex-schema/recursive-defs.yaml
+  - tools/oracle/cases/helpers/vertex-schema/array-type-union.yaml
+  - tools/oracle/cases/helpers/vertex-schema/nullable-enum.yaml
+  - tools/oracle/cases/helpers/vertex-schema/adjacent-nulls.yaml
+  - tools/oracle/cases/helpers/vertex-schema/unknown-fields-and-format.yaml
+  - tools/oracle/cases/helpers/vertex-schema/depth-limit.yaml
+deviations: []
+out_of_scope:
+  - common_utils.strip_field L959-L969 has no caller at the pin; its self-recursion is not a live entry point.
+  - _check_text_in_content L603-L615 is message conversion B1312, and timestamp conversion L972-L986 is B1306.
+  - Other common_utils methods remain with B1304 passthrough targets, B1305 native URLs, B1306 catalog/metadata and B1319 token counting.
+  - Beyond Schema, vertex_ai.py declarations are owned by the message, tool, response and endpoint parts that consume them.
+pitfalls:
+  - propertyOrdering belongs to structured responses and must not be added to function tools by default.
+  - responseJsonSchema must not lose additionalProperties or expand $defs as a side effect of shared code.
+  - The anyOf null pass runs before type-array conversion, so reordering those passes changes output.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 1
+review_level: standard

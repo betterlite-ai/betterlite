@@ -1,0 +1,100 @@
+id: B1393
+title: Authorize native GCS file identifiers against configured storage
+description: >-
+  Implement vertex_gcs_access owning _get_configured_bucket_name and _parse_gcs_uri
+  in Vertex files/transformation.py, 23 nonblank noncomment lines, plus the 98-line GCS
+  specialization of cloud_storage_security.py L35-L167 excluding the S3 encoder. Treat
+  native gs:// artifacts as provider objects, not enterprise unified-file records. Resolve
+  deployment gcs_bucket_name, then bucket_name, then GCS_BATCH_BUCKET_NAME, then GCS_BUCKET_NAME
+  by truthiness; all default absent and absence raises GCS bucket_name is required. Config
+  loads these through VertexSettings with tests loads_gcs_bucket_name, loads_bucket_name,
+  loads_gcs_batch_bucket_env and loads_gcs_bucket_env. Consume B643's already loaded
+  allow_legacy_cloud_file_ids setting, default false, only through its immutable trusted
+  credential snapshot; request dictionaries cannot supply that trust marker.
+  Decode the full file identifier once, require gs://, a matching bucket and a relative
+  nonempty object path. Reject control bytes, dot segments and interior empty segments;
+  a final slash is allowed. Configured bucket names reject URI schemes, query, fragment and
+  backslash in the bucket, and may carry a validated prefix. Ordinary objects must begin
+  with that prefix plus litellm-vertex-files/; trusted legacy access still requires the
+  configured prefix boundary. Encode object names by unquoting once then quoting with no
+  safe slash. Also expose the GCS naming helpers: basename after slash normalization,
+  ASCII-safe component replacement, trim dots/underscores, 255-character cap, sanitized
+  multi-segment paths and UUID-hex upload names. Inject UUID generation. Implement these as
+  GCS-local primitives; B643 supplies only the trusted setting record, not a dependency on
+  betterlite-bedrock's S3 implementation. Keep the specialization private to the Vertex crate.
+  decode_vertex_gcs_id consumes caller bytes and is the fuzz entry. Helper vertex_gcs_access
+  cases configured_prefix, encoded_traversal, foreign_bucket, terminal_slash,
+  percent_reencoding, trusted_legacy, forged_trust, filename_sanitization and model_path
+  call pure source helpers with explicit bucket/settings fixtures. Reserve 200 production,
+  80 config, 140 tests, 80 adapters and 90 fuzz/seed lines within 650.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,vertex_gcs_access}.rs
+    - crates/betterlite-vertex/src/vertex_gcs_access/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_gcs_id.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_gcs_id/**
+    - crates/betterlite-config/src/{config,settings,model,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/**
+    - crates/betterlite-config/src/tests/vertex_gcs_settings.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_gcs*
+    - tools/oracle/src/helpers/{mod,vertex_gcs_access}.rs
+    - tools/oracle/helpers/{dispatch,vertex_gcs_access}.py
+    - tools/oracle/cases/helpers/vertex-gcs-access/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_gcs_access*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L962-L971
+    why: The native GCS bucket lookup chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1139-L1151
+    why: GCS-specific authorization arguments and final object encoding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L35-L167
+    why: Called naming/path helpers and the immutable trust requirement, used here only for GCS.
+dod:
+  - text: GCS lookup cannot escape the configured bucket/prefix through encoding or forged legacy credentials.
+    proof: [gcs-access-tests, gcs-access-python, oracle]
+  - text: All four bucket settings load through real configuration and retain their precedence.
+    proof: [gcs-settings]
+  - text: GCS byte parsing and helper-envelope parsing replay newly introduced seeds.
+    proof: [gcs-corpus, gcs-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gcs-access-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_gcs_access::/) - test(replays_the_vertex_gcs_id_corpus)'
+      why: Authorization fixtures distinguish trusted deployment values from identically spelled request fields.
+    - id: gcs-settings
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_gcs_settings::/)'
+      why: Named loader tests cover each bucket field, environment default and collision.
+    - id: gcs-access-python
+      run: test -f tools/oracle/helpers/vertex_gcs_access.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python exercises the GCS specialization using MappingProxyType only for trusted fixtures.
+    - id: gcs-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_gcs_id.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_gcs_id)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_gcs_id_corpus)'
+      why: Encoded separators and invalid path bytes are replayed through decode_vertex_gcs_id.
+    - id: gcs-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gcs_access*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_gcs_access::/)'
+      why: Each helper seed selects call.vertex_gcs_access and reaches the shared decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-gcs-access/configured-prefix.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/encoded-traversal.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/foreign-bucket.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/terminal-slash.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/percent-reencoding.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/trusted-legacy.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/forged-trust.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/filename-sanitization.yaml
+  - tools/oracle/cases/helpers/vertex-gcs-access/model-path.yaml
+deviations: []
+out_of_scope:
+  - B115 retains is_managed_cloud_storage_uri, encode_s3_object_key_for_url and the general non-GCS cloud_storage_security.py API; this task ports only the GCS argument specialization of its validation/naming functions.
+  - B1376 selects file operations and maps GCS metadata; B1374, B1375 and B1377 own batch row and stream conversion.
+  - The S3-specific helper contract and allow_legacy_cloud_file_ids loader already belong to B643.
+  - Proxy unified-file ownership checks are B087 and are not replaced by native bucket authorization.
+pitfalls:
+  - Legacy access permits older object names but never a foreign configured prefix.
+  - The GCS encoder escapes slashes that the S3 encoder deliberately preserves.
+  - Sanitizing an upload filename is separate from validating an existing object path.
+budget: {max_changed_lines: 650, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,78 @@
+id: B1308
+title: Gemini function tools, search and Maps retrieval
+description: >-
+  Implement gemini_tools over B1307's schema shaper. Own VertexGeminiConfig methods L355-L766:
+  tool choice, web search, search-key recognition and conflict removal, service tier, computer use,
+  Maps retrieval extraction, camel/snake lookup and function/tool assembly. Represent native Tools,
+  FunctionDeclaration and ToolConfig as typed records. Remove strict and false additionalProperties
+  recursively from tools before mapping; retain additionalProperties=true. Tools supplied through
+  functions follow the source's separate branch. Preserve one output Tool per special kind and
+  one grouped function-declarations Tool, in the exact source order. Unknown tools warn and drop.
+  A mixed function/search request drops googleSearch, googleSearchRetrieval, enterpriseWebSearch
+  and url_context unless include_server_side_tool_invocations is enabled; code_execution,
+  computerUse and googleMaps remain. Run the second conflict pass after separately supplied
+  web_search_options are merged. Maps latitude/longitude move to toolConfig.retrievalConfig.latLng
+  only as a pair; languageCode moves with them. Invalid computer-use environment logs and omits
+  that field, while excluded_predefined_functions becomes excludedPredefinedFunctions.
+  Register gemini_tools helper cases for native_tool_order, mixed_search_warning, server_tools_opt_in,
+  maps_coordinates, computer_environment, invalid_tool_choice and strict_false_additional_properties.
+  Tests under gemini_tools use parsed tool records; B217 already owns the bounded schema parser.
+  Add an oracle seed with call.gemini_tools and a decoder-selection test. The owned methods have
+  340 nonblank noncomment lines plus approximately 45 tool declarations; reserve 320 production,
+  190 tests, 110 adapters and 50 wiring lines, maximum 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_tools}.rs
+    - crates/betterlite-vertex/src/gemini_tools/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/gemini_tools.rs
+    - tools/oracle/src/helpers/gemini_tools/**
+    - tools/oracle/helpers/{dispatch,gemini_tools}.py
+    - tools/oracle/cases/helpers/gemini-tools/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_tools*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L355-L766
+    why: Complete owned tool assembly and warning/drop rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L149-L167
+    why: Function declaration, retrieval and calling-mode records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L255-L284
+    why: Native tool spellings and ToolConfig fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4104-L4145
+    why: Read the invoked cleanup semantics; do not export another generic utils implementation.
+dod:
+  - text: Native tools, warning drops, retrieval side effects and invalid-choice errors match the pin.
+    proof: [tool-tests, oracle, tool-python]
+  - text: The new tools helper is reachable through a committed parsed seed.
+    proof: [tool-seed]
+checks:
+  optional: []
+  commands:
+    - id: tool-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_tools::/)'
+      why: Tool ordering, sanitization or search conflict behavior is absent.
+    - id: tool-python
+      run: test -f tools/oracle/helpers/gemini_tools.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter must capture optional_params changes as well as returned tools.
+    - id: tool-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_tools*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_tools::/)'
+      why: No new tools seed or an incorrect variant must fail validation tests.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-tools/native-tool-order.yaml
+  - tools/oracle/cases/helpers/gemini-tools/mixed-search-warning.yaml
+  - tools/oracle/cases/helpers/gemini-tools/server-tools-opt-in.yaml
+  - tools/oracle/cases/helpers/gemini-tools/maps-coordinates.yaml
+  - tools/oracle/cases/helpers/gemini-tools/computer-environment.yaml
+  - tools/oracle/cases/helpers/gemini-tools/invalid-tool-choice.yaml
+  - tools/oracle/cases/helpers/gemini-tools/strict-false-additional-properties.yaml
+deviations: []
+out_of_scope:
+  - The Gemini class's model predicates are B1305, response-format/thinking helpers B1309 and option composition B1310.
+  - B1313-B1315 own response and stream methods after L1313; B1316 owns network methods and request adapters after L2513.
+  - Message conversion comes from B1311-B1312; remaining vertex_ai.py records follow their consuming endpoint, response or cache tasks.
+pitfalls:
+  - The maps extractor removes flat languageCode even when incomplete coordinates prevent creating retrievalConfig.
+  - code_execution and computerUse are not members of the set dropped for mixed search/function tools.
+  - service_tier=auto maps to priority, while other service-tier strings are merely lowercased.
+budget: {max_changed_lines: 750, max_new_expects: 0}
+review_level: standard
