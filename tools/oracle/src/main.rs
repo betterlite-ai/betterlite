@@ -1,16 +1,19 @@
-#![expect(
-    clippy::restriction,
-    reason = "The oracle CLI reports harness failures on stderr."
+#![cfg_attr(
+    not(test),
+    expect(
+        clippy::restriction,
+        reason = "The oracle CLI reports harness failures on stderr."
+    )
 )]
 
-use std::process::ExitCode;
-
-fn main() -> ExitCode {
-    match betterlite_oracle::run() {
-        Ok(code) => code,
+#[cfg(not(test))]
+fn main() {
+    let status = match betterlite_oracle::run() {
+        Ok(code) => betterlite_oracle::exit_status(code),
         Err(error) => {
             eprintln!("oracle error: {error}");
-            ExitCode::from(2)
+            2
         }
-    }
+    };
+    std::process::exit(status);
 }

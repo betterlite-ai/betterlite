@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::case::Request;
 
-const MAX_BODY: usize = 16 * 1024 * 1024;
+pub(crate) const MAX_BODY: usize = 16 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub(crate) struct Response {
@@ -38,10 +38,6 @@ pub(crate) enum HttpError {
     Text(#[source] Utf8Error),
     #[error("response body event is not valid JSON: {0}")]
     Body(#[source] serde_json::Error),
-}
-
-pub(crate) const fn client() -> Client {
-    Client
 }
 
 pub(crate) fn send(client: &Client, base: &str, request: &Request) -> Result<Response, HttpError> {
@@ -75,10 +71,15 @@ pub(crate) fn ready(client: &Client, base: &str) -> Result<bool, HttpError> {
         headers: BTreeMap::new(),
         body: Value::Null,
     };
-    Ok(send(client, base, &request)?.status == 200)
+    Ok(is_ready_status(send(client, base, &request)?.status))
 }
 
-fn validate_method(method: &str) -> Result<&str, HttpError> {
+pub(crate) fn is_ready_status(status: u16) -> bool {
+    let ready = status == 200;
+    ready
+}
+
+pub(crate) fn validate_method(method: &str) -> Result<&str, HttpError> {
     if method.is_empty() || method.chars().any(|character| character.is_whitespace()) {
         return Err(HttpError::Method {
             method: method.to_owned(),
@@ -87,7 +88,7 @@ fn validate_method(method: &str) -> Result<&str, HttpError> {
     Ok(method)
 }
 
-fn parse_base(base: &str) -> Result<(SocketAddr, String), HttpError> {
+pub(crate) fn parse_base(base: &str) -> Result<(SocketAddr, String), HttpError> {
     let authority = base.strip_prefix("http://").ok_or_else(|| HttpError::Url {
         url: base.to_owned(),
     })?;
@@ -100,15 +101,16 @@ fn parse_base(base: &str) -> Result<(SocketAddr, String), HttpError> {
 }
 
 fn connect(address: SocketAddr) -> Result<TcpStream, HttpError> {
-    TcpStream::connect_timeout(&address, Duration::from_secs(30)).map_err(|source| {
+    let result = TcpStream::connect_timeout(&address, Duration::from_secs(30)).map_err(|source| {
         HttpError::Connect {
             address: address.to_string(),
             source,
         }
-    })
+    });
+    result
 }
 
-fn write_request(
+pub(crate) fn write_request(
     stream: &mut TcpStream,
     method: &str,
     path: &str,
@@ -128,7 +130,7 @@ fn write_request(
     stream.flush().map_err(HttpError::Io)
 }
 
-fn read_response(stream: &mut TcpStream) -> Result<Response, HttpError> {
+pub(crate) fn read_response(stream: &mut TcpStream) -> Result<Response, HttpError> {
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 8192];
     loop {
@@ -148,7 +150,7 @@ fn read_response(stream: &mut TcpStream) -> Result<Response, HttpError> {
     parse_response(&bytes)
 }
 
-fn parse_response(bytes: &[u8]) -> Result<Response, HttpError> {
+pub(crate) fn parse_response(bytes: &[u8]) -> Result<Response, HttpError> {
     let header_end = bytes
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
@@ -192,7 +194,7 @@ fn parse_response(bytes: &[u8]) -> Result<Response, HttpError> {
     })
 }
 
-fn decode_chunks(bytes: &[u8]) -> Result<Vec<u8>, HttpError> {
+pub(crate) fn decode_chunks(bytes: &[u8]) -> Result<Vec<u8>, HttpError> {
     let mut cursor = 0;
     let mut output = Vec::new();
     loop {
@@ -226,7 +228,10 @@ fn decode_chunks(bytes: &[u8]) -> Result<Vec<u8>, HttpError> {
     }
 }
 
-fn parse_body(headers: &BTreeMap<String, String>, bytes: &[u8]) -> Result<Value, HttpError> {
+pub(crate) fn parse_body(
+    headers: &BTreeMap<String, String>,
+    bytes: &[u8],
+) -> Result<Value, HttpError> {
     let text = str::from_utf8(bytes).map_err(HttpError::Text)?;
     if headers
         .get("content-type")

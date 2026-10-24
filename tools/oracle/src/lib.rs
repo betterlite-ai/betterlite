@@ -16,13 +16,18 @@ mod mock;
 mod process;
 mod runner;
 
-#[cfg(test)]
 mod tests;
 
 use std::process::ExitCode;
 
+pub fn exit_status(code: ExitCode) -> i32 {
+    let status = if code == ExitCode::SUCCESS { 0 } else { 1 };
+    status
+}
+
+#[cfg(not(test))]
 pub fn run() -> Result<ExitCode, String> {
-    let options = cli::Options::parse().map_err(|error| error.to_string())?;
+    let options = <cli::Options as clap::Parser>::try_parse().map_err(|error| error.to_string())?;
     let cases = case::load_cases(&options.paths).map_err(|error| error.to_string())?;
     runner::run_cases(&options, cases).map_err(|error| error.to_string())
 }

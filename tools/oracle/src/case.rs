@@ -121,7 +121,7 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), CaseError> 
     Ok(())
 }
 
-fn validate(path: &Path, case: &Case) -> Result<(), CaseError> {
+pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), CaseError> {
     if case.name.is_empty() || case.config.is_empty() || case.request.path.is_empty() {
         return Err(invalid(
             path,
@@ -146,16 +146,14 @@ fn validate(path: &Path, case: &Case) -> Result<(), CaseError> {
         if ignored.why.is_empty() {
             return Err(invalid(path, "compare.ignore entries need a why"));
         }
-        if ignored.why.is_empty() {
-            return Err(invalid(path, "compare.ignore entries need a why"));
-        }
     }
     Ok(())
 }
 
 fn invalid(path: &Path, message: &str) -> CaseError {
-    CaseError::Invalid {
+    let error = CaseError::Invalid {
         path: path.to_owned(),
         message: message.to_owned(),
-    }
+    };
+    error
 }

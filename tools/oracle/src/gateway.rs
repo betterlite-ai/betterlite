@@ -15,6 +15,11 @@ pub(crate) struct GatewayInput<'a> {
     pub(crate) first: bool,
 }
 
+pub(crate) fn uses_litellm(options: &Options, first: bool) -> bool {
+    let run_litellm = options.self_check || first;
+    run_litellm
+}
+
 pub(crate) fn start(input: GatewayInput<'_>) -> Result<Gateway, HarnessError> {
     let GatewayInput {
         options,
@@ -49,7 +54,8 @@ pub(crate) fn start(input: GatewayInput<'_>) -> Result<Gateway, HarnessError> {
             source: std::io::Error::other("configuration path is not UTF-8"),
         })?
         .to_owned();
-    let args = if options.self_check || first {
+    let run_litellm = uses_litellm(options, first);
+    let args = if run_litellm {
         vec![
             "run".to_owned(),
             "--locked".to_owned(),
@@ -73,7 +79,7 @@ pub(crate) fn start(input: GatewayInput<'_>) -> Result<Gateway, HarnessError> {
             port.to_string(),
         ]
     };
-    let (command, cwd) = if options.self_check || first {
+    let (command, cwd) = if run_litellm {
         (PathBuf::from("uv"), root.join("tools/oracle/litellm"))
     } else {
         (root.join("target/debug/betterlite"), root)
@@ -87,7 +93,7 @@ pub(crate) fn start(input: GatewayInput<'_>) -> Result<Gateway, HarnessError> {
         log_path: &log_path,
     };
     let mut gateway = Gateway::start(&specification)?;
-    let client = crate::http::client();
+    let client = crate::http::Client;
     gateway.wait_ready(&client)?;
     Ok(gateway)
 }

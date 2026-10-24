@@ -8,6 +8,8 @@ use serde_json::Value;
 
 use super::ProviderRequest;
 
+pub(crate) const MAX_REQUEST: usize = 16 * 1024 * 1024;
+
 pub(crate) struct Answer {
     pub(crate) status: u16,
     pub(crate) headers: BTreeMap<String, String>,
@@ -21,7 +23,7 @@ pub(crate) fn handle_connection(
 ) -> Result<Option<ProviderRequest>, Error> {
     stream.set_read_timeout(Some(Duration::from_secs(30)))?;
     let request = read_request(stream)?;
-    if request.method == "GET" && request.path == "/v1/models" {
+    if is_model_probe(&request) {
         let response_body = br#"{"object":"list","data":[]}"#;
         write_response(
             stream,
@@ -46,7 +48,7 @@ pub(crate) fn handle_connection(
     Ok(Some(request))
 }
 
-fn write_response(
+pub(crate) fn write_response(
     stream: &mut TcpStream,
     status: u16,
     headers: &BTreeMap<String, String>,
@@ -71,7 +73,7 @@ fn write_response(
     Ok(())
 }
 
-fn read_request(stream: &mut TcpStream) -> Result<ProviderRequest, Error> {
+pub(crate) fn read_request(stream: &mut TcpStream) -> Result<ProviderRequest, Error> {
     let bytes = read_bytes(stream)?;
     let header_end = bytes
         .windows(4)
@@ -118,10 +120,10 @@ fn read_request(stream: &mut TcpStream) -> Result<ProviderRequest, Error> {
     })
 }
 
-fn read_bytes(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
+pub(crate) fn read_bytes(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
     let mut bytes = Vec::new();
     let mut buffer = [0_u8; 4096];
-    while bytes.len() < 16 * 1024 * 1024 {
+    while should_read_more(bytes.len()) {
         let count = stream.read(&mut buffer)?;
         if count == 0 {
             break;
@@ -130,14 +132,29 @@ fn read_bytes(stream: &mut TcpStream) -> Result<Vec<u8>, Error> {
             .get(..count)
             .ok_or_else(|| Error::new(ErrorKind::InvalidData, "invalid read size"))?;
         bytes.extend_from_slice(chunk);
-        if bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+        if header_complete(&bytes) {
             break;
         }
     }
     Ok(bytes)
 }
 
-fn request_headers<'a>(
+pub(crate) fn should_read_more(length: usize) -> bool {
+    let should_read = length < MAX_REQUEST;
+    should_read
+}
+
+pub(crate) fn is_model_probe(request: &ProviderRequest) -> bool {
+    let probe = request.method == "GET" && request.path == "/v1/models";
+    probe
+}
+
+pub(crate) fn header_complete(bytes: &[u8]) -> bool {
+    let complete = bytes.windows(4).any(|window| window == b"\r\n\r\n");
+    complete
+}
+
+pub(crate) fn request_headers<'a>(
     lines: impl Iterator<Item = &'a str>,
 ) -> Result<(BTreeMap<String, String>, usize), Error> {
     let mut headers = BTreeMap::new();
@@ -156,10 +173,11 @@ fn request_headers<'a>(
 }
 
 pub(crate) fn to_answer(answer: &crate::case::UpstreamAnswer) -> Answer {
-    Answer {
+    let prepared = Answer {
         status: answer.status,
         headers: answer.headers.clone(),
         body: answer.body.clone(),
         events: answer.events.clone(),
-    }
+    };
+    prepared
 }

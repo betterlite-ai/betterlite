@@ -10,9 +10,9 @@ use thiserror::Error;
 use crate::http::{self, Client, HttpError};
 
 pub(crate) struct Gateway {
-    child: Child,
-    base_url: String,
-    log_path: PathBuf,
+    pub(crate) child: Child,
+    pub(crate) base_url: String,
+    pub(crate) log_path: PathBuf,
 }
 
 pub(crate) struct GatewaySpec<'a> {
@@ -69,7 +69,7 @@ impl Gateway {
         let deadline = Instant::now()
             .checked_add(Duration::from_secs(120))
             .ok_or(ProcessError::Timeout)?;
-        while Instant::now() < deadline {
+        while before_deadline(Instant::now(), deadline) {
             if let Some(status) = self.child.try_wait().map_err(ProcessError::Stop)? {
                 return Err(ProcessError::Exited(status));
             }
@@ -83,14 +83,6 @@ impl Gateway {
         Err(ProcessError::Timeout)
     }
 
-    pub(crate) fn base_url(&self) -> &str {
-        &self.base_url
-    }
-
-    pub(crate) fn log_path(&self) -> &Path {
-        &self.log_path
-    }
-
     pub(crate) fn stop(&mut self) -> Result<(), ProcessError> {
         if self.child.try_wait().map_err(ProcessError::Stop)?.is_none() {
             self.child.kill().map_err(ProcessError::Stop)?;
@@ -98,6 +90,11 @@ impl Gateway {
         self.child.wait().map_err(ProcessError::Stop)?;
         Ok(())
     }
+}
+
+pub(crate) fn before_deadline(now: Instant, deadline: Instant) -> bool {
+    let before = now < deadline;
+    before
 }
 
 impl Drop for Gateway {

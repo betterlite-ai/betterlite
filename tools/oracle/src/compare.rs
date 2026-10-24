@@ -121,7 +121,8 @@ fn remove_pointer(value: &mut Value, pointer: &str) {
 }
 
 fn unescape(value: &str) -> String {
-    value.replace("~1", "/").replace("~0", "~")
+    let unescaped = value.replace("~1", "/").replace("~0", "~");
+    unescaped
 }
 
 fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String> {
@@ -154,7 +155,7 @@ fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String
     }
 }
 
-fn first_difference_optional(
+pub(crate) fn first_difference_optional(
     left: Option<&Value>,
     right: Option<&Value>,
     pointer: &str,
@@ -167,10 +168,11 @@ fn first_difference_optional(
 }
 
 fn difference(pointer: &str, message: &str) -> Difference {
-    Difference {
+    let difference = Difference {
         pointer: pointer.to_owned(),
         message: message.to_owned(),
-    }
+    };
+    difference
 }
 
 pub(crate) fn response_document(response: &Response) -> Value {

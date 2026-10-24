@@ -13,7 +13,7 @@ use thiserror::Error;
 use crate::case::UpstreamAnswer;
 
 #[path = "mock_wire.rs"]
-mod wire;
+pub(crate) mod wire;
 
 use wire::{Answer, handle_connection, to_answer};
 
@@ -36,7 +36,7 @@ pub(crate) enum MockError {
 }
 
 pub(crate) struct MockProvider {
-    base_url: String,
+    pub(crate) base_url: String,
     requests: Arc<Mutex<Vec<ProviderRequest>>>,
     failure: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
@@ -76,10 +76,6 @@ impl MockProvider {
         })
     }
 
-    pub(crate) fn base_url(&self) -> &str {
-        &self.base_url
-    }
-
     pub(crate) fn finish(self) -> Result<Vec<ProviderRequest>, MockError> {
         self.stop.store(true, Ordering::Relaxed);
         if self.thread.join().is_err() {
@@ -102,7 +98,7 @@ impl MockProvider {
     }
 }
 
-fn serve(
+pub(crate) fn serve(
     listener: TcpListener,
     answers: Vec<Answer>,
     requests: Arc<Mutex<Vec<ProviderRequest>>>,
@@ -111,8 +107,18 @@ fn serve(
 ) {
     let deadline = Instant::now() + Duration::from_secs(120);
     let mut answer_index = 0;
-    while !stop.load(Ordering::Relaxed) && answer_index < answers.len() && Instant::now() < deadline
-    {
+    if should_stop_before_accept(answers.is_empty(), stop.load(Ordering::Relaxed)) {
+        return;
+    }
+    while should_serve(
+        stop.load(Ordering::Relaxed),
+        answer_index,
+        answers.len(),
+        deadline_reached(Instant::now(), deadline),
+    ) {
+        if should_stop_after_answer(stop.load(Ordering::Relaxed), answer_index, answers.len()) {
+            break;
+        }
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let Some(answer) = answers.get(answer_index) else {
@@ -137,16 +143,22 @@ fn serve(
                     }
                 }
             }
-            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                thread::park_timeout(Duration::from_millis(10));
-            }
             Err(error) => {
-                set_failure(&failure, error.to_string());
-                break;
+                if should_retry_accept(&error) {
+                    thread::park_timeout(Duration::from_millis(10));
+                } else {
+                    set_failure(&failure, error.to_string());
+                    break;
+                }
             }
         }
     }
-    if !stop.load(Ordering::Relaxed) && answer_index < answers.len() && Instant::now() >= deadline {
+    if should_report_timeout(
+        stop.load(Ordering::Relaxed),
+        answer_index,
+        answers.len(),
+        deadline_reached(Instant::now(), deadline),
+    ) {
         set_failure(
             &failure,
             "timed out waiting for provider requests".to_owned(),
@@ -154,7 +166,51 @@ fn serve(
     }
 }
 
-fn set_failure(failure: &Arc<Mutex<Option<String>>>, message: String) {
+pub(crate) fn should_serve(
+    stopped: bool,
+    answer_index: usize,
+    answer_count: usize,
+    deadline_reached: bool,
+) -> bool {
+    let should_serve = !stopped && answer_index < answer_count && !deadline_reached;
+    should_serve
+}
+
+pub(crate) fn should_stop_before_accept(answers_empty: bool, stopped: bool) -> bool {
+    let should_stop = answers_empty || stopped;
+    should_stop
+}
+
+pub(crate) fn should_stop_after_answer(
+    stopped: bool,
+    answer_index: usize,
+    answer_count: usize,
+) -> bool {
+    let should_stop = stopped || answer_index >= answer_count;
+    should_stop
+}
+
+pub(crate) fn should_report_timeout(
+    stopped: bool,
+    answer_index: usize,
+    answer_count: usize,
+    deadline_reached: bool,
+) -> bool {
+    let should_report = !should_serve(stopped, answer_index, answer_count, !deadline_reached);
+    should_report
+}
+
+pub(crate) fn deadline_reached(now: Instant, deadline: Instant) -> bool {
+    let reached = now >= deadline;
+    reached
+}
+
+pub(crate) fn should_retry_accept(error: &Error) -> bool {
+    let would_block = error.kind() == std::io::ErrorKind::WouldBlock;
+    would_block
+}
+
+pub(crate) fn set_failure(failure: &Arc<Mutex<Option<String>>>, message: String) {
     if let Ok(mut slot) = failure.lock() {
         *slot = Some(message);
     }
