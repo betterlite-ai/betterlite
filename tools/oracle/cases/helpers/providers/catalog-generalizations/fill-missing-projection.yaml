@@ -1,0 +1,26 @@
+kind: helper
+name: fill-missing-projection
+call:
+  catalog_generalizations:
+    rules:
+      - {pattern: gemini, model_info: {litellm_provider: vertex_ai, supports_pdf: true}, fill_missing_for_providers: [vertex_ai]}
+      - {pattern: gemini-3, model_info: {supports_pdf: false, max_tokens: null}, fill_missing_for_providers: [vertex_ai, gemini]}
+      - {pattern: "^bare$", model_info: {}, fill_missing_for_providers: [openai]}
+      - {pattern: "^route$", model_info: {litellm_provider: openai}, fill_missing_for_providers: [openai]}
+      - {pattern: "^plain$", model_info: {mode: chat}}
+      - {pattern: "^$", model_info: {mode: blank}, fill_missing_for_providers: [vertex_ai]}
+    routing: []
+    capabilities: []
+    fill_missing:
+      - {model: gemini-3-pro, provider: vertex_ai}
+      - {model: Gemini-2, provider: vertex_ai}
+      - {model: gemini-3, provider: gemini}
+      - {model: gemini-2, provider: Vertex_AI}
+      - {model: gemini-2, provider: ""}
+      - {model: "", provider: vertex_ai}
+      - {model: bare, provider: openai}
+      - {model: route, provider: openai}
+      - {model: plain, provider: openai}
+env: {}
+compare:
+  ignore: []

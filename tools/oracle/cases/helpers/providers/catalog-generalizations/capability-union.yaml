@@ -1,0 +1,15 @@
+kind: helper
+name: capability-union
+call:
+  catalog_generalizations:
+    rules:
+      - {pattern: claude, model_info: {mode: chat, supports_vision: true, max_tokens: 100}}
+      - {pattern: claude-x, model_info: {supports_vision: false, max_tokens: null}}
+      - {pattern: legacy, model_info: {litellm_provider: bedrock, mode: completion}}
+      - {pattern: "^empty$", model_info: {}}
+    routing: [legacy-claude]
+    capabilities: [claude-x-1, legacy-claude, claude, EMPTY, gpt, ""]
+    fill_missing: []
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,98 @@
+id: B3510
+title: Decisions wire records and shared intermediate representation
+description: >-
+  Add crates/betterlite-models. Build SystemOne and OpenAI request/response records, their shared intermediate representation (IR), validation, and hidden response metadata. The records enforce field constraints on construction: DecisionQuestionMap 1–128 questions, ChoiceQuestion.criteria 1–255 entries, ScoreQuestion.criteria 1–10 entries, OpenAIChoiceQuestion.choices 2–255 options, OpenAIScoreQuestion.levels 2–10 levels, OpenAIDecisionRequestBody.questions 1–128 questions. Keep ordered questions, boolean/string choice distinctions, passthrough fields and token-field serialization faithful so provider modules can depend on these records without importing decision routes or configuration logic.
+
+  SystemOne covers noul (yes/no), choice and score questions mapped by name. OpenAI covers predicate, choice and score questions in sequence with optional names echoed in answers. The IR is a neutral dataclass representation: SystemOne questions map to IR predicates/choices/scores, and OpenAI questions, input messages and answers convert bidirectionally through the IR. Token details in usage records distinguish cached and write tokens; decision responses carry hidden metadata (provider, cost) set by downstream tasks, unreached by the client. An UnsupportedDecisionsRequest reason appears when a payload transformation fails early, like image rejection.
+
+  Validators enforce that a noul question has instructions or criteria, and that OpenAI choice values (including booleans) map to unique SystemOne keys. Construction fails when field length bounds or validator conditions are violated. LiteLLM passthrough fields and extra='allow' keep forward compatibility. Defaults from LiteLLM's wire formats: DecisionsResponse answers is required, usage is optional and defaults to zeros; OpenAI input is string or list of user messages, questions are in sequence, safety_identifier is optional. Both request types accept extra='allow' on the envelopes; individual question/content parts forbid unknown fields.
+
+  Copy LiteLLM's decisions.py and the two-line decisions_text helper from base_llm/decisions/transformation.py into a new betterlite-models crate with a types/ module matching the domain. Validate the IR by round-tripping through LiteLLM's converters at B3511; that task will consume these record definitions.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-models/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L1-L496
+    why: All record definitions, validators and type aliases for decisions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L59-L60
+    why: The decisions_text helper, proposed relocation from B524.
+
+dod:
+  - text: >-
+      Every SystemOne and OpenAI request/response record type exists with fields typed as in LiteLLM, including
+      extra='allow' and field constraints. Field length constraints are enforced on construction: DecisionQuestionMap
+      1–128 questions, ChoiceQuestion.criteria 1–255 entries, ScoreQuestion.criteria 1–10 entries, OpenAIChoiceQuestion.choices
+      2–255 options, OpenAIScoreQuestion.levels 2–10 levels, OpenAIDecisionRequestBody.questions 1–128 questions. Construction
+      fails when bounds are violated.
+    proof: [decisions-types-exist, decisions-types-constraint-violations]
+  - text: NoulQuestion requires instructions or criteria through a validator.
+    proof: [decisions-validators]
+  - text: OpenAIChoiceQuestion requires unique SystemOne keys through a validator.
+    proof: [decisions-validators]
+  - text: DecisionsIRRequest, DecisionsIRResponse and answer variant types exist as dataclasses matching the bidirectional conversions B3511 will use.
+    proof: [decisions-types-exist]
+  - text: Hidden metadata on responses is set by set_hidden_params and read by the hidden_params property, and never appears in serialization.
+    proof: [decisions-hidden-metadata]
+  - text: decisions_text converts JSON to string or passes strings through.
+    proof: [decisions-text]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: decisions-types-exist
+      why: >-
+        SystemOne question/answer types, OpenAI question/answer types, both request envelopes, the IR types or any of their fields are missing or differently typed than LiteLLM
+      run: |
+        cargo build --locked -p betterlite-models && \
+        cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^decisions_types::/) - test(/rejects_/)'
+    - id: decisions-types-constraint-violations
+      why: >-
+        Field length constraints are not enforced: DecisionQuestionMap bounds (0 and 129 questions), ChoiceQuestion.criteria
+        (empty and 256 entries), ScoreQuestion.criteria (empty and 11 entries), OpenAIChoiceQuestion.choices (1 and 256 options),
+        OpenAIScoreQuestion.levels (1 and 11 levels), OpenAIDecisionRequestBody.questions (0 and 129 questions) do not reject
+        invalid construction
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^decisions_types::rejects_/)'
+    - id: decisions-validators
+      why: >-
+        NoulQuestion/OpenAIChoiceQuestion validators do not exist, do not run on construction, or do not reject invalid inputs
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^decisions_validators::/)'
+    - id: decisions-hidden-metadata
+      why: >-
+        The hidden_params property or set_hidden_params method does not exist, is not used, or appears in serialized responses
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^decisions_hidden_metadata::/)'
+    - id: decisions-text
+      why: >-
+        decisions_text helper is missing or does not convert JSON objects/arrays to strings and pass through existing strings
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^decisions_text::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - >-
+    B3511 owns bidirectional SystemOne/IR conversion functions (systemone_request_to_ir, ir_to_systemone_request, systemone_response_to_ir, ir_to_systemone_response) and OpenAI conversions.
+  - >-
+    B3513 owns decision request preparation and provider selection logic.
+  - >-
+    B3514 owns decision request sending and response formatting.
+  - >-
+    B3515 owns the public decisions and systemone entrypoints.
+
+pitfalls:
+  - "Field length bounds are strict: DecisionQuestionMap min_length=1/max_length=128, ChoiceQuestion.criteria min_length=1/max_length=255, ScoreQuestion.criteria min_length=1/max_length=10, OpenAIChoiceQuestion.choices min_length=2/max_length=255, OpenAIScoreQuestion.levels min_length=2/max_length=10, OpenAIDecisionRequestBody.questions min_length=1/max_length=128. Construction must fail when bounds are violated, and rejects_question_and_choice_bounds tests boundaries at 0, 1, max, and max+1 for each constraint."
+  - "NoulQuestion requires instructions or criteria: a question with neither must fail at construction."
+  - "OpenAI choice values include both strings and booleans. systemone_choice_key maps true -> 'true' and false -> 'false'; a choice with value=true and another with value='true' must both map to 'true', triggering the uniqueness validator."
+  - "DecisionsUsage, OpenAIDecisionInputTokensDetails and OpenAIDecisionOutputTokensDetails have default zero values. Set defaults in record construction to match LiteLLM's behavior when fields are absent."
+  - "A passthrough field (extra='allow' or a field named extra in IR records) holds JSON unchanged. Do not deserialize or validate inside it; it round-trips as-is."
+  - "Hidden metadata is a mutable property (_hidden_params dict) on an otherwise frozen Pydantic model. This requires PrivateAttr; set_hidden_params updates it, hidden_params returns the dict."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

@@ -18,6 +18,7 @@ A task is done when `cargo gate run <ID>` passes and your final answer is a vali
 - Stay inside scope.paths and the task's budgets. Needing more is a blocker, not a judgment call.
 - Commit in small steps, staging files by explicit path, with plain messages such as `feat(config): resolve os.environ references`.
 - While iterating, run `cargo gate run <ID> --only <check>`. Run the full gate before you stop. The first line of the gate output names the folder holding each check's full log.
+- Oracle helpers share one registry, and every helper task adds to it, so keep it in name order: the mod lines and HelperCall variants in tools/oracle/src/helpers/mod.rs, the arms of invoke, and the imports and RUNNERS entries in tools/oracle/helpers/dispatch.py. Entries added in different places merge without conflicts. A test that needs its own variant takes it with let-else instead of matching every variant, so the next helper does not have to edit it.
 
 ## LiteLLM
 
@@ -32,6 +33,8 @@ Everything in LiteLLM's enterprise directory and in the litellm_enterprise packa
 ## Blocked
 
 When the task cannot be finished inside its scope and budgets, stop and answer with status blocked. The blocker says what you need, where, and the evidence (command, output, file and line). Typical blockers are a file outside scope, a check that can't pass without a protected file, the task text contradicting the oracle, a budget the work can't fit, and a tool missing or at the wrong version. Describe it and stop. The decision belongs to the architect.
+
+The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .bash_profile, .profile, .zshrc, .zprofile, .gitconfig, .gitmodules, .mcp.json, .ripgreprc, .idea, .vscode and paths under .claude). Inside the sandbox they make committed, scope, hooks, diff-budget and mutants fail on those paths. That alone is not a blocker: the dispatcher runs the gate again outside the sandbox. Report done when every other check passes, and say in notes which checks failed only on those paths.
 
 ## Final answer
 

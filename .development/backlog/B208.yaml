@@ -1,7 +1,7 @@
 id: B208
 milestone: M1 openai data plane
 title: Environment proxy selection and authentication
-status: todo
+status: in-progress
 depends_on: [B171]
 file: tasks/B208-http-proxies.yaml
 covers:
