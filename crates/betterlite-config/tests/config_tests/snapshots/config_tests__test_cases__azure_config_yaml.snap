@@ -1,0 +1,10 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Err(
+    MissingEnvironment {
+        variable: "AZURE_API_KEY",
+        path: "model_list.0.litellm_params.api_key",
+    },
+)

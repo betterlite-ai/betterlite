@@ -1,0 +1,12 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Err(
+    Unsupported {
+        paths: [
+            "general_settings.disable_prisma_schema_update",
+            "litellm_settings.callbacks",
+        ],
+    },
+)

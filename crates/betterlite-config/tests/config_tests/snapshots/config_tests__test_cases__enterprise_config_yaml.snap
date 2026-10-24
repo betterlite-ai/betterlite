@@ -1,0 +1,14 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: result
+---
+Err(
+    Unsupported {
+        paths: [
+            "litellm_settings.cache",
+            "litellm_settings.callbacks",
+            "model_list.0.litellm_params.tags",
+            "router_settings.enable_tag_filtering",
+        ],
+    },
+)

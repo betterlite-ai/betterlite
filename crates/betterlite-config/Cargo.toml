@@ -1,0 +1,19 @@
+[package]
+name = "betterlite-config"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+secrecy.workspace = true
+serde.workspace = true
+serde-saphyr.workspace = true
+serde_ignored.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
+
+[lints]
+workspace = true
