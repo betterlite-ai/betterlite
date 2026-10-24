@@ -2061,10 +2061,11 @@ tasks:
     depends_on:
     - B016
     - B304
+    - B301
+    - B002
     file: tasks/B314-least-busy.yaml
     covers:
     - litellm/router_strategy/least_busy.py
-
   - id: B315
     milestone: M2 routing
     title: Latency and first-token latency selection
