@@ -1,7 +1,7 @@
 id: B171
 milestone: M1 openai data plane
 title: Direct helper oracle and URL path encoding
-status: in-progress
+status: done
 depends_on: [B001]
 file: tasks/B171-helper-oracle.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/litellm_core_utils/url_utils.py"
 parent: B009
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 60

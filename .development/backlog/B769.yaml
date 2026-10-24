@@ -1,14 +1,14 @@
 id: B769
 milestone: M4 keys, spend and management
 title: JWT login result HTML
-status: in-progress
+status: done
 depends_on: [B003]
 file: tasks/B769-jwt-display.yaml
 covers:
   - "litellm/proxy/common_utils/html_forms/jwt_display_template.py"
 parent: B053
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 59

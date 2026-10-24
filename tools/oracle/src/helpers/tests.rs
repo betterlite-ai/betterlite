@@ -12,7 +12,7 @@ use crate::case::{HelperCase, parse_helper_case};
 #[case::hung_child("exec sleep 5", "helper timed out and was reaped")]
 #[case::excess_output("head -c 1048577 /dev/zero", "helper output exceeded 1 MiB")]
 #[case::failed_child("echo e >&2; exit 3", "helper exited with exit status: 3: e\n")]
-fn b171_helper_runner_tests_behavior(#[case] script: &str, #[case] expected: &str) {
+fn helper_runner_tests_behavior(#[case] script: &str, #[case] expected: &str) {
     let mut command = Command::new("sh");
     command.args(["-c", script]);
     let timeout = Duration::from_millis(300);
