@@ -1,5 +1,6 @@
 #![cfg(test)]
-use super::loader::ConfigLoader;
+use super::loader::{ConfigError, ConfigLoader};
+use super::types::RoutingStrategy;
 use secrecy::ExposeSecret;
 use std::collections::BTreeMap;
 
@@ -41,11 +42,14 @@ fn loads_general_router_and_model_info() {
     );
     assert!(config.general_settings.master_key.is_some());
     assert_eq!(
-        config.router_settings.routing_strategy.as_deref(),
-        Some("simple-shuffle")
+        config.router_settings.routing_strategy,
+        Some(RoutingStrategy::SimpleShuffle)
     );
     assert_eq!(config.router_settings.num_retries, Some(2));
     assert_eq!(config.litellm_settings.num_retries, Some(4));
+    map_loader(BTreeMap::new())
+        .load("router_settings:\n  routing_strategy: unsupported\n")
+        .unwrap_err();
     let environment = map_loader(BTreeMap::new())
         .load("environment_variables:\n  REGION: eu\n")
         .unwrap();
@@ -86,4 +90,10 @@ fn debug_does_not_expose_secrets() {
 
     assert!(!debug.contains("api-secret"));
     assert!(!debug.contains("master-secret"));
+}
+#[test]
+fn rejects_boolean_in_numeric_field_as_invalid_scalar() {
+    assert!(
+        matches!(map_loader(BTreeMap::new()).load("model_list:\n  - model_name: x\n    litellm_params:\n      timeout: true\n"), Err(ConfigError::InvalidScalar { path, value: true }) if path == "model_list.0.litellm_params.timeout")
+    );
 }

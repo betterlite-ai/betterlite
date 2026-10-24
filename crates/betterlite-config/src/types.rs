@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use secrecy::SecretString;
+use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -44,12 +45,23 @@ pub struct GeneralSettings {
 
 #[derive(Debug, Clone, Default)]
 pub struct RouterSettings {
-    pub routing_strategy: Option<String>,
+    pub routing_strategy: Option<RoutingStrategy>,
     pub num_retries: Option<u32>,
     pub timeout: Option<f64>,
     pub allowed_fails: Option<u32>,
     pub cooldown_time: Option<f64>,
     pub fallbacks: Vec<RouterFallback>,
+}
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum RoutingStrategy {
+    SimpleShuffle,
+    LeastBusy,
+    UsageBasedRouting,
+    LatencyBasedRouting,
+    CostBasedRouting,
+    UsageBasedRoutingV2,
+    Lar1,
 }
 
 pub type RouterFallback = BTreeMap<String, Vec<String>>;

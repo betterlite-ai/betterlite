@@ -49,7 +49,7 @@ pub enum ConfigError {
         source: ParseIntError,
     },
     #[error("invalid scalar at {path}")]
-    InvalidScalar { path: String },
+    InvalidScalar { path: String, value: bool },
 }
 
 pub struct ConfigLoader<L> {
@@ -184,11 +184,7 @@ fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, Confi
 where
     L: EnvironmentLookup,
 {
-    let routing_strategy = resolve_optional(
-        raw.routing_strategy,
-        "router_settings.routing_strategy",
-        lookup,
-    )?;
+    let routing_strategy = raw.routing_strategy;
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
     let num_retries = integer(raw.num_retries, "router_settings.num_retries")?;

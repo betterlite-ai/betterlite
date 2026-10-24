@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::types::RouterFallback;
+use crate::types::{RouterFallback, RoutingStrategy};
 
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawConfig {
@@ -53,7 +53,7 @@ pub(super) struct RawGeneral {
 
 #[derive(Debug, Deserialize, Default)]
 pub(super) struct RawRouter {
-    pub(super) routing_strategy: Option<String>,
+    pub(super) routing_strategy: Option<RoutingStrategy>,
     pub(super) num_retries: Option<RawNumber>,
     pub(super) timeout: Option<RawNumber>,
     pub(super) allowed_fails: Option<RawNumber>,
@@ -74,6 +74,6 @@ pub(super) struct RawLiteLlm {
 pub(super) enum RawNumber {
     Integer(i64),
     Float(f64),
-    Boolean,
+    Boolean(bool),
     Text(String),
 }
