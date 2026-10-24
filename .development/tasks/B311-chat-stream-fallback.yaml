@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-server/**
   - crates/betterlite-openai/**
   - tools/oracle/cases/routing/chat-stream-fallback/**
-  - tools/oracle/src/router_probes/chat-stream-fallback/**
+  - tools/oracle/src/router_probes/chat_stream_fallback/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/chat_stream_fallback.py
   - tools/oracle/litellm/probes/registry.py
@@ -34,7 +34,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the chat_stream_fallback prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: All mutants in changed router, config or wire code are caught.
