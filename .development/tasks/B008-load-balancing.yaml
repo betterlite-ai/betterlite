@@ -49,6 +49,7 @@ out_of_scope:
 pitfalls:
   - The oracle cannot compare random picks across Python and Rust random generators, so this task proves behavior with seeded tests instead of oracle cases.
   - A statistical test with a fixed seed is deterministic. Pick the seed once and keep it; never retry with a new seed until it passes.
+review_level: standard
 budget:
   max_changed_lines: 600
   max_new_expects: 0

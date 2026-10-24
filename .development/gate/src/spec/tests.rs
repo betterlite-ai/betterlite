@@ -26,6 +26,7 @@ oracle_cases: []
 deviations: []
 out_of_scope: []
 pitfalls: []
+review_level: standard
 budget:
   max_changed_lines: 100
   max_new_expects: 0

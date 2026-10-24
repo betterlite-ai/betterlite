@@ -13,9 +13,9 @@ use crate::error::GateError;
 use crate::facts::resolve_base;
 use crate::git::common_dir;
 use crate::journal::journal_dir;
-use crate::spec::agents::{Agents, Rung, Runner};
+use crate::spec::agents::{Agents, Role, Rung, Runner};
 use crate::spec::backlog::Status;
-use crate::spec::task::Task;
+use crate::spec::task::{ReviewLevel, Task};
 use crate::yaml::read_yaml;
 
 use prompt::Brief;
@@ -56,6 +56,13 @@ pub(crate) fn find_runner<'agents>(
         task: String::new(),
         reason: format!("agents.yaml has no runner {id}"),
     })
+}
+
+pub(crate) const fn reviewer_role(agents: &Agents, level: ReviewLevel) -> &Role {
+    match level {
+        ReviewLevel::Standard => &agents.roles.reviewer,
+        ReviewLevel::Security => &agents.roles.security_reviewer,
+    }
 }
 
 fn ready_file<'backlog>(

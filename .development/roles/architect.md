@@ -13,7 +13,7 @@ The architect is the top of the pyramid: the main session working with Max. It o
 1. Pull main. Pick ready backlog entries: status todo, every dependency done.
 2. For entries without a task file, start the planner on a branch `plan/<first-id>`: `codex exec` with the planner rung from agents.yaml and a prompt naming the entries. Read the task files it wrote, fix what's off, run `cargo gate validate`, and land them through a pull request.
 3. Mark the entries in-progress in a small status pull request; batch status changes rather than opening one per task.
-4. Run `cargo gate dispatch <ID>` for each, in the background; entries whose scope.paths don't overlap can run at the same time. The dispatcher climbs the worker ladder, runs the gate, and asks a reviewer from the other vendor.
+4. Run `cargo gate dispatch <ID>` for each, in the background. Entries whose scope.paths don't overlap can run at the same time, at most 3 at once (Max, 2026-10-24): each one builds in its own target folder and they all share the Codex rate limit. The dispatcher climbs the worker ladder, runs the gate, and asks a reviewer from the other vendor.
 5. When a dispatch ends ready, read the diff, the report and the review. Push the branch and open a pull request whose body says what changed and links the task file, with auto-merge on in the same command: `gh pr create ... && gh pr merge --auto`. The merge queue lands it once the gate check passes, so nobody calls merge by hand (Max's call, 2026-10-24). Mark the entry done in the next status pull request and remove the worktree.
 6. When a dispatch ends with an error, the journal under .git/betterlite/<ID>/ holds every prompt, answer, log and gate output. Decide: rewrite the task, split it, answer the blocker, or take it to Max.
 
