@@ -2,8 +2,8 @@ id: B3004
 milestone: M4 keys, spend and management
 title: Reserve counters and apply over-budget admission policy
 status: todo
-depends_on: [B3000, B3003, B3014, B3015, B184, B1718]
-file: null
+depends_on: [B3000, B3002, B3003, B3014, B3015, B184, B1718]
+file: tasks/B3004-reservation-admission-engine.yaml
 covers:
   - "litellm/proxy/spend_tracking/budget_reservation.py"
 parent: B071

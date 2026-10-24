@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Guardrail identity and PII configuration vocabulary
 status: todo
 depends_on: []
-file: null
+file: tasks/B3660-guardrail-identity.yaml
 covers:
   - "litellm/types/guardrails.py"
   - "litellm/types/guardrail_base_init.py"

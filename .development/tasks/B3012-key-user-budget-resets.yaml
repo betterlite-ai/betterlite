@@ -1,0 +1,99 @@
+id: B3012
+title: Reset key and user budgets in bounded chunks
+description: >-
+  Implement `betterlite-db::identity_budget_reset` for resetting key and user budgets in the reset job. Load due keys and users in bounded chunks, calculate spend decrements with rollover carry, write spend and reset-timestamp updates to the database, then invalidate the spend counters. Collect per-row failures without stopping the chunk, report failed rows to the service callback, and advance the checkpoint only for rows that reset past the cutoff. When resetting the global proxy user (the one with LITELLM_PROXY_BUDGET_NAME), also invalidate the global proxy cached accumulator after the spend counter invalidation. Preserve key expiry filtering and the separate failure path that keeps already-committed writes from being lost when a row cannot be reset.
+
+scope:
+  paths:
+    - crates/betterlite-db/**
+    - Cargo.toml
+  lint_tables: true
+
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L940-L987"
+    why: _write_key_reset_updates and _write_user_reset_updates methods that queue spend and timestamp updates in a unit of work.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1036-L1145"
+    why: reset_budget_for_litellm_keys and _reset_budget_for_litellm_keys_chunk implementation with per-row failure collection and chunk outcome reporting.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1147-L1260"
+    why: reset_budget_for_litellm_users and _reset_budget_for_litellm_users_chunk implementation with global proxy cache invalidation for the budget-name user.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4935-L4946"
+    why: "PrismaClient.get_data key find_all with reset_at filter: fetches keys WHERE budget_reset_at < reset_at AND budget_duration IS NOT NULL (own-schedule keys)."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4993-L5012"
+    why: "PrismaClient.get_data user find_all with reset_at filter: fetches users WHERE budget_duration IS NOT NULL AND (budget_reset_at IS NULL OR budget_reset_at < reset_at), treating NULL reset_at as due when budget_duration is set."
+
+dod:
+  - text: Key and user reset phases each fetch rows due for reset in bounded chunks, including only keys with their own budget_duration (keys where budget_duration IS NOT NULL).
+    proof: [key-user-reads]
+  - text: Per-row spend decrements are calculated as pre-reset spend minus post-reset spend; both values are converted from the row's float field with a fallback to zero.
+    proof: [spend-decrement-calculation]
+  - text: Spend and budget_reset_at updates are queued in a spend_reset_unit_of_work and committed in one transaction; write failures are retried once with database reconnection.
+    proof: [write-transactional]
+  - text: Users with budget_duration set and budget_reset_at NULL are treated as due for reset (to prevent silent spend accumulation over the row lifetime).
+    proof: [key-user-reads]
+  - text: Spend counters are invalidated only after the database commit, keyed by spend:key:{token} for keys and spend:user:{user_id} for users, with the format matching the source.
+    proof: [counter-invalidation-order]
+  - text: When the reset user is the configured global proxy budget user (LITELLM_PROXY_BUDGET_NAME), the global proxy spend accumulator cache is also invalidated after the spend counter invalidation.
+    proof: [global-proxy-invalidation]
+  - text: Per-row failures (rows that cannot be reset) are collected without stopping the chunk; failed rows are reported to the service callback with event metadata.
+    proof: [per-row-failure-collection]
+  - text: Chunk outcome counts rows that advanced past the reset cutoff, distinguishing them from rows read but not advanced; zero advances means the phase is drained.
+    proof: [chunk-outcome-cases]
+  - text: Success and failure hooks are dispatched with call_type (reset_budget_keys or reset_budget_users), service type, duration, and event metadata naming the counts of rows found, updated and failed.
+    proof: [service-hook-cases]
+
+checks:
+  optional: []
+  commands:
+    - id: key-user-reads
+      why: Key/user chunk reads are missing, read all keys instead of non-budget-duration only, or fail to apply expiry filter for keys
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::(key_reads|user_reads|key_expiry_filter)/)'
+    - id: spend-decrement-calculation
+      why: Spend decrement calculation is missing, uses wrong pre/post values, or does not handle float/zero conversion
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::spend_decrement/)'
+    - id: write-transactional
+      why: Write operations are not transactional, do not use spend_reset_unit_of_work, or retry logic is missing
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::write_transactional/)'
+    - id: counter-invalidation-order
+      why: Spend counter invalidation happens before the database commit, uses wrong cache keys, or does not match source format
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::counter_invalidation/)'
+    - id: global-proxy-invalidation
+      why: Global proxy cache invalidation is missing, happens before counter invalidation, or does not check for LITELLM_PROXY_BUDGET_NAME
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::global_proxy/)'
+    - id: per-row-failure-collection
+      why: Per-row failures are not collected, stop the chunk on the first error, or are not reported to service callback
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::per_row_failure/)'
+    - id: chunk-outcome-cases
+      why: Chunk outcome is missing, does not distinguish advanced rows, or does not mark zero advances as phase-drained
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::chunk_outcome/)'
+    - id: service-hook-cases
+      why: Service success/failure hooks are missing, use wrong call_type values, or event metadata lacks required counts
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^identity_budget_reset::service_hooks/)'
+
+oracle_cases: []
+
+deviations:
+  - what: "Database write retries happen silently and do not replay a write that may have already reached Postgres, using the B3009 task-level DB_RETRY_SAFE_ERROR_TYPES filter instead of retrying all exceptions."
+    why: "A reset unconditionally erases spend when it lands at the database. Replaying a failed connection attempt blindly would wipe out spend that accumulated after the first write succeeded but before the network error signaled."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py"
+
+out_of_scope:
+  - "Key and user reset calculation (_reset_budget_for_key, _reset_budget_for_user) are owned by B3009; this task only writes the updated rows."
+  - "Team reset phase; owned by B3013."
+  - "Budget cascade and tier-sweep phases; owned by B3010-B3011."
+  - "Spend counter initialization and read/repair logic; owned by B3014-B3015."
+  - "Service callback assembly and logging; the callback contract is injected through the constructor."
+
+pitfalls:
+  - "Keys with budget_duration set must be included in the key reset phase; they reset on their own schedule per-key (B3012 owns only keys where budget_duration IS NOT NULL)."
+  - "The spend decrement must be calculated as pre-reset minus post-reset, both converted from float with a fallback to zero; a negative decrement would reverse the reset."
+  - "Individual spend counter keys (spend:key:{token}, spend:user:{user_id}) and the global proxy cache (LITELLM_PROXY_BUDGET_NAME's accumulator) must be invalidated only after database commit succeeds; clearing them before a failed write leaves the reset unconfirmed."
+  - "Users with budget_duration set but budget_reset_at NULL must be included in resets; without this they would never be reset and spend would accumulate for the lifetime of the row, silently exceeding max_budget."
+  - "The global proxy budget user has ID LITELLM_PROXY_BUDGET_NAME (a string constant from LiteLLM); checking user_id == LITELLM_PROXY_BUDGET_NAME is the exact condition before invalidating the global proxy cache."
+  - "Per-row failures must not stop the chunk; if one row fails to reset, its error is collected and reported, but updated rows stay committed and the phase continues to the next row."
+  - "Chunk outcome advanced count must consider only rows that reset past the cutoff (datetime.now(timezone.utc)); rows that failed to advance are not counted and the phase drains when none advance."
+
+review_level: security
+
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
