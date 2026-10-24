@@ -1,7 +1,7 @@
 id: B1108
 title: Request guardrail selection
 description: >-
-  Resolve MIT guardrail metadata and policy selection with injected B104/B105 policy results; preserve override
+  Resolve MIT guardrail metadata and policy selection with injected B3240/B3241 policy results; preserve override
   order and excluded-policy diagnostics without loading enterprise hooks.
 
 
@@ -46,8 +46,9 @@ description: >-
   30 wiring; 554 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B732 (Typed authentication principals and grant resolution), B104 (Guardrail framework,
-  registry and guardrail API), B105 (Built-in content filter, secret detection and prompt injection checks), B171
+  Direct inputs come from B732 (Typed authentication principals and grant resolution), B3240 (Policy values,
+  conditions and inheritance: PolicyMatchContext, PolicyMatcher, PolicyResolver), B3241 (Policy memory, attachment
+  matching and request resolution: get_policy_registry, get_attachment_registry), B171
   (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B1102 (Request model and destination policy).
   These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
   on the provider and keys/data branches.
