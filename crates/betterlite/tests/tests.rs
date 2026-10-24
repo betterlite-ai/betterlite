@@ -1,8 +1,8 @@
 #![cfg(test)]
+use std::env;
 use std::path::{Path, PathBuf};
 use std::process::{self, Stdio};
 use std::time::Duration;
-use std::{env, hint::black_box};
 use tokio::fs;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -31,6 +31,7 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
         .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
         .await
         .unwrap();
+    sleep(Duration::from_millis(10)).await;
     send_sigterm(server.child.as_ref().unwrap().id().unwrap()).await;
     health_request
         .write_all(b"Connection: close\r\n\r\n")
@@ -49,6 +50,8 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
         .unwrap();
     let mut response = Vec::new();
     request.read_to_end(&mut response).await.unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 404"));
+    assert!(response.ends_with(b"{\"detail\":\"Not Found\"}"));
     let stderr = server.wait().await;
     assert_json_logs(&stderr);
 }
@@ -90,10 +93,17 @@ async fn dropping_server_guard_kills_server() {
     TcpStream::connect(("127.0.0.1", port)).await.unwrap_err();
 }
 fn assert_json_logs(stderr: &[u8]) {
-    for line in String::from_utf8(stderr.to_owned()).unwrap().lines() {
-        let event: LogEvent = serde_json::from_str(line).unwrap();
-        black_box((&event.timestamp, &event.level, &event.message));
-    }
+    let events = String::from_utf8(stderr.to_owned())
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str::<LogEvent>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert!(!events.is_empty());
+    assert!(events.iter().any(|event| {
+        !event.timestamp.is_empty()
+            && event.level == "INFO"
+            && event.message == "betterlite server listening"
+    }));
 }
 async fn fixture(port: u16, source: &str) -> (PathBuf, PathBuf) {
     let directory = env::temp_dir().join(format!("betterlite-b003-{}-{port}", process::id()));

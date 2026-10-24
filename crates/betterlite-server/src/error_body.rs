@@ -38,3 +38,14 @@ pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response 
             .into_response(),
     }
 }
+pub(crate) fn request_timeout_error() -> Response {
+    let error = ErrorResponse {
+        error: ErrorObject {
+            message: "request timed out".to_owned(),
+            error_type: "invalid_request_error".to_owned(),
+            param: None,
+            code: "408".to_owned(),
+        },
+    };
+    (StatusCode::REQUEST_TIMEOUT, Json(error)).into_response()
+}

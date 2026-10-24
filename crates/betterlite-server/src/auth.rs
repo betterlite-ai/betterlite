@@ -5,7 +5,6 @@ use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use secrecy::{ExposeSecret as _, SecretString};
-use std::str;
 use subtle::ConstantTimeEq as _;
 #[derive(Clone)]
 pub(crate) struct AuthState {
@@ -26,7 +25,14 @@ pub(crate) async fn authenticate(
         return next.run(request).await;
     };
     let presented_key = extract_key(request.headers());
-    if is_valid_key(presented_key.as_ref(), master_key) {
+    if presented_key.as_ref().is_some_and(|presented| {
+        bool::from(
+            presented
+                .expose_secret()
+                .as_bytes()
+                .ct_eq(master_key.expose_secret().as_bytes()),
+        )
+    }) {
         return next.run(request).await;
     }
     let failure = match presented_key.as_ref() {
@@ -57,13 +63,13 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
     if header_bytes.is_empty() {
         return None;
     }
-    let header_value = str::from_utf8(header_bytes).ok()?;
+    let header_value: String = header_bytes.iter().map(|byte| char::from(*byte)).collect();
     let token = if name == header::AUTHORIZATION.as_str() {
-        strip_prefix(header_value).unwrap_or_default()
+        strip_prefix(&header_value).unwrap_or_default()
     } else if name == "x-litellm-api-key" {
-        strip_prefix(header_value).unwrap_or_else(|| header_value.to_owned())
+        strip_prefix(&header_value).unwrap_or_else(|| header_value.clone())
     } else {
-        header_value.to_owned()
+        header_value
     };
     Some(SecretString::from(token))
 }
@@ -105,15 +111,4 @@ fn aws_credential(value: &str) -> Option<String> {
     }
     let credential = value.split_once("Credential=")?.1;
     first_credential_part(credential)
-}
-fn is_valid_key(presented_key: Option<&SecretString>, master_key: &SecretString) -> bool {
-    let Some(presented) = presented_key else {
-        return false;
-    };
-    bool::from(
-        presented
-            .expose_secret()
-            .as_bytes()
-            .ct_eq(master_key.expose_secret().as_bytes()),
-    )
 }

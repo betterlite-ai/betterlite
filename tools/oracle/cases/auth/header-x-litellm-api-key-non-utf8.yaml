@@ -1,0 +1,18 @@
+name: auth-header-x-litellm-api-key-non-utf8
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /not-served
+  headers:
+    x-litellm-api-key: "invalid-\xFF"
+    Authorization: Bearer oracle-master
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
