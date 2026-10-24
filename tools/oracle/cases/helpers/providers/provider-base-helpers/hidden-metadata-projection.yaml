@@ -1,0 +1,11 @@
+kind: helper
+name: hidden-metadata-projection
+call:
+  provider_base_helpers:
+    hidden_params:
+      kind: dict
+      hidden: opaque
+      create: true
+env: {}
+compare:
+  ignore: []

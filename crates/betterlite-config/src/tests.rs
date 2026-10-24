@@ -4,6 +4,8 @@ use super::types::RoutingStrategy;
 use secrecy::ExposeSecret;
 use std::collections::BTreeMap;
 
+mod provider_base_config;
+
 fn map_loader(values: BTreeMap<String, String>) -> ConfigLoader<BTreeMap<String, String>> {
     ConfigLoader { lookup: values }
 }

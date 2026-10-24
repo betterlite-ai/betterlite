@@ -1,0 +1,23 @@
+task: B2202
+deviations:
+  - what: A ref_template field that adds a conversion, format spec, attribute or index to model (for example {model!r} or {model:>8}) fails with a KeyError-class error; Python's str.format applies it. A brace inside a field name also fails as KeyError, where Python raises ValueError.
+    why: betterlite formats only {model}, {{ and }}; LiteLLM's callers pass plain templates such as "#/$defs/{model}", and a full str.format port is out of proportion to that use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L160-L163
+  - what: A thinking budget_tokens that is a float or a boolean fails with BudgetNotInteger, and a sum past i64 fails with BudgetOverflow; Python adds them (1024.5 gives 5120.5, true gives 4097) and has unbounded integers.
+    why: Floats are denied in betterlite, and max_tokens is an integer token count everywhere else.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L116-L123
+  - what: When optional_params already holds a string or a dict under tools, appending fails with ToolsNotList; Python splats the string's characters or the dict's keys into the new list. A null tools value fails the same way in both.
+    why: A non-list tools value is malformed input, and silently splitting it into characters would send garbage tools to the provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L136-L147
+  - what: DEFAULT_MAX_TOKENS with digit-group underscores such as 4_096 is a config error; Python's int() accepts it. Surrounding whitespace and a sign work in both.
+    why: The value is parsed with Rust's integer parser after trimming; underscores in an environment number are rare enough not to justify a custom parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L90
+  - what: litellm_settings.modify_params takes only a boolean. serde-saphyr reads the quoted string 'false' as false, where LiteLLM stores the string and its truthiness turns the setting on, and a list or number is a config error instead of a truthy value.
+    why: The config is typed, and a quoted false meaning on is a trap rather than behavior worth copying.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L250
+  - what: litellm_settings.DEFAULT_MAX_TOKENS is rejected as an unsupported key; LiteLLM's proxy sets it on the litellm module, where it has no effect because transformation.py imported the constant at startup.
+    why: Rule no-silent-drops makes a key that does nothing an error that names it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L13
+  - what: hidden_params returns a copy of the metadata map; LiteLLM returns the stored dict itself, so writes through the result reach a dict response.
+    why: Rust ownership makes the caller write the map back explicitly, as the task's contract already asks of callers that stamp results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L196-L209

@@ -1,0 +1,11 @@
+kind: helper
+name: dot-paths-get-seed
+call:
+  dot_paths:
+    get:
+      data: {"kubernetes.io": {"namespace": "default"}}
+      key_path: 'kubernetes\.io.namespace'
+      default: null
+env: {}
+compare:
+  ignore: []

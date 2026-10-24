@@ -1,0 +1,10 @@
+kind: helper
+name: array-delete
+call:
+  dot_paths:
+    delete:
+      data: {"tools": [{"name": "t1", "input_examples": ["a"]}, {"name": "t2", "input_examples": ["b"]}]}
+      path: tools[ +0_1 ].input_examples
+env: {}
+compare:
+  ignore: []

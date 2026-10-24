@@ -1,0 +1,7 @@
+kind: helper
+name: base-image-edit-initializer
+call:
+  provider_base_helpers: {image_edit_init: null}
+env: {}
+compare:
+  ignore: []

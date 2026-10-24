@@ -1,0 +1,8 @@
+kind: helper
+name: fuzz-seed
+call:
+  provider_base_helpers:
+    hidden_params: {kind: object, hidden: {model: {model_id: m}}, create: true}
+env: {}
+compare:
+  ignore: []

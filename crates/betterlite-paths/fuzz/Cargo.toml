@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-paths-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-paths = { path = ".." }
+libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
+
+[[bin]]
+name = "control_paths"
+path = "fuzz_targets/control_paths.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

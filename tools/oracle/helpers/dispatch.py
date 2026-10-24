@@ -8,6 +8,8 @@ os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 from bedrock_request_policy import run as run_bedrock_request_policy
 from catalog_generalizations import run as run_catalog_generalizations
+from dot_paths import run as run_dot_paths
+from provider_base_helpers import run as run_provider_base_helpers
 from provider_message_primitives import run as run_provider_message_primitives
 from url_path import run as run_url_path
 
@@ -15,6 +17,8 @@ Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Js
 RUNNERS: dict[str, Callable[[dict[str, Json]], Json]] = {
     "bedrock_request_policy": run_bedrock_request_policy,
     "catalog_generalizations": run_catalog_generalizations,
+    "dot_paths": run_dot_paths,
+    "provider_base_helpers": run_provider_base_helpers,
     "provider_message_primitives": run_provider_message_primitives,
     "url_path": run_url_path,
 }

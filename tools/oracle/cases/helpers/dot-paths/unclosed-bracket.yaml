@@ -1,0 +1,8 @@
+kind: helper
+name: unclosed-bracket
+call:
+  dot_paths:
+    delete: {data: {"a": {"0": {"b": 1, "c": 2}}}, path: "a[0.b"}
+env: {}
+compare:
+  ignore: []

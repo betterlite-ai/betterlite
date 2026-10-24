@@ -1,0 +1,11 @@
+kind: helper
+name: missing-path
+call:
+  dot_paths:
+    get:
+      data: {"user": {"name": "text"}}
+      key_path: user.name.first
+      default: {"fallback": true}
+env: {}
+compare:
+  ignore: []
