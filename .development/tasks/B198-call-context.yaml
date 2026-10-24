@@ -1,21 +1,31 @@
 id: B198
 title: Injected call context and shared settings
 description: >-
-  Create betterlite-core for injected call context and shared settings, above provider/error/logging layers and
-  below the server/Python adapters. Define immutable per-call identity, deadline, parent/internal-call provenance,
-  privacy, phase and pinned billing timestamp; child contexts derive explicitly from their parent and no HTTP field
-  may construct trusted internal flags. Snapshot supported config settings into a typed CoreSettings at construction,
-  keeping unsupported module-level settings a named config error. Add shared AWS partition/ARN helpers and typed
-  clock/ID generation inputs, replacing UUID monkeypatching, asyncify/thread-pool wrappers and import caches with
-  explicit native dependencies. Do not add global environment reads, Python interpreters or a runtime callback registry.
-  Add call_context and aws_partition helper cases, using synthetic IDs/time in Python; verify request isolation
-  and deadline inheritance in Rust tests. Budget 300 context/settings lines, 100 config integration and 300 tests.
-  Seed B171's shared helper_case corpus with every added operation and replay it through the common typed parser.
+  Create the leaf betterlite-context crate for injected call context, AWS partition and shared settings, with no
+  dependency on provider/error/logging/core crates. B014 owns the upper betterlite-core pipeline. Define immutable
+  per-call identity, deadline, parent/internal-call provenance, privacy, phase and pinned billing timestamp; child
+  contexts derive explicitly from their parent and no HTTP field may construct trusted internal flags. Snapshot
+  supported config settings into a typed CoreSettings at construction, keeping unsupported module-level settings
+  a named config error. Add shared AWS partition/ARN helpers and typed clock/ID generation inputs, replacing UUID
+  monkeypatching, asyncify/thread-pool wrappers and import caches with explicit native dependencies. Do not add
+  global environment reads, Python interpreters or a runtime callback registry. Add call_context and aws_partition
+  helper cases, using synthetic IDs/time in Python; verify request isolation and deadline inheritance in Rust tests.  Seed
+  B171's shared helper_case corpus with every added operation and replay it through the common typed parser. CoreSettings
+  owns only REQUEST_TIMEOUT (6000 seconds) plus its explicitly-set flag and the existing litellm_settings.request_timeout/litellm_params.timeout
+  override values; other constants stay with the features consuming them. Put get_env_int/get_env_int_in_range/get_env_int_or_none
+  equivalents in betterlite-config: malformed integer inputs fall back (or return None for optional input), out-of-range
+  inputs use defaults, and warnings name the variable. REQUEST_TIMEOUT itself follows its pinned numeric parse;
+  do not silently extend integer fallback to every unrelated float setting. Expose post-response-phase and pinned
+  billing-time values from this leaf crate for logging/providers/cost consumers. Budget 270 context/AWS/settings,
+  100 adapters, 300 tests and 60 manifests (730 total). Write the behavior rstest functions b198_call_context_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations call_context, aws_partition, env_integer in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
   - deny.toml
-  - crates/betterlite-core/**
+  - crates/betterlite-context/**
   - crates/betterlite-config/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/**
@@ -24,30 +34,38 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_internal_context.py#L20-L54
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_internal_context.py#L15-L54
   why: Internal-call, phase and pinned billing context.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_uuid.py#L1-L15
   why: Call ID generation boundary.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L6-L55
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/aws_partition.py#L6-L55
   why: Region partition, DNS suffix and ARN helpers.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L54-L104
-  why: Shared drop settings and arithmetic boundaries.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
   why: Existing timeout defaults, not a reason to add global state.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/env_utils.py#L10-L61
+  why: Integer parsing fallbacks and optional outcomes.
 dod:
 - text: Explicit context/phase/billing-time projections and AWS partition helpers match listed oracle cases.
   proof:
   - oracle
-- text: Concurrent calls and children cannot overwrite settings, IDs or billing time, and request metadata cannot
-    forge internal-call provenance.
+  - helper-python
+- text: >-
+    Concurrent calls and children cannot overwrite settings, IDs or billing time, and request metadata cannot forge
+    internal-call provenance.
   proof:
   - call-context-tests
-- text: Every environment-dependent setting is resolved by config and unsupported settings still fail by complete
-    key path.
+- text: >-
+    Every environment-dependent setting is resolved by config and unsupported settings still fail by complete key
+    path.
   proof:
   - call-context-tests
   - config-yaml-corpus
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -56,22 +74,29 @@ checks:
   commands:
   - id: call-context-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/call_context|aws_partition/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-context -p betterlite-config --no-tests=fail -E 'test(/::b198_call_context_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: config-yaml-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'request_timeout' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
+      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'call_context' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'aws_partition' tools/oracle/fuzz/corpus/helper_case
+      && grep -rlq 'env_integer' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/call-context/phase-nesting.yaml
 - tools/oracle/cases/helpers/call-context/pinned-billing-time.yaml
@@ -80,11 +105,18 @@ oracle_cases:
 - tools/oracle/cases/helpers/call-context/aws-china.yaml
 - tools/oracle/cases/helpers/call-context/aws-gov.yaml
 - tools/oracle/cases/helpers/call-context/arn-prefix.yaml
+- tools/oracle/cases/helpers/call-context/invalid-int-default.yaml
+- tools/oracle/cases/helpers/call-context/out-of-range-default.yaml
+- tools/oracle/cases/helpers/call-context/optional-int-none.yaml
 deviations: []
 out_of_scope:
-- Python module globals, import caches, sync/async reflection and version API are B157-B166; native code exposes
+- >-
+  Python module globals, import caches, sync/async reflection and version API are B157-B166; native code exposes
   explicit settings instead.
 - Duration and calendar parsing is B199, batch scheduling B201 and call execution B014.
+- >-
+  All remaining constants belong to their consuming feature tasks; core_helpers drop_params flags are B206, not
+  this leaf context task.
 pitfalls:
 - The current billing time is fixed for a call even if pricing crosses a time window during execution.
 - An SDK sync wrapper must not start a nested Tokio runtime inside an async call.
