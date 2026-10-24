@@ -290,6 +290,7 @@ tasks:
     - B357
     - B358
     - B359
+    - B349
     file: null
     covers:
     - router_plugins.json
@@ -2642,3 +2643,21 @@ tasks:
     file: tasks/B360-routing-state-store.yaml
     covers:
     - litellm/router_strategy/base_routing_strategy.py
+
+  - id: B349
+    milestone: M2 routing
+    title: Validate and preview automatic-router configurations
+    status: todo
+    depends_on:
+    - B343
+    - B352
+    - B353
+    - B354
+    - B358
+    - B070
+    - B071
+    file: tasks/B349-auto-router-preview.yaml
+    covers:
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_availability.py
