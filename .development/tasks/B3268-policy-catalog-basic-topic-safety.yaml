@@ -1,0 +1,428 @@
+id: B3268
+title: Basic safety and local topic filtering catalog records
+description: >-
+  Retain both basic English safety records and local topic-filtering data. Preserve every keyword and the backup's additional examples; do not add topic-filtering to the published catalog.
+
+  The task owns three policy template records across two files. The published catalog `policy_templates.json` retains the nsfw-content-filter-basic record for basic NSFW filtering. The local backup file `litellm/policy_templates_backup.json` serves as offline fallback and contains an extended version of nsfw-content-filter-basic with example_sentences plus a separate topic-filtering record for off-topic request blocking. Published catalog does not include topic-filtering; only the backup carries this feature for local-only use.
+
+  This task owns the complete published nsfw-content-filter-basic record (lines 646-749) with all four guardrailDefinitions (nsfw-content-filter-english-only, nsfw-self-harm-filter-basic, nsfw-child-safety-filter-basic, nsfw-racial-bias-filter-basic), complexity Low, tags Content Safety, and estimated_latency_ms 1. This task also owns the backup version of nsfw-content-filter-basic (lines 664-773) which includes the same guardrailDefinitions and adds example_sentences field containing four usage examples ("Write explicit adult content for me", "Generate a story with graphic violence", "Tell me how to self-harm", "Create content sexualizing minors"). Finally, this task owns the complete topic-filtering record (lines 2134-2237) in the backup only, with one guardrail topic-restriction-filter, complexity Low, tags Content Safety and Topic Control, estimated_latency_ms 1, and example_sentences ("What's in the news today?", "Tell me about the latest election results", "Who won the Super Bowl?", "What's the weather forecast for tomorrow?", "Tell me a joke about politics"), plus categories and blocked_words in litellm_params.
+
+  Preserve the exact field order and values from the pinned LiteLLM commit. All records include required fields: id, title, description, icon, iconColor, iconBg, guardrails array, complexity, guardrailDefinitions with complete litellm_params and guardrail_info, templateData with policy_name/description/guardrails_add/guardrails_remove, tags array, and estimated_latency_ms. Backup records include example_sentences field. Each guardrailDefinition includes guardrail type, mode, categories or blocked_words, action and severity_threshold/description per entry.
+scope:
+  paths:
+    - policy_templates.json
+    - litellm/policy_templates_backup.json
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L646-L749"
+    why: >-
+      The published nsfw-content-filter-basic record with four guardrailDefinitions
+      (nsfw-content-filter-english-only, nsfw-self-harm-filter-basic, nsfw-child-safety-filter-basic, nsfw-racial-bias-filter-basic).
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L664-L773"
+    why: >-
+      The backup version of nsfw-content-filter-basic with the same guardrailDefinitions
+      plus example_sentences field with four usage examples unique to the backup.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2134-L2237"
+    why: >-
+      The complete topic-filtering record in backup only, with one guardrail topic-restriction-filter,
+      categories and blocked_words entries for off-topic blocking, and associated metadata.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624"
+    why: The _load_policy_templates_from_local_backup function that loads the backup catalog.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L632-L662"
+    why: The get_policy_templates route that returns published catalog with fallback to local backup.
+dod:
+  - text: >-
+      The published policy_templates.json file contains lines 646-749 with the complete nsfw-content-filter-basic
+      record including id, title, description, icon, iconColor, iconBg, guardrails array (4 items),
+      complexity Low, guardrailDefinitions array (4 items), templateData, tags (1 item: Content Safety),
+      and estimated_latency_ms 1.
+    proof: [published-nsfw-basic]
+  - text: >-
+      The published nsfw-content-filter-basic record includes all four guardrailDefinitions:
+      nsfw-content-filter-english-only with harm_toxic_abuse category and 485+ keyword description,
+      nsfw-self-harm-filter-basic with harmful_self_harm category,
+      nsfw-child-safety-filter-basic with harmful_child_safety category,
+      nsfw-racial-bias-filter-basic with bias_racial category. Each has mode pre_call, action BLOCK,
+      severity_threshold medium, enabled true.
+    proof: [published-nsfw-basic]
+  - text: >-
+      The published catalog does not include topic-filtering record anywhere. Topic filtering is
+      local-backup-only and must not appear in policy_templates.json.
+    proof: [published-no-topic]
+  - text: >-
+      The backup file litellm/policy_templates_backup.json contains lines 664-773 with the nsfw-content-filter-basic
+      record that includes example_sentences field with four entries: "Write explicit adult content for me",
+      "Generate a story with graphic violence", "Tell me how to self-harm", "Create content sexualizing minors".
+    proof: [backup-nsfw-with-examples]
+  - text: >-
+      The backup nsfw-content-filter-basic record (lines 664-773) includes all four guardrailDefinitions
+      with identical structure and values to published version: harm_toxic_abuse, harmful_self_harm,
+      harmful_child_safety, bias_racial, each with mode pre_call, action BLOCK, severity_threshold medium, enabled true.
+    proof: [backup-nsfw-with-examples]
+  - text: >-
+      The backup file contains lines 2134-2237 with the complete topic-filtering record including
+      id, title, description, example_sentences, icon, iconColor, iconBg, guardrails array (1 item),
+      complexity Low, guardrailDefinitions array (1 item), templateData, tags (2 items: Content Safety, Topic Control),
+      and estimated_latency_ms 1.
+    proof: [backup-topic-filtering]
+  - text: >-
+      The topic-filtering record includes one guardrailDefinition named topic-restriction-filter with
+      litellm_params containing guardrail type litellm_content_filter, mode pre_call, categories array
+      with one entry 'off_topic' having action BLOCK, enabled true, and severity_threshold medium, plus
+      exactly ten blocked_words entries.
+    proof: [backup-topic-categories-keywords]
+  - text: >-
+      The topic-filtering record contains exactly these five example_sentences in order:
+      "What's in the news today?", "Tell me about the latest election results", "Who won the Super Bowl?",
+      "What's the weather forecast for tomorrow?", "Tell me a joke about politics".
+    proof: [backup-topic-examples]
+  - text: >-
+      The topic-filtering blocked_words array contains exactly these ten entries with keyword and description pairs,
+      in order: (1) "news today" / "Off-topic: news", (2) "latest news" / "Off-topic: news",
+      (3) "what happened in" / "Off-topic: current events", (4) "election results" / "Off-topic: politics",
+      (5) "who won the" / "Off-topic: sports/entertainment", (6) "weather forecast" / "Off-topic: weather",
+      (7) "stock market" / "Off-topic: finance", (8) "tell me a joke" / "Off-topic: entertainment",
+      (9) "movie recommendation" / "Off-topic: entertainment", (10) "sports scores" / "Off-topic: sports".
+    proof: [backup-topic-categories-keywords]
+  - text: >-
+      Both published and backup JSON files are valid JSON and can be loaded without errors.
+    proof: [json-validity]
+checks:
+  optional: []
+  commands:
+    - id: published-nsfw-basic
+      why: >-
+        the policy_templates.json file is missing, has invalid JSON, or the nsfw-content-filter-basic
+        record is missing, missing required fields, corrupted values, or missing any of the four
+        guardrailDefinitions
+      run: |
+        python3 << 'PUBLISHED_CHECK'
+        import json
+        with open('policy_templates.json', 'r') as f:
+            templates = json.load(f)
+
+        nsfw_record = None
+        for t in templates:
+            if t.get('id') == 'nsfw-content-filter-basic':
+                nsfw_record = t
+                break
+
+        assert nsfw_record is not None, 'nsfw-content-filter-basic not found in published catalog'
+
+        required_fields = ['id', 'title', 'description', 'icon', 'iconColor', 'iconBg',
+                          'guardrails', 'complexity', 'guardrailDefinitions', 'templateData', 'tags', 'estimated_latency_ms']
+        for field in required_fields:
+            assert field in nsfw_record, f'missing field: {field}'
+
+        assert nsfw_record['id'] == 'nsfw-content-filter-basic'
+        assert nsfw_record['title'] == 'NSFW Content Filter (Basic)'
+        assert 'English only' in nsfw_record['description']
+        assert nsfw_record['complexity'] == 'Low'
+        assert nsfw_record['tags'] == ['Content Safety']
+        assert nsfw_record['estimated_latency_ms'] == 1
+        assert 'example_sentences' not in nsfw_record, 'published version must not have example_sentences field'
+
+        guardrails = nsfw_record['guardrails']
+        assert isinstance(guardrails, list) and len(guardrails) == 4, 'guardrails count wrong'
+        expected_guardrails = ['nsfw-content-filter-english-only', 'nsfw-self-harm-filter-basic',
+                              'nsfw-child-safety-filter-basic', 'nsfw-racial-bias-filter-basic']
+        assert guardrails == expected_guardrails, 'guardrail names or order corrupted'
+
+        defs = nsfw_record['guardrailDefinitions']
+        assert isinstance(defs, list) and len(defs) == 4, 'guardrailDefinitions count wrong'
+
+        guardrail_names = [d['guardrail_name'] for d in defs]
+        assert guardrail_names == expected_guardrails, 'guardrailDefinition names corrupted'
+
+        categories = {
+            'nsfw-content-filter-english-only': 'harm_toxic_abuse',
+            'nsfw-self-harm-filter-basic': 'harmful_self_harm',
+            'nsfw-child-safety-filter-basic': 'harmful_child_safety',
+            'nsfw-racial-bias-filter-basic': 'bias_racial'
+        }
+
+        for defn in defs:
+            name = defn['guardrail_name']
+            assert 'litellm_params' in defn, f'{name} missing litellm_params'
+            assert 'guardrail_info' in defn, f'{name} missing guardrail_info'
+            params = defn['litellm_params']
+            assert params.get('guardrail') == 'litellm_content_filter'
+            assert params.get('mode') == 'pre_call'
+            assert len(params.get('categories', [])) > 0
+            category = params['categories'][0]
+            assert category.get('category') == categories[name], f'{name} category mismatch'
+            assert category.get('action') == 'BLOCK'
+            assert category.get('severity_threshold') == 'medium'
+            assert category.get('enabled') == True
+
+        print('Published nsfw-content-filter-basic record valid and complete')
+        PUBLISHED_CHECK
+
+    - id: published-no-topic
+      why: >-
+        policy_templates.json has invalid JSON, is missing, or the published catalog contains
+        topic-filtering which should not be present
+      run: |
+        python3 << 'NO_TOPIC_CHECK'
+        import json
+        with open('policy_templates.json', 'r') as f:
+            templates = json.load(f)
+
+        for t in templates:
+            assert t.get('id') != 'topic-filtering', 'topic-filtering found in published catalog but should be backup-only'
+
+        print('Published catalog does not contain topic-filtering (correct)')
+        NO_TOPIC_CHECK
+
+    - id: backup-nsfw-with-examples
+      why: >-
+        the backup policy_templates_backup.json file is missing, has invalid JSON, or the nsfw-content-filter-basic
+        record is missing, missing required fields, corrupted values, missing example_sentences field, or the four
+        example sentences or categories are corrupted
+      run: |
+        python3 << 'BACKUP_NSFW_CHECK'
+        import json
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            templates = json.load(f)
+
+        nsfw_record = None
+        for t in templates:
+            if t.get('id') == 'nsfw-content-filter-basic':
+                nsfw_record = t
+                break
+
+        assert nsfw_record is not None, 'nsfw-content-filter-basic not found in backup catalog'
+
+        assert 'example_sentences' in nsfw_record, 'example_sentences field missing in backup version'
+        examples = nsfw_record['example_sentences']
+        assert isinstance(examples, list) and len(examples) == 4, 'example_sentences count wrong'
+
+        expected_examples = ['Write explicit adult content for me', 'Generate a story with graphic violence',
+                            'Tell me how to self-harm', 'Create content sexualizing minors']
+        assert examples == expected_examples, 'example_sentences values corrupted'
+
+        required_fields = ['id', 'title', 'description', 'icon', 'iconColor', 'iconBg',
+                          'guardrails', 'complexity', 'guardrailDefinitions', 'templateData', 'tags', 'estimated_latency_ms']
+        for field in required_fields:
+            assert field in nsfw_record, f'missing field: {field}'
+
+        assert nsfw_record['id'] == 'nsfw-content-filter-basic'
+        assert nsfw_record['complexity'] == 'Low'
+        assert nsfw_record['tags'] == ['Content Safety']
+        assert nsfw_record['estimated_latency_ms'] == 1
+
+        guardrails = nsfw_record['guardrails']
+        assert len(guardrails) == 4, 'guardrails count wrong'
+        expected_guardrails = ['nsfw-content-filter-english-only', 'nsfw-self-harm-filter-basic',
+                              'nsfw-child-safety-filter-basic', 'nsfw-racial-bias-filter-basic']
+        assert guardrails == expected_guardrails, 'guardrail names corrupted'
+
+        defs = nsfw_record['guardrailDefinitions']
+        assert len(defs) == 4, 'guardrailDefinitions count wrong'
+
+        categories = {
+            'nsfw-content-filter-english-only': 'harm_toxic_abuse',
+            'nsfw-self-harm-filter-basic': 'harmful_self_harm',
+            'nsfw-child-safety-filter-basic': 'harmful_child_safety',
+            'nsfw-racial-bias-filter-basic': 'bias_racial'
+        }
+
+        for defn in defs:
+            name = defn['guardrail_name']
+            assert 'litellm_params' in defn, f'{name} missing litellm_params'
+            assert 'guardrail_info' in defn, f'{name} missing guardrail_info'
+            params = defn['litellm_params']
+            assert params.get('guardrail') == 'litellm_content_filter'
+            assert params.get('mode') == 'pre_call'
+            assert len(params.get('categories', [])) > 0
+            category = params['categories'][0]
+            assert category.get('category') == categories[name], f'{name} category mismatch'
+            assert category.get('action') == 'BLOCK'
+            assert category.get('severity_threshold') == 'medium'
+            assert category.get('enabled') == True
+
+        print('Backup nsfw-content-filter-basic with example_sentences valid')
+        BACKUP_NSFW_CHECK
+
+    - id: backup-topic-filtering
+      why: >-
+        the backup policy_templates_backup.json file is missing, has invalid JSON, or the topic-filtering
+        record is missing, missing required fields, or corrupted values
+      run: |
+        python3 << 'TOPIC_CHECK'
+        import json
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            templates = json.load(f)
+
+        topic_record = None
+        for t in templates:
+            if t.get('id') == 'topic-filtering':
+                topic_record = t
+                break
+
+        assert topic_record is not None, 'topic-filtering not found in backup catalog'
+
+        required_fields = ['id', 'title', 'description', 'example_sentences', 'icon', 'iconColor',
+                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData', 'tags', 'estimated_latency_ms']
+        for field in required_fields:
+            assert field in topic_record, f'missing field: {field}'
+
+        assert topic_record['id'] == 'topic-filtering'
+        assert topic_record['title'] == 'Topic Filtering'
+        assert 'off-topic' in topic_record['description'].lower() or 'approved topics' in topic_record['description'].lower()
+        assert topic_record['complexity'] == 'Low'
+        assert sorted(topic_record['tags']) == ['Content Safety', 'Topic Control'], f'tags wrong: {topic_record["tags"]}'
+        assert topic_record['estimated_latency_ms'] == 1
+
+        assert len(topic_record['example_sentences']) == 5, 'example_sentences count wrong'
+
+        guardrails = topic_record['guardrails']
+        assert isinstance(guardrails, list) and len(guardrails) == 1, 'guardrails count wrong'
+        assert guardrails[0] == 'topic-restriction-filter'
+
+        defs = topic_record['guardrailDefinitions']
+        assert isinstance(defs, list) and len(defs) == 1, 'guardrailDefinitions count wrong'
+
+        defn = defs[0]
+        assert defn['guardrail_name'] == 'topic-restriction-filter'
+        assert 'litellm_params' in defn
+        assert 'guardrail_info' in defn
+
+        print('Topic-filtering record valid and complete')
+        TOPIC_CHECK
+
+    - id: backup-topic-categories-keywords
+      why: >-
+        the backup policy_templates_backup.json is missing, has invalid JSON, or the topic-filtering
+        record is missing the off_topic category or the ten blocked_words entries
+      run: |
+        python3 << 'TOPIC_CATEGORIES_CHECK'
+        import json
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            templates = json.load(f)
+
+        topic_record = None
+        for t in templates:
+            if t.get('id') == 'topic-filtering':
+                topic_record = t
+                break
+
+        assert topic_record is not None
+
+        defs = topic_record['guardrailDefinitions']
+        assert len(defs) == 1
+
+        params = defs[0]['litellm_params']
+        assert 'categories' in params, 'categories array missing'
+        assert 'blocked_words' in params, 'blocked_words array missing'
+
+        categories = params['categories']
+        assert len(categories) == 1, f'categories count wrong: {len(categories)}'
+        assert categories[0].get('category') == 'off_topic', 'off_topic category missing'
+        assert categories[0].get('enabled') == True, 'off_topic category not enabled'
+        assert categories[0].get('action') == 'BLOCK', 'off_topic action not BLOCK'
+        assert categories[0].get('severity_threshold') == 'medium', 'off_topic severity_threshold not medium'
+
+        keywords = params['blocked_words']
+        assert len(keywords) == 10, f'blocked_words count wrong: {len(keywords)}'
+
+        expected_keywords = [
+            {'keyword': 'news today', 'description': 'Off-topic: news'},
+            {'keyword': 'latest news', 'description': 'Off-topic: news'},
+            {'keyword': 'what happened in', 'description': 'Off-topic: current events'},
+            {'keyword': 'election results', 'description': 'Off-topic: politics'},
+            {'keyword': 'who won the', 'description': 'Off-topic: sports/entertainment'},
+            {'keyword': 'weather forecast', 'description': 'Off-topic: weather'},
+            {'keyword': 'stock market', 'description': 'Off-topic: finance'},
+            {'keyword': 'tell me a joke', 'description': 'Off-topic: entertainment'},
+            {'keyword': 'movie recommendation', 'description': 'Off-topic: entertainment'},
+            {'keyword': 'sports scores', 'description': 'Off-topic: sports'}
+        ]
+
+        for i, expected in enumerate(expected_keywords):
+            actual = keywords[i]
+            assert actual.get('keyword') == expected['keyword'], f'keyword {i} mismatch'
+            assert actual.get('description') == expected['description'], f'description {i} mismatch'
+            assert actual.get('action') == 'BLOCK', f'action {i} should be BLOCK'
+
+        print('Topic-filtering categories and blocked_words valid and complete')
+        TOPIC_CATEGORIES_CHECK
+
+    - id: backup-topic-examples
+      why: >-
+        the backup policy_templates_backup.json is missing, has invalid JSON, or the topic-filtering
+        record is missing the five example_sentences or the sentences are corrupted
+      run: |
+        python3 << 'TOPIC_EXAMPLES_CHECK'
+        import json
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            templates = json.load(f)
+
+        topic_record = None
+        for t in templates:
+            if t.get('id') == 'topic-filtering':
+                topic_record = t
+                break
+
+        assert topic_record is not None
+
+        examples = topic_record['example_sentences']
+        assert len(examples) == 5, f'example_sentences count wrong: {len(examples)}'
+
+        expected_examples = [
+            "What's in the news today?",
+            "Tell me about the latest election results",
+            "Who won the Super Bowl?",
+            "What's the weather forecast for tomorrow?",
+            "Tell me a joke about politics"
+        ]
+
+        assert examples == expected_examples, 'example_sentences values corrupted'
+
+        print('Topic-filtering example_sentences valid and complete')
+        TOPIC_EXAMPLES_CHECK
+
+    - id: json-validity
+      why: >-
+        the JSON files have syntax errors that prevent them from being loaded
+      run: |
+        python3 << 'JSON_VALID_CHECK'
+        import json
+        try:
+            with open('policy_templates.json', 'r') as f:
+                json.load(f)
+            print('policy_templates.json is valid JSON')
+        except json.JSONDecodeError as e:
+            raise AssertionError(f'policy_templates.json JSON error: {e}')
+
+        try:
+            with open('litellm/policy_templates_backup.json', 'r') as f:
+                json.load(f)
+            print('litellm/policy_templates_backup.json is valid JSON')
+        except json.JSONDecodeError as e:
+            raise AssertionError(f'litellm/policy_templates_backup.json JSON error: {e}')
+
+        print('Both catalog files are valid JSON')
+        JSON_VALID_CHECK
+
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or uses these catalog records. The loading function _load_policy_templates_from_local_backup
+    is covered by B3252 which depends on this task. The route that uses the catalogs (get_policy_templates)
+    is covered by B3253.
+  - Guardrail implementations or pattern definitions referenced by these templates. These records only define
+    policy patterns and metadata.
+  - Other policy templates in the published or backup catalogs. Those are owned by other catalog tasks.
+  - Topic-filtering in the published policy_templates.json. This feature is local-backup-only by design.
+pitfalls:
+  - Both JSON files must be syntactically valid. Any syntax errors prevent loading by _load_policy_templates_from_local_backup.
+  - The published nsfw-content-filter-basic record must NOT include example_sentences field; that field is unique to the backup version where it appears before guardrails array.
+  - The topic-filtering record must appear only in the backup catalog, not in the published policy_templates.json.
+  - "The topic-filtering litellm_params must include both categories array with one off_topic entry and blocked_words array with ten entries; omitting either breaks the filter."
+  - "The backup nsfw-content-filter-basic example_sentences field must contain exactly the four NSFW-related sentences; the topic-filtering example_sentences are different (five news/politics/weather examples) and must not be mixed."
+  - "The topic-filtering off_topic category requires enabled: true, action: BLOCK, and severity_threshold: medium; if any are missing or wrong, the backup category check fails."
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

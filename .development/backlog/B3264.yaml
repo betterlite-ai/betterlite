@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Published passenger and local global safety catalog records
 status: todo
 depends_on: []
-file: null
+file: tasks/B3264-policy-catalog-passenger-global-safety.yaml
 covers:
   - "policy_templates.json"
   - "litellm/policy_templates_backup.json"

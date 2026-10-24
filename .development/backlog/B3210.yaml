@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Build reproducible installable skill archives
 status: todo
 depends_on: [B171]
-file: null
+file: tasks/B3210-skill-discovery-archives.yaml
 covers:
   - "litellm/proxy/discovery_endpoints/agent_skills_archive.py"
 parent: B078

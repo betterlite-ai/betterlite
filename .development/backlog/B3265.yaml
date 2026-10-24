@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Published global safety and local financial AI and MCP records
 status: todo
 depends_on: []
-file: null
+file: tasks/B3265-policy-catalog-global-financial-mcp.yaml
 covers:
   - "policy_templates.json"
   - "litellm/policy_templates_backup.json"
