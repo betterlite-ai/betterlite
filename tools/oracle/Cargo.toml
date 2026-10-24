@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-http = { path = "../../crates/betterlite-http" }
+betterlite-models = { path = "../../crates/betterlite-models" }
 axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "time", "io-util", "macros", "process", "fs"] }

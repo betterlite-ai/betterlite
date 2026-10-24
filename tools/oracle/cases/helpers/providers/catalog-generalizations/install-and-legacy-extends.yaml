@@ -1,0 +1,21 @@
+kind: helper
+name: install-and-legacy-extends
+call:
+  catalog_generalizations:
+    rules:
+      - {name: base, pattern: "^zzz$", model_info: {mode: chat, max_tokens: 1}}
+      - {name: base, pattern: "^yyy$", model_info: {mode: embedding, max_tokens: 2}}
+      - {name: child, pattern: "^child", extends: base, model_info: {max_tokens: 9}}
+      - {name: grand, pattern: "^grand", extends: child, model_info: {x: 1}}
+      - {name: loop-a, pattern: "^loop-a", extends: loop-b, model_info: {a: 1}}
+      - {name: loop-b, pattern: "^loop-b", extends: loop-a, model_info: {b: 1}}
+      - {pattern: "^orphan", extends: missing, model_info: {y: 1}}
+      - {pattern: "^numeric", extends: 7, model_info: {z: 1}}
+      - {pattern: "^bad", extends: base, model_info: text}
+      - loose
+    routing: []
+    capabilities: [child-1, grand-1, loop-a, loop-b, orphan, numeric, yyy, zzz]
+    fill_missing: []
+env: {}
+compare:
+  ignore: []

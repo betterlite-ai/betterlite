@@ -46,6 +46,7 @@ scope:
     - crates/betterlite-config/src/providers/embedding_hosts.rs
     - crates/betterlite-config/src/loader.rs
     - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/tests/**
     - crates/betterlite-config/src/resolve.rs
     - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/tests/embedding_host_settings.rs

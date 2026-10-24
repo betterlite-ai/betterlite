@@ -1,4 +1,5 @@
 mod bedrock_request_policy;
+mod catalog_generalizations;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -21,6 +22,8 @@ pub(crate) enum HelperCall {
     UrlPath(url_path::UrlPathInput),
     #[serde(rename = "bedrock_request_policy")]
     BedrockRequestPolicy(bedrock_request_policy::BedrockRequestPolicyInput),
+    #[serde(rename = "catalog_generalizations")]
+    CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -79,6 +82,7 @@ fn invoke(call: &HelperCall) -> HelperOutput {
     let result = match call {
         HelperCall::UrlPath(input) => url_path::invoke(input),
         HelperCall::BedrockRequestPolicy(input) => bedrock_request_policy::invoke(input),
+        HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
     };
     match result {
         Ok(value) => HelperOutput {

@@ -1,0 +1,1 @@
+[{"name":"base","pattern":"^claude-","model_info":{"litellm_provider":"anthropic","mode":"chat"}},{"name":"child","pattern":"claude-x","extends":"base","model_info":{"supports_vision":true},"fill_missing_for_providers":["anthropic"]},{"pattern":"gpt-(?!\\d)","model_info":{"litellm_provider":"openai"}}]

@@ -1,7 +1,7 @@
 id: B2214
 milestone: M3 providers
 title: Shared provider message and iterator primitives
-status: todo
+status: in-progress
 depends_on: [B171]
 file: tasks/B2214-provider-message-primitives.yaml
 covers:
