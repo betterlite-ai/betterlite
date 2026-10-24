@@ -20,7 +20,7 @@ const FALLBACK: &str =
 
 fn render(policy: &ProxyPolicy, target: &str) -> String {
     let url = Url::parse(target).unwrap();
-    let route = match policy.route(url.scheme(), url.host_str().unwrap()) {
+    let route = match policy.route(&url) {
         None => "direct".to_owned(),
         Some(ProxyRoute::Forward(server)) => server.credentials.as_ref().map_or_else(
             || format!("{}:{}", server.host, server.port),
@@ -56,6 +56,7 @@ fn render(policy: &ProxyPolicy, target: &str) -> String {
 #[case::cgi_keeps_lowercase_http("", &[("REQUEST_METHOD", "GET"), ("http_proxy", PROXY)], "http://api.example.com", "proxy.local:3128")]
 #[case::no_proxy_suffix("", &[("HTTPS_PROXY", PROXY), ("NO_PROXY", "other.org, .Example.com")], "https://API.example.com", "direct")]
 #[case::no_proxy_exact("", &[("HTTPS_PROXY", PROXY), ("no_proxy", "example.com")], "https://example.com", "direct")]
+#[case::no_proxy_ipv6("", &[("HTTPS_PROXY", PROXY), ("NO_PROXY", "::1")], "https://[::1]:8443", "direct")]
 #[case::no_proxy_star("", &[("HTTPS_PROXY", PROXY), ("NO_PROXY", "*")], "https://api.example.com", "direct")]
 #[case::no_proxy_other_host("", &[("HTTPS_PROXY", PROXY), ("NO_PROXY", "notexample.com")], "https://example.com", "proxy.local:3128")]
 #[case::all_proxy_on_default_path("", &[("ALL_PROXY", "http://all.local:8080")], "https://api.example.com", "all.local:8080")]

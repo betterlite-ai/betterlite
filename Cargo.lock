@@ -184,9 +184,15 @@ dependencies = [
 name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "percent-encoding",
+ "reqwest",
  "rstest",
+ "secrecy",
  "thiserror",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

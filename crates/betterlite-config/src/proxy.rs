@@ -8,7 +8,7 @@ use std::sync::Arc;
 use netrc_rs::Netrc;
 use percent_encoding::percent_decode_str;
 use secrecy::SecretString;
-use url::Url;
+use url::{Host, Url};
 
 use crate::types::LiteLlmSettings;
 
@@ -78,16 +78,23 @@ impl ProxyPolicy {
     }
 
     #[must_use]
-    pub fn route(&self, scheme: &str, host: &str) -> Option<&ProxyRoute> {
+    pub fn route(&self, url: &Url) -> Option<&ProxyRoute> {
+        // httpx hands LiteLLM an IPv6 host without its brackets
+        let host = match url.host() {
+            Some(Host::Ipv6(address)) => address.to_string(),
+            Some(Host::Domain(_) | Host::Ipv4(_)) | None => {
+                url.host_str().unwrap_or_default().to_owned()
+            }
+        };
         if let Some(no_proxy) = &self.no_proxy
-            && bypasses(no_proxy, host)
+            && bypasses(no_proxy, &host)
         {
             return None;
         }
         self.primary
-            .get(scheme)
+            .get(url.scheme())
             .or_else(|| self.primary.get("all"))
-            .or_else(|| self.fallback.get(scheme))
+            .or_else(|| self.fallback.get(url.scheme()))
     }
 }
 
