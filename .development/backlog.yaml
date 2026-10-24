@@ -2715,12 +2715,13 @@ tasks:
     title: Typed local and Redis routing state
     status: todo
     depends_on:
-    - B302
-    - B009
+    - B390
+    - B393
+    - B002
+    - B301
     file: tasks/B360-routing-state-store.yaml
     covers:
-    - litellm/router_strategy/base_routing_strategy.py
-
+    - litellm/caching/redis_cache.py
   - id: B361
     milestone: M2 routing
     title: Explicit numerical and deviation comparison contracts
@@ -3098,6 +3099,17 @@ tasks:
     file: tasks/B389-latency-observations.yaml
     covers:
     - litellm/router_strategy/lowest_latency.py
+  - id: B390
+    milestone: M2 routing
+    title: Typed routing values and bounded local store
+    status: todo
+    depends_on:
+    - B002
+    - B301
+    - B361
+    file: tasks/B390-routing-value-store.yaml
+    covers:
+    - litellm/caching/in_memory_cache.py
   - id: B391
     milestone: M2 routing
     title: Scripted routing mock replies and trace capture
@@ -3114,6 +3126,16 @@ tasks:
     - B001
     file: tasks/B392-routing-probe-ipc.yaml
     covers: []
+  - id: B393
+    milestone: M2 routing
+    title: Routing Redis circuit and failure policy
+    status: todo
+    depends_on:
+    - B002
+    - B301
+    file: tasks/B393-redis-failure-policy.yaml
+    covers:
+    - litellm/caching/redis_cache.py
   - id: B394
     milestone: M2 routing
     title: Capability forecast parsing and calibration
