@@ -2,23 +2,26 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io;
 use std::path::Path;
 use std::str;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rstest::rstest;
 use secrecy::SecretString;
+use tracing::Level as TraceLevel;
+use tracing::subscriber::with_default;
 
 use crate::error::SecretError;
 use crate::secret_codec::bearer::{decrypt_bearer_token, encrypt_bearer_token};
-use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent};
+use crate::secret_codec::diagnostics::{Level, SecretDiagnostics, SecretEvent, TracingDiagnostics};
 use crate::secret_codec::sealing::seal;
 use crate::secret_codec::secret_map::{StoredMap, decode_secret_map, encrypt_secret_map};
 use crate::secret_codec::{
     Algorithm, CipherSettings, DecryptPolicy, FailureLog, FailureValue, MAX_ENCODED_BYTES,
-    NonceSource, StoredCipher, StoredValue, decrypt_if_encrypted_with,
+    NonceSource, OsNonces, StoredCipher, StoredValue, decrypt_if_encrypted_with,
 };
 
 // every vector below came from LiteLLM's own helpers, salt "salt-one", nonce bytes 0, 1, 2, ...
@@ -252,6 +255,51 @@ fn native_secret_diagnostics_redact_values() {
     );
     let rendered = format!("{messages:?} {error} {error:?}");
     assert!(!rendered.contains("sk-live"));
+}
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn production_sources_reach_the_os_and_tracing() {
+    let mut first = [0_u8; 24];
+    let mut second = [0_u8; 24];
+    OsNonces.fill(&mut first).unwrap();
+    OsNonces.fill(&mut second).unwrap();
+    assert_ne!(first, second);
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(TraceLevel::DEBUG)
+        .with_writer(move || writer.clone())
+        .finish();
+    let event = SecretEvent::UnableToDecrypt { field: "api_key" };
+    with_default(subscriber, || {
+        TracingDiagnostics.record(Level::Debug, &event);
+        TracingDiagnostics.record(Level::Error, &event);
+    });
+    let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        output
+            .matches("Unable to decrypt value for key: api_key")
+            .count(),
+        2
+    );
+    assert!(output.contains("DEBUG") && output.contains("ERROR"));
 }
 
 fn padded(value: &str, filler: &str, length: usize) -> String {
