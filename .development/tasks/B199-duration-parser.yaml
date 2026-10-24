@@ -48,7 +48,7 @@ references:
 - url: https://docs.rs/jiff/latest/jiff/
   why: Checked calendar arithmetic and explicit timezone ambiguity handling.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L239-L382
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L239-L381
   why: Zero intervals return current_time; monthly resets require exactly one month.
 dod:
 - text: Fixed and calendar durations, all reset units and injected timezone cases match Python on exact instants.
