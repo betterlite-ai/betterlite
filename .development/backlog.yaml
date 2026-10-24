@@ -229,6 +229,7 @@ tasks:
     - B016
     - B314
     - B315
+    - B316
     file: null
     covers:
     - litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py
@@ -2040,3 +2041,15 @@ tasks:
     file: tasks/B315-latency-routing.yaml
     covers:
     - litellm/router_strategy/lowest_latency.py
+
+  - id: B316
+    milestone: M2 routing
+    title: Cost-based routing with model price overrides
+    status: todo
+    depends_on:
+    - B016
+    - B013
+    - B304
+    file: tasks/B316-cost-routing.yaml
+    covers:
+    - litellm/router_strategy/lowest_cost.py
