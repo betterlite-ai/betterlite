@@ -2061,10 +2061,13 @@ tasks:
     milestone: M1 openai data plane
     title: Message privacy and safe callback metadata
     status: todo
-    depends_on: [B187]
+    depends_on:
+    - B187
+    - B005
+    - B006
     file: tasks/B188-logging-privacy.yaml
     covers:
-      - "litellm/litellm_core_utils/{redact_messages,initialize_dynamic_callback_params,internal_call_metadata}.py"
+    - litellm/litellm_core_utils/{redact_messages,initialize_dynamic_callback_params,internal_call_metadata}.py
   - id: B189
     milestone: M1 openai data plane
     title: Callback registry and configuration validation
