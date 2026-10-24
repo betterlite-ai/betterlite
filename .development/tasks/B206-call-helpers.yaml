@@ -123,7 +123,7 @@ out_of_scope:
   Cost calculations and reservation behavior are B068-B069; this part carries their typed optional metadata only.
 - Python deep-copy of arbitrary object graphs and callable filtering are B166.
 - >-
-  max_retries_per_request_hit is B017; redact_nested_match_and_regex_keys is B100 guardrail compliance logging;
+  max_retries_per_request_hit is B017; redact_nested_match_and_regex_keys is B104 guardrail compliance logging;
   is_codex_user_agent is B024 OpenAI client compatibility.
 - >-
   get_proxy_server_request_headers from llm_request_utils.py is implemented here as a typed request-header projection;
