@@ -231,6 +231,7 @@ tasks:
     - B315
     - B316
     - B317
+    - B318
     file: null
     covers:
     - litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py
@@ -2066,3 +2067,14 @@ tasks:
     file: tasks/B317-usage-routing.yaml
     covers:
     - litellm/router_strategy/lowest_tpm_rpm.py
+
+  - id: B318
+    milestone: M2 routing
+    title: Usage v2 batched reads and pre-call accounting
+    status: todo
+    depends_on:
+    - B317
+    - B304
+    file: tasks/B318-usage-routing-v2.yaml
+    covers:
+    - litellm/router_strategy/lowest_tpm_rpm_v2.py
