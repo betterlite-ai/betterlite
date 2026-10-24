@@ -126,13 +126,17 @@ fn request_metadata_size_characters() {
         Err(BedrockError::MetadataValueCharacters { key: key("k") }),
     ];
     assert_eq!(outcomes, expected);
+    errors_are_bad_requests(&outcomes);
+    resolver_drops_invalid_pairs(&long);
+}
+
+fn errors_are_bad_requests(outcomes: &[Result<(), BedrockError>]) {
     let statuses: Vec<u16> = outcomes
         .iter()
         .filter_map(|outcome| outcome.as_ref().err())
         .map(BedrockError::status_code)
         .collect();
     assert_eq!(statuses, [400; 8]);
-    resolver_drops_invalid_pairs(&long);
 }
 
 fn resolver_drops_invalid_pairs(long: &str) {
