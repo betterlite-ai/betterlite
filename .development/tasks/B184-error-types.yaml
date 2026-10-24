@@ -8,13 +8,19 @@ description: >-
   its wire shape, retaining absence/null/string distinctions. Preserve causes inside Rust but write bounded betterlite-owned
   client messages; no opaque error Debug dump reaches the client. Introduce helper error_class cases constructing
   each public LiteLLM exception family with synthetic inputs and comparing only the observable fields, including
-  specialized budget/guardrail/schema/mid-stream classes as data types without implementing those systems. Budget
-  260 taxonomy/envelope lines, 150 integration lines and 300 tests. Seed B171's shared helper_case corpus with every
-  added operation and replay it through the common typed parser.
+  specialized budget/guardrail/schema/mid-stream classes as data types without implementing those systems.  Seed
+  B171's shared helper_case corpus with every added operation and replay it through the common typed parser. Put
+  the shared HTTP envelope in crates/betterlite-error/src/envelope.rs. Derive type/param as getattr(e, field, "None")
+  and code from status with openai_code retained when present, matching proxy_server.py. Forward all provider headers
+  as llm_provider-<name> (without double prefixing), plus the four bare x-ratelimit request/token limit/remaining
+  headers; filter UNSAFE_PROXY_RESPONSE_HEADERS on the resulting name. Additionally remove cookie and CORS names
+  both raw and prefixed as the documented security deviation. Write the behavior rstest functions b184_error_type_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations error_class in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
 scope:
   paths:
   - Cargo.toml
-  - deny.toml
   - crates/betterlite-error/**
   - crates/betterlite-openai/**
   - crates/betterlite-server/**
@@ -25,27 +31,45 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L24-L115
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L24-L115
   why: Rate-limit category and dimension.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132-L531
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132-L531
   why: Common HTTP-facing exception metadata.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L888
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L888
   why: Specialized API and transport error classes.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L892-L1264
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L892-L1264
   why: Validation, budget, guardrail and stream-related classes.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_headers.py#L5-L48
+  why: Provider header projection and bare OpenAI set.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3674-L3698
+  why: Filtering after prefixing.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12263-L12275
+  why: Wire error type/param/code defaults.
 dod:
-- text: Every exception family in the listed helper cases matches status/type/param/code and category metadata;
-    messages are excluded with reasons.
+- text: >-
+    Every exception family in the listed helper cases matches status/type/param/code and category metadata; messages
+    are excluded with reasons.
   proof:
   - oracle
-- text: Wrapping transport/parse errors preserves their source and serialization retains null-versus-string distinctions.
+  - helper-python
+- text: >-
+    Wrapping transport/parse errors preserves their source and serialization retains null-versus-string distinctions.
   proof:
   - error-type-tests
-- text: Vendor Set-Cookie/CORS headers and synthetic secrets never escape through the allowed client envelope or
-    Debug output.
+- text: >-
+    Vendor Set-Cookie/CORS headers and synthetic secrets never escape through the allowed client envelope or Debug
+    output.
   proof:
   - error-type-tests
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -54,17 +78,21 @@ checks:
   commands:
   - id: error-type-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/error_type|error_envelope/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/::b184_error_type_tests_behavior($|::)/)
+      - test(/replays_the_/)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'error_class' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/error-class/auth-notfound-permission.yaml
 - tools/oracle/cases/helpers/error-class/badrequest-unprocessable.yaml
@@ -76,7 +104,15 @@ oracle_cases:
 - tools/oracle/cases/helpers/error-class/api-connection-validation.yaml
 - tools/oracle/cases/helpers/error-class/unsupported-schema.yaml
 - tools/oracle/cases/helpers/error-class/guardrail-midstream.yaml
-deviations: []
+- tools/oracle/cases/helpers/error-class/provider-rate-limit-headers.yaml
+- tools/oracle/cases/helpers/error-class/wire-none-defaults.yaml
+deviations:
+- what: Cookie and CORS response headers are dropped both raw and llm_provider-prefixed.
+  why: >-
+    Prevent provider cookie and cross-origin policy leakage; LiteLLM filters unsafe names after prefixing and can
+    retain prefixed copies. Other provider headers and rate-limit headers remain.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3674-L3698
 out_of_scope:
 - Provider-specific body parsing is B185-B186; normalized logging codes and call-id attachment are B011.
 - Retry policy and budget enforcement remain B017 and M4.
