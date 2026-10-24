@@ -107,6 +107,17 @@ out_of_scope:
   ClassifierAudit helpers and _autorouter_savings_for_payload are B021; deployment pricing and cost helpers B068/B069;
   callback setup/get_custom_logger_compatible_class B189 plus exporter branches B110-B118; prompt-management B117,
   MCP B140, other endpoint conversions B080-B099.
+- >-
+  Complete remaining litellm_logging ownership: _get_cached_prometheus_logger is B111; pricing helpers 417-533,
+  get_deployment_model_for_cost and 5555-5596 are B068; mask_api_base_credentials is B187; initialize_standard_built_in_tools_params
+  is B024; _get_masked_values is B188; set_callbacks and _get_custom_logger_settings_from_proxy_server are B189;
+  logger construction/exporter gating 4502-5537 and modify_integration are B110-B118. Python extension class loading
+  belongs to B164-B165.
+- >-
+  Logging._build_standard_logging_payload is the thin call into this task; access-group extraction 5604-5637 is
+  B052 auth metadata, _autorouter_savings_for_payload is B021, and _get_traceback_str_for_error is B251. create_dummy_standard_logging_payload
+  is a Python test/SDK convenience owned by B164, not production event synthesis. Every StandardLoggingPayloadSetup
+  method is B253/B254 except get_model_cost_information (B068) and _generate_cold_storage_object_key (B115).
 pitfalls:
 - Logged output must reflect post-processing that changed the served response, not the raw provider text.
 - A sparse choice index must not allocate an unbounded vector.
