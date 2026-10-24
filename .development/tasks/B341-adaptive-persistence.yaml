@@ -50,6 +50,11 @@ dod:
 - text: All mutants in changed router, config or wire code are caught.
   proof:
   - mutants
+- text: A failed flush retains unacknowledged rows; concurrent updates, shutdown, queue saturation and
+    ambiguous commits follow the approved bounded recovery contract without duplicate deltas.
+  proof:
+  - routing-tests
+  - oracle
 checks:
   optional:
   - mutants
@@ -74,6 +79,7 @@ oracle_cases:
 - tools/oracle/cases/routing/adaptive-persistence/restart-restores-selection.yaml
 - tools/oracle/cases/routing/adaptive-persistence/flush-empty.yaml
 - tools/oracle/cases/routing/adaptive-persistence/snapshot-private-fields-absent.yaml
+- tools/oracle/cases/routing/adaptive-persistence/failed-flush-retains-deltas.yaml
 deviations:
 - what: Failed adaptive-state flush rows are retained for bounded retry instead of discarded after logging.
   why: The no-silent-drops and bounded-queue rules require an explicit failure path without losing drained
