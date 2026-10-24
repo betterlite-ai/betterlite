@@ -276,6 +276,7 @@ tasks:
     - B339
     - B340
     - B341
+    - B342
     file: null
     covers:
     - router_plugins.json
@@ -2395,3 +2396,17 @@ tasks:
     covers:
     - litellm/router_strategy/adaptive_router/update_queue.py
     - litellm/router_strategy/adaptive_router/adaptive_router.py
+
+  - id: B342
+    milestone: M2 routing
+    title: Auto-router savings baselines and cache observations
+    status: todo
+    depends_on:
+    - B334
+    - B068
+    - B075
+    - B012
+    file: tasks/B342-routing-baselines.yaml
+    covers:
+    - litellm/router_strategy/savings_baseline.py
+    - litellm/proxy/hooks/autorouter_baseline_cache.py
