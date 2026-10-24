@@ -1933,7 +1933,7 @@ tasks:
     title: Native provider error classifiers
     status: todo
     depends_on: [B185]
-    file: null
+    file: tasks/B186-native-errors.yaml
     covers:
       - "litellm/litellm_core_utils/exception_mapping_utils.py"
   - id: B187
