@@ -1,0 +1,153 @@
+id: B044
+title: Install proxy forwarding and the live custom and deprecated dispatch paths
+description: >-
+  Complete B044 by installing LitellmProxy, AlephAlpha and Custom endpoint execution in the closed
+  betterlite-provider enum, plus the CustomPython variant whose configured handler is loaded by B165.
+  Add legacy_dispatch.rs for main.py _complete_aiohttp_openai (2390-2448), _complete_aleph_alpha
+  (2998-3044), _custom_api_first_output and _complete_custom (4909-4979), _complete_custom_providers
+  (4982-5042), the litellm_proxy embedding branch (6504-6555) and custom embedding branch (7274-7296).
+  Own custom_chat_llm_router in custom_llm.py; its ten CustomLLM methods and error class remain B164.
+  Reuse B1500 forwarding and B1501's legacy adapter, and expose B1502-B1506's hosted skill services
+  through the core's operation composition without adding skills routes or a second injection hook.
+
+  Aleph Alpha key precedence is explicit api_key, litellm.aleph_alpha_key, ALEPH_ALPHA_API_KEY,
+  ALEPHALPHA_API_KEY, litellm.api_key; base is explicit, litellm.api_base, ALEPH_ALPHA_API_BASE,
+  then https://api.aleph-alpha.com/complete. Load the new globals/environment through betterlite-config's
+  legacy_provider module, with absent key defaults. Aiohttp selection uses B500 OpenAI base/key defaults,
+  warns when B172 http2 is enabled but retains HTTP/1.1, and overwrites optional extra_headers whenever
+  the explicit value is non-None. Its configured base defaults to /v1 even though B010's bare adapter
+  has a different direct-call default. Proxy embedding retains B006's OpenAI fallback chain after B1500
+  resolution, organization and LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT semantics.
+
+  The legacy custom endpoint prefers litellm.api_base over explicit api_base, requires a nonempty base,
+  joins message content with spaces, puts the prompt in a one-element params.prompt list and sends
+  max_tokens/temperature/top_p/top_k even when null. extra_body expands last and may replace model or
+  params. decode_custom_output reads bounded JSON data[0].output[0]; it stamps content, created and model
+  without inventing usage. The custom-provider map selects the last matching provider. Chat chooses the
+  sync/async and stream/nonstream method by truthiness, but wraps a returned stream only for literal True.
+  Empty headers fall back to litellm.headers then {}; all call context, timeout, client and credential
+  fields reach the selected callable. Embedding independently selects embedding/aembedding and reports
+  an unknown provider if no handler matches. Preserve typed causes and the B184 public error envelope.
+
+  HTTP fixtures boot the proxy and exercise POST /v1/chat/completions and /chat/completions for proxy,
+  aleph_alpha, custom and aiohttp_openai deployments, plus /v1/embeddings and /embeddings for proxy and
+  a fixture custom handler. Capture upstream bodies/headers and downstream status, error type/param/code
+  and headers; error cases ignore only /error/message with the betterlite wording reason. Use model
+  litellm_proxy/gemini/gemini-1.5-pro to prove nested prefixes survive and aleph_alpha/luminous-base-control
+  for prompt formatting. Include bearer rejection, missing custom base, missing handler and provider failure.
+  Register a pure custom_method helper only for the four-method selection table; its Python adapter calls
+  custom_chat_llm_router, with a call.custom_method seed. Configuration test legacy_provider_loads_keys
+  loads every new Aleph Alpha key/base spelling and global through B002. Fuzz decode_custom_output and
+  replay custom_output alongside the existing config corpus. Source ownership totals 293 nonblank/non-comment
+  lines; plan 290 dispatch, 220 tests, 95 adapters, 75 parser/fuzz and 110 config/composition lines (790).
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/lib.rs
+    - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/operation.rs
+    - crates/betterlite-provider/src/legacy_dispatch.rs
+    - crates/betterlite-provider/src/legacy_dispatch/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/custom_output.rs
+    - crates/betterlite-provider/fuzz/corpus/custom_output/**
+    - crates/betterlite-core/src/operation.rs
+    - crates/betterlite-core/src/dispatch.rs
+    - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/composition.rs
+    - crates/betterlite-core/src/skills/composition/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/legacy_provider.rs
+    - crates/betterlite-config/src/providers/legacy_provider/**
+    - crates/betterlite-config/src/settings.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/custom_method.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/custom_method.py
+    - tools/oracle/cases/helpers/custom-method/**
+    - tools/oracle/fuzz/corpus/helper_case/custom_method*
+    - tools/oracle/cases/providers/proxy-custom/**
+    - tools/oracle/fixtures/proxy-custom/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2390-L2448
+    why: Aiohttp dispatch adds global OpenAI defaults before the bare adapter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2998-L3044
+    why: Aleph Alpha's still-live dispatch and unusual key precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4909-L5042
+    why: Legacy custom wire protocol and Python custom-handler dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6504-L6555
+    why: Proxy embeddings retain the OpenAI fallback branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7274-L7296
+    why: Last-match custom embedding selection and its forwarded arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_llm.py#L219-L231
+    why: Exactly the four-way custom chat selector owned here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6457-L6470
+    why: Existing B165 custom_provider_map loader called by the HTTP fixture.
+dod:
+  - text: Booted chat and embedding aliases execute the configured provider and preserve complete upstream and client error/header contracts.
+    proof: [legacy-dispatch-tests, oracle]
+  - text: Custom method choice and argument forwarding preserve the pinned sync/async distinction and last matching handler.
+    proof: [legacy-dispatch-tests, oracle, custom-method-python]
+  - text: Aleph Alpha settings use the correct precedence and do not expose keys in Debug or diagnostics.
+    proof: [legacy-config-tests, legacy-config-corpus]
+  - text: Custom output decoding survives malformed arrays and fuzz inputs, while hosted skill composition exposes the existing leaf services once.
+    proof: [custom-output-corpus, hosted-skill-composition]
+checks:
+  optional: [mutants]
+  commands:
+    - id: legacy-dispatch-tests
+      why: an installed legacy provider has no behavior tests or emits an incorrect call
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^legacy_dispatch::/) - test(replays_custom_output)'
+    - id: legacy-config-tests
+      why: the actual loader cannot resolve each supported Aleph Alpha source
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(legacy_provider_loads_keys)'
+    - id: legacy-config-corpus
+      why: no fresh configuration seed reaches the extended loader
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: custom-method-python
+      why: pure method selection lacks its Python implementation or case seed
+      run: grep -qE '^[[:space:]]+custom_method:' tools/oracle/fuzz/corpus/helper_case/custom_method* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/custom_method.py tools/oracle/fixtures/proxy-custom && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: custom-output-corpus
+      why: bounded data/output decoding has no added corpus or replay
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/custom_output.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/custom_output)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_custom_output)'
+    - id: hosted-skill-composition
+      why: hosted operations are not reachable from core composition
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::composition::/)'
+oracle_cases:
+  - tools/oracle/cases/providers/proxy-custom/nested-proxy-chat.yaml
+  - tools/oracle/cases/providers/proxy-custom/aleph-control.yaml
+  - tools/oracle/cases/providers/proxy-custom/custom-body-override.yaml
+  - tools/oracle/cases/providers/proxy-custom/aiohttp-global-base.yaml
+  - tools/oracle/cases/providers/proxy-custom/proxy-embedding.yaml
+  - tools/oracle/cases/providers/proxy-custom/python-embedding.yaml
+  - tools/oracle/cases/providers/proxy-custom/bearer-rejected.yaml
+  - tools/oracle/cases/providers/proxy-custom/custom-base-missing.yaml
+  - tools/oracle/cases/providers/proxy-custom/custom-handler-missing.yaml
+  - tools/oracle/cases/providers/proxy-custom/upstream-failure.yaml
+  - tools/oracle/cases/helpers/custom-method/four-methods.yaml
+deviations: []
+out_of_scope:
+  - CustomLLMError.__init__, CustomLLM.__init__, completion, streaming, acompletion, astreaming, image_generation, aimage_generation, embedding, aembedding, image_edit and aimage_edit, plus CustomLLMItem, are B164's Python extension surface; B164 covers both custom_llm files.
+  - The skills __init__.py exports have no additional algorithm; their live services are B1502-B1506, while the unused CodeExecutionHandler exports remain excluded under B1504.
+  - main.py _complete_azure/_complete_azure_text are B025, _complete_azure_ai is B026, _complete_anthropic/_complete_anthropic_text are B027 and _complete_bedrock/_complete_bedrock_mantle are B028.
+  - main.py _complete_vertex_ai/_complete_vertex_ai_beta are B031; _complete_xai/_complete_mistral/_complete_text_completion_codestral are B036; _complete_cohere_chat is B037.
+  - main.py _complete_deepseek/_complete_heroku/_complete_groq/_complete_cometapi/_complete_bytez are B038; _complete_minimax/_complete_amazon_nova/_complete_text_completion_inception are B039.
+  - main.py _complete_hosted_vllm/_complete_oobabooga/_complete_vllm/_complete_ollama/_complete_ollama_chat/_complete_triton/_complete_lemonade are B040; _complete_fireworks_ai/_complete_together_ai/_complete_replicate/_complete_huggingface/_complete_openrouter/_complete_vercel_ai_gateway/_complete_edenai/_complete_predibase/_complete_petals are B041.
+  - main.py _complete_sap/_complete_oci/_complete_databricks/_complete_datarobot/_complete_sagemaker_chat/_complete_sagemaker/_complete_watsonx/_complete_watsonx_text/_complete_cloudflare/_complete_snowflake/_complete_gdc/_complete_ovhcloud are B042; _complete_gigachat/_complete_nlp_cloud/_complete_maritalk/_complete_compactifai/_complete_nadir/_complete_gradient_ai are B043.
+  - main.py _complete_custom_openai and _complete_text_completion_openai are B024, except Copilot's authorization stanza owned by B045; _complete_fal_ai is B046, _complete_ragflow is B049, and _complete_a2a/_complete_langgraph/_complete_langflow are B050.
+  - The main.py public facades LiteLLM/Chat/Completions/AsyncCompletions, acompletion, completion, aembedding, embedding outside the two owned branches, _resolve_dispatched_chat_response, _model_response_from_cached_dict, _transcription_response_from_cached_dict and _async_streaming remain B158.
+  - B158 also retains main.py _resolve_control_options, _handle_mock_potential_exceptions, _handle_mock_timeout/_async, _sleep_for_timeout/_async, admission_input_tokens, admitted_prompt_token_counter, mock_completion, responses_api_bridge_check, _is_claude_tool_target, _without_anthropic_only_tool_keys, _drop_anthropic_only_tool_keys, _ProxyAuthHeadersProvider.get_auth_headers, _proxy_auth_headers, _build_custom_pricing_entry, _get_router_deployment_id and _register_custom_pricing_for_request.
+  - The remainder of main.py's SDK functions completion_with_retries, acompletion_with_retries, responses_with_retries, aresponses_with_retries, _resolve_dispatched_text_completion_response, _resolve_pending_chat_response, atext_completion, text_completion, aadapter_completion, aadapter_generate_content, adapter_completion, moderation, amoderation, atranscription, transcription, aspeech, speech, ahealth_check, config_completion, acount_tokens and __getattr__ retain B158's facade ownership and their existing API-family implementations.
+  - B500 owns main.py _is_openai_backed_api_base/_resolve_openai_api_base; B198 owns _provider_config_items/_locals_snapshot/_dispatch_metadata/_dispatch_client_http/_dispatch_client_azure/_dispatch_client_openai; B195 owns _load_default_encoding; B196 owns _load_module_encoding/_get_encoding; B2239 owns print_verbose.
+  - B2227 owns main.py stream_chunk_builder, stream_chunk_builder_text_completion, _reported_cost_is_priced_by_calculator, _stream_builder_response_cost, _joined_streamed_citations, _stream_builder_model_map_cost, _set_stream_builder_response_cost, _stamp_streaming_usage_cost, _stream_choice_delta, _delta_carries_more_than_text and _simple_text_part.
+pitfalls:
+  - Aleph Alpha's global generic api_key comes after both provider environment spellings.
+  - _complete_custom gives the global base priority over its explicit argument, unlike the neighboring providers.
+  - Aiohttp's dispatcher adds /v1 through its fallback base even though the bare config's default base omits it.
+  - The custom map search has no break, so duplicate provider names select the last configured handler.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

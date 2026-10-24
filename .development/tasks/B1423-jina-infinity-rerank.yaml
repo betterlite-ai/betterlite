@@ -1,0 +1,98 @@
+id: B1423
+title: Jina and Infinity ranking response differences
+description: >-
+  Implement host_rerank with separate Jina and Infinity policies. Jina copies only query,
+  top_n, documents and return_documents present in non_default_params; the corresponding
+  formal arguments do not populate that dictionary. Its request overlays model with
+  mapped options. A None base defaults to https://api.jina.ai/v1/rerank; otherwise replace
+  the URL's path with /v1/rerank, preserving its other components. Require a non-None
+  resolved key and replace caller headers with lowercase authorization, accept and
+  content-type. The error mentions JINA_API_KEY but this method never reads it; B037
+  supplies the key through the provider resolver.
+
+  Jina response transformation requires status exactly 200, raising a generic exception
+  for other statuses before post_call. After logging raw text, parse JSON, copy usage
+  into both RerankBilledUnits and RerankTokens, require results to be non-None, and retain
+  index/relevance_score. String documents become {text: value}; other present document
+  values stay as supplied. A falsey id uses the injected UUID. Input cost is billed
+  total_tokens times model input_cost_per_token when both are non-None, otherwise zero;
+  output cost is always zero. Use B193's exact monetary representation.
+
+  Infinity inherits B1419's V1 options/request projection, but requires a non-None base,
+  strips trailing slashes and appends /rerank only when absent. A None key resolves
+  INFINITY_API_KEY, the same alias again as in the source, then litellm.infinity_key;
+  do not add a second alias. Caller headers overwrite all defaults, and missing keys
+  still yield Bearer None. Extend embedding_host_settings with a named
+  infinity_rerank_global_key test loading litellm_settings.infinity_key and proving
+  embedding does not use that fallback. Decode failures use B1422's InfinityError and
+  upstream status; there is no status check in this response method. Missing/empty results
+  return an empty list, and only truthy document fields are wrapped as text. Usage input
+  is prompt_tokens, output is total_tokens minus prompt_tokens without clamping; copy
+  the original usage into billed_units. Falsey id again uses UUID.
+
+  decode_host_rerank(provider, status, bytes) owns both JSON boundaries and is fuzzed by
+  host_rerank. Keep unknown usage counters in the bounded B1013 extension record.
+  Helper host_rerank_record invokes actual pinned methods with stable IDs and hooks;
+  fresh call.host_rerank_record seeds are verified by exact variant. The two transforms
+  total 256 nonblank/noncomment lines; their handler shims add seven documentation lines.
+  Budget 250 production, 225 tests, 145 adapters and 105 settings/fuzz/export lines, cap 775.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,host_rerank}.rs
+    - crates/betterlite-openai/src/host_rerank/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/host_rerank.rs
+    - crates/betterlite-openai/fuzz/corpus/host_rerank/**
+    - crates/betterlite-config/src/providers/embedding_hosts.rs
+    - crates/betterlite-config/src/settings.rs
+    - crates/betterlite-config/tests/embedding_host_settings.rs
+    - tools/oracle/src/helpers/{mod,host_rerank_record}.rs
+    - tools/oracle/helpers/{dispatch,host_rerank_record}.py
+    - tools/oracle/cases/helpers/host-rerank-record/**
+    - tools/oracle/fuzz/corpus/helper_case/host_rerank_record*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L28-L173
+    why: Dictionary-only option selection, path replacement, generic status error and token pricing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/infinity/rerank/transformation.py#L30-L142
+    why: Typed upstream shape, empty-result acceptance and subtraction-based output tokens.
+dod:
+  - text: Jina ranking uses supplied dictionary options and native URL, header, status and pricing rules.
+    proof: [host-rerank-tests, host-rerank-python, oracle]
+  - text: Infinity preserves empty results, signed usage differences and its rerank-only global key fallback.
+    proof: [host-rerank-tests, infinity-rerank-setting, host-rerank-python, oracle]
+  - text: New ranking decoder and helper seeds are consumed by the production entry points.
+    proof: [host-rerank-corpus, host-rerank-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: host-rerank-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^host_rerank::/) - test(replays_the_host_rerank_corpus)'
+      why: Jina and Infinity disagree on missing results, empty documents and status validation.
+    - id: infinity-rerank-setting
+      run: cargo nextest run --locked -p betterlite-config --test embedding_host_settings --no-tests=fail -E 'test(infinity_rerank_global_key)'
+      why: This added real-loader test proves the global key applies only to reranking.
+    - id: host-rerank-python
+      run: test -f tools/oracle/helpers/host_rerank_record.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The fixture must compare each native exception category and logged response order.
+    - id: host-rerank-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/host_rerank.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/host_rerank)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_host_rerank_corpus)'
+      why: Both provider variants must replay malformed response bodies from newly added seeds.
+    - id: host-rerank-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/host_rerank_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::host_rerank_record::/)'
+      why: A nonempty helper corpus must select the host_rerank_record operation.
+oracle_cases:
+  - tools/oracle/cases/helpers/host-rerank-record/jina-formals-versus-dictionary.yaml
+  - tools/oracle/cases/helpers/host-rerank-record/path-replacement-and-empty-base.yaml
+  - tools/oracle/cases/helpers/host-rerank-record/generic-status-and-json-errors.yaml
+  - tools/oracle/cases/helpers/host-rerank-record/missing-results-and-empty-document.yaml
+  - tools/oracle/cases/helpers/host-rerank-record/negative-output-and-token-cost.yaml
+deviations: []
+out_of_scope:
+  - B1419 owns inherited Cohere V1 request construction and B1422 the common Infinity error; B037 handles dispatch and provider key resolution.
+pitfalls:
+  - Infinity's check for cohere_results is None cannot fire because the list was initialized before the loop.
+  - Jina ignores a formal top_n value if non_default_params does not contain that key.
+  - Infinity can report negative output_tokens when total_tokens is below prompt_tokens.
+budget: {max_changed_lines: 775, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,73 @@
+id: B1520
+title: Execute BFL image edits with first-image selection and shared polling
+description: >-
+  Build api::bfl::edit_call for BlackForestLabsImageEdit's constructor, image_edit, async_image_edit,
+  both _poll_for_result methods and _poll_status. The submit/poll protocol classes become typed views
+  of B1517's response. Reuse B1519's poll executor: the two edit polling bodies have the same status,
+  trust, timing and error behavior, including the literal Image generation failed message. Do not
+  copy a second loop. Pass B1518's completed result through its single-sample projection.
+
+  Accept dictionary or GenericLiteLLMParams call context. A matching supplied transport is retained;
+  an incompatible one falls back to B173's appropriate client. Start headers from the truthy
+  image_edit_optional_request_params.extra_headers map, let B1518 validation overwrite its required
+  headers, then overlay the separately supplied extra_headers. Reject an empty outer image list as
+  BFL 400 No image provided before pre_call or POST; a nonempty list contributes its first member.
+  Convert falsey prompt to an empty string for the request but send the original prompt to B249
+  pre_call. The asynchronous BFL-specific path uses the same transformation as the synchronous path.
+  Submit JSON with the caller timeout and wrap only submission exceptions in BFL 500 Request failed.
+
+  Extend neither request-media policy nor transport parsing. At the bfl_edit_call helper seam, run
+  the pinned handler with recorded clients and injected clock/sleep. Compare nested_header_order,
+  empty_outer_images, first_image_submission, null_prompt_logging, edit_poll_failure and
+  completed_edit_projection, including no extra POST after polling starts. Add call.bfl_edit_call
+  and tests under api::bfl::edit_call; exercise cancellation during an edit poll through the reused
+  executor. The covered file contains 400 nonblank/non-comment lines, but 150 lines of poll bodies
+  reuse B1519 and the sync/async pair shares one native implementation. Allocate 190 production,
+  215 tests, 110 adapters and 35 module/corpus lines, capped at 650.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/edit_call.rs
+    - crates/betterlite-core/src/api/bfl/edit_call/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/bfl_edit_call.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/bfl_edit_call.py
+    - tools/oracle/cases/helpers/bfl-edit-call/**
+    - tools/oracle/fuzz/corpus/helper_case/bfl_edit_call*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_edit/handler.py#L38-L513
+    why: Edit submission header ordering, input selection and polling equivalence.
+dod:
+  - text: Edit submission retains the two header overlays, first-image choice and original-versus-normalized prompt behavior.
+    proof: [edit-execution-tests, oracle, edit-execution-python]
+  - text: Completed and failed edit jobs use the shared poll semantics and return the edit-specific image result.
+    proof: [edit-execution-tests, oracle, edit-execution-python]
+checks:
+  optional: []
+  commands:
+    - id: edit-execution-tests
+      why: the BFL edit executor lacks its own submission and lifecycle coverage
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::bfl::edit_call::/)'
+    - id: edit-execution-python
+      why: edit execution traces are not compared through the source handler
+      run: grep -qE '^[[:space:]]+bfl_edit_call:' tools/oracle/fuzz/corpus/helper_case/bfl_edit_call* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/bfl_edit_call.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/bfl-edit-call/nested-header-order.yaml
+  - tools/oracle/cases/helpers/bfl-edit-call/empty-outer-images.yaml
+  - tools/oracle/cases/helpers/bfl-edit-call/first-image-submission.yaml
+  - tools/oracle/cases/helpers/bfl-edit-call/null-prompt-logging.yaml
+  - tools/oracle/cases/helpers/bfl-edit-call/edit-poll-failure.yaml
+  - tools/oracle/cases/helpers/bfl-edit-call/completed-edit-projection.yaml
+deviations: []
+out_of_scope:
+  - B1518 defines the input-image policy, while B046 handles this executor's registration with the image-edit family.
+pitfalls:
+  - The inner optional extra_headers and outer extra_headers are applied at different points around credential validation.
+  - An empty list produces No image provided before the lower transform can raise its own indexing error.
+  - Poll failures still say Image generation failed on the edit operation.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

@@ -1,0 +1,90 @@
+id: B1534
+title: Authenticate and poll Runway image and speech jobs
+description: >-
+  Introduce api::runway::tasks in betterlite-core, owning image configuration URL/authentication,
+  the two task record definitions, and both image/speech timeout, status and polling implementations.
+  A RunwaySettings loader reads RUNWAYML_API_BASE (https://api.dev.runwayml.com), RUNWAYML_API_SECRET
+  and RUNWAYML_API_KEY (unset), RUNWAYML_DEFAULT_API_VERSION (2024-11-06), and integer
+  RUNWAYML_POLLING_TIMEOUT (600 seconds). Test the loader in runway_task_settings. Explicit nonempty
+  credentials precede secret then key; an empty result raises the source ValueError. Preserve input
+  headers while replacing Authorization and X-Runway-Version; speech additionally sets Content-Type
+  application/json. Endpoint construction trims trailing slashes before v1/text_to_image or
+  v1/text_to_speech. Expose these settings to the later video adapter without importing that adapter.
+
+  Poll through B173 clients and an injectable clock/sleeper at base/v1/tasks/{id}, encoding the path
+  segment through B171. Check elapsed time strictly greater than the deadline before each GET, call
+  raise_for_status before decoding, uppercase status, return SUCCEEDED, sleep two seconds for
+  PENDING/RUNNING/THROTTLED, and fail immediately on FAILED/CANCELLED/unknown. Retain the distinct
+  image-generation and TTS failure/timeout messages, including missing failure=Unknown error and
+  failureCode=unknown. A nonzero request duration may exceed the polling deadline before the next
+  loop check; do not invent an HTTP timeout argument absent from the source.
+
+  decode_runway_task reads bounded provider JSON bytes into typed optional id/status/failure fields
+  and heterogeneous output records used by both consumers. Preserve unsupported output members for
+  consumer validation without rejecting the whole array. Add the runway_task cargo-fuzz target and
+  replays_the_runway_task_corpus with missing fields, invalid UTF-8, malformed JSON and mixed outputs.
+  Register call.runway_tasks; Python invokes the actual source methods with scripted clients/time.
+  Cases cover header_fallback, endpoint_suffix, throttled_then_success, deadline_equality,
+  failed_messages and http_error_before_json. About 297 nonblank/non-comment source lines collapse
+  duplicated sync/async loops; allow 250 implementation/config, 210 tests and 180 oracle/fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/tasks.rs
+    - crates/betterlite-core/src/api/runway/tasks/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/runway_task.rs
+    - crates/betterlite-core/fuzz/corpus/runway_task/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/runway.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/runway_tasks.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/runway_tasks.py
+    - tools/oracle/cases/helpers/runway-tasks/**
+    - tools/oracle/fuzz/corpus/helper_case/runway_tasks*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L33-L300
+    why: Image credentials and the polling state machine, excluding image projection owned by B1535.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L201-L384
+    why: Speech header copy and differing error messages around the same polling sequence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L294-L295
+    why: Environment-controlled API version and polling deadline.
+dod:
+  - text: Loaded Runway settings and authenticated task polls reproduce header precedence, waits and terminal errors.
+    proof: [runway-poll-tests, oracle, runway-poll-python]
+  - text: The shared provider-task decoder survives the added malformed and heterogeneous corpus.
+    proof: [runway-poll-tests, runway-task-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: runway-poll-tests
+      why: Runway poll transitions or the environment loader are unimplemented
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::runway::tasks::/) - test(replays_the_runway_task_corpus) | test(runway_task_settings)'
+    - id: runway-task-corpus
+      why: no new Runway task bytes exercise the production decoder
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/runway_task)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_runway_task_corpus)'
+    - id: runway-poll-python
+      why: mocked polling effects lack a checked pinned-source adapter
+      run: grep -qE '^[[:space:]]+runway_tasks:' tools/oracle/fuzz/corpus/helper_case/runway_tasks* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/runway_tasks.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/runway-tasks/header-fallback.yaml
+  - tools/oracle/cases/helpers/runway-tasks/endpoint-suffix.yaml
+  - tools/oracle/cases/helpers/runway-tasks/throttled-then-success.yaml
+  - tools/oracle/cases/helpers/runway-tasks/deadline-equality.yaml
+  - tools/oracle/cases/helpers/runway-tasks/failed-messages.yaml
+  - tools/oracle/cases/helpers/runway-tasks/http-error-before-json.yaml
+deviations: []
+out_of_scope:
+  - B1535 owns image _transform_runwayml_response_to_openai at 93-153 and all methods from 301 onward.
+  - B1536 owns speech dispatch, voice mapping and request/response assembly at 43-200 and 385-587; task records at 35-40 belong here.
+pitfalls:
+  - RUNWAYML_API_SECRET outranks RUNWAYML_API_KEY even though both produce the same Bearer header.
+  - Exactly 600 elapsed seconds permits one more GET under the default polling deadline.
+  - The image failure prefix is RunwayML image generation failed while speech uses RunwayML TTS failed.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 1

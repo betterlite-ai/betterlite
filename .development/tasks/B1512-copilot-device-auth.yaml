@@ -1,0 +1,96 @@
+id: B1512
+title: Obtain GitHub access tokens with the Copilot device flow
+description: >-
+  Add copilot::device_auth and copilot::headers to betterlite-openai. Implement authenticator.py's
+  constructor, get_access_token, _ensure_token_dir, _get_github_headers, _get_device_code,
+  _poll_for_access_token and _login, plus all constants, exception types and get_copilot_default_headers
+  in common_utils.py. B173 supplies HTTP and B187 secret-safe diagnostics. Keep device instructions on
+  an operator-only output sink, separate from proxy logs and responses. Existing trimmed nonempty
+  access-token contents bypass login. Otherwise perform at most three login attempts; saving the result
+  uses an ordinary truncating write and an I/O error only logs before returning the acquired token.
+
+  Device acquisition POSTs scope=read:user and requires presence of device_code, user_code and
+  verification_uri. Poll the access endpoint at most twelve times, sleeping five seconds after every
+  unsuccessful response, including the last. Presence of access_token succeeds even for an empty value;
+  authorization_pending is debug-level, other provider errors warn. HTTP/transport failures become the
+  source's 400 device/access errors; exhausted outer login attempts become GetAccessTokenError 401.
+  Preserve OAuth headers with vscode/1.85.1 and copilot/1.155.0, distinct from inference headers with
+  vscode/1.95.0, copilot-chat/0.26.7, GitHubCopilotChat/0.26.7 and API version 2025-04-01. Inject UUIDs
+  only for comparing x-request-id, never replace production randomness.
+
+  B002 must load GITHUB_COPILOT_TOKEN_DIR (default ~/.config/litellm/github_copilot), ACCESS_TOKEN_FILE
+  and API_KEY_FILE under the GITHUB_COPILOT_ prefix (access-token and api-key.json). Also load
+  GITHUB_COPILOT_CLIENT_ID=Iv1.b507a08c87ecfe98, DEVICE_CODE_URL=https://github.com/login/device/code,
+  ACCESS_TOKEN_URL=https://github.com/login/oauth/access_token and
+  API_KEY_URL=https://api.github.com/copilot_internal/v2/token with that same prefix. Preserve explicit
+  empty environment values. Name loader tests copilot_device_defaults and copilot_device_overrides.
+  The API-key endpoint setting is exposed for B1513, which owns its use.
+
+  decode_device_reply handles bounded JSON bytes with typed fields and a confined additional-fields
+  map. Add the device_reply cargo-fuzz target and replay new corpus seeds in copilot::device_auth.
+  The copilot_device helper runs the real methods against scripted files, transport, clock and sleeper;
+  compare effects for cached_whitespace, pending_then_success, twelve_waits, missing_device_field,
+  exhausted_logins and unwritable_access_file. Register call.copilot_device. This slice has 57 common,
+  188 authenticator method and four constant nonblank/non-comment lines; budget 270 implementation/config, 220 tests,
+  110 adapters and 70 fuzz/wiring lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/lib.rs
+    - crates/betterlite-openai/src/copilot.rs
+    - crates/betterlite-openai/src/copilot/{device_auth,headers}.rs
+    - crates/betterlite-openai/src/copilot/device_auth/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/device_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/device_reply/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/copilot.rs
+    - crates/betterlite-config/src/providers/copilot/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/copilot_device.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/copilot_device.py
+    - tools/oracle/cases/helpers/copilot-device/**
+    - tools/oracle/fuzz/corpus/helper_case/copilot_device*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L20-L77
+    why: Token path settings and three-attempt access-token acquisition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L185-L356
+    why: Device request, twelve polling attempts, OAuth headers and private display text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/common_utils.py#L12-L77
+    why: Inference identities and subscription exception family.
+dod:
+  - text: Access-token login preserves retry, wait and write-failure ordering with credentials absent from diagnostics.
+    proof: [device-tests, oracle, device-python]
+  - text: Copilot settings load the pinned defaults and overrides, and device JSON decoding withstands malformed replies.
+    proof: [device-tests, device-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: device-tests
+      why: a login transition, secret treatment or configured endpoint is unsupported
+      run: cargo nextest run --locked -p betterlite-openai -p betterlite-config --no-tests=fail -E 'test(/^copilot::device_auth::/) - test(replays_the_device_reply_corpus) | test(copilot_device_defaults) | test(copilot_device_overrides)'
+    - id: device-corpus
+      why: the production decoder has no new malformed-input coverage
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/device_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_device_reply_corpus)'
+    - id: device-python
+      why: scripted GitHub login is not compared to runnable pinned code
+      run: grep -qE '^[[:space:]]+copilot_device:' tools/oracle/fuzz/corpus/helper_case/copilot_device* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/copilot_device.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/copilot-device/cached-whitespace.yaml
+  - tools/oracle/cases/helpers/copilot-device/pending-then-success.yaml
+  - tools/oracle/cases/helpers/copilot-device/twelve-waits.yaml
+  - tools/oracle/cases/helpers/copilot-device/missing-device-field.yaml
+  - tools/oracle/cases/helpers/copilot-device/exhausted-logins.yaml
+  - tools/oracle/cases/helpers/copilot-device/unwritable-access-file.yaml
+deviations: []
+out_of_scope:
+  - B1513 owns get_api_key, get_api_base and _refresh_api_key in the shared authenticator file.
+pitfalls:
+  - The access-token poll ignores an interval value from the device reply and always waits five seconds.
+  - OAuth authorization uses the literal token scheme, whereas inference authorization uses Bearer.
+  - A failed access-token write must not consume another outer login attempt.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 1

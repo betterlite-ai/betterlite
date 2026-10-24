@@ -1,0 +1,95 @@
+id: B1554
+title: Authenticate DataForSEO tasks and preserve first-result semantics
+description: >-
+  Implement api::search_providers::dataforseo with B091 search types and trusted-base validation.
+  Load DATAFORSEO_LOGIN/PASSWORD unset, DATAFORSEO_API_BASE default
+  https://api.dataforseo.com/v3/serp/google/organic/live/advanced, and integer
+  DEFAULT_DATAFORSEO_LOCATION_CODE default 2250. dataforseo_search_settings must load all four.
+  A nonempty api_key containing colon replaces both login/password by splitting once; a key without
+  colon is ignored. Only complete environment credentials invoke the shared trusted-base guard.
+  Check missing login before password, retain their source messages, and set Basic base64 UTF-8
+  login:password plus JSON Content-Type without removing unrelated headers. Display DataForSEO;
+  use POST and the resolved full endpoint unchanged.
+
+  Build a one-element task array. A query list contributes only its first member, empty list becomes
+  empty keyword. Truthy max_results becomes integer depth capped at 700 with no lower bound;
+  truthy country becomes location_name and truthy search_domain_filter becomes domain unchanged.
+  Insert language_code=en and, if no location_name was constructed, the configured location_code
+  before native passthrough. Consequently caller language_code and location_code cannot overwrite
+  those defaults; language_name or location_name may coexist with them. Preserve this order rather
+  than applying a conventional caller-overrides-default merge. Ignore unified max_tokens_per_page.
+
+  decode_dataforseo_search parses typed tasks/results/items from provider bytes. Inspect only the
+  first task and require numeric status_code=20000 plus a present nonempty result array; then inspect
+  only its first result. Return only type=organic items with title/url/description defaults empty and
+  both date fields null. Other task status codes yield an empty successful search, not an exception.
+  Missing tasks/results produce the same empty shapes; invalid present structures retain source
+  conversion failures. Add dataforseo_reply fuzzing and replays_the_dataforseo_corpus with absent,
+  null, malformed and multi-task payloads.
+
+  call.dataforseo_search compares first_query_only, default_location_blocks_override,
+  country_avoids_location_default, depth_without_floor, explicit_colon_credentials,
+  ignored_noncolon_key, first_task_result and failed_task_empty. Exercise environment credential
+  rejection for an untrusted custom base as part of the key cases. Source methods run against fixed
+  settings and real response records in Python. The transformation owns 159 nonblank/non-comment
+  lines plus exports; 210 production/config, 210 tests and 160 oracle/fuzz lines fit a 650-line cap.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/dataforseo.rs
+    - crates/betterlite-core/src/api/search_providers/dataforseo/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/dataforseo.rs
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/dataforseo_reply.rs
+    - crates/betterlite-core/fuzz/corpus/dataforseo_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/dataforseo_search.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/dataforseo_search.py
+    - tools/oracle/cases/helpers/dataforseo-search/**
+    - tools/oracle/fuzz/corpus/helper_case/dataforseo_search*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dataforseo/search/transformation.py#L22-L222
+    why: Credential-pair resolution, defaults before passthrough and first-task organic projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L682-L684
+    why: The environment-controlled default location is France code 2250.
+dod:
+  - text: DataForSEO loaded settings and Basic authentication distinguish caller credentials from guarded server credentials.
+    proof: [dataforseo-tests, oracle, dataforseo-python]
+  - text: Task arrays preserve source default precedence and first-result-only behavior for success, provider task failure and malformed replies.
+    proof: [dataforseo-tests, dataforseo-corpus, oracle, dataforseo-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: dataforseo-tests
+      why: DataForSEO credentials, task projection or settings loading is unimplemented
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::dataforseo::/) - test(replays_the_dataforseo_corpus) | test(dataforseo_search_settings)'
+    - id: dataforseo-corpus
+      why: no new nested task payloads exercise the DataForSEO decoder
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/dataforseo_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_dataforseo_corpus)'
+    - id: dataforseo-python
+      why: DataForSEO credential and first-result behavior lacks a pinned-source helper
+      run: grep -qE '^[[:space:]]+dataforseo_search:' tools/oracle/fuzz/corpus/helper_case/dataforseo_search* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/dataforseo_search.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/dataforseo-search/first-query-only.yaml
+  - tools/oracle/cases/helpers/dataforseo-search/default-location-blocks-override.yaml
+  - tools/oracle/cases/helpers/dataforseo-search/country-avoids-location-default.yaml
+  - tools/oracle/cases/helpers/dataforseo-search/depth-without-floor.yaml
+  - tools/oracle/cases/helpers/dataforseo-search/explicit-colon-credentials.yaml
+  - tools/oracle/cases/helpers/dataforseo-search/ignored-noncolon-key.yaml
+  - tools/oracle/cases/helpers/dataforseo-search/first-task-result.yaml
+  - tools/oracle/cases/helpers/dataforseo-search/failed-task-empty.yaml
+deviations: []
+out_of_scope:
+  - The source package initializer exports DataForSEOSearchConfig without additional runtime callables; B048 owns registration in the executable search registry.
+pitfalls:
+  - The provider's documented USA example does not change DEFAULT_DATAFORSEO_LOCATION_CODE=2250.
+  - An api_key lacking colon does not override DATAFORSEO_LOGIN or DATAFORSEO_PASSWORD.
+  - A successful second task is ignored when the first task reports a non-20000 status.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 1

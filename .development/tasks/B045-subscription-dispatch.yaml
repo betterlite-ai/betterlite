@@ -1,0 +1,97 @@
+id: B045
+title: Connect ChatGPT and Copilot subscription operations to the gateway
+description: >-
+  Install chatgpt and github_copilot in B010's closed provider dispatcher through an upper-layer
+  api::subscription_dispatch service in betterlite-core. Compose B1507-B1516 without moving their
+  core-dependent adapters into a lower provider crate. B174 and B2230 select the subscription identity;
+  B024 supplies common OpenAI completion dispatch. Own main.py's Copilot authorization stanza inside
+  _complete_custom_openai at 2635-2646 and its embedding branch at 6488-6503. The chat stanza obtains
+  a subscription key, builds defaults and then overlays extra_headers; preserve B024's normal versus
+  EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER=false dispatch semantics. The embedding branch forwards
+  the common call context to B1516, whose authentication supersedes the forwarded key.
+
+  Install ChatGPT chat normalization and forced-stream Responses buffering, Copilot native-reply chat
+  repair, embedding and Messages policy, and the Copilot Responses capability predicate. Model=None
+  permits native Copilot Responses; otherwise B1515 decides native versus the existing chat bridge.
+  Allocate all stream maps per call. Share the configured token stores and operator login sink without
+  exposing token/device-code values to client errors or logs. Retain the resolved base and settings
+  from the leaf services; there are no new environment variables in this composition layer.
+
+  Exercise the booted proxy using temporary subscription token files and a mock upstream. Existing
+  factories remain the sole route registrars. Cover POST /v1/chat/completions, /chat/completions,
+  /engines/{model}/chat/completions and /openai/deployments/{model}/chat/completions; /v1/embeddings,
+  /embeddings, /engines/{model}/embeddings and /openai/deployments/{model}/embeddings; /v1/responses,
+  /responses and /openai/v1/responses; /v1/messages and /claude_code_gateway/v1/messages with the
+  gateway enabled. Parameterize alias cases within the named fixtures. Assert proxy auth, exact
+  upstream model/headers/body, status, error.type/param/code and returned headers. Include chatgpt
+  repeated tool IDs, ChatGPT SSE returned as JSON, Copilot extra-header precedence under both handlers,
+  native-versus-chat Responses models, embedding prefix removal, Messages trusted-host enforcement,
+  empty-key 401 and missing proxy-key rejection before upstream I/O. Do not use helper calls for routes.
+
+  The two owned dispatch spans contain 26 nonblank/non-comment lines; composition adds about 150
+  Rust lines and 260 test/fixture lines. Test subscription_dispatch in both betterlite-core and
+  betterlite-server. Reuse operation parsers and their fuzz corpora; cap the complete change at 550.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/subscription_dispatch.rs
+    - crates/betterlite-core/src/api/subscription_dispatch/**
+    - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/dispatch.rs
+    - crates/betterlite-server/src/subscription_dispatch.rs
+    - crates/betterlite-server/src/subscription_dispatch/**
+    - crates/betterlite-server/src/lib.rs
+    - tools/oracle/cases/providers/subscriptions/**
+    - tools/oracle/fixtures/subscriptions/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2634-L2651
+    why: Copilot header insertion before common OpenAI dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6488-L6503
+    why: Copilot embedding operation and forwarded context.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9187-L9197
+    why: Native Responses selection including a missing model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11930-L11952
+    why: Four existing chat aliases used by the subscription tests.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12299
+    why: Embedding decorators and authentication dependencies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L212
+    why: Responses paths already mounted by B080.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L125
+    why: Authenticated native Messages route owned by B081.
+dod:
+  - text: Both subscription names execute their supported operations through existing routes with the correct upstream credentials and transformations.
+    proof: [subscription-tests, oracle]
+  - text: Token failures, proxy authentication and Messages host restriction remain observable at the HTTP boundary.
+    proof: [subscription-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: subscription-tests
+      why: subscription composition or its booted gateway coverage is missing
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/subscription_dispatch::/)'
+oracle_cases:
+  - tools/oracle/cases/providers/subscriptions/chat-aliases.yaml
+  - tools/oracle/cases/providers/subscriptions/chatgpt-tools.yaml
+  - tools/oracle/cases/providers/subscriptions/chatgpt-buffered-response.yaml
+  - tools/oracle/cases/providers/subscriptions/copilot-handler-headers.yaml
+  - tools/oracle/cases/providers/subscriptions/copilot-response-selection.yaml
+  - tools/oracle/cases/providers/subscriptions/copilot-embedding-aliases.yaml
+  - tools/oracle/cases/providers/subscriptions/copilot-messages-host.yaml
+  - tools/oracle/cases/providers/subscriptions/empty-subscription-key.yaml
+  - tools/oracle/cases/providers/subscriptions/proxy-key-required.yaml
+deviations: []
+out_of_scope:
+  - The remaining bodies of _complete_custom_openai and _complete_text_completion_openai are B024; _complete_aiohttp_openai, _complete_aleph_alpha, _custom_api_first_output, _complete_custom, _complete_custom_providers and the custom/proxy embedding branches are B044.
+  - Provider-specific main.py completion functions retain their owners by suffix — azure/azure_text B025; azure_ai B026; anthropic/anthropic_text B027; bedrock/bedrock_mantle B028; vertex_ai/vertex_ai_beta B031; xai/mistral/text_completion_codestral B036; cohere_chat B037.
+  - The remaining _complete_ suffix groups are deepseek/heroku/groq/cometapi/bytez B038; minimax/amazon_nova/text_completion_inception B039; hosted_vllm/oobabooga/vllm/ollama/ollama_chat/triton/lemonade B040; fireworks_ai/together_ai/replicate/huggingface/openrouter/vercel_ai_gateway/edenai/predibase/petals B041; sap/oci/databricks/datarobot/sagemaker_chat/sagemaker/watsonx/watsonx_text/cloudflare/snowflake/gdc/ovhcloud B042; gigachat/nlp_cloud/maritalk/compactifai/nadir/gradient_ai B043; fal_ai B046; ragflow B049; a2a/langgraph/langflow B050.
+  - Shared main.py helper ownership is B500 for _is_openai_backed_api_base and _resolve_openai_api_base, B195 for _load_default_encoding, B196 for _load_module_encoding/_get_encoding, B198 for _provider_config_items/_locals_snapshot/_dispatch_metadata and the three _dispatch_client helpers, and B2239 for print_verbose.
+  - B2227 retains all main.py stream assembly and cost helpers from stream_chunk_builder through _simple_text_part; all other main.py facade, mock, bridge, pricing-registration, retry and adapter callables remain B158, including completion/embedding outside the explicitly owned stanzas.
+pitfalls:
+  - A Copilot Responses request with no model bypasses the per-model capability check.
+  - The common OpenAI handler already inserts extra_headers and must not receive a second independent insertion path.
+  - Mounting an additional copy of an API family route would panic before any subscription request can run.
+review_level: security
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0

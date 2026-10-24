@@ -1,0 +1,85 @@
+id: B1541
+title: Send ElevenLabs transcription multipart and retain word metadata
+description: >-
+  Implement api::elevenlabs::transcription for the complete audio_transcription configuration using
+  B1122 contracts, B1001 processed local audio and B1540's settings/error. The provider name is
+  elevenlabs. Map language to language_code and retain temperature, ignoring other OpenAI inputs
+  regardless of drop_params. Build model_id plus non-null supported and provider-specific form
+  fields using Python-compatible string conversion, and one file tuple with the processed filename,
+  bytes and content type. Reuse B1122's exclusion rules rather than dropping language_code as an
+  unsupported OpenAI parameter.
+
+  The URL uses explicit api_base whenever non-null, including empty string; otherwise provider
+  environment/default resolves to https://api.elevenlabs.io. Trim slashes and append /v1/speech-to-text.
+  Authentication is explicit-or-ELEVENLABS_API_KEY only, with no global OpenAI fallback, and rejects
+  null while accepting the source's empty final key. Preserve incoming headers and set xi-api-key.
+  These operations consume loaded settings; they do not introduce another environment reader.
+
+  decode_eleven_transcript parses bounded upstream bytes into a typed text/language/word response
+  with a deliberate hidden passthrough for the complete provider metadata. Default missing text to
+  empty and missing language_code to unknown, set task=transcribe, and emit words only when the
+  source words field exists. Include exactly entries with type=word, copying text/start/end with
+  defaults empty/zero/zero; spacing and audio_event entries disappear. Store the full provider reply
+  in hidden parameters. A decoding or projection error becomes the source ValueError including the
+  raw response text. Add eleven_transcript fuzzing and replays_the_eleven_transcript_corpus over
+  mixed word types, malformed records and invalid bytes.
+
+  call.elevenlabs_transcription runs the real Python configuration against in-memory file tuples.
+  Cases mapped_language_form, provider_field_strings, transcription_key_scope, empty_explicit_base,
+  filtered_words, absent_words and malformed_transcript compare body/file metadata, output and errors.
+  The source has 135 nonblank/non-comment lines; 180 production, 170 tests and 160 oracle/fuzz lines
+  fit a 600-line cap. HTTP integration remains in B047.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/elevenlabs.rs
+    - crates/betterlite-core/src/api/elevenlabs/transcription.rs
+    - crates/betterlite-core/src/api/elevenlabs/transcription/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/eleven_transcript.rs
+    - crates/betterlite-core/fuzz/corpus/eleven_transcript/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/elevenlabs_transcription.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/elevenlabs_transcription.py
+    - tools/oracle/cases/helpers/elevenlabs-transcription/**
+    - tools/oracle/fuzz/corpus/helper_case/elevenlabs_transcription*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/audio_transcription/transformation.py#L26-L188
+    why: Multipart string fields, transcription-only auth precedence and word filtering.
+dod:
+  - text: Transcription requests preserve ElevenLabs form/file encoding and its distinct base/key rules.
+    proof: [eleven-transcript-tests, oracle, eleven-transcript-python]
+  - text: Word filtering, absent-field defaults and hidden provider metadata survive valid and malformed reply inputs.
+    proof: [eleven-transcript-tests, eleven-transcript-corpus, oracle, eleven-transcript-python]
+checks:
+  optional: []
+  commands:
+    - id: eleven-transcript-tests
+      why: ElevenLabs transcription behavior has no executable assertions
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::elevenlabs::transcription::/) - test(replays_the_eleven_transcript_corpus)'
+    - id: eleven-transcript-corpus
+      why: new transcription reply bytes do not reach the production parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/eleven_transcript)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_eleven_transcript_corpus)'
+    - id: eleven-transcript-python
+      why: ElevenLabs multipart and word projection lack an independent oracle adapter
+      run: grep -qE '^[[:space:]]+elevenlabs_transcription:' tools/oracle/fuzz/corpus/helper_case/elevenlabs_transcription* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/elevenlabs_transcription.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/elevenlabs-transcription/mapped-language-form.yaml
+  - tools/oracle/cases/helpers/elevenlabs-transcription/provider-field-strings.yaml
+  - tools/oracle/cases/helpers/elevenlabs-transcription/transcription-key-scope.yaml
+  - tools/oracle/cases/helpers/elevenlabs-transcription/empty-explicit-base.yaml
+  - tools/oracle/cases/helpers/elevenlabs-transcription/filtered-words.yaml
+  - tools/oracle/cases/helpers/elevenlabs-transcription/absent-words.yaml
+  - tools/oracle/cases/helpers/elevenlabs-transcription/malformed-transcript.yaml
+deviations: []
+out_of_scope:
+  - Audio file interpretation stays with B1001; this configuration receives its filename/content/MIME result without adding file acquisition paths.
+pitfalls:
+  - The transcription adapter does not inherit ElevenLabs speech's litellm.openai_key fallback.
+  - words omitted and words present but containing only spacing produce different response shapes.
+  - Form booleans use Python True/False spellings rather than Deepgram's lowercase query encoding.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 1

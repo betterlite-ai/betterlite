@@ -1,0 +1,135 @@
+id: B037
+title: Cohere, Voyage, Jina and Infinity executable provider bindings
+description: >-
+  Connect B1414–B1423 to B010/B678's closed provider and operation dispatch, using
+  embedding_rerank_providers modules in betterlite-provider and betterlite-core.
+  Install Cohere chat v1/v2, direct Cohere v2 embeddings, all three Voyage embedding
+  variants, Jina/Infinity embeddings and the four providers' rerank adapters. Expose
+  B1418's legacy embedding execution to existing signed-endpoint callers without sending
+  ordinary Cohere requests through it. Attach B1419's rerank/arerank guardrail translation
+  at B104's registry. Supply B1013's rerank preparation contract and use B186 for errors; no new
+  route factory or wire decoder is introduced.
+
+  Own main.py _complete_cohere_chat L3047–3109 and embedding arms L6658–6686,
+  L7053–7067 and L7156–7174. Chat and direct embeddings resolve key from explicit,
+  litellm.cohere_key, COHERE_API_KEY, CO_API_KEY, then litellm.api_key. Chat uses B2230's
+  case-sensitive v1/ substring selector; v2 strips every v2/ occurrence from model,
+  whereas v1 retains its prefix. Chat base precedence is explicit/litellm.api_base/
+  COHERE_API_BASE, followed by https://api.cohere.com/v2/chat or https://api.cohere.ai/v1/chat.
+  Choose truthy supplied headers, litellm.headers, or an empty map, then overlay non-None
+  extra_headers before the leaf's header transformation. Cohere embeddings preserve the
+  previously merged headers. Voyage/Infinity embedding calls pass empty litellm_params
+  and no headers argument; Jina also wraps a scalar string before the call. Verify these
+  omissions at the execution boundary rather than copying chat's forwarding behavior.
+
+  Extract this family's branches of ProviderConfigManager.get_provider_embedding_config
+  and get_provider_rerank_config from B157's broad utility ownership, plus
+  should_use_cohere_v1_client. Voyage context substring wins before multimodal when both
+  occur. Cohere rerank selects v2 if base is falsey; otherwise v1 wins for a base ending
+  /v1/rerank, or for max_chunks_per_doc without max_tokens_per_doc unless base ends
+  /v2/rerank. Trailing slashes affect these exact suffix checks. Other family variants
+  select their corresponding leaf. Leave unrelated utility branches with their owners.
+  Jina credentials/base enter through B174/B211 and B1422's typed provider projection.
+
+  Add embedding_provider_settings to the real B002 loader tests for COHERE_API_BASE,
+  COHERE_API_KEY, CO_API_KEY, litellm_settings.cohere_key, api_key, api_base and headers,
+  reusing fields declared by B1419 and existing foundations. All start absent; the URL
+  defaults above apply only after resolution. Loader cases must prove operation-specific
+  fallback and explicit overrides. The remaining types/llms/rerank.py declaration has
+  no caller at the pin and introduces no runtime variant.
+
+  Through both booted proxies exercise POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions;
+  POST /v1/embeddings, /embeddings, /engines/{model:path}/embeddings and
+  /openai/deployments/{model:path}/embeddings. B004/B006 mount these routes once.
+  B1014 and B085 already depend on this provider foundation; they own later execution
+  through POST /v2/rerank, /v1/rerank and /rerank. Do not reverse that dependency.
+  Here native dispatcher tests assert each rerank leaf's preparation, send and projection
+  with fixture transports; the leaves' differential cases cover their observable wire rules.
+  Proxy cases capture upstream authorization, URL,
+  body and streaming data plus client status, content-type, error type/param/code and
+  request-id headers. Include missing gateway auth, invalid provider auth, rate limit,
+  malformed provider response and Cohere chat version selection. Native composition tests
+  additionally exercise rerank version selection and the instruction guardrail binding.
+  Suppress only error.message differences with the repository's owned-wording reason.
+  Helper embedding_family_selection compares only pure utility selection and new seeds
+  assert call.embedding_family_selection. Source count is 115 main.py lines plus 40
+  utility selection lines; estimate 250 bindings, 230 tests, 105 adapters and 100
+  settings/shared exports, maximum 750.
+scope:
+  paths:
+    - crates/betterlite-provider/src/{lib,error,provider,operation,prepared,embedding_rerank_providers}.rs
+    - crates/betterlite-provider/src/embedding_rerank_providers/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-core/src/{lib,dispatch,operation,embedding_rerank_providers}.rs
+    - crates/betterlite-core/src/embedding_rerank_providers/**
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,embedding_providers}.rs
+    - crates/betterlite-config/tests/embedding_provider_settings.rs
+    - Cargo.lock
+    - tools/oracle/src/helpers/{mod,embedding_family_selection}.rs
+    - tools/oracle/helpers/{dispatch,embedding_family_selection}.py
+    - tools/oracle/cases/helpers/embedding-family-selection/**
+    - tools/oracle/cases/providers/embedding-rerank/**
+    - tools/oracle/fuzz/corpus/helper_case/embedding_family_selection*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3047-L3109
+    why: Cohere chat version, prefix removal and dispatch-specific settings precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6658-L6686
+    why: Cohere embedding key chain and merged headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7053-L7067
+    why: Voyage and Infinity omit caller headers at the base handler boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7156-L7174
+    why: Jina dispatch wraps only scalar strings and forwards empty litellm_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8767-L8908
+    why: Own only Cohere, Voyage, Jina and Infinity selection arms in these two factories.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10099-L10105
+    why: A missing base forces the v2 rerank client despite legacy limit parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11951
+    why: All four existing chat decorators exercised by provider dispatch cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12298
+    why: Embedding aliases preserve the gateway model-path forms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L45
+    why: Rerank route decorators include both v1 and v2 aliases independently of provider version.
+dod:
+  - text: Chat and embedding aliases reach their provider leaves, and native rerank dispatch invokes each installed adapter.
+    proof: [embedding-provider-tests, embedding-provider-settings, oracle]
+  - text: Family selection reproduces Cohere base-dependent rerank routing and Voyage context precedence.
+    proof: [embedding-provider-tests, embedding-selection-python, oracle]
+  - text: Fresh selection helper seeds choose the typed operation rather than calling HTTP handlers.
+    proof: [embedding-selection-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: embedding-provider-tests
+      run: cargo nextest run --locked -p betterlite-provider -p betterlite-core --no-tests=fail -E 'test(/^embedding_rerank_providers::/)'
+      why: Native binding tests must reach the actual leaves and preserve wrapper-level forwarding omissions.
+    - id: embedding-provider-settings
+      run: cargo nextest run --locked -p betterlite-config --test embedding_provider_settings --no-tests=fail
+      why: Cohere dispatch globals and environment values must be recognized and applied by the loader.
+    - id: embedding-selection-python
+      run: test -f tools/oracle/helpers/embedding_family_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The pure helper must inspect the config selected by the pinned utility factories.
+    - id: embedding-selection-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_family_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::embedding_family_selection::/)'
+      why: Every new seed must parse to embedding_family_selection with a nonzero count.
+oracle_cases:
+  - tools/oracle/cases/providers/embedding-rerank/cohere-chat-aliases.yaml
+  - tools/oracle/cases/providers/embedding-rerank/embedding-host-aliases.yaml
+  - tools/oracle/cases/providers/embedding-rerank/voyage-context-and-multimodal.yaml
+  - tools/oracle/cases/providers/embedding-rerank/auth-status-and-error-fields.yaml
+  - tools/oracle/cases/helpers/embedding-family-selection/cohere-no-base-and-version-suffix.yaml
+  - tools/oracle/cases/helpers/embedding-family-selection/voyage-context-before-multimodal.yaml
+deviations: []
+out_of_scope:
+  - B1414–B1423 own all provider-directory callables; types/llms/rerank.py InfinityRerankResult has no caller at the pin.
+  - Other main.py functions retain the owners in B500's callable inventory, and other utils.py functions/branches retain the owners in B2230's inventory; this task extracts only the explicitly listed family selector arms and should_use_cohere_v1_client from B157.
+  - B004, B006 and B085 register the routes; B1014 handles generic rerank parameters and lifecycle, and B104 handles general guardrail authorization and execution.
+pitfalls:
+  - The /v1/rerank client route does not itself select Cohere's v1 upstream client.
+  - Cohere's v2 chat default uses api.cohere.com while v1 uses api.cohere.ai.
+  - Jina embedding dispatch does not forward the merged headers argument used by Cohere embedding dispatch.
+budget: {max_changed_lines: 750, max_new_expects: 0}
+review_level: security

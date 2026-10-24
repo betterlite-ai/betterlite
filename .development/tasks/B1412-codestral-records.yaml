@@ -1,0 +1,85 @@
+id: B1412
+title: Codestral FIM options, text replies and chunk decoding
+description: >-
+  Implement codestral_records in betterlite-openai from the complete completion
+  transformation, handler response/protocol records, TextCompletionCodestralError and
+  process_text_completion_response. Config defaults remain absent, including top_p/stop
+  supplied only by a configured caller. The mapper supports suffix, temperature, top_p,
+  max tokens, stream, seed and stop; it also maps min_tokens although that field is not
+  advertised. seed becomes random_seed, max token spellings overwrite in encounter order,
+  and stream only passes when literally true. Reuse B2237 text defaults/records without
+  importing the executable provider dispatcher.
+
+  For ordinary replies log post_call before checking status, require exactly HTTP 200,
+  and map JSON parse failure to TextCompletionCodestralError 422. Project every choice's
+  message.content to text, retaining index/finish_reason/logprobs and top-level id/created/
+  model/usage/object. Do not apply the unused output_parser: ChatML marker strings survive.
+  Preserve the native error's synthetic POST request URL when no request is supplied.
+  For chunks, reuse B005 SSE prefix stripping, trim whitespace and return unfinished empty
+  output for blank, [DONE], invalid JSON or empty choices. Validate the original stream
+  object before testing choices, then use only its first choice; a non-None finish_reason
+  sets is_finished and carries logprobs, including an empty-string finish reason. Keep the
+  original chunk on nonempty results. Add bounded decode_codestral_reply and
+  decode_codestral_chunk, a tagged codestral_record fuzz target and replay. Helper
+  codestral_records calls these transformations with fixture response wrappers and records
+  post_call ordering; no transport is invoked. Owned count is 111 transformation lines
+  plus 107 handler record/reply lines; plan 230 code, 180 tests, 110 adapters and 100
+  fuzz/wiring lines within 675.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,codestral_records}.rs
+    - crates/betterlite-openai/src/codestral_records/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/codestral_record.rs
+    - crates/betterlite-openai/fuzz/corpus/codestral_record/**
+    - tools/oracle/src/helpers/{mod,codestral_records}.rs
+    - tools/oracle/helpers/{dispatch,codestral_records}.py
+    - tools/oracle/cases/helpers/codestral-records/**
+    - tools/oracle/fuzz/corpus/helper_case/codestral_records*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/transformation.py#L9-L125
+    why: FIM parameter mapping and the provider's chunk parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L27-L95
+    why: Native response fields and error request/response construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L163-L234
+    why: Exactly-200 response acceptance and conversion into text choices.
+dod:
+  - text: FIM options and replies preserve otherwise easy-to-miss min_tokens and marker-text behavior.
+    proof: [codestral-record-tests, codestral-record-python, oracle]
+  - text: Chunk finishing and malformed input follow the native parser with bounded byte decoding.
+    proof: [codestral-record-tests, codestral-record-corpus, oracle, codestral-record-python]
+  - text: Codestral record fixtures select their helper variant.
+    proof: [codestral-record-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: codestral-record-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^codestral_records::/) - test(replays_codestral_record_corpus)'
+      why: The outer stream wrapper must not conceal the chunk parser's own unfinished sentinel result.
+    - id: codestral-record-python
+      run: test -f tools/oracle/helpers/codestral_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: FIM native replies must be compared before any generic text-to-chat bridge.
+    - id: codestral-record-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/codestral_record.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/codestral_record)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_codestral_record_corpus)'
+      why: Both response and event payload forms need production-decoder replay.
+    - id: codestral-record-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/codestral_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::codestral_records::/)'
+      why: The new seeds must select call.codestral_records rather than generic text completion.
+oracle_cases:
+  - tools/oracle/cases/helpers/codestral-records/min-tokens-and-seed.yaml
+  - tools/oracle/cases/helpers/codestral-records/choice-message-to-text.yaml
+  - tools/oracle/cases/helpers/codestral-records/chatml-markers-retained.yaml
+  - tools/oracle/cases/helpers/codestral-records/non200-and-invalid-json.yaml
+  - tools/oracle/cases/helpers/codestral-records/done-malformed-and-empty-choices.yaml
+  - tools/oracle/cases/helpers/codestral-records/empty-finish-reason-and-logprobs.yaml
+deviations: []
+out_of_scope:
+  - B1413 owns make_call, CodestralTextCompletion initialization, _validate_environment, completion, async_completion and async_streaming in handler.py.
+  - CodestralTextCompletion.output_parser and embedding have no caller at the pin and are not implemented.
+pitfalls:
+  - The [DONE] sentinel does not set is_finished in CodestralTextCompletionConfig._chunk_parser.
+  - HTTP 201 is an error for the ordinary FIM reply path.
+  - Intermediate chunk logprobs are omitted until finish_reason becomes non-None.
+budget: {max_changed_lines: 675, max_new_expects: 0}
+review_level: standard

@@ -1,0 +1,84 @@
+id: B1427
+title: Legacy compatible line streaming shared with Databricks
+description: >-
+  Extract databricks/streaming_utils.ModelResponseIterator into
+  betterlite-openai::compatible_line_stream before implementing its OpenAI-like handler
+  caller. The current Databricks chat adapter has its own different iterator; this
+  legacy class remains reachable through OpenAILikeChatHandler. Use B005's stream
+  contracts and cancellation, and B004's ModelResponseStream record construction.
+
+  decode_legacy_compatible_line receives a transport-decoded line and an explicit
+  Sync/Async mode. Apply the existing SSE data-prefix stripping, substitute empty string
+  for a falsey result and trim whitespace. Async [DONE] terminates; sync [DONE] reaches
+  JSON parsing and becomes an unfinished empty chunk with a debug diagnostic. Blank
+  lines also emit empty chunks. Parse/model-validation ValueErrors log debug and emit
+  that same empty chunk; do not change this into a fatal stream error. Receiving a
+  ValueError becomes RuntimeError in either mode, while async additionally wraps other
+  receive exceptions. Normal iterator exhaustion stays exhaustion.
+
+  Project only choice zero and always return index zero. Forward non-None delta.content,
+  and copy only the first tool call when it has a function and non-None arguments,
+  preserving its id, function name and tool index. Any non-None finish_reason marks
+  finished, including an empty string. An empty choices list returns usage without
+  indexing a choice, defaults each falsey token count to zero and never marks finished;
+  ordinary-choice usage copies its three fields without that extra fallback. Drop
+  unprojected provider fields rather than copying the full source record into the chunk.
+
+  Add helper compatible_line_chunk invoking the real sync/async iterator with fixture
+  lines, including receive failures. The production line parser accepts external JSON
+  text, so fuzz compatible_line with arbitrary strings and replay new malformed/usage-only
+  seeds. Helper seeds use call.compatible_line_chunk and an adapter test checks that tag
+  and a nonzero count. There are 160 nonblank/noncomment source lines; reserve 150
+  implementation, 200 tests, 115 adapters and 80 fuzz/export lines, maximum 575.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,compatible_line_stream}.rs
+    - crates/betterlite-openai/src/compatible_line_stream/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/compatible_line.rs
+    - crates/betterlite-openai/fuzz/corpus/compatible_line/**
+    - tools/oracle/src/helpers/{mod,compatible_line_chunk}.rs
+    - tools/oracle/helpers/{dispatch,compatible_line_chunk}.py
+    - tools/oracle/cases/helpers/compatible-line-chunk/**
+    - tools/oracle/fuzz/corpus/helper_case/compatible_line_chunk*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/streaming_utils.py#L14-L182
+    why: First-choice projection, empty-choice usage and different sync/async DONE handling.
+dod:
+  - text: Legacy compatible lines preserve first-choice/tool projection and nonterminal usage-only chunks.
+    proof: [compatible-line-tests, compatible-line-python, oracle]
+  - text: Parsing failures fall back with debug diagnostics while receive failures and DONE retain mode-specific behavior.
+    proof: [compatible-line-tests, compatible-line-python, oracle]
+  - text: New line-parser and helper seeds replay through their exact production variants.
+    proof: [compatible-line-corpus, compatible-line-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: compatible-line-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^compatible_line_stream::/) - test(replays_the_compatible_line_corpus)'
+      why: Empty chunks and true EOF must remain distinguishable in each iterator mode.
+    - id: compatible-line-python
+      run: test -f tools/oracle/helpers/compatible_line_chunk.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Iterating the source in both modes exposes the pinned sentinel inconsistency.
+    - id: compatible-line-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/compatible_line.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/compatible_line)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_compatible_line_corpus)'
+      why: Newly added malformed lines must exercise this fallback parser rather than the OpenAI parser alone.
+    - id: compatible-line-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/compatible_line_chunk*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::compatible_line_chunk::/)'
+      why: Fresh seeds must select the compatible_line_chunk helper operation.
+oracle_cases:
+  - tools/oracle/cases/helpers/compatible-line-chunk/done-sync-versus-async.yaml
+  - tools/oracle/cases/helpers/compatible-line-chunk/blank-and-invalid-json-fallback.yaml
+  - tools/oracle/cases/helpers/compatible-line-chunk/usage-only-empty-choices.yaml
+  - tools/oracle/cases/helpers/compatible-line-chunk/first-tool-empty-arguments.yaml
+  - tools/oracle/cases/helpers/compatible-line-chunk/receive-error-categories.yaml
+deviations: []
+out_of_scope:
+  - B1428 owns HTTP execution and stream selection; B042 retains DatabricksChatResponseIterator in chat/transformation.py, which is not this legacy iterator.
+pitfalls:
+  - Sync [DONE] yields an empty chunk while async [DONE] ends iteration.
+  - Usage-only chunks stay unfinished even when they are the last upstream record.
+  - A second choice or second tool call is never projected by this iterator.
+budget: {max_changed_lines: 575, max_new_expects: 0}
+review_level: standard

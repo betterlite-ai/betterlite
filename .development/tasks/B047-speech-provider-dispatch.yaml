@@ -1,0 +1,114 @@
+id: B047
+title: Connect speech and transcription providers to native and HTTP calls
+description: >-
+  Compose B1540-B1551 in core api::speech_providers over B010/B174 and the prepared speech and
+  transcription seams B1084/B1082. ElevenLabs/Deepgram use the generic HTTP transcription contract;
+  ElevenLabs/Polly implement speech; Riva invokes its gRPC SDK service; Soniox runs the resource-aware
+  pipeline. Expose B1542's common listen metadata service for B094's future passthrough consumer
+  without mounting that route here. Existing lower provider crates receive contracts and identities,
+  never an import of betterlite-core.
+
+  Own SonioxAudioTranscriptionHandler.audio_transcriptions at 111-172. Choose its default config
+  only when none/falsey is supplied, use async only for atranscription exactly true, retain the client
+  only when its mode matches, and normalize falsey headers to empty. max_retries is accepted but
+  ignored: a provider 429 during this pipeline surfaces after one attempt unless the existing router
+  retries the whole operation. Register call.speech_provider_dispatch for source-backed native cases
+  soniox_sync_client, soniox_async_client and ignored_max_retries, stubbing only the pipeline seam.
+
+  Load missing Riva environment projections in betterlite-config, reusing any existing B002 fields:
+  NVIDIA_RIVA_API_BASE, NVIDIA_RIVA_API_KEY and NVIDIA_NIM_API_KEY all default unset. Explicit truthy
+  base wins, otherwise NVIDIA_RIVA_API_BASE; no public endpoint is invented. Explicit truthy key wins,
+  then NVIDIA_RIVA_API_KEY, then NVIDIA_NIM_API_KEY. riva_dispatch_settings loads these keys and checks
+  precedence. Forward Soniox, ElevenLabs, Deepgram and AWS resolved settings from their owners.
+
+  Reuse B083's route registrations for POST /v1/audio/speech, /audio/speech, /v1/audio/transcriptions
+  and /audio/transcriptions. Booted-proxy cases cover each supported provider on both aliases,
+  ElevenLabs voice query and multipart language, Polly signed-body/format behavior, Deepgram raw
+  audio/diarization, Riva final-only recognition and missing endpoint, Soniox upload/fetch/cleanup,
+  SRT/VTT/text/verbose results, upstream 401/429 and proxy authentication before provider effects.
+  Assert actual status, error.type/param/code, response media type/headers and provider request fields.
+  HTTP transcription still requires the file form field at this pin; native Soniox file_id/audio_url
+  support does not relax that route requirement. Use B900 for multipart comparisons.
+
+  For HTTP Riva fixtures, preload a test-only module through B165's existing callback loading seam
+  in both proxies. Replace only external riva-client Auth/ASRService/protobuf constructors, capture
+  their arguments through the oracle mock endpoint, and return deterministic SDK results; retain
+  actual gateway routing, audio decoding and provider code. This needs no production mock switch.
+  Check that Python fixture and the dispatch helper with ruff/basedpyright. Test speech_providers in
+  core/server and the named config loader. The remaining owned source is 54 dispatch lines plus
+  docstring-only package initializers; allow 190 composition/config, 230 tests, 220 HTTP/helper
+  fixtures and 90 SDK fixture lines under an 800-line cap. All parsers remain with their leaf tasks.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/speech_providers.rs
+    - crates/betterlite-core/src/api/speech_providers/**
+    - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/dispatch.rs
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/riva.rs
+    - crates/betterlite-server/src/speech_providers.rs
+    - crates/betterlite-server/src/speech_providers/**
+    - crates/betterlite-server/src/lib.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/speech_provider_dispatch.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/speech_provider_dispatch.py
+    - tools/oracle/cases/helpers/speech-provider-dispatch/**
+    - tools/oracle/fuzz/corpus/helper_case/speech_provider_dispatch*
+    - tools/oracle/cases/providers/speech/**
+    - tools/oracle/fixtures/speech/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L111-L172
+    why: Final public mode/client dispatcher and intentionally unused retry argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L647-L657
+    why: Riva's endpoint requirement and NVIDIA_NIM key fallback consumed by dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8091-L8134
+    why: Existing transcription facade selects dedicated Riva and Soniox handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12522-L12652
+    why: Speech decorators and binary HTTP response path owned by B083.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12654-L12803
+    why: Required multipart file, transcription aliases and endpoint error mapping.
+dod:
+  - text: Supported speech/transcription providers run through both existing aliases with correct payloads, response formats and authentication.
+    proof: [speech-provider-tests, oracle, speech-provider-python]
+  - text: Soniox mode/client selection and unused retries, plus loaded Riva credential precedence, remain source-compatible.
+    proof: [speech-provider-tests, oracle, speech-provider-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: speech-provider-tests
+      why: provider composition, booted route cases or Riva environment loading are missing
+      run: uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/speech_providers::/) | test(riva_dispatch_settings)'
+    - id: speech-provider-python
+      why: native dispatch helper or booted Riva SDK fixture is absent or unchecked
+      run: grep -qE '^[[:space:]]+speech_provider_dispatch:' tools/oracle/fuzz/corpus/helper_case/speech_provider_dispatch* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/speech_provider_dispatch.py tools/oracle/fixtures/speech/riva_sdk.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json tools/oracle/fixtures/speech/riva_sdk.py
+oracle_cases:
+  - tools/oracle/cases/helpers/speech-provider-dispatch/soniox-sync-client.yaml
+  - tools/oracle/cases/helpers/speech-provider-dispatch/soniox-async-client.yaml
+  - tools/oracle/cases/helpers/speech-provider-dispatch/ignored-max-retries.yaml
+  - tools/oracle/cases/providers/speech/elevenlabs-speech-aliases.yaml
+  - tools/oracle/cases/providers/speech/polly-speech-aliases.yaml
+  - tools/oracle/cases/providers/speech/elevenlabs-transcription-aliases.yaml
+  - tools/oracle/cases/providers/speech/deepgram-transcription-aliases.yaml
+  - tools/oracle/cases/providers/speech/riva-transcription-aliases.yaml
+  - tools/oracle/cases/providers/speech/riva-missing-endpoint.yaml
+  - tools/oracle/cases/providers/speech/soniox-transcription-aliases.yaml
+  - tools/oracle/cases/providers/speech/soniox-subtitle-formats.yaml
+  - tools/oracle/cases/providers/speech/transcription-file-required.yaml
+  - tools/oracle/cases/providers/speech/upstream-auth-and-rate-limit.yaml
+  - tools/oracle/cases/providers/speech/proxy-key-required.yaml
+deviations: []
+out_of_scope:
+  - Within the shared Soniox handler, B1549 owns records and preparation/logging/error helpers at 61-102 and 173-357; B1550 owns remote helper pairs at 482-588 and 716-816; B1551 owns pipeline bodies at 358-481 and 589-715.
+  - Deepgram listen WebSocket authorization, route mounting and billing consumers belong to B094 and must consume B1542 rather than this composer.
+  - Public audio-route extraction remains B083, and native facade preparation/execution outside these provider variants remains B1082/B1083/B1084.
+pitfalls:
+  - Soniox audio_url support does not make the proxy's required multipart file optional.
+  - Passing an async client into a synchronous Soniox call selects a new synchronous client instead of using it.
+  - Riva has no public-default api_base even when a usable NVIDIA_NIM_API_KEY is present.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

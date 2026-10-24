@@ -1,0 +1,86 @@
+id: B1501
+title: Preserve the deprecated Aleph Alpha completion protocol
+description: >-
+  Implement the still-dispatched Aleph Alpha adapter in betterlite-openai/src/aleph_alpha.rs, using B173's
+  transport and B196's injected tokenizer. Own AlephAlphaError, AlephAlphaConfig construction/get_config,
+  validate_environment and completion in deprecated_providers/aleph_alpha.py. Configuration supplies all
+  declared non-None defaults; maximum_tokens starts at litellm.max_tokens (4096 unless overridden through
+  the existing DEFAULT_MAX_TOKENS/global loader), and explicit optional parameters win even when false or zero.
+  B044 supplies the resolved endpoint/key and owns _complete_aleph_alpha. Control-model prompts concatenate
+  ###Instruction:, ###Input: and ###Response: without added whitespace; other models join content with spaces.
+  Send the provided endpoint unchanged with lowercase accept/content-type and conditional Bearer authorization.
+  Literal stream=True returns lines for the existing stream machinery before JSON error handling.
+
+  Decode bounded response bytes with decode_aleph_reply into typed completions or an error-bearing response.
+  Preserve one-based choice indices, empty completion as null, upstream finish reasons, model and injected
+  creation time. Usage tokenizes the constructed prompt and only the first choice. A body error takes the
+  actual HTTP status even on status 200; malformed completions also become AlephAlphaError with that status.
+  Build an aleph_alpha helper that calls the real Python completion with captured module_level_client and
+  tokenizer, comparing request, reply, tokenization calls and logging order. Give the Rust module rstest
+  cases control_roles, config_zero_override, multiple_choices, error_body, empty_completion and raw_stream.
+  The old embedding stub and PalmConfig methods have no caller at the pin and receive no implementation.
+  Source size is 241 nonblank/non-comment lines after excluding embedding; budget 250 adapter/decoder,
+  205 behavioral tests, 110 oracle bridges, 80 fuzz/replay and 45 wiring lines (690 total).
+scope:
+  paths:
+    - crates/betterlite-openai/src/lib.rs
+    - crates/betterlite-openai/src/aleph_alpha.rs
+    - crates/betterlite-openai/src/aleph_alpha/**
+    - crates/betterlite-openai/src/error.rs
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/aleph_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/aleph_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/aleph_alpha.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/aleph_alpha.py
+    - tools/oracle/cases/helpers/aleph-alpha/**
+    - tools/oracle/fuzz/corpus/helper_case/aleph_alpha*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deprecated_providers/aleph_alpha.py#L13-L290
+    why: Live legacy completion, including class defaults and one-based choices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deprecated_providers/palm.py#L5-L69
+    why: Exported but uncalled Palm configuration; there is no Palm completion here.
+dod:
+  - text: Aleph Alpha prompt construction, explicit defaults and response/error projection match the captured Python invocation.
+    proof: [aleph-behavior, oracle, aleph-adapter]
+  - text: The reply decoder handles malformed and bounded inputs without panicking, and added corpus files replay through it.
+    proof: [aleph-corpus]
+  - text: Stream=True hands raw upstream lines to the existing streaming boundary without decoding them as a full response.
+    proof: [aleph-stream, oracle, aleph-adapter]
+checks:
+  optional: []
+  commands:
+    - id: aleph-behavior
+      why: legacy prompt or response semantics are missing
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^aleph_alpha::/) - test(replays_aleph_reply)'
+    - id: aleph-stream
+      why: raw streaming is accidentally routed through complete-body decoding
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^aleph_alpha::.*raw_stream/)'
+    - id: aleph-adapter
+      why: the pinned completion adapter or its typed case input is unavailable
+      run: grep -qE '^[[:space:]]+aleph_alpha:' tools/oracle/fuzz/corpus/helper_case/aleph_alpha* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/aleph_alpha.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: aleph-corpus
+      why: the new response parser lacks a fuzz entry point or replayed examples
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/aleph_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/aleph_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_aleph_reply)'
+oracle_cases:
+  - tools/oracle/cases/helpers/aleph-alpha/control-roles.yaml
+  - tools/oracle/cases/helpers/aleph-alpha/config-zero-override.yaml
+  - tools/oracle/cases/helpers/aleph-alpha/multiple-choices.yaml
+  - tools/oracle/cases/helpers/aleph-alpha/error-body.yaml
+  - tools/oracle/cases/helpers/aleph-alpha/empty-completion.yaml
+  - tools/oracle/cases/helpers/aleph-alpha/raw-stream.yaml
+deviations: []
+out_of_scope:
+  - aleph_alpha.embedding and palm.PalmConfig.__init__/get_config have no caller at the pin; Palm's module re-export does not invoke either method.
+  - B044 owns Aleph Alpha key/base precedence and installing its main.py dispatcher branch.
+  - Public settings objects are exposed by B157; this task consumes their typed snapshot rather than creating mutable class globals.
+pitfalls:
+  - "The first role-bearing control message always becomes ###Instruction even when its role is assistant."
+  - Non-200 alone is not the error predicate in this adapter; the JSON error member controls the explicit error branch.
+  - Usage reads only choices[0], so summing every returned completion changes billed tokens.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

@@ -1,0 +1,107 @@
+id: B1424
+title: Pinned JSON provider registry and configuration projection
+description: >-
+  Implement json_provider_registry in betterlite-models, below executable adapters.
+  Include the exact pinned providers.json table as a package asset and decode it into
+  bounded ProviderDescriptor records keyed by B209's provider identity. Preserve insertion
+  order for reverse base lookup. Required fields are base_url and api_key_env; api_base_env
+  defaults absent, base_class to openai_gpt, param_mappings/constraints/special_handling to
+  empty maps and supported_endpoints to an empty list. Unknown fields are ignored: Sarvam's
+  headers entry is not read by SimpleProviderConfig and must not install api-subscription-key.
+  The descriptors supply B2230's caller-owned JSONProviderProjection through B038, keeping
+  the model selector independent of executable provider modules.
+
+  Retain all 31 slugs, including nano-gpt and scx-ai. Environment values start unset.
+  Key names are PUBLICAI_API_KEY, HELICONE_API_KEY, VENICE_AI_API_KEY, XIAOMI_MIMO_API_KEY,
+  SCW_SECRET_KEY, SYNTHETIC_API_KEY, STIMA_API_KEY, NANOGPT_API_KEY, POE_API_KEY, CHUTES_API_KEY,
+  ABLITERATION_API_KEY, LLAMAGATE_API_KEY, GMI_API_KEY, SARVAM_API_KEY, ASSEMBLYAI_API_KEY,
+  CHARITY_ENGINE_API_KEY, AIHUBMIX_API_KEY, CRUSOE_API_KEY, DARKBLOOM_API_KEY, NEOSANTARA_API_KEY,
+  TENSORMESH_INFERENCE_API_KEY, PARASAIL_API_KEY, LIBERTAI_API_KEY, EMPIRIOLABS_API_KEY,
+  META_API_KEY, COGNITION_API_KEY, CORTECS_API_KEY, PINSTRIPES_API_KEY, SCX_API_KEY, PRISM_API_KEY
+  and SAIL_API_KEY. Read only the api_base_env names actually present in the table, including
+  TENSORMESH_SERVERLESS_BASE_URL; do not invent base aliases for entries without one.
+  Preserve every literal base_url, notably Helicone's trailing slash, Chutes' /v1/ trailing
+  slash, Apertis' STIMA credentials and Charity Engine's /remotejobs/v2/inference path.
+  A table-driven json_provider_settings test loads each declared environment key through
+  B002, checks absent/default and explicit deployment overrides, and verifies no key is
+  reported unsupported. Registry descriptors remain credential-free Debug values.
+
+  Port load/get/exists/get_by_base_url/supports_responses_api. Loading is attempted once;
+  a missing asset yields an empty loaded registry. Malformed JSON or a malformed entry
+  logs a warning and marks loaded anyway; valid entries inserted before an entry failure
+  remain visible. Do not replace that partial state with an atomic all-or-nothing load.
+  Reverse base lookup compares exact strings and returns the first matching entry.
+  Responses support means exact membership of /v1/responses, independent of other endpoints.
+  Expose a fixture-reader seam for missing/read-failure/partial-load tests without making
+  the package path a user-configurable URL or adding a provider hot-reload mechanism.
+
+  decode_json_provider_registry(bytes, limits) is the production asset decoder and the
+  json_provider_registry fuzz target entry. Helper json_provider_registry compares the
+  pinned loader with isolated class state and fixture file reads; operation seeds use
+  call.json_provider_registry and assert that tag before replay. The loader has 65
+  nonblank/noncomment lines including the unused list method below; its data asset has
+  222 lines. Budget 110 logic, 222 asset, 150 tests, 110 adapters and 145 loader/fuzz/export
+  lines, maximum 775.
+scope:
+  paths:
+    - crates/betterlite-models/src/{lib,error,json_provider_registry}.rs
+    - crates/betterlite-models/src/json_provider_registry/**
+    - crates/betterlite-models/src/json_providers.json
+    - crates/betterlite-models/fuzz/Cargo.toml
+    - crates/betterlite-models/fuzz/fuzz_targets/json_provider_registry.rs
+    - crates/betterlite-models/fuzz/corpus/json_provider_registry/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,json_providers}.rs
+    - crates/betterlite-config/tests/json_provider_settings.rs
+    - tools/oracle/src/helpers/{mod,json_provider_registry}.rs
+    - tools/oracle/helpers/{dispatch,json_provider_registry}.py
+    - tools/oracle/cases/helpers/json-provider-registry/**
+    - tools/oracle/fuzz/corpus/helper_case/json_provider_registry*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/json_loader.py#L12-L88
+    why: Descriptor defaults, once-only loading and partial registry retention on entry failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/providers.json#L1-L222
+    why: Exact provider names, credentials, base strings, mappings and endpoint flags to embed.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/README.md#L1-L76
+    why: Package-local JSON configuration and optional descriptor fields.
+dod:
+  - text: Every pinned descriptor and environment key is available with its exact defaults and endpoint declarations.
+    proof: [json-registry-tests, json-provider-settings, json-registry-python, oracle]
+  - text: Missing assets, entry failures and reverse lookup preserve the loader's once-only and partial-state behavior.
+    proof: [json-registry-tests, json-registry-python, oracle]
+  - text: New registry bytes and helper records are decoded with bounded production functions.
+    proof: [json-registry-corpus, json-registry-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: json-registry-tests
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^json_provider_registry::/) - test(replays_the_json_provider_registry_corpus)'
+      why: Registry order and partial insertion cannot be established by checking one provider exists.
+    - id: json-provider-settings
+      run: cargo nextest run --locked -p betterlite-config --test json_provider_settings --no-tests=fail
+      why: Each descriptor's environment alias must resolve through the production loader.
+    - id: json-registry-python
+      run: test -f tools/oracle/helpers/json_provider_registry.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The fixture loader must isolate class state and retain the source's ordered mutations.
+    - id: json-registry-corpus
+      run: test -f crates/betterlite-models/fuzz/fuzz_targets/json_provider_registry.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/json_provider_registry)" && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_json_provider_registry_corpus)'
+      why: Malformed descriptor input needs new bounded asset-decoder seeds.
+    - id: json-registry-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_provider_registry*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::json_provider_registry::/)'
+      why: Seed tests assert a nonempty set of json_provider_registry call variants.
+oracle_cases:
+  - tools/oracle/cases/helpers/json-provider-registry/all-pinned-descriptors.yaml
+  - tools/oracle/cases/helpers/json-provider-registry/missing-file-no-retry.yaml
+  - tools/oracle/cases/helpers/json-provider-registry/partial-entry-failure.yaml
+  - tools/oracle/cases/helpers/json-provider-registry/exact-base-first-match.yaml
+  - tools/oracle/cases/helpers/json-provider-registry/sarvam-unused-headers.yaml
+deviations: []
+out_of_scope:
+  - JSONProviderRegistry.list_providers has no caller at the pin; B1426 owns executable chat/Responses/Messages descriptor policies and B038 binds them.
+pitfalls:
+  - The JSON headers object for Sarvam is silently ignored by the actual descriptor constructor.
+  - Failed loading sets _loaded and therefore prevents a later successful retry in the same registry instance.
+  - Exact base comparison treats a trailing slash as significant.
+budget: {max_changed_lines: 775, max_new_expects: 0}
+review_level: security

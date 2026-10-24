@@ -1,0 +1,111 @@
+id: B1434
+title: Gradient agent endpoints and Heroku, Hyperbolic, Lambda and Inception policies
+description: >-
+  Implement agent_and_diffusion_hosts in betterlite-openai. Gradient keeps its constructor
+  snapshot through B668, with all fields initially None, and accepts both token-limit
+  spellings without renaming. Its list comprises frequency_penalty, both token limits,
+  presence_penalty, stop, stream, stream_options, temperature, top_p, k, kb_filters,
+  filter_kb_content_by_query_metadata, instruction_override, include_functions_info,
+  include_retrieval_info, include_guardrails_info, provide_citations and retrieval_method.
+  Copy supported values including null. Unsupported options raise UnsupportedParamsError
+  400 unless the passed drop_params is true; the replacement flag has no effect.
+  Resolve Gradient identity from explicit base/GRADIENT_AI_AGENT_ENDPOINT/
+  https://inference.do-ai.run and explicit key/GRADIENT_AI_API_KEY. Validation falls back
+  to the env key again, rejects only None, accepts an empty env string, creates headers
+  when absent, and replaces Authorization and Content-Type.
+
+  Gradient endpoint selection must preserve its second env lookup: an explicit truthy
+  base different from https://inference.do-ai.run gets /api/v1/chat/completions; otherwise
+  a different truthy GRADIENT_AI_AGENT_ENDPOINT gets that suffix, even when the caller
+  explicitly passed the serverless base. With neither, use the serverless base plus
+  /v1/chat/completions. Do not trim any of these bases. Heroku instead has no default
+  endpoint: use explicit/HEROKU_API_BASE and explicit/HEROKU_API_KEY, collapse message
+  lists through B218 before B503's sync/async transform, and raise HerokuError for a
+  falsey final base. Append /v1/chat/completions unless already the exact suffix.
+
+  Hyperbolic and Lambda retain B1425 behavior and expose provider tags hyperbolic and
+  lambda_ai. Hyperbolic reads HYPERBOLIC_API_BASE or https://api.hyperbolic.xyz/v1 and
+  HYPERBOLIC_API_KEY after explicit values. Its advertised list is messages, model,
+  stream, temperature, top_p, max_tokens, both penalties, stop, n, tools, tool_choice,
+  response_format, seed and user. Lambda's equivalent aliases are LAMBDA_API_BASE and
+  LAMBDA_API_KEY with https://api.lambda.ai/v1 as the base default.
+
+  Inception chat also inherits B1425. Its options are both token limits, temperature,
+  stop, tools, tool_choice, stream, stream_options, response_format, reasoning_effort,
+  reasoning_summary, reasoning_summary_wait, diffusing and realtime. Resolve base
+  explicit/INCEPTION_API_BASE/https://api.inceptionlabs.ai/v1, but fill the key from
+  explicit/litellm.inception_key/INCEPTION_API_KEY only when the original explicit base
+  was None or the explicit key was truthy. An explicit empty base suppresses key fallback
+  too. The separate B2237 text-completion policy accepts suffix, both token limits,
+  top_p, both penalties, stop, stream and stream_options; rename max_completion_tokens
+  in input order and preserve supported nulls. B038 alone adds its /fim dispatch.
+
+  All named env/global settings default absent. Load each in agent_host_settings,
+  including Inception's global key and the Gradient serverless/agent conflict. Helper
+  agent_host_policy runs these source methods on parsed settings/options, with new
+  call.agent_host_policy seeds covering every host and Inception FIM. No byte decoder
+  changes are needed. These six files total 336 nonblank/noncomment lines; reserve
+  275 implementation, 225 tests, 145 adapters and 95 settings/export lines within 775.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,agent_and_diffusion_hosts}.rs
+    - crates/betterlite-openai/src/agent_and_diffusion_hosts/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,agent_hosts}.rs
+    - crates/betterlite-config/tests/agent_host_settings.rs
+    - tools/oracle/src/helpers/{mod,agent_host_policy}.rs
+    - tools/oracle/helpers/{dispatch,agent_host_policy}.py
+    - tools/oracle/cases/helpers/agent-host-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/agent_host_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gradient_ai/chat/transformation.py#L11-L149
+    why: Gradient routes agent and serverless endpoints differently while retaining both token-limit names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/heroku/chat/transformation.py#L19-L77
+    why: Heroku collapses content lists and requires an endpoint without a public fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hyperbolic/chat/transformation.py#L12-L54
+    why: Hyperbolic's advertised options include body identity fields but omit max_completion_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/lambda_ai/chat/transformation.py#L12-L29
+    why: Lambda keeps a distinct provider tag and credential aliases over the common compatible policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/inception/chat/transformation.py#L17-L52
+    why: An explicitly supplied Inception base controls whether ambient credentials are eligible.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/inception/completion/transformation.py#L16-L43
+    why: FIM has a separate suffix-capable option list and token-limit remapping.
+dod:
+  - text: Gradient and Heroku retain their endpoint, option and content-list behavior.
+    proof: [agent-host-tests, agent-host-python, oracle]
+  - text: Inception's explicit-base key boundary and FIM option mapping remain distinct from chat.
+    proof: [agent-host-tests, agent-host-settings, agent-host-python, oracle]
+  - text: Every host's settings and tagged oracle seeds are exercised through their production loaders.
+    proof: [agent-host-settings, agent-host-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: agent-host-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^agent_and_diffusion_hosts::/)'
+      why: Explicit serverless bases and explicit empty Inception bases both expose non-obvious fallback branches.
+    - id: agent-host-settings
+      run: cargo nextest run --locked -p betterlite-config --test agent_host_settings --no-tests=fail
+      why: Loader cases must distinguish missing, empty and explicitly supplied base/key fields.
+    - id: agent-host-python
+      run: test -f tools/oracle/helpers/agent_host_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The helper invokes real source subclass methods with per-case environment and class-state isolation.
+    - id: agent-host-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/agent_host_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::agent_host_policy::/)'
+      why: Assert the agent_host_policy tag and nonzero fixture counts for all five hosts plus FIM.
+oracle_cases:
+  - tools/oracle/cases/helpers/agent-host-policy/gradient-serverless-with-agent-env.yaml
+  - tools/oracle/cases/helpers/agent-host-policy/gradient-null-options-and-empty-key.yaml
+  - tools/oracle/cases/helpers/agent-host-policy/heroku-list-content-and-missing-base.yaml
+  - tools/oracle/cases/helpers/agent-host-policy/hyperbolic-and-lambda-identities.yaml
+  - tools/oracle/cases/helpers/agent-host-policy/inception-custom-base-key-isolation.yaml
+  - tools/oracle/cases/helpers/agent-host-policy/inception-fim-suffix-and-limit-order.yaml
+deviations: []
+out_of_scope:
+  - B038 owns _complete_text_completion_inception and API execution; B2237 owns inherited text-completion wire transformations.
+pitfalls:
+  - A configured Gradient agent endpoint can override an explicitly supplied serverless base during complete-URL selection.
+  - Inception treats an explicit empty base as caller-supplied when deciding whether to borrow ambient credentials.
+  - Heroku appends /v1/chat/completions to an existing /v1 base without removing the duplicated version.
+budget: {max_changed_lines: 775, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,80 @@
+id: B1413
+title: Codestral prompt execution and lazy FIM streaming
+description: >-
+  Implement codestral_call in betterlite-openai, owning make_call and the active
+  CodestralTextCompletion request/execution methods. Use B1412 for options, native errors,
+  replies and chunks; B177 for prompt_factory/custom_prompt; B173 for the actual client
+  and B249 for call hooks. _validate_environment rejects only None keys, supplies lowercase
+  content-type plus Bearer, then overlays all caller headers, allowing Authorization to
+  change. Consume custom_endpoint only when checking whether its value is literally true;
+  true uses the supplied configured URL as-is, otherwise a falsey base defaults to
+  https://codestral.mistral.ai/v1/fim/completions. Select custom_prompt_dict by exact model
+  key, otherwise prompt_factory. Merge class defaults only for absent option keys, pop
+  stream with false default, and build model/prompt followed by remaining options so their
+  values retain the source precedence. Record pre_call after that preparation.
+
+  Preserve the SDK mode distinctions in typed request plans even though native execution
+  is async. Sync streaming sends no stream body field and identifies its wrapper as
+  codestral; async streaming reinserts stream=true and identifies text-completion-codestral.
+  The async stream issues HTTP only when polled, requires exactly 200, logs the line stream
+  with an empty logging API key and forwards B1412 chunks through B005 cancellation.
+  Async nonstream wraps HTTPStatusError with its response status and other transport
+  exceptions as 500; sync requests use the configured shared-client timeout, whereas the
+  async client selection uses the supplied timeout. All ordinary replies delegate to
+  B1412, preserving its post_call-before-status ordering. No extra decoder is needed.
+
+  Add helper codestral_plan: compare pure auth/prompt/default/body facts using a Python
+  fixture client that stops at the send seam, never a proxy handler. Adjacent transport
+  tests assert lazy first poll, cancelled sends, timeout selection and both exception
+  branches. Count 244 nonblank/noncomment lines in the owned execution spans; allow 250
+  production, 210 tests, 120 adapter and 45 module wiring lines, maximum 675.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,codestral_call}.rs
+    - crates/betterlite-openai/src/codestral_call/**
+    - tools/oracle/src/helpers/{mod,codestral_plan}.rs
+    - tools/oracle/helpers/{dispatch,codestral_plan}.py
+    - tools/oracle/cases/helpers/codestral-plan/**
+    - tools/oracle/fuzz/corpus/helper_case/codestral_plan*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L98-L141
+    why: Streaming send, exact status check and caller-header precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/codestral/completion/handler.py#L236-L459
+    why: Prompt selection, option consumption, sync/async body difference and lazy stream construction.
+dod:
+  - text: FIM request planning preserves custom prompt selection, absent-only defaults and caller headers.
+    proof: [codestral-call-tests, codestral-plan-python, oracle]
+  - text: Streaming is lazy and preserves mode-specific payload, provider tag and failure mapping.
+    proof: [codestral-call-tests, oracle, codestral-plan-python]
+  - text: The plan helper has fresh typed seeds.
+    proof: [codestral-plan-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: codestral-call-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^codestral_call::/)'
+      why: Poll timing and mode-specific body fields are invisible in static response fixtures.
+    - id: codestral-plan-python
+      run: test -f tools/oracle/helpers/codestral_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The fixture seam must capture the request made by CodestralTextCompletion itself.
+    - id: codestral-plan-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/codestral_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::codestral_plan::/)'
+      why: Cases need the codestral_plan call tag rather than a copied expected body.
+oracle_cases:
+  - tools/oracle/cases/helpers/codestral-plan/empty-key-and-header-override.yaml
+  - tools/oracle/cases/helpers/codestral-plan/custom-prompt-exact-model.yaml
+  - tools/oracle/cases/helpers/codestral-plan/explicit-null-before-config.yaml
+  - tools/oracle/cases/helpers/codestral-plan/custom-endpoint-true-only.yaml
+  - tools/oracle/cases/helpers/codestral-plan/sync-stream-omits-body-flag.yaml
+  - tools/oracle/cases/helpers/codestral-plan/async-stream-body-and-provider.yaml
+deviations: []
+out_of_scope:
+  - B1412 owns handler protocols, TextCompletionCodestralError and process_text_completion_response; output_parser and embedding have no caller at the pin.
+  - B036 owns main.py _complete_text_completion_codestral and CODESTRAL_API_KEY resolution; B158 exposes the synchronous Python facade.
+pitfalls:
+  - The sync and async stream wrappers use different provider literals in this handler.
+  - Popping stream before constructing the sync request intentionally leaves it out of the JSON body.
+  - Caller Authorization wins over the API-key header even though the key is still required to be non-None.
+budget: {max_changed_lines: 675, max_new_expects: 0}
+review_level: security

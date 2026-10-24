@@ -1,0 +1,84 @@
+id: B1403
+title: Grok chat options and streamed usage
+description: >-
+  Implement xai_chat in betterlite-openai over B668/B503/B504. Own every method in
+  XAIChatConfig and XAIChatCompletionStreamingHandler except the three usage helpers
+  assigned to B1402. Resolve chat base as explicit, XAI_API_BASE, https://api.x.ai/v1;
+  use B1402's nonlegacy key order. Only a truthy use_xai_oauth without a resolved API key
+  enters B1400; OAuth replaces the base with the OAuth base and replaces Authorization,
+  but retains either existing Content-Type casing. Convert OAuth failures to AuthenticationError.
+  Retain the exact supported option list; stop is absent for grok-3-mini, grok-4 and
+  grok-code-fast substrings, frequency_penalty for the latter two, and reasoning_effort
+  depends on B2221 capability lookup with debug-and-continue on lookup failure.
+  max_completion_tokens writes max_tokens; tools recursively lose strict via B219's
+  shared schema helper, empty cleaned tools are omitted, and supported None values are
+  not inserted. B218 strips names from every role except user. Presence of web_search_options always
+  warns that chat Live Search was deprecated and removes that option before delegation.
+
+  After the parent reply conversion, change an empty finish_reason to tool_calls only
+  when that choice contains tool calls. Copy server_side_tool_usage_details to usage,
+  debugging and retaining the reply if extraction fails. Invoke B1402's reasoning fold,
+  total repair and tick-cost restatement in that order. A stream chunk with empty choices
+  and a usage key receives one index-zero empty delta, including when usage is null;
+  normalize nonnull usage before the parent chunk parser and restate its cost afterward.
+  Both paths use the existing chat/SSE decoders; add xai fixture seeds to those decoders
+  when extending their typed usage fields, without a second SSE parser. Helper xai_chat
+  calls the actual config methods and captures warnings. Adjacent rstest rows cover
+  grok-3-mini stop rejection, grok-4 frequency rejection, failed capability lookup,
+  strict removal, warning on null web search, OAuth/API-key precedence, tool finish repair,
+  null usage chunks and reasoning totals. The remaining source is 286 nonblank/noncomment
+  lines; plan 260 transformation, 220 tests, 120 adapters and 60 wiring lines under 725.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,xai_chat}.rs
+    - crates/betterlite-openai/src/xai_chat/**
+    - crates/betterlite-openai/fuzz/corpus/{chat_response,sse_events}/xai*
+    - tools/oracle/src/helpers/{mod,xai_chat}.rs
+    - tools/oracle/helpers/{dispatch,xai_chat}.py
+    - tools/oracle/cases/helpers/xai-chat/**
+    - tools/oracle/fuzz/corpus/helper_case/xai_chat*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L41-L302
+    why: Chat auth, model-specific supported fields, warning/drop and response augmentation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L370-L385
+    why: Search detail attachment is best-effort after response conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/chat/transformation.py#L407-L434
+    why: Usage-only chunks acquire an empty delta before the OpenAI parser.
+dod:
+  - text: Grok option gates, OAuth selection and deprecated-search warnings match the config methods.
+    proof: [grok-chat-tests, grok-chat-python, oracle]
+  - text: Chat replies and usage-only chunks preserve tool finishes and normalized charges.
+    proof: [grok-chat-tests, oracle, grok-chat-python]
+  - text: The helper dispatcher recognizes newly added Grok cases.
+    proof: [grok-chat-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: grok-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_chat::/)'
+      why: A generic OpenAI passthrough misses Grok's capability gates and final usage delta.
+    - id: grok-chat-python
+      run: test -f tools/oracle/helpers/xai_chat.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Warning capture and usage conversion use the pinned XAIChatConfig directly.
+    - id: grok-chat-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_chat::/)'
+      why: Parser tests must select call.xai_chat from each new seed.
+oracle_cases:
+  - tools/oracle/cases/helpers/xai-chat/grok-capabilities.yaml
+  - tools/oracle/cases/helpers/xai-chat/capability-lookup-failure.yaml
+  - tools/oracle/cases/helpers/xai-chat/strict-and-message-name.yaml
+  - tools/oracle/cases/helpers/xai-chat/deprecated-search-warning.yaml
+  - tools/oracle/cases/helpers/xai-chat/api-key-before-oauth.yaml
+  - tools/oracle/cases/helpers/xai-chat/empty-tool-finish.yaml
+  - tools/oracle/cases/helpers/xai-chat/null-and-populated-final-usage.yaml
+deviations: []
+out_of_scope:
+  - B1402 owns _usage_restated_from_xai_ticks, fold_reasoning_tokens_into_completion and _normalize_openai_compatible_usage_totals in this file.
+  - B036 installs _complete_xai and exercises authenticated chat aliases through the running proxy.
+pitfalls:
+  - The supported list still advertises web_search_options although transform_request warns and removes it.
+  - OAuth never takes precedence over a truthy xai_key or XAI_API_KEY.
+  - A usage key with a null value still causes insertion of the empty streaming choice.
+budget: {max_changed_lines: 725, max_new_expects: 0}
+review_level: security

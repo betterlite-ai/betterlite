@@ -1,0 +1,160 @@
+id: B038
+title: JSON-configured and A–L compatible provider execution
+description: >-
+  Compose B1424–B1440's applicable leaves behind B010's closed Provider and B678's
+  operation extension points, using compatible_providers in betterlite-provider and
+  betterlite-core. Bind openai_like, the 31 pinned JSON descriptors, aiml, baseten,
+  bytez, cerebras, clarifai, cometapi, compactifai, datarobot, deepinfra, deepseek,
+  empower, featherless_ai, friendliai, galadriel, gdc, github, gradient_ai, heroku,
+  hyperbolic, inception, lambda_ai and text-completion-inception. Pass B1424's descriptor
+  projection to B210/B211 identity resolution and B2230 chat selection; instantiate
+  B1426's policies only after selection, supplying B2221 capabilities. Standard compatible
+  chat uses B004/B005 execution and B500 fallback credentials where its existing common
+  path does; expose B1428's separate legacy handler for its consumers without substituting
+  it for all compatible chat. Bind B1425 model discovery as an injected callable and
+  B1440's shared embedding operation without adding a refresh scheduler.
+
+  Own main.py _complete_deepseek, _complete_heroku, _complete_cometapi,
+  _complete_compactifai, _complete_datarobot, _complete_text_completion_inception,
+  _complete_gradient_ai, _complete_gdc and _complete_bytez. DeepSeek and Heroku pass
+  resolved context through the HTTP handler, post_call with original error text and
+  supplied headers on failure, then rethrow. CometAPI resolves key explicit/cometapi_key/
+  COMETAPI_KEY/api_key and base explicit/api_base/COMETAPI_API_BASE/
+  https://api.cometapi.com/v1; its additional post_call runs after obtaining the handler
+  result, including the async-handle stage before awaiting. CompactifAI resolves key
+  explicit/COMPACTIFAI_API_KEY/api_key and base explicit/https://api.compactif.ai/v1.
+  DataRobot adds no fallback beyond its selected policy. Gradient gives litellm.api_base
+  precedence over the context base and passes shared_session but no caller client or
+  explicit provider_config. Preserve each dispatcher's forwarded fields in native tests.
+
+  GDC resolves key explicit/gdc_key/GDC_API_KEY/api_key and base explicit/gdc_api_base/
+  GDC_API_BASE/api_base, then uses B1438/B1439 with its fixed GDC config. Bytez resolves
+  key explicit/bytez_key/BYTEZ_API_KEY/api_key and selects B1435's custom stream path.
+  These unqualified settings denote litellm globals, absent by default. Add
+  compatible_provider_settings loader cases for every listed global/env alias, including
+  CometAPI's ignored image-only aliases, Gradient's global-base preference and GDC's
+  host/project settings from B1438. Keep existing typed settings shared with leaf loaders.
+
+  Inception FIM short-circuits explicit base, popped optional api_base and popped base_url;
+  later aliases remain unpopped when an earlier source wins. Then use INCEPTION_API_BASE
+  or https://api.inceptionlabs.ai/v1, trim slashes and append /fim unless already present.
+  Fill key from explicit/inception_key/INCEPTION_API_KEY only when the selected caller
+  base is None or an explicit key is truthy. Invoke B2238 with provider text-completion-inception
+  and B1434's FIM policy. Convert to chat via B2237 only for sync, nonstream calls with
+  text_completion=false; stream or async paths invoke post_call with the returned handle.
+  Unlike chat identity, FIM's base decision uses the short-circuit result, so retain the
+  empty-alias edge. B202/B203 retain public text routing and streaming.
+
+  Compose B1440's API-family identifiers with B1430 DeepSeek Messages, B1426 generic/JSON
+  Messages and Responses, B1431 AIML/CometAPI images, B1436 DeepInfra rerank and B1437
+  CometAPI embeddings. Keep native Messages composition in core, above provider leaves.
+  The existing API services own native-versus-emulated fallback and route factories.
+  Do not promote a descriptor to an API absent from supported_endpoints.
+
+  Use booted HTTP oracle cases for chat aliases /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions;
+  embeddings and completions use the same four forms with their respective suffixes.
+  Responses creation uses /v1/responses, /responses and /openai/v1/responses. Messages
+  uses /v1/messages plus /claude_code_gateway/v1/messages when B1132 enables that alias.
+  Image generation uses /v1/images/generations, /images/generations and
+  /openai/deployments/{model:path}/images/generations. Rerank uses /v2/rerank, /v1/rerank
+  and /rerank. Mount each existing factory once. B1139 scenarios compare actual auth,
+  status, error type/param/code, selected response headers and captured upstream requests;
+  ignore only error.message. Exercise each descriptor and host in bounded scenarios,
+  plus cross-family alias coverage and upstream 401/429/5xx. Bytez's fixed external root
+  must never be contacted by the HTTP oracle: cover its preflight failures through the
+  booted gateway and rely on B1435's injected transport tests for successful streaming.
+  Other successful cases use explicit mock bases. Test GDC with a fixture bearer key,
+  not a live service-account exchange. The nine dispatchers contain 356 nonblank/noncomment
+  lines; allow 275 binding/orchestration, 290 tests, 105 configuration and 105 shared
+  exports/operation wiring lines, capped at 800. All byte parsers remain in the leaves.
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/{lib,provider,operation,prepared,bedrock_dispatch_contract,compatible_providers}.rs
+    - crates/betterlite-provider/src/compatible_providers/**
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/{lib,dispatch,operation,compatible_providers}.rs
+    - crates/betterlite-core/src/compatible_providers/**
+    - crates/betterlite-core/src/api/{responses_routes,anthropic_messages_routes,image_generation_call,rerank_call}.rs
+    - crates/betterlite-server/src/{state,routes}.rs
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,compatible_providers}.rs
+    - crates/betterlite-config/tests/compatible_provider_settings.rs
+    - Cargo.lock
+    - tools/oracle/cases/providers/compatible-a-l/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1566-L1614
+    why: DeepSeek logs the original failure with context headers before propagating it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1960-L2007
+    why: Heroku retains the HTTP handler path and its own outer error hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2451-L2497
+    why: CometAPI fallback credentials and unconditional post-call dispatch hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3259-L3298
+    why: CompactifAI adds global-key fallback outside its config's empty-string identity result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3407-L3441
+    why: DataRobot forwards the selected full URL without another suffix or credential lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4045-L4106
+    why: Inception FIM endpoint selection, key isolation and sync-only chat conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4708-L4819
+    why: Gradient, GDC and Bytez have distinct context and global-setting precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11951
+    why: The four authenticated chat route decorators used by compatible hosts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12105-L12116
+    why: Existing completion aliases serve Inception FIM through the text service.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12300
+    why: Four embedding aliases exercise CometAPI and the generic compatible call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L194-L212
+    why: Responses create aliases retain the existing authentication and error envelope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L120-L129
+    why: Native Messages is exercised through the actual authenticated endpoint.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L67-L85
+    why: Image generation has three aliases; none is re-registered by provider composition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L45
+    why: All three rerank aliases must reach DeepInfra's inference transformation.
+dod:
+  - text: Compatible hosts and JSON descriptors select their own leaves through executable dispatch.
+    proof: [compatible-provider-tests, compatible-provider-http, oracle]
+  - text: Nine provider dispatchers preserve setting precedence, client arguments and ordered hooks.
+    proof: [compatible-provider-tests, compatible-provider-settings, compatible-provider-http, oracle]
+  - text: Existing API aliases serve native supported families and preserve auth, error and upstream contracts.
+    proof: [compatible-provider-http, oracle]
+checks:
+  optional: []
+  commands:
+    - id: compatible-provider-tests
+      run: cargo nextest run --locked -p betterlite-provider -p betterlite-core --no-tests=fail -E 'test(/^compatible_providers::/)'
+      why: Dispatch tests must reach each leaf and capture sync/async hook order and explicit client forwarding.
+    - id: compatible-provider-settings
+      run: cargo nextest run --locked -p betterlite-config --test compatible_provider_settings --no-tests=fail
+      why: Main-dispatch globals and env aliases need loader coverage beyond provider config identity methods.
+    - id: compatible-provider-http
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/compatible-a-l)" && cargo run --locked -p betterlite-oracle -- tools/oracle/cases/providers/compatible-a-l
+      why: Exercise booted gateways with fresh provider and alias scenarios, never only a selector helper.
+oracle_cases:
+  - tools/oracle/cases/providers/compatible-a-l/json-registry-chat-slugs.yaml
+  - tools/oracle/cases/providers/compatible-a-l/native-chat-policies-and-aliases.yaml
+  - tools/oracle/cases/providers/compatible-a-l/deepseek-thinking-and-tools.yaml
+  - tools/oracle/cases/providers/compatible-a-l/gradient-global-base-precedence.yaml
+  - tools/oracle/cases/providers/compatible-a-l/gdc-project-auth-and-model-prefix.yaml
+  - tools/oracle/cases/providers/compatible-a-l/bytez-preflight-errors.yaml
+  - tools/oracle/cases/providers/compatible-a-l/inception-fim-aliases-and-stream.yaml
+  - tools/oracle/cases/providers/compatible-a-l/comet-and-generic-embeddings.yaml
+  - tools/oracle/cases/providers/compatible-a-l/aiml-comet-image-aliases.yaml
+  - tools/oracle/cases/providers/compatible-a-l/deepinfra-rerank-aliases.yaml
+  - tools/oracle/cases/providers/compatible-a-l/json-responses-and-native-messages.yaml
+  - tools/oracle/cases/providers/compatible-a-l/auth-errors-and-upstream-failures.yaml
+deviations: []
+out_of_scope:
+  - B1424, B1425, B1426 and B1428–B1440 own the extracted provider source; B1427's shared line iterator remains a B042 part used by B1428.
+  - B1440 owns the shared openai_like/llamafile/lm_studio and CometAPI embedding branches plus the enumerated API selectors; B2230 owns the chat selector.
+  - Other main.py functions retain the callable owners recorded by B500; the nine listed dispatchers are the only main.py bodies owned here.
+  - B004, B006, B202, B203, B080, B081, B082 and B085 retain route registration and wire parsing; compatible_providers only supplies operation bindings.
+  - B068 integrates provider cost callbacks and B845 schedules model discovery; this task exports their leaf interfaces without implementing either service.
+pitfalls:
+  - Gradient's outer dispatch prefers litellm.api_base over a caller context base before its own endpoint policy runs.
+  - CometAPI's extra post_call occurs at the handler-return stage, which precedes awaiting an async result.
+  - FIM short-circuit evaluation can leave an unused base_url option in the body options.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

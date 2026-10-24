@@ -1,0 +1,80 @@
+id: B1516
+title: Authenticate Copilot embeddings and pin Messages to the session endpoint
+description: >-
+  Implement api::copilot_embedding and api::copilot_messages in betterlite-core, covering every method
+  in the two provider transformation files and the Messages package export. Both consume B1512's
+  inference headers and B1513's key service. Embeddings rejects a falsey key with AuthenticationError,
+  translates GetAPIKeyError, and lets caller headers replace defaults. Its URL chooses explicit base,
+  authenticated endpoint, B1514's GITHUB_COPILOT_API_BASE, then https://api.githubcopilot.com, trims
+  trailing slashes and appends /embeddings. Convert a scalar string input to a one-element array,
+  remove one leading github_copilot/ from the model and overlay optional parameters last. Only timeout,
+  dimensions, encoding_format and user enter through map_openai_params. Log the raw reply through B249
+  before B006 decoding/conversion, and reuse the OpenAI error class from B668.
+
+  Messages preparation deliberately discards caller api_base and the environment override: only the
+  authenticated endpoint or https://api.githubcopilot.com receives the token. Fill missing defaults,
+  force openai-intent and x-interaction-type to messages-proxy, force x-github-api-version=2026-06-01,
+  and default anthropic-version=2023-06-01. Invoke B960 beta-header expansion with provider
+  github_copilot, preserving its resulting beta values without provider filtering. Report both native
+  web-search execution and beta filtering as false. Use B961/B962 for inherited Messages behavior.
+  get_complete_url consumes the already resolved trusted base and appends /v1/messages only when it
+  is not already present. It must not reinterpret the original caller base after validation.
+
+  A copilot_auxiliary helper invokes the pinned embedding and Messages configurations. Cases
+  embedding_scalar_and_prefix, embedding_optional_override, key_missing, messages_untrusted_base,
+  messages_beta_passthrough and messages_suffix compare URLs, headers, payloads and errors. Add
+  call.copilot_auxiliary. Keep behavior tests in api::copilot_embedding and api::copilot_messages;
+  reuse the existing operation decoders so this typed preparation adds no parser. These files contain
+  146 and 99 nonblank/non-comment lines; plan 240 implementation, 210 tests, 105 adapters and 35
+  composition lines, with a 650-line cap.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/copilot_embedding.rs
+    - crates/betterlite-core/src/api/copilot_embedding/**
+    - crates/betterlite-core/src/api/copilot_messages.rs
+    - crates/betterlite-core/src/api/copilot_messages/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/copilot_auxiliary.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/copilot_auxiliary.py
+    - tools/oracle/cases/helpers/copilot-auxiliary/**
+    - tools/oracle/fuzz/corpus/helper_case/copilot_auxiliary*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/embedding/transformation.py#L37-L188
+    why: Embedding request overlay, accepted parameters and authenticated headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/messages/transformation.py#L15-L122
+    why: Trusted Messages host, forced proxy headers and beta capability overrides.
+dod:
+  - text: Copilot embeddings preserve the request overlay and key requirements while using existing reply conversion.
+    proof: [auxiliary-tests, oracle, auxiliary-python]
+  - text: Messages sends credentials only to its resolved session host and preserves expanded Anthropic beta headers.
+    proof: [auxiliary-tests, oracle, auxiliary-python]
+checks:
+  optional: []
+  commands:
+    - id: auxiliary-tests
+      why: one of the two subscription operation adapters is absent or violates its host/header rules
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::copilot_embedding::/) | test(/^api::copilot_messages::/)'
+    - id: auxiliary-python
+      why: the embedding and Messages policy comparisons are not executable
+      run: grep -qE '^[[:space:]]+copilot_auxiliary:' tools/oracle/fuzz/corpus/helper_case/copilot_auxiliary* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/copilot_auxiliary.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/copilot-auxiliary/embedding-scalar-and-prefix.yaml
+  - tools/oracle/cases/helpers/copilot-auxiliary/embedding-optional-override.yaml
+  - tools/oracle/cases/helpers/copilot-auxiliary/key-missing.yaml
+  - tools/oracle/cases/helpers/copilot-auxiliary/messages-untrusted-base.yaml
+  - tools/oracle/cases/helpers/copilot-auxiliary/messages-beta-passthrough.yaml
+  - tools/oracle/cases/helpers/copilot-auxiliary/messages-suffix.yaml
+deviations: []
+out_of_scope:
+  - B045 attaches these prepared operations to the existing gateway routes and embedding dispatch branch.
+pitfalls:
+  - Messages must ignore GITHUB_COPILOT_API_BASE even though the embedding adapter honors it.
+  - Embedding optional_params can replace the model and input fields constructed immediately before it.
+  - The Messages API version is 2026-06-01 rather than the shared 2025-04-01 header default.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

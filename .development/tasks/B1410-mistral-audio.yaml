@@ -1,0 +1,99 @@
+id: B1410
+title: Voxtral speech, transcription and Mistral resource credentials
+description: >-
+  Implement mistral_audio and mistral_identity in betterlite-openai, owning all functions
+  in both audio transformations and common_utils.py (343 nonblank/noncomment lines).
+  Resource origin uses explicit base, MISTRAL_API_BASE, https://api.mistral.ai, strips
+  trailing slashes and one /v1; resource auth uses explicit key or MISTRAL_API_KEY and
+  replaces Authorization, failing on None. Config test mistral_resource_settings loads
+  MISTRAL_API_BASE and the existing B1408 key setting. Keep these helpers distinct from
+  chat's Azure fallback and from the audio methods' own precedence.
+
+  Speech accepts voice and response_format. Resolve a nonblank trimmed voice string,
+  then mapping voice_id/id/name, then kwargs.voice_id; map alloy to en_paul_neutral,
+  echo to gb_oliver_neutral, fable to en_paul_cheerful, onyx to en_paul_confident and
+  nova/shimmer to gb_jane_sarcasm case-insensitively, preserving unknown IDs. Keep only
+  string response_format/ref_audio; omit an absent voice_id. Speech URL uses explicit
+  truthy base or https://api.mistral.ai/v1, trims slashes and ensures /v1. Missing auth
+  raises its native 401; JSON content type replaces the caller value. Decode audio_data
+  with strict base64, producing HTTP 200 binary audio; missing/invalid data raises 500,
+  non-JSON retains upstream status. Drop content-encoding, transfer-encoding, content-length
+  and content-type; insert decoded length and requested-format MIME (mp3/audio-mpeg,
+  wav, pcm, flac, opus/audio-ogg), defaulting audio/mpeg for unknown formats.
+
+  Transcription instead appends /audio/transcriptions to an explicit base without adding
+  /v1, defaults only on None, and lets supplied headers override Bearer/accept defaults.
+  Its missing key is serialized as Bearer None. Accept prepared B1001 audio from B036;
+  copy language/temperature/timestamp_granularities/response_format, and B1122's provider
+  extras stringify with lowercase booleans. Return falsey text as empty, preserve segments
+  and language by presence, and retain the complete payload as hidden metadata. Implement
+  decode_voxtral_reply for bounded JSON plus base64; parse the saved request format from
+  its typed request rather than reparsing serialized bytes. Helpers voxtral_speech and
+  voxtral_transcription compare mapping, headers and response projection. Budget 320
+  implementation, 210 tests/config, 140 adapters and 100 fuzz/export lines, cap 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,mistral_audio,mistral_identity}.rs
+    - crates/betterlite-openai/src/{mistral_audio,mistral_identity}/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/voxtral_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/voxtral_reply/**
+    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/mistral.rs
+    - crates/betterlite-config/src/providers/mistral/resources.rs
+    - crates/betterlite-config/src/tests/mistral_resources.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/mistral_resources*
+    - tools/oracle/src/helpers/{mod,voxtral_speech,voxtral_transcription}.rs
+    - tools/oracle/helpers/{dispatch,voxtral_speech,voxtral_transcription}.py
+    - tools/oracle/cases/helpers/{voxtral-speech,voxtral-transcription}/**
+    - tools/oracle/fuzz/corpus/helper_case/voxtral_*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/common_utils.py#L9-L39
+    why: Resource-only origin/key resolution and MistralError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/audio_speech/transformation.py#L25-L210
+    why: Voice aliases, JSON request and strict base64-to-binary response conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/audio_transcription/transformation.py#L24-L151
+    why: Different base/auth precedence and diarization metadata retention.
+dod:
+  - text: Voxtral voice selection and binary output retain native aliases, MIME and header replacement.
+    proof: [voxtral-tests, voxtral-python, oracle]
+  - text: Transcription form values and missing-key behavior remain distinct from speech auth.
+    proof: [voxtral-tests, oracle, voxtral-python]
+  - text: Resource settings and both external response forms are exercised through their production loaders.
+    proof: [mistral-resource-config, voxtral-corpus, voxtral-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: voxtral-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^mistral_(audio|identity)::/) - test(replays_voxtral_reply_corpus)'
+      why: A shared audio auth implementation would change the transcription override behavior.
+    - id: mistral-resource-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(mistral_resource_settings)'
+      why: Native resource base settings must resolve independently from Mistral's Azure chat settings.
+    - id: voxtral-python
+      run: test -f tools/oracle/helpers/voxtral_speech.py && test -f tools/oracle/helpers/voxtral_transcription.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference uses each endpoint's own transformation class.
+    - id: voxtral-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/voxtral_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/voxtral_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_voxtral_reply_corpus)'
+      why: Invalid JSON, invalid base64 and diarization payloads must reach decode_voxtral_reply.
+    - id: voxtral-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/voxtral_speech*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/voxtral_transcription*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::voxtral_(speech|transcription)::/)'
+      why: Speech and transcription have separate case variants and require separate seeds.
+oracle_cases:
+  - tools/oracle/cases/helpers/voxtral-speech/voice-alias-and-mapping-priority.yaml
+  - tools/oracle/cases/helpers/voxtral-speech/ref-audio-without-voice.yaml
+  - tools/oracle/cases/helpers/voxtral-speech/audio-data-and-header-rebuild.yaml
+  - tools/oracle/cases/helpers/voxtral-speech/invalid-json-and-base64.yaml
+  - tools/oracle/cases/helpers/voxtral-transcription/missing-key-and-caller-headers.yaml
+  - tools/oracle/cases/helpers/voxtral-transcription/unversioned-custom-base.yaml
+  - tools/oracle/cases/helpers/voxtral-transcription/diarize-and-hidden-segments.yaml
+deviations: []
+out_of_scope:
+  - B036 supplies audio preprocessing and mounts these operations behind existing audio API routes; the leaf introduces no route factory.
+pitfalls:
+  - Transcription sends Bearer None when no key exists, while speech rejects the same input with 401.
+  - A successful speech transform replaces the upstream status with 200 and rebuilds the audio headers.
+  - Only recognized voice aliases are case-folded; unknown voice IDs keep their original case.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

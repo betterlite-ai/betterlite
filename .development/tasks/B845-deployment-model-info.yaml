@@ -16,8 +16,8 @@ description: >-
   in the resolved model, and truthy use_clientside_credentials. Use params.api_key or the dynamic key.
   Select truthy extra_headers, then headers, then an empty mapping; validate string keys/values and
   lowercase names before overlaying authorization=Bearer <key>. Explicit Authorization wins. Call
-  B038.get_openai_compatible_model_info with B173's supplied or pooled OpenAI client and B125's memory
-  cache. B038 owns the configured /v1/models request, five-second timeout and response decoding.
+  B1425 get_openai_compatible_model_info with B173's supplied or pooled OpenAI client and B125's memory
+  cache. B1425 owns the configured /v1/models request, five-second timeout and response decoding.
 
   Empty discoveries, missing IDs and a deployment replaced during the request do not update the cache.
   Identity is the actual catalog record, not merely an equal ID or equal contents. For a current result
@@ -64,7 +64,7 @@ description: >-
   Pure projections use deployment_model_info under B856's models dispatch and B171's helper parser.
   The Python adapter calls pinned methods with fixture catalog/cache state; compare values, complete
   ValueError messages, debug/error events and input immutability. Refresh is effectful: Rust tests
-  call the real B038 transport against a local mock, including request headers and failure isolation.
+  call the real B1425 transport against a local mock, including request headers and failure isolation.
   No new byte decoder or config loader is introduced. Keep B2219's current local-only Hugging Face
   behavior, recorded as a deviation below, until Max resolves downloads.
 

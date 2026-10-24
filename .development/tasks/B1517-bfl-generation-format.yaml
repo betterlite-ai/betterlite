@@ -1,0 +1,94 @@
+id: B1517
+title: Map Black Forest Labs image generation and validate polling hosts
+description: >-
+  Add api::bfl::generation and api::bfl::common in betterlite-core. Own all generation transformation
+  methods, its config selector, and common_utils.py's error, constants and assert_bfl_polling_url.
+  Model lookup lowercases the final slash-separated component and accepts exactly the six generation
+  models in IMAGE_GENERATION_MODELS. Resolve api_base before BFL_API_BASE before https://api.bfl.ai,
+  trimming trailing slashes. Authentication prefers api_key, BFL_API_KEY, then BLACK_FOREST_LABS_API_KEY;
+  unset credentials raise the BFL 401 error. Overwrite x-key, Content-Type and Accept as the source does.
+  Load these three environment keys in betterlite-config and prove defaults/precedence through
+  bfl_generation_settings. Expose the edit endpoint table and polling constants 1.5 seconds/300 seconds
+  for later handlers without adding polling behavior here.
+
+  Existing optional keys win before mapping. Supported n becomes num_images only for ultra names;
+  quality=hd becomes raw=true only for ultra, and other quality values disappear. Map lowercase-x
+  size strings into integer dimensions; strings without x do nothing, malformed splits raise ValueError.
+  Drop unsupported parameters only when drop_params is true. Request projection includes only the
+  listed BFL fields with non-null values and supplies output_format=png. The final reply appends a
+  result.sample object or result-list strings/url objects to preexisting image data, errors 500 only
+  when the resulting data is empty, and stamps the injected current integer time.
+
+  decode_bfl_reply is the shared bounded JSON boundary for task submissions, polls and final results;
+  use typed status, polling_url, errors-presence and result variants rather than an unconstrained body.
+  check_bfl_poll_url parses a supplied provider URL and accepts HTTPS with host bfl.ai or a dot-delimited
+  subdomain, case-insensitively. Reject other schemes/hosts with 502 before any x-key-bearing request.
+  Reuse the existing URL library, retaining source behavior for ports and user information. A bfl_boundary
+  cargo-fuzz target exercises both functions and a replay test consumes newly added malformed JSON,
+  malicious-host and valid regional-host seeds.
+
+  Register helper call.bfl_generation; pinned cases compare ultra_mapping, retained_option,
+  unusual_size, key_precedence, unknown_model, append_results and regional_poll_host. Include the
+  suffix-confusion rejection bfl.ai.example.test. The source is 310 nonblank/non-comment lines plus
+  export-only initialization; budget 290 implementation/config, 230 tests, 110 adapters and 80 fuzz
+  lines, maximum 800. B046 later makes this prepared operation executable.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/{common,generation}.rs
+    - crates/betterlite-core/src/api/bfl/generation/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/bfl_boundary.rs
+    - crates/betterlite-core/fuzz/corpus/bfl_boundary/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/bfl.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/bfl_generation.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/bfl_generation.py
+    - tools/oracle/cases/helpers/bfl-generation/**
+    - tools/oracle/fuzz/corpus/helper_case/bfl_generation*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L40-L322
+    why: Generation model table use, field projection and accumulated result handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/common_utils.py#L13-L76
+    why: Trusted polling domain, HTTP error statuses and provider constants.
+dod:
+  - text: Generation formatting and loaded credentials match the pinned BFL configuration on successful and unsupported inputs.
+    proof: [bfl-format-tests, oracle, bfl-format-python]
+  - text: The production task-body and polling-URL boundaries reject malformed data and credential-host confusion with the expected status.
+    proof: [bfl-format-tests, bfl-boundary-corpus, oracle, bfl-format-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: bfl-format-tests
+      why: BFL field projection, result accumulation or environment precedence is absent
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::bfl::generation::/) - test(replays_the_bfl_boundary_corpus) | test(bfl_generation_settings)'
+    - id: bfl-boundary-corpus
+      why: shared BFL decoders have no newly committed adversarial inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/bfl_boundary)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_bfl_boundary_corpus)'
+    - id: bfl-format-python
+      why: generation mapping is not checked against the independent source methods
+      run: grep -qE '^[[:space:]]+bfl_generation:' tools/oracle/fuzz/corpus/helper_case/bfl_generation* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/bfl_generation.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/bfl-generation/ultra-mapping.yaml
+  - tools/oracle/cases/helpers/bfl-generation/retained-option.yaml
+  - tools/oracle/cases/helpers/bfl-generation/unusual-size.yaml
+  - tools/oracle/cases/helpers/bfl-generation/key-precedence.yaml
+  - tools/oracle/cases/helpers/bfl-generation/unknown-model.yaml
+  - tools/oracle/cases/helpers/bfl-generation/append-results.yaml
+  - tools/oracle/cases/helpers/bfl-generation/regional-poll-host.yaml
+deviations: []
+out_of_scope:
+  - The package initializers only expose the configuration, constants and later B1519/B1520 handlers; they do not require singleton state in Rust.
+pitfalls:
+  - The trust boundary is bfl.ai and its subdomains, not equality with the submission host.
+  - An existing response image lets an otherwise empty result succeed.
+  - image_url is forwarded to BFL as a field; this transformation never downloads it.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

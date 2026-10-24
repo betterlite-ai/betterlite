@@ -1,0 +1,77 @@
+id: B1404
+title: xAI Responses search tools and usage costs
+description: >-
+  Add xai_responses to betterlite-openai, owning the complete Responses transformation
+  and types/llms/xai.py. Reuse B508 reply/event decoding and B1402 tick conversion.
+  Copy optional parameters, debug and remove metadata even when null, and normalize a
+  truthy non-list tools value to a single-element list. code_interpreter becomes only
+  its type, discarding container and every other field. web_search keeps allowed_domains
+  and excluded_domains from a mapping-valued filters before flat fields, plus top-level
+  enable_image_understanding; presence of search_context_size logs its removal. x_search
+  preserves the six handle/date/media fields, including explicit nulls. Unknown tools and
+  non-mapping tool entries pass through. Do not enforce domain/handle limits merely stated
+  in annotations, or force store=false for images: neither behavior occurs in the code.
+
+  Responses auth uses B1402's legacy key order, then B1400 OAuth when opted in without
+  a key; an absent final key raises ValueError, OAuth failures AuthenticationError. Replace
+  Authorization without adding Content-Type here. Normal base order is explicit, global
+  api_base, XAI_API_BASE, https://api.x.ai/v1; OAuth instead selects its own base. Trim
+  trailing slashes and append /responses. Restate cost on ordinary replies and completed,
+  incomplete or failed terminal events only. Advertise native websocket support as false.
+  Register pure helper xai_responses with tools, URL, auth and parsed reply/event inputs;
+  use B508's actual decoded objects rather than reimplementing its decoder. Named tests
+  exercise nested-filter precedence, all tool fields, singleton tools, untouched store,
+  generic key fallback, missing key, terminal-only cost and websocket capability. The two
+  source files contain 249 nonblank/noncomment lines; allocate 240 transformation/types,
+  180 behavior tests, 120 adapters and 55 wiring lines, capped at 650.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,xai_responses}.rs
+    - crates/betterlite-openai/src/xai_responses/**
+    - tools/oracle/src/helpers/{mod,xai_responses}.rs
+    - tools/oracle/helpers/{dispatch,xai_responses}.py
+    - tools/oracle/cases/helpers/xai-responses/**
+    - tools/oracle/fuzz/corpus/helper_case/xai_responses*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/responses/transformation.py#L37-L294
+    why: Every xAI Responses override, including terminal cost restatement and false websocket capability.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/xai.py#L1-L28
+    why: Native web_search and x_search fields without runtime cardinality enforcement.
+dod:
+  - text: Search-tool projection and metadata omission preserve explicit values and source diagnostics.
+    proof: [xai-responses-tests, xai-responses-python, oracle]
+  - text: Responses auth and terminal usage differ from chat only at the specified boundaries.
+    proof: [xai-responses-tests, oracle, xai-responses-python]
+  - text: The xai_responses helper tag is exercised by newly committed cases.
+    proof: [xai-responses-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: xai-responses-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_responses::/)'
+      why: Container stripping, nested filters and terminal-event cost each need provider-specific assertions.
+    - id: xai-responses-python
+      run: test -f tools/oracle/helpers/xai_responses.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The oracle must exercise XAIResponsesAPIConfig rather than the inherited OpenAI config.
+    - id: xai-responses-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_responses*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_responses::/)'
+      why: New fixtures must deserialize to the Responses-specific helper variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/xai-responses/nested-filters-win.yaml
+  - tools/oracle/cases/helpers/xai-responses/native-tools-and-container.yaml
+  - tools/oracle/cases/helpers/xai-responses/single-tool-and-null-metadata.yaml
+  - tools/oracle/cases/helpers/xai-responses/image-store-unchanged.yaml
+  - tools/oracle/cases/helpers/xai-responses/legacy-key-and-oauth-base.yaml
+  - tools/oracle/cases/helpers/xai-responses/missing-key.yaml
+  - tools/oracle/cases/helpers/xai-responses/terminal-cost-only.yaml
+  - tools/oracle/cases/helpers/xai-responses/no-native-websocket.yaml
+deviations: []
+out_of_scope:
+  - All callable bodies in the two covered files are implemented here; B036 attaches the adapter to the executable Responses operation.
+pitfalls:
+  - The docstring recommends store=false for image input but map_openai_params does not insert it.
+  - An empty filters mapping suppresses flat allowed_domains rather than falling back to it.
+  - Removing metadata is a debug diagnostic rather than a request error.
+budget: {max_changed_lines: 650, max_new_expects: 0}
+review_level: security

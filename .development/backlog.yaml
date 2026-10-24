@@ -358,7 +358,7 @@ tasks:
     milestone: M3 providers
     title: Vertex AI partner models, Gemma and Model Garden
     status: todo
-    depends_on: [B010, B678, B1302, B1304, B1306, B1332, B1333, B1335, B1336, B1337, B1338, B1339, B582, B036, B038, B081, B004, B005, B171]
+    depends_on: [B010, B678, B1302, B1304, B1306, B1332, B1333, B1335, B1336, B1337, B1338, B1339, B582, B1412, B038, B081, B004, B005, B171]
     file: tasks/B032-vertex-partner-provider.yaml
     covers:
       - "litellm/llms/vertex_ai/vertex_ai_partner_models/{__init__,main}.py"
@@ -395,33 +395,34 @@ tasks:
     milestone: M3 providers
     title: xAI, Mistral and Codestral
     status: todo
-    depends_on: [B010, B011, B177, B2220]
-    file: null
+    depends_on: [B002, B004, B006, B010, B080, B083, B086, B087, B092, B104, B171, B186, B202, B210, B249, B323, B678, B900, B901, B921, B1001, B1032, B1033, B1034, B1050, B1051, B1125, B1133, B1139, B2230, B1400, B1401, B1402, B1403, B1404, B1405, B1406, B1407, B1408, B1409, B1410, B1411, B1412, B1413]
+    file: tasks/B036-xai-mistral-provider.yaml
     covers:
-      - "litellm/llms/{xai,mistral,codestral}/**"
-      - "litellm/types/llms/{xai,mistral}.py"
+      - "litellm/llms/{xai,mistral,codestral}/**/__init__.py"
+      - "litellm/llms/mistral/embedding.py"
+      - "litellm/llms/mistral/mistral_embedding_transformation.py"
+      - "litellm/llms/mistral/ocr/**"
       - "litellm/llms/openai/openai.py"
       - "litellm/main.py"
   - id: B037
     milestone: M3 providers
     title: Cohere, Voyage, Jina and Infinity
     status: todo
-    depends_on: [B010, B011, B182, B186, B183, B2230]
-    file: null
+    depends_on: [B002, B004, B006, B010, B104, B171, B174, B186, B211, B678, B1013, B2230, B1414, B1415, B1416, B1417, B1418, B1419, B1420, B1421, B1422, B1423]
+    file: tasks/B037-embedding-rerank-providers.yaml
     covers:
-      - "litellm/llms/{cohere,voyage,jina_ai,infinity}/**"
-      - "litellm/types/llms/{cohere,rerank}.py"
+      - "litellm/types/llms/rerank.py"
       - "litellm/main.py"
+      - "litellm/utils.py"
   - id: B038
     milestone: M3 providers
     title: JSON-configured OpenAI-compatible providers, A to L
     status: todo
-    depends_on: [B024]
-    file: null
+    depends_on: [B002, B004, B005, B006, B010, B011, B080, B081, B082, B085, B174, B186, B202, B203, B210, B211, B249, B500, B678, B1132, B1139, B2221, B2230, B2237, B2238, B1424, B1425, B1426, B1428, B1429, B1430, B1431, B1432, B1433, B1434, B1435, B1436, B1437, B1438, B1439, B1440]
+    file: tasks/B038-compatible-providers-a-l.yaml
     covers:
-      - "litellm/llms/openai_like/**"
-      - "litellm/llms/{aiml,baseten,bytez,cerebras,clarifai,cometapi,compactifai,datarobot,deepinfra,deepseek,empower,featherless_ai,friendliai,galadriel,gdc,github,gradient_ai,heroku,hyperbolic,inception,lambda_ai}/**"
-      - "litellm/types/llms/aiml.py"
+      - "litellm/llms/aiml/__init__.py"
+      - "litellm/llms/gdc/{__init__.py,chat/__init__.py}"
       - "litellm/main.py"
   - id: B039
     milestone: M3 providers
@@ -438,7 +439,7 @@ tasks:
     milestone: M3 providers
     title: Self-hosted inference servers
     status: todo
-    depends_on: [B024, B186, B2223, B2224, B2220]
+    depends_on: [B024, B186, B2223, B2224, B2220, B1440]
     file: null
     covers:
       - "litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**"
@@ -458,7 +459,7 @@ tasks:
     milestone: M3 providers
     title: Cloud ML platforms
     status: todo
-    depends_on: [B010, B011, B186]
+    depends_on: [B010, B011, B186, B1427]
     file: null
     covers:
       - "litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**"
@@ -468,7 +469,7 @@ tasks:
     milestone: M3 providers
     title: Regional hosts and other native APIs
     status: todo
-    depends_on: [B010, B011, B186]
+    depends_on: [B010, B011, B186, B1430]
     file: null
     covers:
       - "litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**"
@@ -477,48 +478,50 @@ tasks:
     milestone: M3 providers
     title: litellm_proxy provider, custom providers and deprecated providers
     status: todo
-    depends_on: [B024]
-    file: null
+    depends_on: [B002, B004, B005, B006, B010, B172, B173, B174, B184, B196, B198, B500, B164, B165, B171, B1500, B1501, B1502, B1503, B1504, B1505, B1506]
+    file: tasks/B044-proxy-custom-dispatch.yaml
     covers:
       - "litellm/llms/custom_llm.py"
-      - "litellm/llms/{litellm_proxy,deprecated_providers}/**"
+      - "litellm/llms/litellm_proxy/skills/__init__.py"
+      - "litellm/llms/litellm_proxy/skills/README.md"
       - "litellm/types/llms/custom_llm.py"
       - "litellm/main.py"
   - id: B045
     milestone: M3 providers
     title: Subscription-backed providers, ChatGPT and GitHub Copilot
     status: todo
-    depends_on: [B024]
-    file: null
+    depends_on: [B004, B005, B006, B010, B024, B080, B081, B174, B2230, B1507, B1508, B1509, B1510, B1511, B1512, B1513, B1514, B1515, B1516]
+    file: tasks/B045-subscription-dispatch.yaml
     covers:
-      - "litellm/llms/{chatgpt,github_copilot}/**"
       - "litellm/main.py"
   - id: B046
     milestone: M3 providers
     title: Image and video generation providers
     status: todo
-    depends_on: [B082, B093]
-    file: null
+    depends_on: [B002, B004, B010, B082, B083, B093, B174, B196, B198, B249, B900, B998, B999, B1000, B1084, B1517, B1518, B1519, B1520, B1521, B1522, B1523, B1524, B1525, B1526, B1527, B1528, B1529, B1530, B1531, B1532, B1533, B1534, B1535, B1536, B1537, B1538, B1539]
+    file: tasks/B046-media-provider-dispatch.yaml
     covers:
-      - "litellm/llms/{black_forest_labs,fal_ai,recraft,stability,runwayml,topaz}/**"
-      - "litellm/types/llms/{recraft,stability}.py"
+      - "litellm/llms/runwayml/__init__.py"
+      - "litellm/llms/fal_ai/__init__.py"
+      - "litellm/llms/fal_ai/image_generation/__init__.py"
       - "litellm/main.py"
   - id: B047
     milestone: M3 providers
     title: Speech and transcription providers
     status: todo
-    depends_on: [B083]
-    file: null
+    depends_on: [B002, B010, B083, B165, B174, B900, B1082, B1084, B1540, B1541, B1542, B1543, B1544, B1545, B1546, B1547, B1548, B1549, B1550, B1551]
+    file: tasks/B047-speech-provider-dispatch.yaml
     covers:
-      - "litellm/llms/{elevenlabs,deepgram,aws_polly,nvidia_riva,soniox}/**"
+      - "litellm/llms/soniox/{__init__.py,audio_transcription/{__init__.py,handler.py}}"
   - id: B048
     milestone: M3 providers
     title: Web search and crawl providers
     status: todo
-    depends_on: [B091]
+    depends_on: [B091, B1552, B1553, B1554, B1555]
     file: null
     covers:
-      - "litellm/llms/{apiserpent,brave,dataforseo,duckduckgo,exa_ai,fastcrw,firecrawl,google_pse,linkup,nimble,parallel_ai,searchapi,searxng,serper,tavily,you_com,tinyfish}/**"
+      - "litellm/llms/apiserpent/__init__.py"
+      - "litellm/llms/{exa_ai,fastcrw,firecrawl,google_pse,linkup,nimble,parallel_ai,searchapi,searxng,serper,tavily,you_com,tinyfish}/**"
   - id: B049
     milestone: M3 providers
     title: Vector store, RAG and OCR providers
@@ -3865,7 +3868,7 @@ tasks:
     milestone: M3 providers
     title: Foundry chat request and response mapping
     status: todo
-    depends_on: [B549, B502, B503, B504, B193, B218, B171, B2200, B668, B174, B219, B036, B129, B2221]
+    depends_on: [B549, B502, B503, B504, B193, B218, B171, B2200, B668, B174, B219, B1403, B129, B2221]
     file: tasks/B550-foundry-chat.yaml
     covers:
       - "litellm/llms/azure_ai/chat/transformation.py"
@@ -6130,7 +6133,7 @@ tasks:
     milestone: M5 api families
     title: Realtime connect
     status: todo
-    depends_on: [B002, B012, B036, B039, B157, B174, B176, B528, B529, B545, B666, B901, B1004, B1303, B1365, B1378, B1382, B2457]
+    depends_on: [B002, B012, B1402, B1405, B039, B157, B174, B176, B528, B529, B545, B666, B901, B1004, B1303, B1365, B1378, B1382, B2457]
     file: tasks/B1011-realtime-connect.yaml
     covers:
       - "litellm/realtime_api/main.py"
@@ -6281,7 +6284,7 @@ tasks:
     milestone: M5 api families
     title: File content stream
     status: todo
-    depends_on: [B010, B012, B036, B174, B176, B500, B516, B694, B2200, B1015, B1080, B2401, B2463, B2464]
+    depends_on: [B010, B012, B1407, B174, B176, B500, B516, B694, B2200, B1015, B1080, B2401, B2463, B2464]
     file: tasks/B1030-file-content-stream.yaml
     covers:
       - "litellm/files/main.py"
@@ -7293,7 +7296,7 @@ tasks:
     milestone: M5 API families
     title: Realtime health probes and stored credentials
     status: todo
-    depends_on: [B002, B036, B061, B173, B528, B529, B545, B901, B1011, B1301, B1304, B1356, B1365, B2225]
+    depends_on: [B002, B1402, B061, B173, B528, B529, B545, B901, B1011, B1301, B1304, B1356, B1365, B2225]
     file: tasks/B1127-realtime-connection-plan.yaml
     covers:
       - "litellm/realtime_api/main.py"
@@ -8604,7 +8607,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Deployment model info and configured limits
     status: todo
-    depends_on: [B038, B125, B157, B171, B173, B174, B193, B205, B206, B367, B844, B856, B2225, B2306]
+    depends_on: [B1425, B125, B157, B171, B173, B174, B193, B205, B206, B367, B844, B856, B2225, B2306]
     file: tasks/B845-deployment-model-info.yaml
     covers:
       - "litellm/router.py"
@@ -12378,7 +12381,7 @@ tasks:
     milestone: M5 API families
     title: File provider config and timeout selection
     status: todo
-    depends_on: [B171, B1367, B1376, B644, B645, B646, B588, B036, B050]
+    depends_on: [B171, B1367, B1376, B644, B645, B646, B588, B1407, B1411, B050]
     file: tasks/B2464-file-provider-selection.yaml
     covers:
       - "litellm/utils.py"
@@ -12463,3 +12466,822 @@ tasks:
     file: tasks/B2489-assistant-dispatch-boundary.yaml
     covers:
       - "litellm/router.py"
+  - id: B1400
+    milestone: M3 providers
+    title: xAI OAuth token records and refresh
+    status: todo
+    depends_on: [B002, B004, B173, B171]
+    file: tasks/B1400-xai-oauth-tokens.yaml
+    covers:
+      - "litellm/llms/xai/oauth.py"
+  - id: B1401
+    milestone: M3 providers
+    title: xAI interactive authorization and loopback callback
+    status: todo
+    depends_on: [B1400, B171]
+    file: tasks/B1401-xai-oauth-login.yaml
+    covers:
+      - "litellm/llms/xai/oauth.py"
+  - id: B1402
+    milestone: M3 providers
+    title: xAI credential selection, usage reconciliation and reported charges
+    status: todo
+    depends_on: [B002, B004, B173, B193, B204, B171]
+    file: tasks/B1402-xai-identity-usage.yaml
+    covers:
+      - "litellm/llms/xai/{common_utils,cost_calculator}.py"
+      - "litellm/llms/xai/chat/transformation.py"
+  - id: B1403
+    milestone: M3 providers
+    title: Grok chat options and streamed usage
+    status: todo
+    depends_on: [B1400, B1402, B668, B503, B504, B218, B219, B2221, B171]
+    file: tasks/B1403-xai-chat.yaml
+    covers:
+      - "litellm/llms/xai/chat/transformation.py"
+  - id: B1404
+    milestone: M3 providers
+    title: xAI Responses search tools and usage costs
+    status: todo
+    depends_on: [B1400, B1402, B508, B1138, B171]
+    file: tasks/B1404-xai-responses.yaml
+    covers:
+      - "litellm/llms/xai/responses/transformation.py"
+      - "litellm/types/llms/xai.py"
+  - id: B1405
+    milestone: M3 providers
+    title: Grok Voice realtime event normalization
+    status: todo
+    depends_on: [B528, B1004, B171]
+    file: tasks/B1405-xai-realtime.yaml
+    covers:
+      - "litellm/llms/xai/realtime/**"
+  - id: B1406
+    milestone: M3 providers
+    title: xAI native batches and paged JSONL results
+    status: todo
+    depends_on: [B1402, B1035, B173, B171]
+    file: tasks/B1406-xai-batches.yaml
+    covers:
+      - "litellm/llms/xai/batches/**"
+  - id: B1407
+    milestone: M3 providers
+    title: xAI file multipart operations and speech recognition
+    status: todo
+    depends_on: [B1402, B1406, B1015, B235, B171]
+    file: tasks/B1407-xai-files-stt.yaml
+    covers:
+      - "litellm/llms/xai/{files,audio_transcription}/**"
+  - id: B1408
+    milestone: M3 providers
+    title: Mistral option mapping and Magistral prompt policy
+    status: todo
+    depends_on: [B002, B668, B2221, B171]
+    file: tasks/B1408-mistral-options.yaml
+    covers:
+      - "litellm/llms/mistral/chat/transformation.py"
+      - "litellm/utils.py"
+  - id: B1409
+    milestone: M3 providers
+    title: Mistral message cleanup and distinct reply formats
+    status: todo
+    depends_on: [B1408, B004, B503, B504, B218, B249, B171]
+    file: tasks/B1409-mistral-chat.yaml
+    covers:
+      - "litellm/llms/mistral/chat/transformation.py"
+      - "litellm/types/llms/mistral.py"
+  - id: B1410
+    milestone: M3 providers
+    title: Voxtral speech, transcription and Mistral resource credentials
+    status: todo
+    depends_on: [B002, B1408, B514, B515, B1122, B171]
+    file: tasks/B1410-mistral-audio.yaml
+    covers:
+      - "litellm/llms/mistral/common_utils.py"
+      - "litellm/llms/mistral/{audio_speech,audio_transcription}/**"
+  - id: B1411
+    milestone: M3 providers
+    title: Mistral native file purposes and batch-job records
+    status: todo
+    depends_on: [B1410, B1015, B1035, B235, B171]
+    file: tasks/B1411-mistral-resources.yaml
+    covers:
+      - "litellm/llms/mistral/{files,batches}/**"
+  - id: B1412
+    milestone: M3 providers
+    title: Codestral FIM options, text replies and chunk decoding
+    status: todo
+    depends_on: [B004, B005, B2237, B249, B171]
+    file: tasks/B1412-codestral-records.yaml
+    covers:
+      - "litellm/llms/codestral/completion/{transformation,handler}.py"
+  - id: B1413
+    milestone: M3 providers
+    title: Codestral prompt execution and lazy FIM streaming
+    status: todo
+    depends_on: [B1412, B177, B173, B005, B249, B171]
+    file: tasks/B1413-codestral-call.yaml
+    covers:
+      - "litellm/llms/codestral/completion/handler.py"
+  - id: B1414
+    milestone: M3 providers
+    title: Cohere versioned event streams and shared chat headers
+    status: todo
+    depends_on: [B004, B005, B171]
+    file: tasks/B1414-cohere-streams.yaml
+    covers:
+      - "litellm/llms/cohere/common_utils.py"
+  - id: B1415
+    milestone: M3 providers
+    title: Cohere v1 chat history and tool schema conversion
+    status: todo
+    depends_on: [B004, B182, B668, B1414, B171]
+    file: tasks/B1415-cohere-chat-v1.yaml
+    covers:
+      - "litellm/llms/cohere/chat/transformation.py"
+      - "litellm/types/llms/cohere.py"
+  - id: B1416
+    milestone: M3 providers
+    title: Cohere v2 chat replies and document citations
+    status: todo
+    depends_on: [B004, B503, B668, B1414, B171]
+    file: tasks/B1416-cohere-chat-v2.yaml
+    covers:
+      - "litellm/llms/cohere/chat/v2_transformation.py"
+      - "litellm/types/llms/cohere.py"
+  - id: B1417
+    milestone: M3 providers
+    title: Cohere embedding input selection and billed usage
+    status: todo
+    depends_on: [B006, B183, B193, B249, B1414, B171]
+    file: tasks/B1417-cohere-embedding-v2.yaml
+    covers:
+      - "litellm/llms/cohere/embed/transformation.py"
+  - id: B1418
+    milestone: M3 providers
+    title: Legacy Cohere embedding execution for signed endpoints
+    status: todo
+    depends_on: [B006, B173, B249, B1417, B171]
+    file: tasks/B1418-cohere-legacy-embedding.yaml
+    covers:
+      - "litellm/llms/cohere/embed/handler.py"
+      - "litellm/llms/cohere/embed/v1_transformation.py"
+  - id: B1419
+    milestone: M3 providers
+    title: Cohere rerank versions and query guardrails
+    status: todo
+    depends_on: [B002, B104, B1013, B1414, B171]
+    file: tasks/B1419-cohere-rerank.yaml
+    covers:
+      - "litellm/llms/cohere/rerank/**"
+      - "litellm/llms/cohere/rerank_v2/**"
+  - id: B1420
+    milestone: M3 providers
+    title: Voyage text and contextual embedding requests
+    status: todo
+    depends_on: [B002, B006, B171]
+    file: tasks/B1420-voyage-contextual.yaml
+    covers:
+      - "litellm/llms/voyage/embedding/transformation.py"
+      - "litellm/llms/voyage/embedding/transformation_contextual.py"
+  - id: B1421
+    milestone: M3 providers
+    title: Voyage multimodal embeddings and token-priced reranking
+    status: todo
+    depends_on: [B002, B193, B249, B1013, B1420, B171]
+    file: tasks/B1421-voyage-media-rerank.yaml
+    covers:
+      - "litellm/llms/voyage/embedding/transformation_multimodal.py"
+      - "litellm/llms/voyage/rerank/**"
+  - id: B1422
+    milestone: M3 providers
+    title: Jina mixed-media embeddings and Infinity embedding replies
+    status: todo
+    depends_on: [B002, B006, B183, B249, B171]
+    file: tasks/B1422-jina-infinity-embedding.yaml
+    covers:
+      - "litellm/llms/jina_ai/common_utils.py"
+      - "litellm/llms/jina_ai/embedding/**"
+      - "litellm/llms/infinity/common_utils.py"
+      - "litellm/llms/infinity/embedding/**"
+  - id: B1423
+    milestone: M3 providers
+    title: Jina and Infinity ranking response differences
+    status: todo
+    depends_on: [B002, B193, B249, B1013, B1419, B1422, B171]
+    file: tasks/B1423-jina-infinity-rerank.yaml
+    covers:
+      - "litellm/llms/jina_ai/rerank/**"
+      - "litellm/llms/infinity/rerank/**"
+  - id: B1424
+    milestone: M3 providers
+    title: Pinned JSON provider registry and configuration projection
+    status: todo
+    depends_on: [B002, B209, B171]
+    file: tasks/B1424-json-provider-registry.yaml
+    covers:
+      - "litellm/llms/openai_like/json_loader.py"
+      - "litellm/llms/openai_like/providers.json"
+      - "litellm/llms/openai_like/README.md"
+  - id: B1425
+    milestone: M3 providers
+    title: OpenAI-like response cleanup, embedding transport and model discovery
+    status: todo
+    depends_on: [B002, B004, B006, B173, B249, B668, B171]
+    file: tasks/B1425-openai-like-primitives.yaml
+    covers:
+      - "litellm/llms/openai_like/common_utils.py"
+      - "litellm/llms/openai_like/chat/transformation.py"
+      - "litellm/llms/openai_like/embedding/handler.py"
+      - "litellm/llms/openai_like/model_info.py"
+  - id: B1426
+    milestone: M3 providers
+    title: JSON provider policies across chat, Responses and Messages
+    status: todo
+    depends_on: [B002, B218, B503, B508, B571, B668, B960, B961, B962, B2221, B1424, B1425, B171]
+    file: tasks/B1426-json-provider-policies.yaml
+    covers:
+      - "litellm/llms/openai_like/dynamic_config.py"
+      - "litellm/llms/openai_like/responses/**"
+      - "litellm/llms/openai_like/messages/**"
+  - id: B1427
+    milestone: M3 providers
+    title: Legacy compatible line streaming shared with Databricks
+    status: todo
+    depends_on: [B004, B005, B171]
+    file: tasks/B1427-compatible-line-stream.yaml
+    covers:
+      - "litellm/llms/databricks/streaming_utils.py"
+  - id: B1428
+    milestone: M3 providers
+    title: OpenAI-like chat execution and fake-stream mode differences
+    status: todo
+    depends_on: [B004, B005, B173, B249, B503, B609, B2230, B1425, B1427, B171]
+    file: tasks/B1428-compatible-chat-execution.yaml
+    covers:
+      - "litellm/llms/openai_like/chat/handler.py"
+  - id: B1429
+    milestone: M3 providers
+    title: DeepSeek reasoning history, vision messages and tool filtering
+    status: todo
+    depends_on: [B002, B004, B218, B503, B668, B2221, B171]
+    file: tasks/B1429-deepseek-chat.yaml
+    covers:
+      - "litellm/llms/deepseek/chat/transformation.py"
+      - "litellm/llms/deepseek/cost_calculator.py"
+  - id: B1430
+    milestone: M3 providers
+    title: DeepSeek, Tencent and MiniMax native Messages policies
+    status: todo
+    depends_on: [B002, B960, B961, B962, B171]
+    file: tasks/B1430-native-messages-hosts.yaml
+    covers:
+      - "litellm/llms/{deepseek,tencent,minimax}/messages/transformation.py"
+  - id: B1431
+    milestone: M3 providers
+    title: AIML and CometAPI image generation and image-count pricing
+    status: todo
+    depends_on: [B002, B193, B997, B171]
+    file: tasks/B1431-compatible-image-hosts.yaml
+    covers:
+      - "litellm/llms/{aiml,cometapi}/image_generation/**"
+      - "litellm/types/llms/aiml.py"
+  - id: B1432
+    milestone: M3 providers
+    title: Baseten, Cerebras and Featherless option policies and inherited host aliases
+    status: todo
+    depends_on: [B002, B503, B668, B2221, B1425, B171]
+    file: tasks/B1432-hosted-chat-options.yaml
+    covers:
+      - "litellm/llms/{baseten,cerebras,featherless_ai,empower,friendliai,galadriel,github}/**"
+      - "litellm/llms/aiml/chat/transformation.py"
+  - id: B1433
+    milestone: M3 providers
+    title: Clarifai, CompactifAI and DataRobot request and reply identity
+    status: todo
+    depends_on: [B002, B004, B249, B503, B668, B1425, B171]
+    file: tasks/B1433-host-model-identity.yaml
+    covers:
+      - "litellm/llms/{clarifai,compactifai,datarobot}/**"
+  - id: B1434
+    milestone: M3 providers
+    title: Gradient agent endpoints and Heroku, Hyperbolic, Lambda and Inception policies
+    status: todo
+    depends_on: [B002, B218, B503, B668, B1425, B2237, B171]
+    file: tasks/B1434-agent-and-diffusion-hosts.yaml
+    covers:
+      - "litellm/llms/{gradient_ai,heroku,hyperbolic,inception,lambda_ai}/**"
+  - id: B1435
+    milestone: M3 providers
+    title: Bytez media normalization, approximate usage and raw-text streaming
+    status: todo
+    depends_on: [B004, B005, B173, B186, B249, B171]
+    file: tasks/B1435-bytez-chat.yaml
+    covers:
+      - "litellm/llms/bytez/**"
+  - id: B1436
+    milestone: M3 providers
+    title: DeepInfra chat mapping and rerank inference records
+    status: todo
+    depends_on: [B002, B249, B503, B668, B1013, B2221, B171]
+    file: tasks/B1436-deepinfra-chat-rerank.yaml
+    covers:
+      - "litellm/llms/deepinfra/**"
+  - id: B1437
+    milestone: M3 providers
+    title: CometAPI chat streams and embeddings
+    status: todo
+    depends_on: [B002, B004, B006, B010, B503, B668, B171]
+    file: tasks/B1437-cometapi-chat-embedding.yaml
+    covers:
+      - "litellm/llms/cometapi/{chat,embed}/**"
+      - "litellm/llms/cometapi/common_utils.py"
+  - id: B1438
+    milestone: M3 providers
+    title: GDC project, location and request endpoint policy
+    status: todo
+    depends_on: [B002, B184, B1425, B171]
+    file: tasks/B1438-gdc-request-policy.yaml
+    covers:
+      - "litellm/llms/gdc/chat/transformation.py"
+  - id: B1439
+    milestone: M3 providers
+    title: GDCH credential exchange and audience-isolated token caching
+    status: todo
+    depends_on: [B173, B184, B1438, B171]
+    file: tasks/B1439-gdc-credentials.yaml
+    covers:
+      - "litellm/llms/gdc/chat/transformation.py"
+  - id: B1440
+    milestone: M3 providers
+    title: Compatible API-family selection and shared embedding dispatch
+    status: todo
+    depends_on: [B002, B006, B010, B209, B1424, B1425, B1437, B171]
+    file: tasks/B1440-compatible-api-selection.yaml
+    covers:
+      - "litellm/utils.py"
+      - "litellm/main.py"
+  - id: B1500
+    milestone: M3 providers
+    title: Resolve proxy credentials and preserve forwarded model options
+    status: todo
+    depends_on: [B002, B171, B668, B504, B506, B511, B512]
+    file: tasks/B1500-proxy-provider-options.yaml
+    covers:
+      - "litellm/llms/litellm_proxy/chat/**"
+      - "litellm/llms/litellm_proxy/responses/**"
+      - "litellm/llms/litellm_proxy/image_generation/**"
+      - "litellm/llms/litellm_proxy/image_edit/**"
+  - id: B1501
+    milestone: M3 providers
+    title: Preserve the deprecated Aleph Alpha completion protocol
+    status: todo
+    depends_on: [B004, B173, B171, B196, B249, B184]
+    file: tasks/B1501-aleph-alpha.yaml
+    covers:
+      - "litellm/llms/deprecated_providers/**"
+  - id: B1502
+    milestone: M3 providers
+    title: Store hosted skills with owner checks after cache lookup
+    status: todo
+    depends_on: [B171, B192, B726, B858, B1018, B732, B2226, B860]
+    file: tasks/B1502-hosted-skill-store.yaml
+    covers:
+      - "litellm/llms/litellm_proxy/skills/handler.py"
+      - "litellm/llms/litellm_proxy/skills/constants.py"
+  - id: B1503
+    milestone: M3 providers
+    title: Project hosted skill operations into the public Skill records
+    status: todo
+    depends_on: [B1502, B247, B171, B858]
+    file: tasks/B1503-hosted-skill-operations.yaml
+    covers:
+      - "litellm/llms/litellm_proxy/skills/transformation.py"
+  - id: B1504
+    milestone: M3 providers
+    title: Extract skill archives and construct injected prompts and tools
+    status: todo
+    depends_on: [B171, B178, B858]
+    file: tasks/B1504-skill-content.yaml
+    covers:
+      - "litellm/llms/litellm_proxy/skills/prompt_injection.py"
+      - "litellm/llms/litellm_proxy/skills/code_execution.py"
+  - id: B1505
+    milestone: M3 providers
+    title: Rank only the caller's accessible hosted skills
+    status: todo
+    depends_on: [B124, B1502, B171]
+    file: tasks/B1505-skill-search.yaml
+    covers:
+      - "litellm/llms/litellm_proxy/skills/skill_search.py"
+  - id: B1506
+    milestone: M3 providers
+    title: Execute hosted skill files through an owned sandbox session
+    status: todo
+    depends_on: [B165, B171]
+    file: tasks/B1506-skill-sandbox.yaml
+    covers:
+      - "litellm/llms/litellm_proxy/skills/sandbox_executor.py"
+  - id: B1507
+    milestone: M3 providers
+    title: Construct ChatGPT subscription headers and session identity
+    status: todo
+    depends_on: [B002, B171, B184]
+    file: tasks/B1507-chatgpt-headers.yaml
+    covers:
+      - "litellm/llms/chatgpt/common_utils.py"
+  - id: B1508
+    milestone: M3 providers
+    title: Read ChatGPT token records and derive expiry and account hints
+    status: todo
+    depends_on: [B002, B171, B1507]
+    file: tasks/B1508-chatgpt-token-store.yaml
+    covers:
+      - "litellm/llms/chatgpt/authenticator.py"
+  - id: B1509
+    milestone: M3 providers
+    title: Refresh ChatGPT credentials and coordinate device authorization
+    status: todo
+    depends_on: [B1507, B1508, B173, B171, B187]
+    file: tasks/B1509-chatgpt-device-login.yaml
+    covers:
+      - "litellm/llms/chatgpt/authenticator.py"
+  - id: B1510
+    milestone: M3 providers
+    title: Adapt ChatGPT chat calls and normalize repeated tool deltas
+    status: todo
+    depends_on: [B668, B1507, B1508, B1509, B005, B171]
+    file: tasks/B1510-chatgpt-chat.yaml
+    covers:
+      - "litellm/llms/chatgpt/chat/**"
+  - id: B1511
+    milestone: M3 providers
+    title: Recover ChatGPT Responses from completed event streams
+    status: todo
+    depends_on: [B507, B508, B919, B1507, B1508, B1509, B206, B249, B004, B171]
+    file: tasks/B1511-chatgpt-responses.yaml
+    covers:
+      - "litellm/llms/chatgpt/responses/**"
+  - id: B1512
+    milestone: M3 providers
+    title: Obtain GitHub access tokens with the Copilot device flow
+    status: todo
+    depends_on: [B002, B173, B184, B187, B171]
+    file: tasks/B1512-copilot-device-auth.yaml
+    covers:
+      - "litellm/llms/github_copilot/authenticator.py"
+      - "litellm/llms/github_copilot/common_utils.py"
+  - id: B1513
+    milestone: M3 providers
+    title: Refresh Copilot API keys and discover the authenticated endpoint
+    status: todo
+    depends_on: [B1512, B173, B187, B171]
+    file: tasks/B1513-copilot-api-key.yaml
+    covers:
+      - "litellm/llms/github_copilot/authenticator.py"
+  - id: B1514
+    milestone: M3 providers
+    title: Prepare Copilot chat and repair native Claude replies
+    status: todo
+    depends_on: [B002, B668, B504, B578, B1512, B1513, B2221, B171]
+    file: tasks/B1514-copilot-chat.yaml
+    covers:
+      - "litellm/llms/github_copilot/chat/**"
+  - id: B1515
+    milestone: M3 providers
+    title: Select Copilot Responses models and stabilize streamed item identities
+    status: todo
+    depends_on: [B002, B506, B507, B508, B1512, B1513, B1514, B2225, B193, B171]
+    file: tasks/B1515-copilot-responses.yaml
+    covers:
+      - "litellm/llms/github_copilot/responses/**"
+  - id: B1516
+    milestone: M3 providers
+    title: Authenticate Copilot embeddings and pin Messages to the session endpoint
+    status: todo
+    depends_on: [B006, B668, B960, B961, B962, B1512, B1513, B1514, B249, B171]
+    file: tasks/B1516-copilot-embedding-messages.yaml
+    covers:
+      - "litellm/llms/github_copilot/embedding/**"
+      - "litellm/llms/github_copilot/messages/**"
+  - id: B1517
+    milestone: M3 providers
+    title: Map Black Forest Labs image generation and validate polling hosts
+    status: todo
+    depends_on: [B002, B997, B184, B171]
+    file: tasks/B1517-bfl-generation-format.yaml
+    covers:
+      - "litellm/llms/black_forest_labs/common_utils.py"
+      - "litellm/llms/black_forest_labs/__init__.py"
+      - "litellm/llms/black_forest_labs/image_generation/{transformation,__init__}.py"
+      - "litellm/llms/black_forest_labs/image_edit/__init__.py"
+  - id: B1518
+    milestone: M3 providers
+    title: Encode BFL image edits from supplied image and mask bytes
+    status: todo
+    depends_on: [B002, B1517, B997, B183, B171]
+    file: tasks/B1518-bfl-edit-format.yaml
+    covers:
+      - "litellm/llms/black_forest_labs/image_edit/transformation.py"
+  - id: B1519
+    milestone: M3 providers
+    title: Submit BFL generation jobs and poll their terminal state
+    status: todo
+    depends_on: [B1517, B173, B249, B171]
+    file: tasks/B1519-bfl-generation-polling.yaml
+    covers:
+      - "litellm/llms/black_forest_labs/image_generation/handler.py"
+  - id: B1520
+    milestone: M3 providers
+    title: Execute BFL image edits with first-image selection and shared polling
+    status: todo
+    depends_on: [B1517, B1518, B1519, B173, B249, B171]
+    file: tasks/B1520-bfl-edit-execution.yaml
+    covers:
+      - "litellm/llms/black_forest_labs/image_edit/handler.py"
+  - id: B1521
+    milestone: M3 providers
+    title: Prepare Recraft generation and image-to-image requests
+    status: todo
+    depends_on: [B002, B997, B1120, B068, B171]
+    file: tasks/B1521-recraft-images.yaml
+    covers:
+      - "litellm/llms/recraft/**"
+      - "litellm/types/llms/recraft.py"
+  - id: B1522
+    milestone: M3 providers
+    title: Translate Stability generation parameters and base64 replies
+    status: todo
+    depends_on: [B002, B997, B171]
+    file: tasks/B1522-stability-generation.yaml
+    covers:
+      - "litellm/llms/stability/__init__.py"
+      - "litellm/llms/stability/image_generation/**"
+      - "litellm/types/llms/stability.py"
+  - id: B1523
+    milestone: M3 providers
+    title: Build Stability edit multipart bodies and attach catalog image cost
+    status: todo
+    depends_on: [B1522, B997, B2225, B171]
+    file: tasks/B1523-stability-edits.yaml
+    covers:
+      - "litellm/llms/stability/image_edit/**"
+      - "litellm/types/llms/stability.py"
+  - id: B1524
+    milestone: M3 providers
+    title: Prepare Topaz enhancement uploads and encode binary image replies
+    status: todo
+    depends_on: [B002, B997, B1000, B1087, B171]
+    file: tasks/B1524-topaz-variations.yaml
+    covers:
+      - "litellm/llms/topaz/**"
+  - id: B1525
+    milestone: M3 providers
+    title: Establish Fal image decoding and GPT Image option policy
+    status: todo
+    depends_on: [B002, B997, B193, B171]
+    file: tasks/B1525-fal-image-core.yaml
+    covers:
+      - "litellm/llms/fal_ai/image_generation/transformation.py"
+      - "litellm/llms/fal_ai/image_generation/gpt_image_2_transformation.py"
+  - id: B1526
+    milestone: M3 providers
+    title: Convert Fal image edits to inline data and depth-control requests
+    status: todo
+    depends_on: [B1525, B997, B1120, B171]
+    file: tasks/B1526-fal-image-edits.yaml
+    covers:
+      - "litellm/llms/fal_ai/image_edit/**"
+  - id: B1527
+    milestone: M3 providers
+    title: Preserve Fal Flux aspect-ratio and image-size variants
+    status: todo
+    depends_on: [B1525, B171]
+    file: tasks/B1527-fal-flux-profiles.yaml
+    covers:
+      - "litellm/llms/fal_ai/image_generation/{flux_dev_transformation,flux_pro_v11_transformation,flux_pro_v11_ultra_transformation,flux_schnell_transformation}.py"
+  - id: B1528
+    milestone: M3 providers
+    title: Distinguish Fal Imagen, Nano Banana and ByteDance image policies
+    status: todo
+    depends_on: [B1525, B1527, B171]
+    file: tasks/B1528-fal-imagen-banana-bytedance.yaml
+    covers:
+      - "litellm/llms/fal_ai/image_generation/{imagen4_transformation,nano_banana_transformation,bytedance_transformation}.py"
+  - id: B1529
+    milestone: M3 providers
+    title: Handle Fal Bria and Recraft URL-only image results
+    status: todo
+    depends_on: [B1525, B997, B171]
+    file: tasks/B1529-fal-bria-recraft.yaml
+    covers:
+      - "litellm/llms/fal_ai/image_generation/{bria_transformation,recraft_v3_transformation}.py"
+  - id: B1530
+    milestone: M3 providers
+    title: Adapt Fal Ideogram and Stable Diffusion size and response shapes
+    status: todo
+    depends_on: [B1525, B997, B171]
+    file: tasks/B1530-fal-ideogram-diffusion.yaml
+    covers:
+      - "litellm/llms/fal_ai/image_generation/{ideogram_v3_transformation,stable_diffusion_transformation}.py"
+  - id: B1531
+    milestone: M3 providers
+    title: Price Fal images by deployment, resolution and returned dimensions
+    status: todo
+    depends_on: [B002, B193, B068, B997, B171, B1525]
+    file: tasks/B1531-fal-image-pricing.yaml
+    covers:
+      - "litellm/llms/fal_ai/cost_calculator.py"
+  - id: B1532
+    milestone: M3 providers
+    title: Prepare Fal queued video creation and provider-tagged job URLs
+    status: todo
+    depends_on: [B1525, B525, B672, B171]
+    file: tasks/B1532-fal-video-preparation.yaml
+    covers:
+      - "litellm/llms/fal_ai/videos/transformation.py"
+  - id: B1533
+    milestone: M3 providers
+    title: Retrieve Fal video job failures and completed binary content
+    status: todo
+    depends_on: [B1532, B173, B672, B1087, B171]
+    file: tasks/B1533-fal-video-results.yaml
+    covers:
+      - "litellm/llms/fal_ai/videos/**"
+  - id: B1534
+    milestone: M3 providers
+    title: Authenticate and poll Runway image and speech jobs
+    status: todo
+    depends_on: [B002, B173, B171]
+    file: tasks/B1534-runway-task-polling.yaml
+    covers:
+      - "litellm/llms/runwayml/{image_generation,text_to_speech}/transformation.py"
+  - id: B1535
+    milestone: M3 providers
+    title: Complete Runway image jobs and charge returned image counts
+    status: todo
+    depends_on: [B1534, B997, B068, B171]
+    file: tasks/B1535-runway-images.yaml
+    covers:
+      - "litellm/llms/runwayml/image_generation/**"
+      - "litellm/llms/runwayml/cost_calculator.py"
+  - id: B1536
+    milestone: M3 providers
+    title: Select Runway voices and download completed speech output
+    status: todo
+    depends_on: [B002, B1534, B1135, B1084, B1087, B173, B171]
+    file: tasks/B1536-runway-speech.yaml
+    covers:
+      - "litellm/llms/runwayml/text_to_speech/**"
+  - id: B1537
+    milestone: M3 providers
+    title: Prepare Runway video tasks and report creation usage
+    status: todo
+    depends_on: [B002, B1534, B525, B672, B171]
+    file: tasks/B1537-runway-video-create.yaml
+    covers:
+      - "litellm/llms/runwayml/videos/transformation.py"
+  - id: B1538
+    milestone: M3 providers
+    title: Retrieve, cancel and download Runway video tasks
+    status: todo
+    depends_on: [B1537, B1534, B672, B173, B1087, B171]
+    file: tasks/B1538-runway-video-lifecycle.yaml
+    covers:
+      - "litellm/llms/runwayml/videos/**"
+  - id: B1539
+    milestone: M3 providers
+    title: Translate Fal single-image chat queries and usage replies
+    status: todo
+    depends_on: [B004, B1525, B206, B171]
+    file: tasks/B1539-fal-vision-chat.yaml
+    covers:
+      - "litellm/llms/fal_ai/chat/**"
+  - id: B1540
+    milestone: M3 providers
+    title: Resolve ElevenLabs voices and separate speech query parameters
+    status: todo
+    depends_on: [B002, B1135, B2228, B171]
+    file: tasks/B1540-elevenlabs-speech.yaml
+    covers:
+      - "litellm/llms/elevenlabs/{common_utils.py,text_to_speech/**}"
+  - id: B1541
+    milestone: M3 providers
+    title: Send ElevenLabs transcription multipart and retain word metadata
+    status: todo
+    depends_on: [B1540, B1122, B1001, B171]
+    file: tasks/B1541-elevenlabs-transcription.yaml
+    covers:
+      - "litellm/llms/elevenlabs/audio_transcription/**"
+  - id: B1542
+    milestone: M3 providers
+    title: Normalize Deepgram listen targets and streaming billing metadata
+    status: todo
+    depends_on: [B2225, B171]
+    file: tasks/B1542-deepgram-listen-metadata.yaml
+    covers:
+      - "litellm/llms/deepgram/common_utils.py"
+  - id: B1543
+    milestone: M3 providers
+    title: Adapt Deepgram raw-audio transcription and diarized paragraphs
+    status: todo
+    depends_on: [B002, B1542, B1122, B1001, B171]
+    file: tasks/B1543-deepgram-transcription.yaml
+    covers:
+      - "litellm/llms/deepgram/audio_transcription/**"
+  - id: B1544
+    milestone: M3 providers
+    title: Map Polly speech options and sign the exact synthesis body
+    status: todo
+    depends_on: [B1135, B1084, B590, B591, B594, B595, B198, B171]
+    file: tasks/B1544-polly-speech.yaml
+    covers:
+      - "litellm/llms/aws_polly/**"
+  - id: B1545
+    milestone: M3 providers
+    title: Shape Riva recognition options, final transcripts and gRPC failures
+    status: todo
+    depends_on: [B1122, B171]
+    file: tasks/B1545-riva-transcription-records.yaml
+    covers:
+      - "litellm/llms/nvidia_riva/{common_utils.py,audio_transcription/transformation.py}"
+  - id: B1546
+    milestone: M3 providers
+    title: Decode and resample supplied audio for Riva PCM streaming
+    status: todo
+    depends_on: [B1545, B165, B171]
+    file: tasks/B1546-riva-audio-decoding.yaml
+    covers:
+      - "litellm/llms/nvidia_riva/audio_transcription/audio_utils.py"
+  - id: B1547
+    milestone: M3 providers
+    title: Execute Riva recognition through the optional streaming SDK
+    status: todo
+    depends_on: [B1545, B1546, B165, B1001, B004, B249, B171]
+    file: tasks/B1547-riva-streaming-call.yaml
+    covers:
+      - "litellm/llms/nvidia_riva/{__init__.py,audio_transcription/{__init__.py,handler.py}}"
+  - id: B1548
+    milestone: M3 providers
+    title: Render Soniox speaker, language and subtitle token records
+    status: todo
+    depends_on: [B002, B1122, B1002, B171]
+    file: tasks/B1548-soniox-transcript-records.yaml
+    covers:
+      - "litellm/llms/soniox/{common_utils.py,audio_transcription/transformation.py}"
+  - id: B1549
+    milestone: M3 providers
+    title: Bound Soniox polling options and redact transcription callbacks
+    status: todo
+    depends_on: [B1548, B1001, B249, B1087, B171]
+    file: tasks/B1549-soniox-call-preparation.yaml
+    covers:
+      - "litellm/llms/soniox/audio_transcription/handler.py"
+  - id: B1550
+    milestone: M3 providers
+    title: Upload Soniox audio and poll and clean remote jobs
+    status: todo
+    depends_on: [B1549, B173, B1001, B171]
+    file: tasks/B1550-soniox-upload-poll-cleanup.yaml
+    covers:
+      - "litellm/llms/soniox/audio_transcription/handler.py"
+  - id: B1551
+    milestone: M3 providers
+    title: Compose Soniox transcription jobs with resource-aware finalization
+    status: todo
+    depends_on: [B1548, B1549, B1550, B173, B171]
+    file: tasks/B1551-soniox-transcription-pipeline.yaml
+    covers:
+      - "litellm/llms/soniox/audio_transcription/handler.py"
+  - id: B1552
+    milestone: M3 providers
+    title: Map APISerpent quick and deep GET searches
+    status: todo
+    depends_on: [B002, B091, B171]
+    file: tasks/B1552-apiserpent-search.yaml
+    covers:
+      - "litellm/llms/apiserpent/search/**"
+  - id: B1553
+    milestone: M3 providers
+    title: Select Brave result sections and normalize their dates
+    status: todo
+    depends_on: [B002, B091, B165, B171]
+    file: tasks/B1553-brave-search.yaml
+    covers:
+      - "litellm/llms/brave/**"
+  - id: B1554
+    milestone: M3 providers
+    title: Authenticate DataForSEO tasks and preserve first-result semantics
+    status: todo
+    depends_on: [B002, B091, B171]
+    file: tasks/B1554-dataforseo-search.yaml
+    covers:
+      - "litellm/llms/dataforseo/**"
+  - id: B1555
+    milestone: M3 providers
+    title: Project DuckDuckGo instant answers and one-level related topics
+    status: todo
+    depends_on: [B002, B091, B171]
+    file: tasks/B1555-duckduckgo-search.yaml
+    covers:
+      - "litellm/llms/duckduckgo/**"

@@ -1,0 +1,75 @@
+id: B1511
+title: Recover ChatGPT Responses from completed event streams
+description: >-
+  Implement api::chatgpt_responses in betterlite-core, above B507 input transforms, B508 response
+  records and B919 SSE recovery. This placement lets the subscription adapter reuse the existing
+  core recovery service without introducing an openai-to-core dependency. Own every method of
+  ChatGPTResponsesAPIConfig, including construction, custom_llm_provider and the false native-WebSocket
+  capability. Authentication uses B1509, B1508 account/base discovery and B1507 session/default headers;
+  caller headers win. Translate GetAccessTokenError only. An explicit URL base wins here, unlike chat.
+
+  After normal Responses preparation, prepend default instructions unless already a substring of the
+  supplied instructions. Force store=false and stream=true, insert reasoning.encrypted_content once,
+  and retain only model, input, instructions, stream, store, include, tools, tool_choice, reasoning,
+  previous_response_id and truncation. Detect SSE by case-insensitive content type or the source's
+  event:/data: text tests; delegate ordinary JSON to B508. Feed each line to B919's bounded decoder,
+  collect output_item.done and text.done, then stop at the first response.completed even when its response
+  field is malformed. Real output items replace text-only recovery at matching indices. Preserve a
+  nonempty completed output; otherwise fill sorted recovered items. Use safe created_at conversion and
+  the source's permissive construction fallback. Missing completion raises OpenAIError at the original
+  HTTP status, using the most recent failed/error message when available. Attach both raw and processed
+  headers through B206 and keep the post-call logging point through B249.
+
+  The chatgpt_responses helper exercises pinned transformations with scripted token getters and an
+  HTTP response object. Compare pruning and instruction insertion, SSE without its content type,
+  item-over-text recovery, first-completed termination, error-then-completion and header attachment.
+  Register call.chatgpt_responses in the helper corpus. Tests under api::chatgpt_responses use B919's
+  decoder directly; there is no second SSE parser or fuzz target. The owned source has 218 nonblank,
+  non-comment lines; allow 240 implementation, 210 tests, 100 adapters and 50 registration lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/chatgpt_responses.rs
+    - crates/betterlite-core/src/api/chatgpt_responses/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/chatgpt_responses.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/chatgpt_responses.py
+    - tools/oracle/cases/helpers/chatgpt-responses/**
+    - tools/oracle/fuzz/corpus/helper_case/chatgpt_responses*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L39-L250
+    why: Request whitelist, first completion recovery, permissive response construction and URL selection.
+dod:
+  - text: Subscription Responses preparation preserves header precedence and forces the Codex request shape.
+    proof: [responses-tests, oracle, responses-adapter]
+  - text: Buffered SSE follows the first-completion rule and recovers only missing output while preserving failures and response headers.
+    proof: [responses-tests, oracle, responses-adapter]
+checks:
+  optional: []
+  commands:
+    - id: responses-tests
+      why: Codex request filtering or completed-event projection is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::chatgpt_responses::/)'
+    - id: responses-adapter
+      why: independent pinned Responses comparisons cannot execute
+      run: grep -qE '^[[:space:]]+chatgpt_responses:' tools/oracle/fuzz/corpus/helper_case/chatgpt_responses* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/chatgpt_responses.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/chatgpt-responses/pruned-request.yaml
+  - tools/oracle/cases/helpers/chatgpt-responses/unlabelled-sse.yaml
+  - tools/oracle/cases/helpers/chatgpt-responses/items-replace-text.yaml
+  - tools/oracle/cases/helpers/chatgpt-responses/first-completed.yaml
+  - tools/oracle/cases/helpers/chatgpt-responses/error-before-success.yaml
+  - tools/oracle/cases/helpers/chatgpt-responses/attached-headers.yaml
+deviations: []
+out_of_scope:
+  - B919 owns parse_sse_json_chunk and the output recovery helpers in litellm/responses/sse_output_recovery.py; B045 installs this service into dispatch.
+pitfalls:
+  - A response.completed event ends the search even if a later event contains a valid response.
+  - stream=true in the upstream body does not mean a nonstreaming caller should receive SSE.
+  - The instruction check is substring containment rather than equality or a prefix test.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

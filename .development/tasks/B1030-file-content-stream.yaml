@@ -11,7 +11,7 @@ description: >-
   Use B2463 for generic binary/streamed HTTP, B516 compatible content, B694 Azure, B500/B2200
   credentials, B174 model resolution, B176 trusted controls, B1080 stream logging and B012 logger
   construction. B2464 owns file config and timeout selection. xAI batch-results detection/handling
-  stays with its existing B036 provider owner.
+  stays with its existing B1407 provider owner.
   Register B2401 SDK HTTP operation file_content_stream for both SDK modes, actual bytes/headers,
   error facts and close effects. No helper oracle, route authorization or new parser belongs here.
   Tests are in api::file_content_stream::tests. Counted owned spans have 324 nonblank/non-comment
@@ -51,7 +51,7 @@ dod:
 - text: >-
     buffered_content_dispatch tests openai,hosted_vllm,litellm_proxy via B516; azure via B694;
     anthropic,bedrock,vertex_ai through B2463's config path. xai with its recognized batch-results
-    id uses B036 before config lookup, while an ordinary xai file uses its config. Generic clients
+    id uses B1407 before config lookup, while an ordinary xai file uses its config. Generic clients
     are accepted only as HTTPHandler/AsyncHTTPHandler; Azure gets the supplied client, compatible
     buffered calls do not. extra_headers/extra_body stay in FileContentRequest and provider transforms
     decide their use. Provider 404/429 statuses and error type/param/code/message survive unchanged.
