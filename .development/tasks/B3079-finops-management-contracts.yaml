@@ -1,0 +1,76 @@
+id: B3079
+title: Define FinOps management contracts and the admin read predicate
+description: >-
+  Build typed request/response models in betterlite-models for the CloudZero and Vantage FinOps management endpoints.
+  These models decode the HTTP payloads that route handlers in B3076 and B3077 receive and return.
+  Add validators to ensure Vantage credentials are non-empty strings (with optional null handling for updates).
+  CloudZero's operation field accepts any string without validation.
+  Vantage dry-run requests cap preview results at 500 records (the limit parameter defaults to 500);
+  actual export requests have no default limit.
+  CloudZero export requests have no default limit.
+  CloudZeroInitRequest.timezone defaults to "UTC"; CloudZeroExportRequest.operation defaults to "replace_hourly";
+  VantageInitRequest.base_url defaults to "https://api.vantage.sh".
+  Also define the shared role predicate for FinOps routes:
+  user_api_key_has_admin_view returns true when the API key's role is PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY,
+  permitting read access to all settings and operations.
+  This predicate lives in the existing auth-model layer so leaf modules can import it without pulling
+  in the full proxy utilities.
+scope:
+  paths:
+    - crates/betterlite-models/**
+    - crates/betterlite-auth/**
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/cloudzero_endpoints.py#L1-L64"
+    why: All six CloudZero endpoint record declarations.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/vantage_endpoints.py#L1-L91"
+    why: All seven Vantage endpoint records with field validators on init and update requests.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3554-L3564"
+    why: The user_api_key_has_admin_view predicate that checks PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY roles.
+dod:
+  - text: All six CloudZero endpoint records are defined with their fields, defaults and descriptions matching LiteLLM, including timezone default "UTC" and operation default "replace_hourly".
+    proof: [models-compile, validator-tests]
+  - text: All seven Vantage endpoint records are defined with their fields, defaults and descriptions matching LiteLLM, including base_url default "https://api.vantage.sh".
+    proof: [models-compile, validator-tests]
+  - text: VantageInitRequest and VantageSettingsUpdate validate that api_key and integration_token are non-empty strings (stripped whitespace).
+    proof: [validator-tests]
+  - text: Vantage dry-run requests default limit to 500; actual export requests have limit as optional with no default.
+    proof: [validator-tests]
+  - text: The user_api_key_has_admin_view predicate returns true for PROXY_ADMIN and PROXY_ADMIN_VIEW_ONLY roles.
+    proof: [predicate-tests]
+  - text: Every mutant in the models and predicate is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: models-compile
+      why: model definitions do not compile or are missing
+      run: cargo build --locked -p betterlite-models -p betterlite-auth
+    - id: validator-tests
+      why: validators do not enforce the Vantage constraints or field defaults are wrong
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/finops_management/)'
+    - id: predicate-tests
+      why: the admin read predicate does not correctly identify admin or admin-view roles
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/admin_view_predicate/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - HTTP routing and path registration (handled by B3076 and B3077).
+  - Request/response encoding and serialization (handled by the route handlers).
+  - Authorization enforcement beyond the predicate (handled by the route handlers).
+  - Any FinOps export logic or database operations (handled by B3060-B3075).
+pitfalls:
+  - VantageInitRequest and VantageSettingsUpdate field validators must use the strip() method to reject
+    whitespace-only strings, matching LiteLLM's behavior.
+  - CloudZero's operation field in CloudZeroExportRequest accepts any string without validation; do not add
+    a restricted enum.
+  - Vantage's VantageDryRunRequest.limit defaults to 500 for preview safety; VantageExportRequest.limit
+    is None by default, allowing unbounded export.
+  - The predicate function must not call auth, database or any async methods; it only reads the role
+    value from the supplied API key dict.
+  - Preserve the exact field names, types and docstrings from LiteLLM so that masked fields (api_key_masked,
+    integration_token_masked) are distinct from the raw credentials in init/update requests.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

@@ -1,0 +1,87 @@
+id: B3011
+title: Sweep budget tiers and invalidate paged customer caches
+description: >-
+  Implement `betterlite-db::budget_tier_sweep`, the phase that reads and resets expired budget tiers in bounded chunks.
+
+  For each chunk of due budget tiers, collect all linked rows (team members, keys, organizations, tags, model access groups, projects, end users) using existing B3010 cascade logic. Commit the cascaded resets in one transaction, advancing each tier's budget_reset_at to the next window. Treat failed cascades as no progress so the phase stops and the due tiers stay queued for retry.
+
+  After each successful commit, invalidate the spend counters and cache keys the cascade touched using B3010's cache-invalidation logic for non-enduser entities. Walk all customers linked to the tier in keyset-paged chunks without enumerating them into bind parameters, dropping cached spend after each page and recording a failed page as truncated rather than claiming complete invalidation. Report progress to service logging with the count of budgets found and endusers invalidated; the advanced count is tracked internally for draining detection only.
+scope:
+  paths:
+    - crates/betterlite-db/**
+    - Cargo.toml
+  lint_tables: true
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L445-L451"
+    why: "_budget_cascade_event_metadata builds the event dict from the cascade and enduser walk."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L680-L730"
+    why: "_invalidate_enduser_caches walks all customers linked to tiers in keyset-paged chunks; _invalidate_enduser_page and _fetch_enduser_page implement one page and its cursor for the next."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L852-L938"
+    why: "_reset_expired_budget_cascade reads due tiers, collects the cascade, commits resets, invalidates caches, and reports progress. reset_budget_for_litellm_budget_table and _reset_budget_for_litellm_budget_table_chunk drive the chunked phase."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5064-L5076"
+    why: "PrismaClient.get_data budget find_all with reset_at filter: fetches tiers WHERE budget_duration IS NOT NULL AND (budget_reset_at IS NULL OR budget_reset_at < reset_at), treating NULL reset_at as due when budget_duration is set."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1815-L1816"
+    why: "RESET_BUDGET_JOB_BATCH_SIZE default (500) and env var override."
+dod:
+  - text: "The tier phase reads due budget tiers in chunks of RESET_BUDGET_JOB_BATCH_SIZE, including tiers with budget_duration set and budget_reset_at NULL or less than the current time."
+    proof: [tier-read-cases]
+  - text: "Tiers with budget_duration set and budget_reset_at NULL are treated as due for reset (to prevent silent spend accumulation over the tier lifetime)."
+    proof: [tier-null-reset-cases]
+  - text: "Each chunk collects and commits a budget cascade using B3010's cascade/commit logic, and treats cascade failure as no progress."
+    proof: [tier-cascade-cases]
+  - text: "After a successful cascade commit, B3010's non-enduser cache invalidation runs; then enduser caches are invalidated in keyset-paged chunks, with counter drops after each page."
+    proof: [enduser-invalidation-cases]
+  - text: "Service logging is called after each chunk with start_time, end_time, call_type, duration, and event_metadata holding budget count, enduser counts, and truncation status."
+    proof: [tier-progress-cases]
+  - text: "On cascade failure, the chunk returns no progress; the phase stops and the due tiers stay queued for the next run."
+    proof: [tier-failure-cases]
+  - text: "The budget_reset_at timestamp is computed using B3000 reset settings and the tier's budget_duration."
+    proof: [tier-cascade-cases]
+  - text: "A failed enduser page is recorded as truncated; invalidation continues on the next page until the walk is complete or hits an error."
+    proof: [enduser-page-truncation-cases]
+pitfalls:
+  - "Tiers with budget_duration set must be included in the tier reset phase; they reset on their own schedule per-tier (B3011 owns only tiers where budget_duration IS NOT NULL)."
+  - "Tiers with budget_duration set but budget_reset_at NULL must be included in resets; without this they would never be reset and spend would accumulate for the lifetime of the tier, silently exceeding max_budget."
+  - "Treat a cascade failure (zero cascades collected or commit error) as _NO_PROGRESS so the phase stops and does not re-read stale rows forever."
+  - "B3010's cache invalidation happens after the database commit for non-enduser entities; then B3011 walks enduser caches in pages, dropping each one after its page succeeds."
+  - "The enduser walk is keyset-paged and uncapped (customers on a tier are unbounded). A failed page is recorded with cursor=None and truncated=True; later pages are not attempted on that cascade."
+  - "Service logging is called asynchronously with asyncio.create_task to avoid blocking the reset phase on an unresponsive logging service."
+  - "The tier count returned to is_phase_drained counts budgets whose new reset_at cleared the cutoff, not the count fetched; a chunk with no progress advances zero."
+out_of_scope:
+  - "Budget cascade collection, commit, and non-enduser cache invalidation; those are owned by B3010."
+  - "Service-logging callback assembly; this task calls an injected service_logging_obj and does not depend on B012."
+  - "Database retry logic and spend-counter invalidation transport; those are owned by B3009."
+  - "Budget reset settings parsing and storage; B3000 owns those and this task reads them through the constructor."
+deviations:
+  - what: "Enduser cache invalidation is split into keyset-paged reads that do not enumerate all customer IDs at once, instead fetching and invalidating one page of cached spend at a time."
+    why: "Invalidating all customers in a single query would materialize every user ID matching the budget filters, requiring all those IDs in a single bind parameter set. Keyset pagination on user_id bounds memory use and makes each query independent of page count."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L680-L730"
+review_level: security
+budget:
+  max_changed_lines: 200
+  max_new_expects: 0
+checks:
+  optional: []
+  commands:
+    - id: tier-read-cases
+      why: Tier reading is missing, does not page budgets, or fails to detect progress
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_tier_sweep::tier_read/)'
+    - id: tier-null-reset-cases
+      why: Tiers with budget_duration set and budget_reset_at NULL are not treated as due, or are excluded from resets
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_tier_sweep::tier_null_reset/)'
+    - id: tier-cascade-cases
+      why: Cascade collection/commit is missing or does not set budget_reset_at correctly
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_tier_sweep::tier_cascade/)'
+    - id: enduser-invalidation-cases
+      why: Enduser cache invalidation is missing, not paged, or happens before commit
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_tier_sweep::enduser_invalidation/)'
+    - id: enduser-page-truncation-cases
+      why: Failed pages are not recorded as truncated or invalidation continues past failed pages
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_tier_sweep::enduser_page_truncation/)'
+    - id: tier-progress-cases
+      why: Progress is not reported to service logging or event_metadata is missing counts/truncation status
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_tier_sweep::tier_progress/)'
+    - id: tier-failure-cases
+      why: Cascade failure does not return no progress or failed cascades stop the phase instead of queuing for retry
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_tier_sweep::tier_failure/)'
+oracle_cases: []

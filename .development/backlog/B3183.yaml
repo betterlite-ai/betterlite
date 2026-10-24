@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Provider form catalog from Custom through Empower
 status: todo
 depends_on: []
-file: null
+file: tasks/B3183-provider-fields-custom-empower.yaml
 covers:
   - "litellm/proxy/public_endpoints/provider_create_fields.json"
 parent: B077

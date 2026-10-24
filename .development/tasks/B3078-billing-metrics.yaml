@@ -1,0 +1,109 @@
+id: B3078
+title: Configure and flush the optional billing metrics recorder
+description: >-
+  Add crates/betterlite-billing to build and manage the optional mTLS OTLP metrics recorder.
+  The recorder increments one counter per billable request, reporting deployment identity through a validated TLS client certificate instead of a license key in the payload.
+  Build the configuration loader that reads LITELLM_BILLING_METRICS_ENDPOINT, LITELLM_BILLING_METRICS_CLIENT_CERT, LITELLM_BILLING_METRICS_CLIENT_KEY, the optional LITELLM_BILLING_METRICS_CA_CERT, and LITELLM_BILLING_METRICS_EXPORT_INTERVAL_MS (default 60000 ms) environment variables.
+  Each certificate variable accepts either a filesystem path or inline PEM content beginning with -----BEGIN; inline PEM is written to a private temporary directory on startup.
+  Return None from the loader when any of the three required values (endpoint, client cert, client key) are missing, logging a warning that names the variable.
+  Return None when credential resolution fails (permission denied, unwritable temp directory) and log a warning with the system error.
+  Return None when a resolved path does not exist or is not readable, logging a warning that lists every unreadable path by its variable name.
+  The endpoint must end with /v1/metrics after trimming trailing slashes; add that suffix if absent.
+  Build the MeterProvider with OpenTelemetry's OTLPMetricExporter presenting the client certificate and key, with the system trust store as default and a custom CA cert only when provided.
+  Build a BillingMetricsRecorder that owns the provider and increments a counter named litellm.enterprise.billable_requests with attributes for the billable category, HTTP route, status code and optional model ID.
+  Add a module-local ActiveRecorderRegistry that holds one recorder at a time, with set and pop methods for factory and shutdown hooks.
+  Build a factory function that takes premium (bool), license_data (optional dict/record with user_id key), and litellm_version (str) parameters.
+  The factory returns None when the deployment is not licensed (debug log), loads config and returns None on any config error, builds the provider and recorder and returns None if the exporter fails (warning log).
+  The factory extracts the license ID from the user_id key of the license_data dict, which becomes the litellm.license.id attribute on exported metrics (only present when license_data provides a user_id).
+  Build a shutdown function that pops the active recorder and calls its shutdown with a five-second timeout, logging a warning if the final flush fails.
+  The factory logs success with the endpoint and export interval in milliseconds when the recorder starts.
+  Never gate configured metering on the premium flag after the initial check; an unlicensed deployment gets no recorder, but a licensed one with environment configuration gets metering regardless of the tier decision.
+  Add configuration in betterlite-config for the four environment variable names (endpoint, client cert, client key, CA cert) and the export interval (default 60 seconds).
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-billing/**
+    - crates/betterlite-config/src/types.rs
+    - crates/betterlite-config/src/loader.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L70-L113
+    why: The helper functions that build the meter provider, endpoint URL, resource attributes and billable attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L76-L82
+    why: The _resource_attributes function that builds service.name, litellm.version and optional litellm.license.id attributes; license_id comes from the user_id key of license_data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L119-L133
+    why: The BillingMetricsRecorder class, its constructor, record and shutdown methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L136-L146
+    why: The export interval parsing with invalid-value fallback and warning log; LITELLM_BILLING_METRICS_EXPORT_INTERVAL_MS env var at line 39 with default 60000 ms at line 40.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L156-L261
+    why: Configuration loading, credential path resolution, PEM detection and writing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L264-L323
+    why: The ActiveRecorderRegistry, the factory and shutdown functions; factory takes premium, license_data (optional dict), and litellm_version at lines 284-285.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/enterprise_billing/billing_metrics.py#L59-L68
+    why: The BillingMetricsConfig dataclass with export_interval_ms and litellm_version fields.
+  - url: https://docs.rs/opentelemetry/latest/opentelemetry/
+    why: The OpenTelemetry SDK API for meters, providers and counter attributes.
+  - url: https://docs.rs/opentelemetry-otlp/0.21/opentelemetry_otlp/
+    why: The OTLP/HTTP exporter with client certificate support.
+dod:
+  - text: The four environment variables (ENDPOINT, CLIENT_CERT, CLIENT_KEY, CA_CERT) load correctly from the environment, and each accepts either a file path or inline PEM content.
+    proof: [config-tests]
+  - text: LITELLM_BILLING_METRICS_EXPORT_INTERVAL_MS loads from the environment with default 60000 ms.
+    proof: [config-tests]
+  - text: An invalid LITELLM_BILLING_METRICS_EXPORT_INTERVAL_MS value (unparseable as an integer) logs a warning naming the env var and the value, then falls back to 60000 ms.
+    proof: [config-tests]
+  - text: Inline PEM content is detected by the -----BEGIN prefix, written to a private temporary directory with restrictive permissions (0o600), and the resolved path is returned.
+    proof: [config-tests]
+  - text: Missing endpoint, client cert or client key logs a warning naming which variables are absent and returns None.
+    proof: [config-tests]
+  - text: An unreadable certificate file logs a warning naming the variable and the fact that it did not resolve to a readable file, and returns None.
+    proof: [config-tests]
+  - text: A credential resolution failure (OSError) logs a warning with the system error and returns None.
+    proof: [config-tests]
+  - text: The endpoint is suffixed with /v1/metrics when it does not already end with that path.
+    proof: [config-tests]
+  - text: The resource attributes are built with service.name set to "litellm-proxy", litellm.version from config.litellm_version, and litellm.license.id only when config.license_id is present (extracted from license_data's user_id key).
+    proof: [billing-tests]
+  - text: The BillingMetricsRecorder increments a counter with attributes for category (from BillableCategory enum value), route, status code and optional model ID.
+    proof: [billing-tests]
+  - text: The recorder's shutdown method flushes with a five-second timeout.
+    proof: [billing-tests]
+  - text: The build_billing_metrics_recorder factory takes premium (bool), license_data (optional dict with user_id key), and litellm_version (str) parameters.
+    proof: [billing-tests]
+  - text: The factory returns None when premium is false (debug log), loads config and returns None on any config error, builds the provider and returns None if initialization fails (warning log).
+    proof: [billing-tests]
+  - text: The factory logs success when the recorder starts, with the endpoint and export interval in milliseconds.
+    proof: [billing-tests]
+  - text: The shutdown_billing_metrics_recorder function pops the active recorder and calls shutdown, logging a warning if the final flush fails, and is idempotent (does nothing if no recorder is active).
+    proof: [billing-tests]
+  - text: Every mutant in the configuration loader and factory is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the configuration crate's tests fail, do not exist, or do not cover billing_metrics configuration
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/billing_metrics_config/)'
+    - id: billing-tests
+      why: the billing metrics recorder, factory or shutdown tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-billing --no-tests=fail
+oracle_cases: []
+deviations:
+  - what: Configured MIT metering is enabled without a premium flag gate; unlicensed deployments get no recorder, but licensed ones with environment configuration meter regardless of tier.
+    why: The repository has no paid tier, so every feature is on. The outline confirms this applies to vendor billing telemetry as well as user-facing features, and no license validation is needed by this code.
+out_of_scope:
+  - OTLP meter/exporter operations are third-party OpenTelemetry library calls, not owned by this task.
+  - Route classification, request middleware and the invocation of record through the recorder contract belong to the middleware or server startup owner.
+  - The factory and shutdown callers in proxy_server.py (factory at lines 2453-2459, shutdown at lines 1147-1148 of the pinned commit) are owned by the server/middleware owner, not this task.
+  - BillableCategory is consumed as an existing wire-valued input; what makes a request billable stays outside this entry.
+pitfalls:
+  - Inline PEM is written to a temporary directory created with mkdtemp, which has mode 0o700; the key file inside it at 0o600 is unreachable by other users, and both directory and file are never deleted, so write PEM only once at startup.
+  - The OTLP exporter takes certificate paths and a custom CA cert as file paths, never as inline content; the credential resolver must convert inline PEM to paths before passing to the exporter.
+  - The exporter falls back to the system trust store when the CA cert is None; set it only for test collectors whose server certificate is not on the public web PKI.
+  - A missing variable is logged by name, never by value; a variable that is neither a readable path nor recognizable PEM still contains secret material.
+  - The Python code checks premium at the start of the factory and returns a debug log when unlicensed; every other disable path warns, so the absence of a success log is indistinguishable from a silent failure without it.
+  - license_data is Optional[EnterpriseLicenseData], a TypedDict with optional keys; the factory extracts user_id (if present) and passes it as license_id in the config. A None or empty dict results in no license_id attribute on the exported metrics.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
