@@ -1,0 +1,41 @@
+use serde_json::value::RawValue;
+
+// LiteLLM formats the label with %s, so a JSON value prints the way Python's str() shows it
+pub(crate) fn python_text(value: Option<&RawValue>) -> String {
+    match value.map(RawValue::get) {
+        None | Some("null") => "None".to_owned(),
+        Some("true") => "True".to_owned(),
+        Some("false") => "False".to_owned(),
+        Some(text) => serde_json::from_str(text).unwrap_or_else(|_| text.to_owned()),
+    }
+}
+
+pub(crate) fn python_repr(text: &str) -> String {
+    let quote = if text.contains('\'') && !text.contains('"') {
+        '"'
+    } else {
+        '\''
+    };
+    let mut repr = String::from(quote);
+    for character in text.chars() {
+        match character {
+            '\\' => repr.push_str("\\\\"),
+            '\n' => repr.push_str("\\n"),
+            '\r' => repr.push_str("\\r"),
+            '\t' => repr.push_str("\\t"),
+            _ if character == quote => repr.extend(['\\', quote]),
+            _ if character.is_control() => {
+                let code = u32::from(character);
+                repr.push_str("\\x");
+                repr.extend(
+                    [code >> 4_u8, code & 0xF]
+                        .into_iter()
+                        .filter_map(|digit| char::from_digit(digit, 16)),
+                );
+            }
+            _ => repr.push(character),
+        }
+    }
+    repr.push(quote);
+    repr
+}
