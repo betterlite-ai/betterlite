@@ -1,0 +1,91 @@
+id: B202
+title: OpenAI text completions
+description: >-
+  Add typed non-streaming OpenAI text completions to betterlite-openai and expose the four completion route aliases
+  through the existing server auth/provider framework. Use the text-completion-openai identity where LiteLLM selects
+  it and pass configured credentials/base/deadline through the existing HTTP layer. Model string, string-list, token-list
+  and token-list-list prompts, choice text, usage, finish reasons and logprobs without converting them to chat responses
+  on the public completion endpoint. Add supported completion parameters with exact numeric JSON serialization,
+  keeping trusted controls out of the upstream body. Reuse B011 errors and add request/response parser fuzz targets,
+  seeded from the HTTP oracle cases. Streaming and chat-to-text bridging are B203; a requested stream must remain
+  an explicit unsupported result until that task lands. Budget 280 wire/provider lines, 130 route wiring and 330
+  tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-openai/**
+  - crates/betterlite-provider/**
+  - crates/betterlite-server/**
+  - crates/betterlite-config/**
+  - tools/oracle/cases/completions/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12099-L12175
+  why: Completion aliases and common request routing.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/utils.py#L13-L45
+  why: Token prompts and message-to-prompt conversion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/transformation.py#L15-L158
+  why: Completion parameter mapping and separate chat conversion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L19-L214
+  why: Text endpoint requests, control exclusion and response handling.
+dod:
+- text: All prompt variants, route aliases, parameters, response choices and provider errors match the listed HTTP
+    cases on both sides.
+  proof:
+  - oracle
+- text: Auth, configured destination/deadline and existing error/header policy are reused; controls cannot leak
+    upstream.
+  proof:
+  - text-completion-tests
+- text: Request, response and extended config parsers replay nonempty corpora without panic or oversized allocation.
+  proof:
+  - text-request-corpus
+  - text-response-corpus
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: text-completion-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/text_completion/)'
+  - id: text-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/text_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/text_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_text_request_corpus)'
+  - id: text-response-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/text_response.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/text_response)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_text_response_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/completions/string-prompt.yaml
+- tools/oracle/cases/completions/strings-prompt.yaml
+- tools/oracle/cases/completions/tokens-prompt.yaml
+- tools/oracle/cases/completions/token-lists-prompt.yaml
+- tools/oracle/cases/completions/empty-prompt.yaml
+- tools/oracle/cases/completions/invalid-mixed-prompt.yaml
+- tools/oracle/cases/completions/parameters-logprobs.yaml
+- tools/oracle/cases/completions/unversioned-path.yaml
+- tools/oracle/cases/completions/engines-path.yaml
+- tools/oracle/cases/completions/deployments-path.yaml
+- tools/oracle/cases/completions/upstream-400.yaml
+- tools/oracle/cases/completions/upstream-429.yaml
+deviations: []
+out_of_scope:
+- Streaming and completion/chat bridge are B203; moderation is B015.
+- OpenAI SDK implicit retries are not copied; retries arrive with B017.
+pitfalls:
+- Token IDs must remain numbers in their original nested shape, not strings or decoded chat content.
+- The public completion endpoint returns text choices, not chat message choices.
+- Control max_retries must never appear as a provider body parameter.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
