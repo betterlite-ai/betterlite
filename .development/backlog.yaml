@@ -2704,11 +2704,12 @@ tasks:
     - B334
     - B330
     - B327
+    - B301
+    - B002
     file: tasks/B359-complexity-turn-overrides.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
     - litellm/router_strategy/complexity_router/stall_detector.py
-
   - id: B360
     milestone: M2 routing
     title: Typed local and Redis routing state
