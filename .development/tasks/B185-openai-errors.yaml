@@ -1,20 +1,18 @@
 id: B185
 title: OpenAI-family error mapping
 description: >-
-  Move OpenAI-family error classification into betterlite-error/openai using B184's taxonomy and B187's secret scrubber.
-  Parse bounded error bodies from OpenAI, Azure, OpenAI-like, OpenRouter and litellm_proxy shapes into typed records,
-  keeping unknown payload only in a named passthrough field where needed. Implement the shared exception checkers,
-  explicit body-code extraction and generic status fallback; preserve classification precedence and distinguish
-  a real HTTP status from a synthesized one. Feed the existing OpenAI adapter/server through this mapper, with typed
-  transport sources retained and raw provider text kept out of Display/Debug/client messages. Add provider_error
-  helper operations using synthetic HTTP exceptions plus HTTP oracle cases for the installed OpenAI path. Add provider_error
-  fuzz target for error bytes, including invalid UTF-8, HTML, null/array bodies and nested oversized envelopes.
-  Budget 330 classification/parser lines, 100 integration and 320 tests. Seed B171's shared helper_case corpus with
-  every added operation and replay it through the common typed parser.
+  Finish OpenAI error classification with _map_openai_exception (275-524) and exception_type preamble/openai/litellm_proxy
+  branches (2358-2485) in crates/betterlite-error/src/dispatch.rs. Use B236 shared extraction/parser/status, B237
+  Azure/OpenRouter and B245 OpenAI-like classifiers. Preserve timeout-string precedence before provider dispatch
+  and already-mapped/guardrail identity. B186 extends the same dispatch.rs with native families. Integrate B004/B005
+  error handling before the first stream chunk, retaining typed causes and B187 redaction. Extend provider_error
+  seeds for these branches. Budget 290 OpenAI/preamble, 100 adapters, 290 tests/fuzz and 100 integration (780 total).
+  Write the behavior rstest functions b185_openai_error_tests_behavior in adjacent tests.rs files, with a named
+  case for each behavior and failure in the DoD; corpus replay tests have separate names. Register helper operations
+  provider_error in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its
+  own Rust and Python adapter file and corpus seed.
 scope:
   paths:
-  - Cargo.toml
-  - crates/betterlite-error/Cargo.toml
   - crates/betterlite-error/src/lib.rs
   - crates/betterlite-error/src/error.rs
   - crates/betterlite-error/src/openai.rs
@@ -32,22 +30,33 @@ scope:
   - tools/oracle/cases/helpers/openai-errors/**
   - tools/oracle/cases/errors/**
   - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-error/src/dispatch.rs
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L39-L272
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L39-L272
   why: Shared classifiers, safe response extraction and proxy exception reconstruction.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L275-L524
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L275-L524
   why: OpenAI-specific precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L732-L851
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L732-L851
   why: OpenAI-like errors.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1926-L2349
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1926-L2349
   why: Azure, OpenRouter and generic status mapping.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358-L2485
+  why: Preamble and OpenAI/proxy dispatch owned here.
 dod:
-- text: The listed provider error cases preserve classifier/status precedence and compare complete error metadata
-    with Python.
+- text: >-
+    The listed provider error cases preserve classifier/status precedence and compare complete error metadata with
+    Python.
   proof:
   - oracle
-- text: HTML, malformed JSON and invalid UTF-8 never panic or leak raw bodies, while typed causes remain inspectable
+  - helper-python
+- text: >-
+    HTML, malformed JSON and invalid UTF-8 never panic or leak raw bodies, while typed causes remain inspectable
     internally.
   proof:
   - openai-error-tests
@@ -55,7 +64,8 @@ dod:
 - text: Vendor cookies, CORS headers, authorization and query secrets are removed from all exposed diagnostics.
   proof:
   - openai-error-tests
-- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
 checks:
@@ -64,34 +74,34 @@ checks:
   commands:
   - id: openai-error-tests
     why: the required tests fail or the filter selects no tests
-    run: cargo nextest run --locked -p betterlite-error -p betterlite-openai -p betterlite-server --no-tests=fail
-      -E 'test(/openai_error|provider_error/)'
+    run: >-
+      cargo nextest run --locked -p betterlite-error -p betterlite-openai -p betterlite-server --no-tests=fail -E
+      'test(/::b185_openai_error_tests_behavior($|::)/) - test(/replays_the_/)'
   - id: provider-error-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f crates/betterlite-error/fuzz/fuzz_targets/provider_error.rs && test -n "$(ls -A crates/betterlite-error/fuzz/corpus/provider_error)"
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-error/fuzz/corpus/provider_error)"
+      && test -f crates/betterlite-error/fuzz/fuzz_targets/provider_error.rs && test -n "$(ls -A crates/betterlite-error/fuzz/corpus/provider_error)"
       && cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(replays_the_provider_error_corpus)'
   - id: helper-python
     why: the oracle adapters fail strict Python checks
     run: >-
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
-      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
-      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'provider_error' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/openai-errors/context-before-status.yaml
 - tools/oracle/cases/helpers/openai-errors/rate-limit-before-context.yaml
 - tools/oracle/cases/helpers/openai-errors/model-not-found.yaml
 - tools/oracle/cases/helpers/openai-errors/content-policy.yaml
 - tools/oracle/cases/helpers/openai-errors/invalid-encrypted-content.yaml
-- tools/oracle/cases/helpers/openai-errors/azure-body-code.yaml
-- tools/oracle/cases/helpers/openai-errors/openrouter-provider-error.yaml
 - tools/oracle/cases/helpers/openai-errors/proxy-roundtrip.yaml
-- tools/oracle/cases/helpers/openai-errors/synthesized-status.yaml
-- tools/oracle/cases/helpers/openai-errors/unknown-status.yaml
 - tools/oracle/cases/chat/upstream-400.yaml
 - tools/oracle/cases/chat/upstream-401.yaml
 - tools/oracle/cases/chat/upstream-429.yaml
@@ -99,10 +109,17 @@ oracle_cases:
 - tools/oracle/cases/errors/upstream-html.yaml
 - tools/oracle/cases/errors/upstream-null.yaml
 - tools/oracle/cases/errors/upstream-504.yaml
+- tools/oracle/cases/helpers/openai-errors/timeout-before-status.yaml
+- tools/oracle/cases/helpers/openai-errors/already-mapped.yaml
+- tools/oracle/cases/helpers/openai-errors/guardrail-identity.yaml
+- tools/oracle/cases/errors/stream-upstream-500.yaml
 deviations: []
 out_of_scope:
 - Native non-OpenAI classifiers are B186.
 - No retry or fallback is initiated by classification.
+- >-
+  Shared checkers/parser/status B236; Azure/OpenRouter B237; OpenAI-like B245; native classifiers and remainder
+  of exception_type B186; exception_logging and _add_key_name_and_team_to_alert B012.
 pitfalls:
 - Python checks error strings before some status branches, so a status-only table is insufficient.
 - Ignore only client message wording, not type/code/param or header semantics.

@@ -2021,10 +2021,16 @@ tasks:
     milestone: M1 openai data plane
     title: OpenAI-family error mapping
     status: todo
-    depends_on: [B184, B187]
+    depends_on:
+    - B184
+    - B187
+    - B005
+    - B236
+    - B237
+    - B245
     file: tasks/B185-openai-errors.yaml
     covers:
-      - "litellm/litellm_core_utils/exception_mapping_utils.py"
+    - litellm/litellm_core_utils/exception_mapping_utils.py
   - id: B186
     milestone: M1 openai data plane
     title: Native provider error classifiers
@@ -2506,3 +2512,35 @@ tasks:
     file: tasks/B235-media-metadata.yaml
     covers:
     - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B236
+    milestone: M1 openai data plane
+    title: Shared error facts, parsing and status fallbacks
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    file: tasks/B236-error-facts.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B237
+    milestone: M1 openai data plane
+    title: Azure and OpenRouter error classifiers
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B237-azure-openrouter-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B245
+    milestone: M1 openai data plane
+    title: OpenAI-like provider error classification
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B245-openai-like-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
