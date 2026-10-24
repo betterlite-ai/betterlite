@@ -1,0 +1,148 @@
+id: B829
+title: Budget create, patch and inspection routes
+description: >-
+  Implement typed /budget/new, update, info, settings, list and delete routes against BudgetRepository.
+  Preserve fixed field descriptors in budget/settings, linked-row constraints, omission/null/zero behavior
+  and budget_duration reset times. Decimal values cross wire/database adapters without changing the pinned
+  SQL column types.
+
+
+  Build the production budget_api module in betterlite-server; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/budget_management_endpoints.py:
+  new_budget (L40-L116; 64 source lines), update_budget (L124-L202; 66 source lines), info_budget (L210-L231;
+  18 source lines), budget_settings (L239-L300; 50 source lines), list_budget (L308-L328; 17 source lines),
+  delete_budget (L336-L362; 22 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /budget/new -> new_budget; POST /budget/update
+  -> update_budget; POST /budget/info -> info_budget; GET /budget/settings -> budget_settings; GET /budget/list
+  -> list_budget; POST /budget/delete -> delete_budget. For each route send a typed successful request,
+  an invalid or missing target, and a caller lacking that route permission through B001 HttpCase against
+  the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
+  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
+  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
+  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
+  partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 237 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  237 production, 151 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 453 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/budget_api.rs
+    - crates/betterlite-server/src/budget_api/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/budget-api/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L1-L362
+    why: Pinned implementation and exact ownership boundary for budget_api.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2042-L2071
+    why: BudgetNewRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2074-L2075
+    why: BudgetRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2078-L2079
+    why: BudgetDeleteRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L40-L116
+    why: Own new_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L124-L202
+    why: Own update_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L210-L231
+    why: Own info_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L239-L300
+    why: Own budget_settings; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L308-L328
+    why: Own list_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/budget_management_endpoints.py#L336-L362
+    why: Own delete_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: new_budget, patch_null_versus_zero,
+      budget_info, budget_settings_fields, linked_delete, list_budget, unauthorized_budget.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^budget_api::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/budget-api/post--budget-new-success.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-new-invalid-target.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-new-unauthorized-caller.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-update-success.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-update-invalid-target.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-info-success.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-info-invalid-target.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-info-unauthorized-caller.yaml
+  - tools/oracle/cases/management/budget-api/get--budget-settings-success.yaml
+  - tools/oracle/cases/management/budget-api/get--budget-settings-invalid-target.yaml
+  - tools/oracle/cases/management/budget-api/get--budget-settings-unauthorized-caller.yaml
+  - tools/oracle/cases/management/budget-api/get--budget-list-success.yaml
+  - tools/oracle/cases/management/budget-api/get--budget-list-invalid-target.yaml
+  - tools/oracle/cases/management/budget-api/get--budget-list-unauthorized-caller.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-delete-success.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-delete-invalid-target.yaml
+  - tools/oracle/cases/management/budget-api/post--budget-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/budget-api/new-budget.yaml
+  - tools/oracle/cases/management/budget-api/patch-null-versus-zero.yaml
+  - tools/oracle/cases/management/budget-api/budget-info.yaml
+  - tools/oracle/cases/management/budget-api/budget-settings-fields.yaml
+  - tools/oracle/cases/management/budget-api/linked-delete.yaml
+  - tools/oracle/cases/management/budget-api/list-budget.yaml
+  - tools/oracle/cases/management/budget-api/unauthorized-budget.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A zero budget and an explicit null budget carry different reset semantics.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

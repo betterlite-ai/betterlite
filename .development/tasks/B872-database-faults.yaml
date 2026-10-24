@@ -1,0 +1,191 @@
+id: B872
+title: Native database fault classification
+description: >-
+  Implement DbFault classification from SQLSTATE and preserved transport causes. Distinguish permanent
+  schema/data errors, deadlocks, read-only transactions, unavailable services and reconnectable transport
+  failures. Preserve allow_requests_on_db_unavailable=false as a typed policy input; the authenticated
+  fallback identity is owned by B757. Do not emulate Prisma exception names using arbitrary substring
+  matching.
+
+
+  Build the production database_faults module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/exception_handler.py:
+  _batch_postgres_sqlstate (L47-L51; 5 source lines), PrismaDBExceptionHandler.is_database_connection_error
+  (L85-L112; 24 source lines), PrismaDBExceptionHandler.is_database_infrastructure_error (L115-L149; 32
+  source lines), PrismaDBExceptionHandler.is_prisma_data_error (L152-L172; 18 source lines), PrismaDBExceptionHandler.is_database_transport_error
+  (L175-L215; 39 source lines), PrismaDBExceptionHandler.is_prisma_error (L218-L221; 3 source lines),
+  PrismaDBExceptionHandler.is_deadlock_error (L224-L237; 13 source lines), PrismaDBExceptionHandler.postgres_sqlstate
+  (L240-L251; 11 source lines), PrismaDBExceptionHandler.is_read_only_transaction_error (L254-L263; 9
+  source lines), PrismaDBExceptionHandler.is_prisma_engine_internal_error (L266-L292; 24 source lines),
+  PrismaDBExceptionHandler.is_permanent_database_fault (L352-L365; 13 source lines), _coerce_timeout (L445-L451;
+  7 source lines), _DBReconnectClient.attempt_db_reconnect (L460-L466; 7 source lines), call_with_db_reconnect_retry
+  (L469-L590; 102 source lines), _exception_types (L54-L62; 8 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): allow_requests_on_db_unavailable=False.
+
+
+  Add the database_faults operation under B856 Management::database. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a database-faults-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Write betterlite-config::database_faults::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 315 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  315 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 608 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  This component performs no SQL: test its cache/sink or SQLSTATE/transport inputs directly with typed
+  collaborators. Real database execution belongs to B713-B715 and the mutation/repository owners; no fake
+  Postgres row or rollback test is required here.
+scope:
+  paths:
+    - crates/betterlite-db/src/database_faults.rs
+    - crates/betterlite-db/src/database_faults/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - tools/oracle/src/helpers/database_faults.rs
+    - tools/oracle/src/helpers/database_faults/**
+    - tools/oracle/helpers/database_faults.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/database-faults/**
+    - tools/oracle/fuzz/corpus/helper_case/database-faults-*
+    - crates/betterlite-db/src/database_faults/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/database_faults.rs
+    - crates/betterlite-config/src/database_faults/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/database-faults-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L47-L51
+    why: Own _batch_postgres_sqlstate; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L85-L112
+    why: Own PrismaDBExceptionHandler.is_database_connection_error; preserve caller-visible values and
+      failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L115-L149
+    why: Own PrismaDBExceptionHandler.is_database_infrastructure_error; preserve caller-visible values
+      and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L152-L172
+    why: Own PrismaDBExceptionHandler.is_prisma_data_error; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L175-L215
+    why: Own PrismaDBExceptionHandler.is_database_transport_error; preserve caller-visible values and
+      failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L218-L221
+    why: Own PrismaDBExceptionHandler.is_prisma_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L224-L237
+    why: Own PrismaDBExceptionHandler.is_deadlock_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L240-L251
+    why: Own PrismaDBExceptionHandler.postgres_sqlstate; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L254-L263
+    why: Own PrismaDBExceptionHandler.is_read_only_transaction_error; preserve caller-visible values and
+      failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L266-L292
+    why: Own PrismaDBExceptionHandler.is_prisma_engine_internal_error; preserve caller-visible values
+      and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L352-L365
+    why: Own PrismaDBExceptionHandler.is_permanent_database_fault; preserve caller-visible values and
+      failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L445-L451
+    why: Own _coerce_timeout; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L460-L466
+    why: Own _DBReconnectClient.attempt_db_reconnect; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L469-L590
+    why: Own call_with_db_reconnect_retry; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L54-L62
+    why: Own _exception_types; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L1-L6
+    why: allow_requests_on_db_unavailable default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: permanent_fault_no_retry,
+      data_error_not_outage, deadlock_sqlstate, allow_outage_flag.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_faults::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/database_faults.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-faults-*")"
+        && grep -rlq "database_faults" tools/oracle/fuzz/corpus/helper_case/database-faults-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_faults::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-faults-*")"
+        && grep -rlq "allow_requests_on_db_unavailable" crates/betterlite-config/fuzz/corpus/config_yaml/database-faults-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/database-faults/permanent-fault-no-retry.yaml
+  - tools/oracle/cases/helpers/database-faults/data-error-not-outage.yaml
+  - tools/oracle/cases/helpers/database-faults/deadlock-sqlstate.yaml
+  - tools/oracle/cases/helpers/database-faults/allow-outage-flag.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/db/exception_handler.py: B1217 owns _exception_chain (L29-L36), _database_service_unavailable_errors
+    (L39-L44), PrismaDBExceptionHandler.should_allow_request_on_db_unavailable (L71-L82), PrismaDBExceptionHandler.is_database_service_unavailable_error
+    (L295-L349), PrismaDBExceptionHandler.database_unavailable_message (L368-L381), PrismaDBExceptionHandler.service_unavailable_proxy_exception
+    (L384-L390), PrismaDBExceptionHandler.find_database_service_unavailable_error_in_chain (L393-L403),
+    PrismaDBExceptionHandler.is_database_service_unavailable_error_in_chain (L406-L419), PrismaDBExceptionHandler.handle_db_exception
+    (L422-L435).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A data error is not a connection outage and must never enable the restricted fallback token.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

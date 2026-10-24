@@ -1,0 +1,144 @@
+id: B795
+title: Bulk user update endpoint
+description: >-
+  Implement /user/bulk_update using the single-user patch service and bulk creation/deletion helpers where
+  the source dispatches them. Preserve selection validation, row-local errors, password preflight and
+  bounded processing without silently ignoring failed updates.
+
+
+  Build the production user_bulk_update module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/internal_user_endpoints.py:
+  bulk_update_processed_users (L1756-L1831; 64 source lines), bulk_user_update (L1841-L2064; 188 source
+  lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /user/bulk_update -> bulk_user_update.
+  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
+  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
+  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
+  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
+  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
+  management error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 252 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  252 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 465 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
+  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+scope:
+  paths:
+    - crates/betterlite-server/src/user_bulk_update.rs
+    - crates/betterlite-server/src/user_bulk_update/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/user-bulk-update/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1756-L2064
+    why: Pinned implementation and exact ownership boundary for user_bulk_update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2007-L2018
+    why: UpdateUserRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1756-L1831
+    why: Own bulk_update_processed_users; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1841-L2064
+    why: Own bulk_user_update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: bulk_update_selection,
+      mixed_row_results, password_preflight, permission_denied, partial_db_failure, stable_order.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_bulk_update::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/user-bulk-update/post--user-bulk-update-success.yaml
+  - tools/oracle/cases/management/user-bulk-update/post--user-bulk-update-invalid-target.yaml
+  - tools/oracle/cases/management/user-bulk-update/post--user-bulk-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/user-bulk-update/bulk-update-selection.yaml
+  - tools/oracle/cases/management/user-bulk-update/mixed-row-results.yaml
+  - tools/oracle/cases/management/user-bulk-update/password-preflight.yaml
+  - tools/oracle/cases/management/user-bulk-update/permission-denied.yaml
+  - tools/oracle/cases/management/user-bulk-update/partial-db-failure.yaml
+  - tools/oracle/cases/management/user-bulk-update/stable-order.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
+    _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
+    _invitation_link_table (L157-L163), _organization_table (L166-L172), _team_membership_table (L175-L181),
+    _hash_password_in_dict (L184-L203), _strip_password_from_response (L206-L213), _update_internal_new_user_params
+    (L216-L249), _check_duplicate_user_field (L252-L291), _check_duplicate_user_email (L294-L304), _check_duplicate_user_id
+    (L307-L316), _add_user_to_organizations (L319-L351), _add_user_to_team (L354-L410), _fetch_user_team_ids
+    (L470-L472), ui_get_available_role (L681-L707), get_team_from_list (L710-L720), _is_valid_user_id
+    (L723-L732), get_user_id_from_request (L735-L753), _normalize_user_info_user_id (L756-L760).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B791 owns _enforce_user_info_access
+    (L763-L790), _UserInfoDataClient.get_data (L795-L795), _UserInfoDataClient.get_data (L798-L804), _UserInfoDataClient.get_data
+    (L807-L813), _get_user_info_keys (L816-L824), _get_user_info_teams (L827-L876), _redact_scim_enterprise_metadata
+    (L884-L893), _build_user_info_response (L896-L924), user_info (L934-L1005), _check_user_info_v2_access
+    (L1008-L1064), user_info_v2 (L1074-L1170), _fetch_admin_teams_and_keys_rows (L1173-L1176), _get_user_info_for_proxy_admin
+    (L1179-L1241), _process_keys_for_user_info (L1244-L1283).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B792 owns _update_internal_user_params
+    (L1286-L1341), _schedule_user_update_audit_log (L1344-L1371), _check_user_update_authz (L1374-L1399),
+    _invalidate_user_spend_counter_if_changed (L1402-L1416), _clears_object_permission (L1419-L1428),
+    _invalidate_cached_user_entitlement (L1431-L1458), _update_single_user_helper (L1461-L1648), can_user_call_user_update
+    (L1651-L1663), user_update (L1672-L1753).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B796 owns get_user_key_counts (L2067-L2101),
+    _validate_sort_params (L2104-L2133), _authorize_user_list_request (L2136-L2199), get_users (L2224-L2388).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B797 owns delete_user (L2397-L2604).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B798 owns resolve_user_daily_activity_entity_ids
+    (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1203 owns _resolve_org_filter_for_user_search
+    (L2653-L2716), _resolve_team_org_filter (L2719-L2754), ui_view_users (L2766-L2860), _user_search_where
+    (L2205-L2215).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
+    (L413-L434), add_new_user_to_default_team (L437-L467).'
+  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization:
+    no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Legacy /user/bulk_update uses its own bulk_update_processed_users path, not management_v1 dispatch.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

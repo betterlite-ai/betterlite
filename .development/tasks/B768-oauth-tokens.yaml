@@ -1,0 +1,272 @@
+id: B768
+title: OAuth2 introspection and trusted proxy identity
+description: >-
+  Implement OAuthTokenValidator and TrustedOAuthProxy backend over configured OAUTH_TOKEN_INFO_ENDPOINT,
+  OAUTH_CLIENT_ID/SECRET and field mappings (sub, role, team_id defaults). Preserve POST introspection
+  versus GET token-info selection, missing-active behavior and user-role conversion. Trusted-proxy OAuth
+  headers require NetworkContext trust and configured oauth2_config_mappings. Tokens and Basic credentials
+  never reach logs.
+
+
+  Build the production oauth_tokens module in betterlite-auth; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/oauth2_check.py:
+  Oauth2Handler._is_introspection_endpoint (L21-L41; 19 source lines), Oauth2Handler._prepare_introspection_request
+  (L44-L72; 22 source lines), Oauth2Handler._prepare_token_info_request (L75-L85; 9 source lines), Oauth2Handler._extract_user_info
+  (L88-L110; 20 source lines), Oauth2Handler.check_oauth2_token (L113-L213; 70 source lines). litellm/proxy/auth/oauth2_proxy_hook.py:
+  handle_oauth2_proxy_request (L40-L102; 55 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): OAUTH_TOKEN_INFO_ENDPOINT=None;
+  OAUTH_USER_ID_FIELD_NAME='sub'; OAUTH_USER_ROLE_FIELD_NAME='role'; OAUTH_USER_TEAM_ID_FIELD_NAME='team_id';
+  OAUTH_CLIENT_ID=None; OAUTH_CLIENT_SECRET=None; general_settings.oauth2_config_mappings=None; oauth2_config_mappings=None.
+
+
+  oauth2_config_mappings accepts identity fields user_id, user_email, team_id, team_alias, org_id and
+  models only; user_role is rejected. OAUTH_TOKEN_INFO_ENDPOINT, OAUTH_CLIENT_ID and OAUTH_CLIENT_SECRET
+  default absent; field mapping defaults are sub, role and team_id for ordinary introspection, separately
+  from proxy-header identity.
+
+
+  Add the oauth_tokens operation under B856 Management::jwt. Python calls only the owned MIT helper with
+  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a oauth-tokens-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::oauth_tokens::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This task owns the outside-byte boundary oauth_tokens::decode_oauth_response(&[u8]) -> Result<TypedValue,DecodeError>
+  for introspection/token-info response JSON. Production calls this decoder before its typed policy functions;
+  the cargo-fuzz target oauth_tokens calls that same function. Seed valid, truncated, malformed, duplicate-field
+  and limit-boundary inputs and add oauth_tokens::tests::replays_the_oauth_tokens_corpus. Reuse B002 limits
+  for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap bytes
+  at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs. B733
+  owns crates/betterlite-auth/fuzz; depend on it and register this decoder target without recreating the
+  workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 195 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  195 production, 154 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
+  and 50 config lines, 574 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
+  native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso. Exercise the precise
+  changed setting/output branch and assert its configured status/error/side effects; do not add these
+  differing results to oracle equality cases.
+
+
+  Server wiring tests live under betterlite-server::auth::oauth_tokens::tests: stage_is_registered and
+  failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
+  called. These tests are part of the behavior-test allowance already budgeted above.
+scope:
+  paths:
+    - crates/betterlite-auth/src/oauth_tokens.rs
+    - crates/betterlite-auth/src/oauth_tokens/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/oauth_tokens.rs
+    - tools/oracle/src/helpers/oauth_tokens/**
+    - tools/oracle/helpers/oauth_tokens.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/jwt.rs
+    - tools/oracle/helpers/management/jwt.py
+    - tools/oracle/cases/helpers/oauth-tokens/**
+    - tools/oracle/fuzz/corpus/helper_case/oauth-tokens-*
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/oauth-tokens/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/oauth_tokens.rs
+    - crates/betterlite-config/src/oauth_tokens/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-tokens-*
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/oauth_tokens.rs
+    - crates/betterlite-auth/fuzz/corpus/oauth_tokens/**
+    - crates/betterlite-server/src/auth/oauth_tokens.rs
+    - crates/betterlite-server/src/auth/oauth_tokens/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L1-L213
+    why: Pinned implementation and exact ownership boundary for oauth_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_proxy_hook.py#L1-L102
+    why: Pinned implementation and exact ownership boundary for oauth_tokens.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5465
+    why: JWT settings declaration; only the fields consumed by this task are enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L21-L41
+    why: Own Oauth2Handler._is_introspection_endpoint; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L44-L72
+    why: Own Oauth2Handler._prepare_introspection_request; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L75-L85
+    why: Own Oauth2Handler._prepare_token_info_request; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L88-L110
+    why: Own Oauth2Handler._extract_user_info; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L113-L213
+    why: Own Oauth2Handler.check_oauth2_token; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_proxy_hook.py#L40-L102
+    why: Own handle_oauth2_proxy_request; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/trusted_proxy_utils.py#L1-L84
+    why: require_trusted_proxy_request guards OAuth proxy identity headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L139-L144
+    why: OAUTH_TOKEN_INFO_ENDPOINT default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L140-L145
+    why: OAUTH_USER_ID_FIELD_NAME default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L141-L146
+    why: OAUTH_USER_ROLE_FIELD_NAME default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L142-L147
+    why: OAUTH_USER_TEAM_ID_FIELD_NAME default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L145-L150
+    why: OAUTH_CLIENT_ID default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L146-L151
+    why: OAUTH_CLIENT_SECRET default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_proxy_hook.py#L68-L73
+    why: general_settings.oauth2_config_mappings default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L1-L6
+    why: oauth2_config_mappings default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: introspection_basic_post,
+      token_info_bearer_get, inactive_token, missing_active_default, field_mappings, upstream_error, untrusted_proxy_headers,
+      proxy_user_role_mapping_rejected.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: The production decode_oauth_response decoder is used by the service and its fuzz target and
+      rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
+      native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+  - text: The real server constructor invokes the production auth stage and its failures stop downstream
+      execution.
+    proof:
+      - stage-wiring-tests
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^oauth_tokens::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/oauth_tokens.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/oauth-tokens-*")"
+        && grep -rlq "oauth_tokens" tools/oracle/fuzz/corpus/helper_case/oauth-tokens-* && cargo nextest
+        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^oauth_tokens::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/oauth-tokens-*")"
+        && grep -rlq "OAUTH_TOKEN_INFO_ENDPOINT" crates/betterlite-config/fuzz/corpus/config_yaml/oauth-tokens-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/oauth_tokens.rs && grep -q "oauth_tokens"
+        crates/betterlite-auth/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-auth/fuzz/corpus/oauth_tokens)" && cargo nextest run --locked -p betterlite-auth
+        --no-tests=fail -E 'test(replays_the_oauth_tokens_corpus)'
+    - id: stage-wiring-tests
+      why: The server does not register this production auth stage or discards its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::oauth_tokens::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/oauth-tokens/introspection-basic-post.yaml
+  - tools/oracle/cases/helpers/oauth-tokens/token-info-bearer-get.yaml
+  - tools/oracle/cases/helpers/oauth-tokens/inactive-token.yaml
+  - tools/oracle/cases/helpers/oauth-tokens/missing-active-default.yaml
+  - tools/oracle/cases/helpers/oauth-tokens/field-mappings.yaml
+  - tools/oracle/cases/helpers/oauth-tokens/upstream-error.yaml
+  - tools/oracle/cases/helpers/oauth-tokens/untrusted-proxy-headers.yaml
+  - tools/oracle/cases/helpers/oauth-tokens/proxy-user-role-mapping-rejected.yaml
+  - tools/oracle/cases/auth/oauth-tokens/introspection-basic-post.yaml
+  - tools/oracle/cases/auth/oauth-tokens/token-info-bearer-get.yaml
+  - tools/oracle/cases/auth/oauth-tokens/inactive-token.yaml
+  - tools/oracle/cases/auth/oauth-tokens/missing-active-default.yaml
+  - tools/oracle/cases/auth/oauth-tokens/field-mappings.yaml
+  - tools/oracle/cases/auth/oauth-tokens/upstream-error.yaml
+  - tools/oracle/cases/auth/oauth-tokens/untrusted-proxy-headers.yaml
+  - tools/oracle/cases/auth/oauth-tokens/proxy-user-role-mapping-rejected.yaml
+deviations:
+  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
+      entitlement.
+    why: README Decisions specifies no paid tier and no user/team cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L1-L213
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/oauth2_check.py#L21-L41
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+pitfalls:
+  - The six-field OAuth2 proxy allowlist includes models but excludes user_role.
+  - Proxy-header trust checks run before mapped header values become identity.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: security

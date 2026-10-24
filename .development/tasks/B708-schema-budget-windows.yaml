@@ -1,0 +1,198 @@
+id: B708
+title: Postgres migrations for budget windows
+description: >-
+  Preserve this exact ordered cohort of pinned migration.sql files as production SQL under crates/betterlite-db/migrations
+  with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
+  earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
+  the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
+  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
+  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
+  regression cases, not the recovery algorithm.
+
+
+  This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
+  service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
+  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
+  and restart-skips-applied tests, so this data task never depends on the deploy runner.
+
+
+  Build the production schema_budget_windows module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 350 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  350 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 525 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/schema_budget_windows.rs
+    - crates/betterlite-db/src/schema_budget_windows/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/schema_budget_windows/fixtures/**
+    - crates/betterlite-db/migrations/20260811172448_add_shadow_eval/migration.sql
+    - crates/betterlite-db/migrations/20260813180408_add_shadow_eval_direction/migration.sql
+    - crates/betterlite-db/migrations/20260814000000_add_proxy_worker_heartbeat/migration.sql
+    - crates/betterlite-db/migrations/20260817000000_shadow_eval_multi_key/migration.sql
+    - crates/betterlite-db/migrations/20260817143646_add_daily_guardrail_usage_units/migration.sql
+    - crates/betterlite-db/migrations/20260818000000_add_spend_log_timestamps/migration.sql
+    - crates/betterlite-db/migrations/20260818224500_add_shadow_eval_stopped_by/migration.sql
+    - crates/betterlite-db/migrations/20260819000000_shadow_eval_max_budget/migration.sql
+    - crates/betterlite-db/migrations/20260823000000_add_spend_logs_api_key_starttime_index/migration.sql
+    - crates/betterlite-db/migrations/20260824000000_add_gateway_injected_caching_savings_spend/migration.sql
+    - crates/betterlite-db/migrations/20260828000000_shadow_eval_cost_comparison/migration.sql
+    - crates/betterlite-db/migrations/20260829000000_add_model_access_group_budget_table/migration.sql
+    - crates/betterlite-db/migrations/20260831000000_shadow_eval_typed_targets/migration.sql
+    - crates/betterlite-db/migrations/20260831120000_add_litellm_call_id_spend_logs/migration.sql
+    - crates/betterlite-db/migrations/20260831120001_spend_logs_litellm_call_id_index/migration.sql
+    - crates/betterlite-db/migrations/20260901000000_shadow_eval_multi_router/migration.sql
+    - crates/betterlite-db/migrations/20260901000001_add_guardrail_usage_units_cost/migration.sql
+    - crates/betterlite-db/migrations/20260903230000_add_org_id_to_managed_object_table/migration.sql
+    - crates/betterlite-db/migrations/20260904000000_shadow_eval_model_scope/migration.sql
+    - crates/betterlite-db/migrations/20260905120000_add_per_server_oauth_discovery_to_mcp_servers/migration.sql
+    - crates/betterlite-db/migrations/20260907000000_add_autorouter_classifier_cost/migration.sql
+    - crates/betterlite-db/migrations/20260910000000_add_autorouter_session_baseline_models/migration.sql
+    - crates/betterlite-db/migrations/20260910000000_skills_on_object_permission/migration.sql
+    - crates/betterlite-db/migrations/20260913000000_add_tpd_limit/migration.sql
+    - crates/betterlite-db/migrations/20260915000000_add_autorouter_savings_estimate_coverage/migration.sql
+    - crates/betterlite-db/migrations/20260915000000_add_daily_global_spend/migration.sql
+    - crates/betterlite-db/migrations/20260915000000_add_daily_response_time/migration.sql
+    - crates/betterlite-db/migrations/20260915000000_scope_jwt_key_mapping_by_issuer/migration.sql
+    - crates/betterlite-db/migrations/20260915010000_add_autorouter_baseline_state/migration.sql
+    - crates/betterlite-db/migrations/20260916000000_add_key_total_spend/migration.sql
+    - crates/betterlite-db/migrations/20260917000000_add_agent_access_group_ids/migration.sql
+    - crates/betterlite-db/migrations/20260917000000_add_budget_temp_increase/migration.sql
+    - crates/betterlite-db/migrations/20260917055603_add_policy_attachment_priority/migration.sql
+    - crates/betterlite-db/migrations/20260918000000_add_managed_file_content_table/migration.sql
+    - crates/betterlite-db/migrations/20260919000000_add_autorouter_user_session_rollup/migration.sql
+    - crates/betterlite-db/migrations/20260920041500_add_policy_attachment_is_default/migration.sql
+    - crates/betterlite-db/migrations/20260921000000_add_password_reset_columns/migration.sql
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260811172448_add_shadow_eval/migration.sql#L1-L49
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260813180408_add_shadow_eval_direction/migration.sql#L1-L8
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260814000000_add_proxy_worker_heartbeat/migration.sql#L1-L9
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260817000000_shadow_eval_multi_key/migration.sql#L1-L7
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260817143646_add_daily_guardrail_usage_units/migration.sql#L1-L16
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260818000000_add_spend_log_timestamps/migration.sql#L1-L3
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260818224500_add_shadow_eval_stopped_by/migration.sql#L1-L5
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260819000000_shadow_eval_max_budget/migration.sql#L1-L5
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260823000000_add_spend_logs_api_key_starttime_index/migration.sql#L1-L6
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260824000000_add_gateway_injected_caching_savings_spend/migration.sql#L1-L18
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260828000000_shadow_eval_cost_comparison/migration.sql#L1-L22
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260829000000_add_model_access_group_budget_table/migration.sql#L1-L20
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260831000000_shadow_eval_typed_targets/migration.sql#L1-L21
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260831120000_add_litellm_call_id_spend_logs/migration.sql#L1-L2
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260831120001_spend_logs_litellm_call_id_index/migration.sql#L1-L6
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260901000000_shadow_eval_multi_router/migration.sql#L1-L3
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260901000001_add_guardrail_usage_units_cost/migration.sql#L1-L3
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260903230000_add_org_id_to_managed_object_table/migration.sql#L1-L4
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260904000000_shadow_eval_model_scope/migration.sql#L1-L1
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260905120000_add_per_server_oauth_discovery_to_mcp_servers/migration.sql#L1-L2
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260907000000_add_autorouter_classifier_cost/migration.sql#L1-L3
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260910000000_add_autorouter_session_baseline_models/migration.sql#L1-L1
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260910000000_skills_on_object_permission/migration.sql#L1-L1
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260913000000_add_tpd_limit/migration.sql#L1-L14
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260915000000_add_autorouter_savings_estimate_coverage/migration.sql#L1-L5
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260915000000_add_daily_global_spend/migration.sql#L1-L35
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260915000000_add_daily_response_time/migration.sql#L1-L23
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260915000000_scope_jwt_key_mapping_by_issuer/migration.sql#L1-L18
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260915010000_add_autorouter_baseline_state/migration.sql#L1-L36
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260916000000_add_key_total_spend/migration.sql#L1-L5
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260917000000_add_agent_access_group_ids/migration.sql#L1-L2
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260917000000_add_budget_temp_increase/migration.sql#L1-L5
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260917055603_add_policy_attachment_priority/migration.sql#L1-L1
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260918000000_add_managed_file_content_table/migration.sql#L1-L8
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260919000000_add_autorouter_user_session_rollup/migration.sql#L1-L42
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260920041500_add_policy_attachment_is_default/migration.sql#L1-L1
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260921000000_add_password_reset_columns/migration.sql#L1-L3
+    why: Pinned implementation and exact ownership boundary for schema_budget_windows.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
+      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_budget_windows::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_budget_windows::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_budget_windows::tests::postgres_failure_effects$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
+  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
+    candidate itself.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

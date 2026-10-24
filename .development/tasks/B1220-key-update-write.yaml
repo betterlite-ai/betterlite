@@ -1,0 +1,213 @@
+id: B1220
+title: Single key update transaction and effects
+description: >-
+  Execute a validated single-key patch and soft-budget write through the source transaction boundary,
+  preserving access-group sync and cache/event order. The HTTP handler and bulk update invoke this shared
+  executor; errors keep a cause and per-key result without pretending the entire bulk request is atomic.
+
+
+  Build the production key_update_write module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/key_management_endpoints.py:
+  _process_single_key_update (L2698-L2911; 174 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Add the key_update_write operation under B856 Management::keys. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-update-write-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 174 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  174 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 414 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/key_update_write.rs
+    - crates/betterlite-server/src/key_update_write/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/key_update_write.rs
+    - tools/oracle/src/helpers/key_update_write/**
+    - tools/oracle/helpers/key_update_write.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/keys.rs
+    - tools/oracle/helpers/management/keys.py
+    - tools/oracle/cases/helpers/key-update-write/**
+    - tools/oracle/fuzz/corpus/helper_case/key-update-write-*
+    - crates/betterlite-server/src/key_update_write/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L2698-L2911
+    why: Own _process_single_key_update; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: transaction_rollback,
+      cache_after_commit, null_reset, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_update_write::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/key_update_write.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-update-write-*")"
+        && grep -rlq "key_update_write" tools/oracle/fuzz/corpus/helper_case/key-update-write-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_update_write::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_update_write::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-update-write/transaction-rollback.yaml
+  - tools/oracle/cases/helpers/key-update-write/cache-after-commit.yaml
+  - tools/oracle/cases/helpers/key-update-write/null-reset.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
+    generate_service_account_key_fn (L2159-L2322).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
+    _UserRowLike.user_email (L185-L185), _UserRowLike.user_alias (L188-L188), _UserRowLike.model_dump
+    (L190-L190), _UserRowLike.dict (L192-L192), _KeyUpdateTx.litellm_verificationtoken (L237-L237), _KeyUpdateTx.litellm_budgettable
+    (L240-L240), _ConfigTableActions.find_many (L246-L246), _ConfigTableActions.update (L248-L253), _prisma_table
+    (L256-L261), _deleted_verification_token_table (L264-L267), _deprecated_verification_token_table (L270-L273),
+    _user_table (L276-L277), _credentials_table (L280-L283), _config_table (L286-L289), _LegacyDumpable.dict
+    (L466-L466), _legacy_model_dict (L469-L470), _as_object_dict (L473-L474), _model_items (L477-L478),
+    _EnvVarsParam.param_value (L483-L483), _env_vars_param_value (L486-L487).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B771 owns _check_custom_key_allowed
+    (L490-L503), _is_team_key (L506-L507), _is_allowed_to_make_key_request (L582-L605), _team_key_operation_team_member_check
+    (L608-L651), _key_generation_required_param_check (L654-L665), _team_key_generation_check (L668-L703),
+    _personal_key_membership_check (L706-L719), _object_permission_to_dict (L722-L727), _personal_key_generation_check
+    (L730-L755), key_generation_check (L758-L800), raise_on_invalid_key_logging_config (L803-L811), common_key_access_checks
+    (L814-L846), validate_team_id_used_in_service_account_request (L1074-L1102), _check_model_access_group
+    (L4494-L4513).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B772 owns _enforce_upperbound_key_params
+    (L1110-L1169), _check_key_model_specific_limits (L1565-L1633), _check_key_rpm_tpm_limits (L1636-L1671),
+    check_team_key_model_specific_limits (L1674-L1696), check_team_key_rpm_tpm_limits (L1699-L1713), _check_team_key_limits
+    (L1716-L1749), _check_project_key_limits (L1757-L1804), check_org_key_model_specific_limits (L1807-L1837),
+    check_org_key_rpm_tpm_limits (L1840-L1862), _validate_caller_can_assign_key_org (L1865-L1894), _check_org_key_limits
+    (L1897-L1937).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B773 owns _common_key_generation_helper
+    (L1172-L1562).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B774 owns _with_validated_object_permission
+    (L2914-L2936), _validate_mcp_servers_for_key_update (L2939-L2976), _acting_as_team_admin_for_key_update
+    (L3026-L3061), _validate_update_key_data (L3064-L3352).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B775 owns update_key_fn (L3357-L3617).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B776 owns bulk_update_keys (L3627-L3783),
+    _build_failed_team_key_update (L3786-L3812), bulk_update_team_keys (L3822-L4000).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B777 owns delete_key_fn (L4071-L4175),
+    can_modify_verification_token (L4895-L4963), delete_verification_tokens (L4966-L5093), _transform_verification_tokens_to_deleted_records
+    (L5096-L5149), _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens
+    (L5171-L5188), delete_key_aliases (L5191-L5208).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B778 owns _build_model_max_budget_usage
+    (L4178-L4188), _window_max_budget (L4191-L4199), _budget_window_usage (L4202-L4228), _build_budget_limits_usage
+    (L4231-L4245), info_key_fn_v2 (L4254-L4343), info_key_fn (L4348-L4479), _find_deleted_key_info (L4482-L4491),
+    _can_user_query_key_info (L7606-L7627).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B780 owns _check_proxy_or_team_admin_for_key
+    (L5989-L6015), _validate_reset_spend_value (L6018-L6053), _set_spend_counter_with_floor_and_broadcast
+    (L6056-L6087), _budget_limit_windows (L6090-L6104), _advance_one_key_budget_window (L6107-L6131),
+    _reset_key_budget_windows (L6134-L6172), reset_key_spend_fn (L6181-L6278).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B781 owns validate_key_list_check
+    (L6281-L6376), _fetch_user_team_objects (L6379-L6394), _get_admin_team_ids_from_objects (L6397-L6402),
+    _get_team_ids_with_key_list_permission_from_objects (L6405-L6422), _get_member_team_ids_from_objects
+    (L6425-L6437), _apply_non_admin_alias_scope (L6687-L6718).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B782 owns list_keys (L6492-L6684),
+    key_aliases (L6727-L6840).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B783 owns _check_key_admin_access
+    (L7237-L7285), block_key (L7290-L7399), unblock_key (L7404-L7513), key_health (L7523-L7603), test_key_logging
+    (L7630-L7703).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B785 owns _rotate_master_key (L5211-L5365),
+    _require_proxy_admin (L5368-L5375), migrate_encryption_endpoint (L5383-L5415), check_encryption_endpoint
+    (L5423-L5445).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B800 owns _get_user_in_team (L510-L517),
+    _get_caller_team_role (L520-L527).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B892 owns _validate_caller_can_change_key_ownership
+    (L873-L916), _check_allowed_routes_caller_permission (L919-L959), _is_safe_preset_route_transition
+    (L965-L981), _enforce_allowed_routes_update_permission (L984-L998), _check_permissions_caller_permission
+    (L1001-L1020), _check_budget_limits_delegation_ceiling (L1023-L1071).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B893 owns metadata_json_with_limits
+    (L4519-L4547), generate_key_helper_fn (L4550-L4854).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B894 owns prepare_metadata_fields
+    (L2325-L2373), _validate_soft_budget_value (L2376-L2381), _update_key_soft_budget (L2384-L2404), _apply_soft_budget_update
+    (L2407-L2423), _update_key_row_with_soft_budget (L2426-L2457), prepare_key_update_data (L2460-L2563),
+    _handle_update_object_permission (L2566-L2586), is_different_team (L2589-L2594), _validate_max_budget
+    (L2597-L2611), _resolve_token_to_update (L2685-L2695), _require_prisma_client (L2979-L2982), _requested_end_user_budget_id
+    (L2985-L2991), _general_settings (L3018-L3023).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B895 owns _check_regenerate_guardrail_opt_out
+    (L5701-L5713), regenerate_key_fn (L5727-L5986).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B896 owns get_new_token (L5448-L5467),
+    _insert_deprecated_key (L5470-L5528), _execute_virtual_key_regeneration (L5531-L5698).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B897 owns _derive_key_status (L6476-L6483),
+    _validate_sort_params (L6843-L6872), _build_expires_where_clause (L6875-L6878), _not_blocked_where_clause
+    (L6881-L6882), _build_status_where_clause (L6885-L6890), _build_key_search_where (L6893-L6900), _build_key_filter_conditions
+    (L6903-L7037), _list_key_helper (L7040-L7222), _get_condition_to_filter_out_ui_session_tokens (L7225-L7234).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1219 owns _get_and_validate_existing_key
+    (L2614-L2682), _validate_end_user_budget_id_change (L2994-L3012), validate_key_team_change (L4003-L4066).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1224 owns _custom_key_generate_hook
+    (L298-L301), _custom_key_update_hook (L304-L307), _custom_key_policy_hook (L310-L313), _enforce_custom_key_update_policy
+    (L316-L329), _enforce_custom_key_policy (L332-L345), _effective_key_after_update (L366-L375), _update_policy_request
+    (L378-L391), _generate_budget_windows (L394-L407), _effective_key_for_generate (L410-L444), _regenerate_request_as_update_request
+    (L450-L462), _calculate_key_rotation_time (L530-L542), _set_key_rotation_fields (L545-L579), parse_key_alias_pattern
+    (L7713-L7724), _key_alias_rule (L7727-L7736), _validate_key_alias_format (L7739-L7773), _enforce_unique_key_alias
+    (L7776-L7806), validate_model_max_budget (L7809-L7840), _decode_json_string_column (L355-L358), _verification_token_from_row
+    (L361-L363), handle_key_type (L852-L867).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::_team_key_deletion_check: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_admin_team_ids: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_member_team_ids: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - The HTTP handler and bulk update invoke this shared executor; errors keep a cause and per-key result
+    without pretending the entire bulk request is atomic..
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: security

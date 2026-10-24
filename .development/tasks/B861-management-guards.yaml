@@ -1,0 +1,140 @@
+id: B861
+title: Shared management input and delegation guards
+description: >-
+  Implement ManagementGuards for finite Decimal spend, budget durations, per-model team limits, required
+  analytics identity, administrator-only pass-through grants and guardrail opt-outs. Preserve the exact
+  truthy-versus-empty checks and metadata move behavior. Omit premium-user checks and retain every non-license
+  validation. Requests without a user_id cannot turn a service-account analytics query into an unfiltered
+  report.
+
+
+  Build the production management_guards module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/common_utils.py:
+  validate_finite_spend (L13-L24; 11 source lines), validate_budget_duration (L27-L41; 13 source lines),
+  validate_team_model_max_budget (L77-L123; 47 source lines), require_caller_user_id_for_non_admin (L126-L150;
+  23 source lines), _check_passthrough_routes_caller_permission (L153-L177; 24 source lines), _check_disable_global_guardrails_caller_permission
+  (L180-L205; 26 source lines), _set_object_metadata_field (L432-L456; 23 source lines), _update_metadata_field
+  (L639-L661; 16 source lines), _update_metadata_fields (L675-L688; 12 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Add the management_guards operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a management-guards-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 195 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  195 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 438 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/management_guards.rs
+    - crates/betterlite-server/src/management_guards/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/management_guards.rs
+    - tools/oracle/src/helpers/management_guards/**
+    - tools/oracle/helpers/management_guards.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/management-guards/**
+    - tools/oracle/fuzz/corpus/helper_case/management-guards-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L13-L24
+    why: Own validate_finite_spend; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L27-L41
+    why: Own validate_budget_duration; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L77-L123
+    why: Own validate_team_model_max_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L126-L150
+    why: Own require_caller_user_id_for_non_admin; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L153-L177
+    why: Own _check_passthrough_routes_caller_permission; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L180-L205
+    why: Own _check_disable_global_guardrails_caller_permission; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L432-L456
+    why: Own _set_object_metadata_field; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L639-L661
+    why: Own _update_metadata_field; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L675-L688
+    why: Own _update_metadata_fields; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: nonfinite_spend, invalid_duration,
+      anonymous_analytics, passthrough_metadata_denied, guardrail_opt_out_denied, empty_metadata_clear.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_guards::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/management_guards.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/management-guards-*")"
+        && grep -rlq "management_guards" tools/oracle/fuzz/corpus/helper_case/management-guards-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-guards/nonfinite-spend.yaml
+  - tools/oracle/cases/helpers/management-guards/invalid-duration.yaml
+  - tools/oracle/cases/helpers/management-guards/anonymous-analytics.yaml
+  - tools/oracle/cases/helpers/management-guards/passthrough-metadata-denied.yaml
+  - tools/oracle/cases/helpers/management-guards/guardrail-opt-out-denied.yaml
+  - tools/oracle/cases/helpers/management-guards/empty-metadata-clear.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/common_utils.py: B800 owns _team_member_has_permission (L208-L221).'
+  - 'litellm/proxy/management_endpoints/common_utils.py: B862 owns _prisma_value (L488-L489), member_budget_patch
+    (L492-L501), _is_set_budget_value (L504-L509), _has_meaningful_budget_limit (L512-L515), _upsert_budget_and_membership
+    (L518-L636).'
+  - 'litellm/proxy/management_endpoints/common_utils.py: B863 owns _user_has_admin_privileges (L224-L287),
+    _org_admin_can_invite_user (L290-L317), _team_admin_can_invite_user (L320-L356), admin_can_invite_user
+    (L359-L429).'
+  - 'litellm/proxy/management_endpoints/common_utils.py::_has_non_empty_value: no production caller at
+    the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/common_utils.py::_has_non_empty_value (L664-L672): no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Preserve the exact truthy-versus-empty checks and metadata move behavior.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: security

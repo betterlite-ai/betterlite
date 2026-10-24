@@ -1,0 +1,78 @@
+id: B1232
+title: Native database administration command shell
+description: >-
+  Create tools/betterlite-db-admin as a tools-only binary/library package with clap command parsing, typed
+  DbAdminCommand and DbAdminOutcome, injected output, and dispatch registrations. This is the sole owner
+  of its Cargo package, main and command-registry foundation. B051 installs migrate; B852 installs spend
+  backfills; B853 installs partition conversion; B874 installs CSV import/team repair. These callers extend
+  the command enum and registry without creating the package again. The package may depend on betterlite-db
+  and betterlite-config, never betterlite-server.
+
+
+  Own main in migrations/run.py and litellm/proxy/prisma_migration.py only as the replacement native executable/exit
+  boundary. No Prisma generate, Python, Node or subprocess runs in production. Parse --config and the
+  explicit operation name; configuration resolution remains B002/B710. Define DbAdminBackend::run(DbAdminCommand,ResolvedConfig)->Future<Result<DbAdminOutcome,DbAdminError>>;
+  consumers register concrete native services and an unregistered operation fails explicitly. B051 migration
+  completion returns success 0, exhausted retries/index-job failure 1, or unrecoverable migration error
+  2. Help and invalid arguments are tested independently of a live database. B121 alone owns the proxy
+  --skip_server_startup compatibility flag and forwards to migrate; this executable does not redefine
+  the proxy CLI.
+
+
+  Use clap for argv decoding and the existing production config loader; add no handwritten byte parser
+  or dummy fuzz target. Tests live at command_shell::tests::{help_lists_registered_operations,unknown_operation_fails,unregistered_backend_fails,typed_exit_codes,config_path_forwarded}.
+  Exercise the actual clap command and dispatcher with typed injected backends. SQL effects and real Postgres
+  tests stay with the operation owners. Estimate 220 package/dispatch code, 180 CLI behavior tests and
+  30 manifest/config wiring lines, 430 within a 500-line gate.
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - tools/betterlite-db-admin/Cargo.toml
+    - tools/betterlite-db-admin/src/main.rs
+    - tools/betterlite-db-admin/src/lib.rs
+    - tools/betterlite-db-admin/src/commands.rs
+    - tools/betterlite-db-admin/src/command_shell.rs
+    - tools/betterlite-db-admin/src/command_shell/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L37-L69
+    why: Own the executable entry/exit boundary; B051 supplies the native migration service.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prisma_migration.py#L23-L36
+    why: Own the executable entry/exit boundary; B051 supplies the native migration service.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1426-L1447
+    why: Compatibility forwarding and exit 2 versus exhausted-retry exit 1.
+dod:
+  - text: The native command shell dispatches registered operations, forwards typed config and rejects
+      unknown/unregistered operations.
+    proof:
+      - command-tests
+  - text: Typed migration outcomes produce the decided 0/1/2 exit statuses without spawning Prisma or
+      Python.
+    proof:
+      - command-tests
+checks:
+  optional: []
+  commands:
+    - id: command-tests
+      why: The actual CLI parser/dispatcher or exit-code mapping is absent or incorrect.
+      run: cargo nextest run --locked -p betterlite-db-admin --no-tests=fail -E 'test(/^command_shell::tests::/)
+        - test(/replays_the_/)'
+oracle_cases: []
+deviations:
+  - what: betterlite-db-admin migrate replaces Python/Prisma migration entrypoints and omits client generation.
+    why: Architect-decided native SQL execution; existing rows and migration behavior are tested by B051/B716/B873.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L37-L69
+out_of_scope:
+  - B051 owns native migration startup/index-job assembly; B716/B873 own deploy/recovery SQL.
+  - B852, B853 and B874 own their SQL/CSV operations and real database tests.
+  - B121 owns proxy CLI compatibility flags; B002/B710 own config and environment resolution.
+pitfalls:
+  - The admin package cannot depend on betterlite-server under the server crate boundary rule.
+  - A migration job waits for its indexes before success, while the serving proxy schedules them in the
+    background.
+  - An unregistered command must fail explicitly instead of reporting a successful no-op.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,105 @@
+id: B853
+title: Offline spend-log partition conversion
+description: >-
+  Expose opt-in native Postgres partition/unpartition SQL operations in tools/betterlite-db-admin, preserving
+  legacy table/index renames, composite primary key and rollback deduplication semantics. Verify against
+  populated fixtures and explicit transactions. Automatic retention and partition maintenance remain B070;
+  no conversion runs at ordinary startup.
+
+
+  Build the production spend_partitions module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Also write tools/betterlite-db-admin::spend_partitions::tests::dispatches_native_operation and rejects_bad_arguments;
+  the admin command check must fail without these real CLI dispatch tests.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 157 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  157 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 341 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  B1232 creates the database-admin package and typed command dispatcher. Extend its registry for this
+  operation only; do not recreate its Cargo package or depend on betterlite-server from the admin tool.
+  The operation adapter assembles native betterlite-db services directly.
+scope:
+  paths:
+    - crates/betterlite-db/src/spend_partitions.rs
+    - crates/betterlite-db/src/spend_partitions/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - Cargo.toml
+    - tools/betterlite-db-admin/Cargo.toml
+    - tools/betterlite-db-admin/src/main.rs
+    - tools/betterlite-db-admin/src/commands.rs
+    - tools/betterlite-db-admin/src/spend_partitions.rs
+    - tools/betterlite-db-admin/src/spend_partitions/**
+    - crates/betterlite-db/src/spend_partitions/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/partition_spend_logs.sql#L1-L109
+    why: Pinned implementation and exact ownership boundary for spend_partitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/db_scripts/unpartition_spend_logs.sql#L1-L74
+    why: Pinned implementation and exact ownership boundary for spend_partitions.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: partition_populated_table,
+      legacy_index_renames, composite_primary_key, unpartition_deduplication, failure_rolls_back, startup_no_conversion,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The offline admin command invokes the native operation and preserves its exit/error contract.
+    proof:
+      - admin-tests
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_partitions::tests::/)
+        - test(/replays_the_/)'
+    - id: admin-tests
+      why: The offline command does not dispatch the named native operation or reject bad arguments.
+      run: cargo nextest run --locked -p betterlite-db-admin --no-tests=fail -E 'test(/^spend_partitions::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/spend_partitions::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/spend_partitions::tests::postgres_failure_effects$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Unpartition deduplication follows the source composite-key semantics rather than dropping arbitrary
+    duplicates.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

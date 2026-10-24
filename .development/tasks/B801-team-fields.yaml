@@ -1,0 +1,362 @@
+id: B801
+title: Typed team requests and metadata validation
+description: >-
+  Implement typed TeamPatch and member/budget request types with source one-identifier and duration validators.
+  Add injected TeamMetadataValidator and schema registry; preserve configured timeout and unavailable
+  message behavior. Python callable loading is installed by B165 later; requesting an unregistered validator
+  fails startup rather than disabling validation.
+
+
+  Build the production team_fields module in betterlite-server; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/team_metadata_validation.py:
+  TeamMetadataValidator.__call__ (L57-L57; 1 source lines), TeamMetadataValidatorRegistry.__init__ (L61-L62;
+  2 source lines), TeamMetadataValidatorRegistry.set (L64-L65; 2 source lines), TeamMetadataValidatorRegistry.get
+  (L67-L68; 2 source lines), parse_team_metadata_schema (L78-L87; 10 source lines), TeamMetadataSchemaRegistry.__init__
+  (L91-L92; 2 source lines), TeamMetadataSchemaRegistry.set (L94-L95; 2 source lines), TeamMetadataSchemaRegistry.get
+  (L97-L98; 2 source lines), run_team_metadata_validation (L104-L139; 34 source lines), _read_timeout_seconds
+  (L142-L146; 5 source lines), _read_unavailable_message (L149-L153; 5 source lines), validate_team_metadata_if_configured
+  (L156-L189; 32 source lines). litellm/proxy/management_endpoints/team_endpoints.py: _as_object (L238-L239;
+  2 source lines), _as_list (L242-L245; 4 source lines), _UserIdRow.user_id (L250-L250; 1 source lines),
+  _user_id_rows_db (L253-L254; 2 source lines), _ModelDumpRow.model_dump (L258-L258; 1 source lines),
+  _TeamIdRow.team_id (L263-L263; 1 source lines), _ObjectPermissionRow.object_permission_id (L271-L271;
+  1 source lines), _TeamAliasBudgetRow.team_alias (L276-L276; 1 source lines), _TeamAliasBudgetRow.budget_duration
+  (L279-L279; 1 source lines), _AuditableTeamRow.json (L287-L287; 1 source lines), _RawTeamRow.members_with_roles
+  (L292-L294; 3 source lines), _RawTeamRow.organization_id (L297-L297; 1 source lines), _RawTeamRow.max_budget
+  (L300-L300; 1 source lines), _RawTeamRow.soft_budget (L303-L303; 1 source lines), _RawTeamRow.model_id
+  (L306-L306; 1 source lines), _raw_team_db (L309-L312; 4 source lines), _BudgetIdRow.budget_id (L317-L317;
+  1 source lines), _BudgetWriteCall.__call__ (L321-L321; 1 source lines), _as_budget_write (L324-L325;
+  2 source lines), _TeamCreateTx.litellm_teamtable (L362-L362; 1 source lines), _MemberDeleteTx.litellm_usertable
+  (L374-L374; 1 source lines), _MemberDeleteTx.litellm_verificationtoken (L377-L377; 1 source lines),
+  _TeamDeleteTx.execute_raw (L381-L381; 1 source lines), _TeamDeleteTx.litellm_teamtable (L384-L384; 1
+  source lines), _TeamDeleteTx.litellm_teammembership (L387-L387; 1 source lines), _team_db (L397-L398;
+  2 source lines), _team_tx_db (L401-L404; 4 source lines), _team_membership_db (L407-L408; 2 source lines),
+  _user_db (L411-L412; 2 source lines), _model_db (L415-L416; 2 source lines), _org_db (L419-L420; 2 source
+  lines), _org_membership_db (L423-L426; 4 source lines), _budget_db (L429-L430; 2 source lines), _deleted_team_db
+  (L433-L434; 2 source lines), _access_group_db (L437-L438; 2 source lines), _tokens_db (L441-L442; 2
+  source lines), _sanitize_for_log (L445-L451; 7 source lines), _refresh_cached_team (L454-L478; 23 source
+  lines), _general_settings (L484-L487; 3 source lines), _caller_edit_access (L490-L505; 16 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.team_metadata_validation_timeout=None;
+  general_settings.team_metadata_validation_error_message=None; team_metadata_validation_timeout=None;
+  team_metadata_validation_error_message=None.
+
+
+  Add the team_fields operation under B856 Management::teams. Python calls only the owned MIT helper with
+  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-fields-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Write betterlite-config::team_fields::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 210 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  210 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 503 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_fields.rs
+    - crates/betterlite-server/src/team_fields/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/team_fields.rs
+    - tools/oracle/src/helpers/team_fields/**
+    - tools/oracle/helpers/team_fields.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/cases/helpers/team-fields/**
+    - tools/oracle/fuzz/corpus/helper_case/team-fields-*
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/team_fields.rs
+    - crates/betterlite-config/src/team_fields/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/team-fields-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L1-L255
+    why: Pinned implementation and exact ownership boundary for team_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L1-L189
+    why: Pinned implementation and exact ownership boundary for team_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L238-L505
+    why: Pinned implementation and exact ownership boundary for team_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2042-L2071
+    why: BudgetNewRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L57-L57
+    why: Own TeamMetadataValidator.__call__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L61-L62
+    why: Own TeamMetadataValidatorRegistry.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L64-L65
+    why: Own TeamMetadataValidatorRegistry.set; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L67-L68
+    why: Own TeamMetadataValidatorRegistry.get; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L78-L87
+    why: Own parse_team_metadata_schema; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L91-L92
+    why: Own TeamMetadataSchemaRegistry.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L94-L95
+    why: Own TeamMetadataSchemaRegistry.set; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L97-L98
+    why: Own TeamMetadataSchemaRegistry.get; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L104-L139
+    why: Own run_team_metadata_validation; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L142-L146
+    why: Own _read_timeout_seconds; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L149-L153
+    why: Own _read_unavailable_message; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L156-L189
+    why: Own validate_team_metadata_if_configured; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L238-L239
+    why: Own _as_object; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L242-L245
+    why: Own _as_list; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L250-L250
+    why: Own _UserIdRow.user_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L253-L254
+    why: Own _user_id_rows_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L258-L258
+    why: Own _ModelDumpRow.model_dump; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L263-L263
+    why: Own _TeamIdRow.team_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L271-L271
+    why: Own _ObjectPermissionRow.object_permission_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L276-L276
+    why: Own _TeamAliasBudgetRow.team_alias; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L279-L279
+    why: Own _TeamAliasBudgetRow.budget_duration; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L287-L287
+    why: Own _AuditableTeamRow.json; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L292-L294
+    why: Own _RawTeamRow.members_with_roles; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L297-L297
+    why: Own _RawTeamRow.organization_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L300-L300
+    why: Own _RawTeamRow.max_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L303-L303
+    why: Own _RawTeamRow.soft_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L306-L306
+    why: Own _RawTeamRow.model_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L309-L312
+    why: Own _raw_team_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L317-L317
+    why: Own _BudgetIdRow.budget_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L321-L321
+    why: Own _BudgetWriteCall.__call__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L324-L325
+    why: Own _as_budget_write; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L362-L362
+    why: Own _TeamCreateTx.litellm_teamtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L374-L374
+    why: Own _MemberDeleteTx.litellm_usertable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L377-L377
+    why: Own _MemberDeleteTx.litellm_verificationtoken; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L381-L381
+    why: Own _TeamDeleteTx.execute_raw; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L384-L384
+    why: Own _TeamDeleteTx.litellm_teamtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L387-L387
+    why: Own _TeamDeleteTx.litellm_teammembership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L397-L398
+    why: Own _team_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L401-L404
+    why: Own _team_tx_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L407-L408
+    why: Own _team_membership_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L411-L412
+    why: Own _user_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L415-L416
+    why: Own _model_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L419-L420
+    why: Own _org_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L423-L426
+    why: Own _org_membership_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L429-L430
+    why: Own _budget_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L433-L434
+    why: Own _deleted_team_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L437-L438
+    why: Own _access_group_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L441-L442
+    why: Own _tokens_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L445-L451
+    why: Own _sanitize_for_log; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L454-L478
+    why: Own _refresh_cached_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L484-L487
+    why: Own _general_settings; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L490-L505
+    why: Own _caller_edit_access; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L143-L148
+    why: general_settings.team_metadata_validation_timeout default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L150-L155
+    why: general_settings.team_metadata_validation_error_message default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/team_metadata_validation.py#L1-L6
+    why: team_metadata_validation_error_message default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: member_one_identifier,
+      budget_duration, metadata_schema, metadata_validation_error, validator_timeout, explicit_field_clear.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_fields::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/team_fields.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-fields-*")"
+        && grep -rlq "team_fields" tools/oracle/fuzz/corpus/helper_case/team-fields-* && cargo nextest
+        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^team_fields::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/team-fields-*")"
+        && grep -rlq "team_metadata_validation_timeout" crates/betterlite-config/fuzz/corpus/config_yaml/team-fields-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-fields/member-one-identifier.yaml
+  - tools/oracle/cases/helpers/team-fields/budget-duration.yaml
+  - tools/oracle/cases/helpers/team-fields/metadata-schema.yaml
+  - tools/oracle/cases/helpers/team-fields/metadata-validation-error.yaml
+  - tools/oracle/cases/helpers/team-fields/validator-timeout.yaml
+  - tools/oracle/cases/helpers/team-fields/explicit-field-clear.yaml
+deviations:
+  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
+      entitlement.
+    why: README Decisions specifies no paid tier and no user/team cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/team_endpoints.py#L1-L255
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B802 owns TeamMemberBudgetHandler.strip_system_managed_metadata_keys
+    (L516-L521), TeamMemberBudgetHandler.should_create_budget (L524-L538), TeamMemberBudgetHandler.create_team_member_budget_table
+    (L541-L598), TeamMemberBudgetHandler.upsert_team_member_budget_table (L601-L669), TeamMemberBudgetHandler._clean_team_member_fields
+    (L672-L677), TeamMemberBudgetHandler.clear_team_member_budget_fields (L680-L713), TeamMemberBudgetHandler.backfill_team_member_budget_entries
+    (L716-L780).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B803 owns _get_default_team_param (L783-L802),
+    _is_available_team (L805-L810), get_all_team_memberships (L813-L835), _check_team_budget_update_authority
+    (L1188-L1229), _write_team_update (L1243-L1259), _existing_model_cap (L1262-L1266), _check_team_model_budget_update_authority
+    (L1269-L1315), _should_auto_add_team_creator (L1318-L1326).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B804 owns new_team (L1337-L1791).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B805 owns _create_team_update_audit_log (L1794-L1840),
+    _update_model_table (L1843-L1874), _auto_add_team_members_to_organization (L1877-L1913), fetch_and_validate_organization
+    (L1916-L1968), validate_team_org_change (L1971-L2071), _member_user_ids (L2074-L2080), _evict_created_membership_caches
+    (L2083-L2104).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B806 owns update_team (L2109-L2565).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B807 owns _check_team_member_admin_add (L2690-L2703),
+    team_call_validation_checks (L2706-L2726), team_member_add_duplication_check (L2729-L2780), _validate_team_member_add_permissions
+    (L2783-L2856), _update_team_members_list (L2956-L2972), _add_team_members_to_team (L2975-L3028), _update_team_member_role
+    (L3031-L3060), _emit_team_members_metric (L3063-L3075), _members_audit_value (L3156-L3167), _schedule_team_membership_audit_log
+    (L3170-L3197), _schedule_team_member_add_audit_logs (L3200-L3242).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B808 owns team_member_add (L3356-L3505), team_member_update
+    (L3763-L3915).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B809 owns _check_not_resetting_own_spend (L3918-L3928),
+    _raise_reset_spend_error (L3931-L3933), _validate_team_member_reset_spend_value (L3936-L3961), reset_team_member_spend_fn
+    (L3970-L4033), _team_default_budget_id (L4040-L4043), _existing_team_default_budget_id (L4046-L4053),
+    _member_budget_source (L4056-L4059), reset_team_member_budget_fn (L4069-L4123).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B810 owns _create_results_from_response (L4126-L4162),
+    bulk_team_member_add (L4172-L4308), team_member_permissions (L6256-L6313), update_team_member_permissions
+    (L6321-L6374), bulk_update_team_member_permissions (L6384-L6436), _compute_and_batch_updates (L6439-L6460),
+    _append_permissions_to_specific_teams (L6463-L6479), _append_permissions_to_all_teams (L6482-L6509).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B811 owns delete_team (L4313-L4510), _sweep_deleted_team_references
+    (L4513-L4532), _sweep_deleted_team_references_tx (L4535-L4542), _invalidate_deleted_key_cache (L4545-L4561),
+    _invalidate_deleted_team_cache (L4564-L4579), _invalidate_deleted_team_member_cache (L4582-L4591),
+    _evict_deleted_team_member_cache (L4594-L4609), _resolve_deleted_team_member_user_ids (L4612-L4619),
+    _deleted_team_member_user_ids (L4622-L4636), _transform_teams_to_deleted_records (L4639-L4684), _save_deleted_team_records
+    (L4687-L4694), _persist_deleted_team_records (L4697-L4712).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B812 owns validate_membership (L4715-L4753),
+    _add_team_member_budget_table (L4756-L4769), _hydrate_member_user_details (L4772-L4792), _parent_organization_models
+    (L4803-L4806), _resolve_team_access_group_resources (L4809-L4838), team_info (L4843-L5009).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B813 owns list_team_v2 (L5598-L5780), list_team
+    (L5859-L5931), get_paginated_teams (L5934-L5965), ui_view_teams (L5977-L6035).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B814 owns team_model_add (L6057-L6112), append_team_models
+    (L6115-L6164), team_model_delete (L6173-L6247).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B815 owns _daily_activity_error (L6512-L6515),
+    resolve_team_daily_activity_scope (L6525-L6623), get_team_daily_activity (L6631-L6689), aggregated_date_range_error
+    (L6695-L6705), _team_user_spend_sql (L6708-L6731), get_team_spend_by_user (L6753-L6821), _team_alias_or_none
+    (L6824-L6826).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1204 owns _check_team_model_specific_limits
+    (L838-L906), _check_team_rpm_tpm_limits (L909-L944), check_org_team_model_specific_limits (L947-L978),
+    check_org_team_rpm_tpm_limits (L981-L1003), _check_org_team_limits (L1006-L1106), _check_user_team_limits
+    (L1109-L1178).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1205 owns patch_team (L2574-L2642), _set_budget_reset_at
+    (L2645-L2663), handle_update_object_permission (L2666-L2687).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1206 owns _process_team_members (L2859-L2913),
+    _resolve_member_identity (L2916-L2945), _member_already_in_team (L2948-L2953), _resolve_existing_member_user_ids
+    (L3078-L3094), _pre_existing_user_ids (L3097-L3114), _validate_member_user_id_provisioning (L3120-L3153),
+    _validate_and_populate_member_user_info (L3245-L3346).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1207 owns _is_member_addressed_by (L3508-L3511),
+    _cleanup_members_with_roles (L3514-L3528), team_member_delete (L3537-L3575), _team_member_delete (L3578-L3753).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1208 owns team_member_me (L5019-L5123), block_team
+    (L5128-L5178), unblock_team (L5183-L5227), get_team_metadata_schema (L5236-L5245), list_available_teams
+    (L5249-L5288).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1209 owns _get_org_admin_org_ids (L5291-L5322),
+    _get_user_team_ids_from_db (L5325-L5342), _build_team_list_where_conditions (L5345-L5436), _batch_resolve_access_group_resources
+    (L5439-L5455), _convert_teams_to_response_models (L5458-L5488), _get_keys_count_by_team (L5491-L5513),
+    _enforce_list_team_v2_access (L5516-L5588), _authorize_and_filter_teams (L5783-L5854).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py::add_new_models_to_team: no production caller
+    at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/types/proxy/management_endpoints/team_endpoints.py: B1231 owns team_request_contracts (L1-L255).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A configured metadata validator must fail startup when its bridge is unavailable.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: security

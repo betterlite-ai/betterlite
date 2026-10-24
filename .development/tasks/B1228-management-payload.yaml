@@ -1,0 +1,148 @@
+id: B1228
+title: Management effect payload sanitization
+description: >-
+  Build typed sanitized management event payloads, including nested record env-var values, before injected
+  alert/span sinks see them. Preserve IDs and nonsecret names while redacting values; the source response
+  returned to the caller is not modified by a logging copy.
+
+
+  Build the production management_payload module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/utils.py:
+  _object_mapping (L609-L611; 3 source lines), _object_list (L614-L616; 3 source lines), _redacted_env_var
+  (L619-L626; 8 source lines), _redact_record_env_vars (L629-L647; 18 source lines), _redact_env_var_values
+  (L650-L666; 15 source lines).
+
+
+  Add the management_payload operation under B856 Management::models. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a management-payload-* seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: the owned redaction helpers plus alert/span projections fit 200 production, 180 behavior tests,
+  100 helper adapters and 60 wiring lines, 540 estimated within a 600-line gate; fixture exclusions do
+  not hide code.
+
+
+  Also own send_management_endpoint_alert (L559-L606; 39 source lines), _emit_management_endpoint_otel_span
+  (L669-L752; 71 source lines) in litellm/proxy/management_helpers/utils.py. Build the nine-function management
+  event-to-alert mapping and preserve Unknown user/role fallbacks. For span projection, no logger or OTel
+  v2 skips payload building; a missing http_request uses the function name and an empty request body.
+  Remove credential fields key/token/api_key/secret/password/access_token/refresh_token/private_key/service_account_key
+  from the response copy before nested env redaction. Preserve success/failure payloads and timestamps,
+  then call injected ManagementAlertSink and ManagementSpanSink. B116 and B110 implement transports; B865
+  calls these concrete projections before cache eviction. Consume a typed request snapshot from B003 instead
+  of reparsing its body.
+scope:
+  paths:
+    - crates/betterlite-server/src/management_payload.rs
+    - crates/betterlite-server/src/management_payload/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/management_payload.rs
+    - tools/oracle/src/helpers/management_payload/**
+    - tools/oracle/helpers/management_payload.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/management-payload/**
+    - tools/oracle/fuzz/corpus/helper_case/management-payload-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L609-L611
+    why: Own _object_mapping; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L614-L616
+    why: Own _object_list; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L619-L626
+    why: Own _redacted_env_var; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L629-L647
+    why: Own _redact_record_env_vars; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L650-L666
+    why: Own _redact_env_var_values; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L559-L606
+    why: Typed send_management_endpoint_alert projection and injected transport boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L669-L752
+    why: Typed _emit_management_endpoint_otel_span projection and injected transport boundary.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: nested_env_redaction,
+      unchanged_caller_response, missing_env_values.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The nine-event map, missing-request route fallback, OTel v2 skip and credential redaction match
+      the MIT helpers.
+    proof:
+      - behavior-tests
+      - oracle
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_payload::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/management_payload.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/management-payload-*")"
+        && grep -rlq "management_payload" tools/oracle/fuzz/corpus/helper_case/management-payload-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-payload/nested-env-redaction.yaml
+  - tools/oracle/cases/helpers/management-payload/unchanged-caller-response.yaml
+  - tools/oracle/cases/helpers/management-payload/missing-env-values.yaml
+  - tools/oracle/cases/helpers/management-payload/legacy-event-map.yaml
+  - tools/oracle/cases/helpers/management-payload/missing-http-request-span.yaml
+  - tools/oracle/cases/helpers/management-payload/credential-response-redaction.yaml
+  - tools/oracle/cases/helpers/management-payload/otel-v2-skips-payload.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/utils.py: B862 owns handle_budget_for_entity (L180-L264), _clone_team_default_budget_for_member
+    (L283-L333), _resolve_member_budget_id (L336-L390).'
+  - 'litellm/proxy/management_helpers/utils.py: B865 owns _delete_user_id_from_cache (L503-L514), _delete_api_key_from_cache
+    (L517-L528), _delete_team_id_from_cache (L531-L542), _delete_customer_id_from_cache (L545-L556), management_endpoint_wrapper
+    (L755-L823).'
+  - 'litellm/proxy/management_helpers/utils.py: B1227 owns _user_table (L112-L113), _budget_table (L116-L117),
+    _team_membership_table (L120-L121), _find_users_by_email (L124-L134), _upsert_user_row (L137-L150),
+    _create_user_row (L153-L158), get_new_internal_user_defaults (L161-L177), _append_team_id_if_absent
+    (L393-L408), add_new_member (L411-L500), _PrismaRecord.model_dump (L47-L47), _PrismaUserRecord.model_dump
+    (L55-L55), _PrismaBudgetRecord.model_dump (L63-L63), _PrismaBudgetTable.create (L69-L69), _PrismaBudgetTable.find_unique
+    (L71-L71), _PrismaUserTable.update_many (L77-L77), _PrismaUserTable.upsert (L79-L81), _PrismaUserTable.find_many
+    (L83-L83), _PrismaTeamMembershipTable.upsert (L89-L91), MemberWriteTx.litellm_usertable (L102-L103),
+    MemberWriteTx.litellm_budgettable (L105-L106), MemberWriteTx.litellm_teammembership (L108-L109).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Endpoints without http_request still need the legacy success/failure span ended using the function
+    name.
+  - OTel v2 skips the legacy payload entirely; do not emit it twice.
+  - Strip top-level credential fields before nested env-var redaction and never mutate the caller response.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,184 @@
+id: B1200
+title: Team-administrator editable field policy
+description: >-
+  Implement team-admin editable team/key field verdicts over typed before/after values. general_settings.team_admin_editable_team_fields
+  defaults absent/empty; accepted values are tpm_limit, rpm_limit, max_budget, projects and member_key_budgets.
+  A malformed list warns and becomes empty; unsupported entries warn and are ignored. Spend is never an
+  editable key-budget field, and system-managed team_member_budget_id changes cannot bypass the diff policy.
+
+
+  Build the production team_admin_fields module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_admin_field_permissions.py:
+  resolve_team_admin_editable_fields (L72-L94; 23 source lines), team_admin_may_edit_member_key_budgets
+  (L103-L106; 4 source lines), _as_object (L109-L113; 5 source lines), _stored_metadata (L116-L117; 2
+  source lines), _submitted_metadata (L120-L128; 9 source lines), _metadata_changes (L131-L140; 10 source
+  lines), _stored_model_aliases (L143-L145; 3 source lines), _column_changed (L148-L155; 8 source lines),
+  changed_team_fields (L158-L172; 14 source lines), _only_changes (L175-L181; 7 source lines), team_admin_edit_verdict
+  (L184-L195; 12 source lines), team_admin_request_or_raise (L198-L219; 22 source lines), _budget_windows
+  (L222-L239; 17 source lines), _key_column_changed (L242-L250; 9 source lines), changed_key_fields (L253-L268;
+  15 source lines), team_admin_key_edit_verdict (L287-L300; 14 source lines), team_admin_key_request_or_raise
+  (L303-L325; 23 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  general_settings.team_admin_editable_team_fields=None; values tpm_limit/rpm_limit/max_budget/projects/member_key_budgets
+  use the warn-and-ignore behavior of resolve_team_admin_editable_fields.
+
+
+  Add the team_admin_fields operation under B856 Management::teams. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-admin-fields-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Write betterlite-config::team_admin_fields::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 197 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  197 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 487 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_admin_fields.rs
+    - crates/betterlite-server/src/team_admin_fields/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/team_admin_fields.rs
+    - tools/oracle/src/helpers/team_admin_fields/**
+    - tools/oracle/helpers/team_admin_fields.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/cases/helpers/team-admin-fields/**
+    - tools/oracle/fuzz/corpus/helper_case/team-admin-fields-*
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/team_admin_fields.rs
+    - crates/betterlite-config/src/team_admin_fields/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/team-admin-fields-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L72-L94
+    why: Own resolve_team_admin_editable_fields; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L103-L106
+    why: Own team_admin_may_edit_member_key_budgets; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L109-L113
+    why: Own _as_object; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L116-L117
+    why: Own _stored_metadata; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L120-L128
+    why: Own _submitted_metadata; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L131-L140
+    why: Own _metadata_changes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L143-L145
+    why: Own _stored_model_aliases; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L148-L155
+    why: Own _column_changed; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L158-L172
+    why: Own changed_team_fields; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L175-L181
+    why: Own _only_changes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L184-L195
+    why: Own team_admin_edit_verdict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L198-L219
+    why: Own team_admin_request_or_raise; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L222-L239
+    why: Own _budget_windows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L242-L250
+    why: Own _key_column_changed; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L253-L268
+    why: Own changed_key_fields; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L287-L300
+    why: Own team_admin_key_edit_verdict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_admin_field_permissions.py#L303-L325
+    why: Own team_admin_key_request_or_raise; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: field_edit_denied, metadata_diff,
+      key_budget_permission, invalid_setting_warns, unknown_field_warns.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_admin_fields::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/team_admin_fields.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-admin-fields-*")"
+        && grep -rlq "team_admin_fields" tools/oracle/fuzz/corpus/helper_case/team-admin-fields-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^team_admin_fields::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/team-admin-fields-*")"
+        && grep -rlq "team_admin_editable_team_fields" crates/betterlite-config/fuzz/corpus/config_yaml/team-admin-fields-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-admin-fields/field-edit-denied.yaml
+  - tools/oracle/cases/helpers/team-admin-fields/metadata-diff.yaml
+  - tools/oracle/cases/helpers/team-admin-fields/key-budget-permission.yaml
+  - tools/oracle/cases/helpers/team-admin-fields/invalid-setting-warns.yaml
+  - tools/oracle/cases/helpers/team-admin-fields/unknown-field-warns.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/team_admin_field_permissions.py::team_admin_may_manage_projects:
+    no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/team_admin_field_permissions.py::team_admin_may_manage_projects
+    (L97-L100): no production caller at the pinned commit; repository-wide identifier search finds only
+    this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - general_settings.team_admin_editable_team_fields defaults absent/empty; accepted values are tpm_limit,
+    rpm_limit, max_budget, projects and member_key_budgets.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

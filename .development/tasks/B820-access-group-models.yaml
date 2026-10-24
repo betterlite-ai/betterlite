@@ -1,0 +1,138 @@
+id: B820
+title: Maintain model grants across rename and delete
+description: >-
+  Implement AccessGroupModelSync over stored and configured deployment siblings. Rewrite only grants whose
+  served public model name actually disappears; a remaining configuration-backed sibling keeps its access
+  group name. Use the B368 catalog snapshot and atomic SQL array rewrite.
+
+
+  Build the production access_group_models module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/access_group_model_sync.py:
+  RawExecutor.query_raw (L28-L28; 1 source lines), raw_executor (L57-L59; 3 source lines), _config_sourced_sibling
+  (L62-L66; 5 source lines), _served_by_a_config_deployment (L69-L75; 7 source lines), still_backed (L78-L82;
+  5 source lines), _rewrite_groups (L85-L89; 5 source lines), sync_access_groups_for_renamed_model (L92-L106;
+  15 source lines), sync_access_groups_for_deleted_model (L109-L119; 11 source lines).
+
+
+  Add the access_group_models operation under B856 Management::models. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a access-group-models-* seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 52 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  65 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 314 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/access_group_models.rs
+    - crates/betterlite-server/src/access_group_models/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/access_group_models.rs
+    - tools/oracle/src/helpers/access_group_models/**
+    - tools/oracle/helpers/access_group_models.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/access-group-models/**
+    - tools/oracle/fuzz/corpus/helper_case/access-group-models-*
+    - crates/betterlite-server/src/access_group_models/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L1-L119
+    why: Pinned implementation and exact ownership boundary for access_group_models.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L28-L28
+    why: Own RawExecutor.query_raw; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L57-L59
+    why: Own raw_executor; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L62-L66
+    why: Own _config_sourced_sibling; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L69-L75
+    why: Own _served_by_a_config_deployment; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L78-L82
+    why: Own still_backed; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L85-L89
+    why: Own _rewrite_groups; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L92-L106
+    why: Own sync_access_groups_for_renamed_model; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_model_sync.py#L109-L119
+    why: Own sync_access_groups_for_deleted_model; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: rename_last_deployment,
+      config_sibling_retains_grant, delete_last_deployment, delete_with_sibling, array_rewrite_bound,
+      cache_invalidation, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^access_group_models::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/access_group_models.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/access-group-models-*")"
+        && grep -rlq "access_group_models" tools/oracle/fuzz/corpus/helper_case/access-group-models-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_models::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_models::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/access-group-models/rename-last-deployment.yaml
+  - tools/oracle/cases/helpers/access-group-models/config-sibling-retains-grant.yaml
+  - tools/oracle/cases/helpers/access-group-models/delete-last-deployment.yaml
+  - tools/oracle/cases/helpers/access-group-models/delete-with-sibling.yaml
+  - tools/oracle/cases/helpers/access-group-models/array-rewrite-bound.yaml
+  - tools/oracle/cases/helpers/access-group-models/cache-invalidation.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A remaining configuration-backed sibling preserves the public model grant.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

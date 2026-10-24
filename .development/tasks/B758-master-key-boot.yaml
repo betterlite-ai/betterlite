@@ -1,0 +1,144 @@
+id: B758
+title: Master key startup checks and stored-secret refusal
+description: >-
+  Implement MasterKeyBootVerdict over configured key origin and stored-ciphertext counts, keeping exact
+  refusal categories and exit outcome while using betterlite text. Inject stderr/reporting and terminate
+  only in the binary after draining startup work. Existing encrypted data cannot become unreadable through
+  an unnoticed master-key change. dangerously_permit_weak_or_unset_master_key=false and LITELLM_DANGEROUSLY_PERMIT_WEAK_OR_UNSET_MASTER_KEY=false
+  retain the source development override. Refuse None, whitespace-only and the stripped publicly known
+  key sk-1234; this code adds no minimum-length or entropy rule for other keys. Count stored secrets only
+  for the source migration case; keep the development override warning.
+
+
+  Build the production master_key_boot module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/master_key_boot_check.py:
+  master_key_boot_verdict (L76-L105; 30 source lines), with_stored_secrets_counted (L108-L114; 7 source
+  lines), enforce_master_key_boot_verdict (L117-L133; 17 source lines), announce_on_stderr_at_exit (L136-L138;
+  3 source lines), _flush_stdout_then_write_stderr (L141-L143; 3 source lines), render_refusal (L146-L153;
+  8 source lines), _unsafe_reason (L200-L208; 9 source lines), _config_label (L211-L212; 2 source lines),
+  _source_line (L215-L232; 18 source lines), _fix_steps (L235-L238; 4 source lines), _config_steps (L241-L251;
+  11 source lines), _key_steps (L254-L272; 19 source lines), _migrate_from_assignment (L275-L278; 4 source
+  lines), _migration_lead (L281-L291; 11 source lines).
+
+
+  Add the master_key_boot operation under B856 Management::auth. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a master-key-boot-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 146 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  146 production, 157 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 398 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-auth/src/master_key_boot.rs
+    - crates/betterlite-auth/src/master_key_boot/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/master_key_boot.rs
+    - tools/oracle/src/helpers/master_key_boot/**
+    - tools/oracle/helpers/master_key_boot.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/master-key-boot/**
+    - tools/oracle/fuzz/corpus/helper_case/master-key-boot-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L1-L291
+    why: Pinned implementation and exact ownership boundary for master_key_boot.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L76-L105
+    why: Own master_key_boot_verdict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L108-L114
+    why: Own with_stored_secrets_counted; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L117-L133
+    why: Own enforce_master_key_boot_verdict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L136-L138
+    why: Own announce_on_stderr_at_exit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L141-L143
+    why: Own _flush_stdout_then_write_stderr; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L146-L153
+    why: Own render_refusal; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L200-L208
+    why: Own _unsafe_reason; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L211-L212
+    why: Own _config_label; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L215-L232
+    why: Own _source_line; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L235-L238
+    why: Own _fix_steps; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L241-L251
+    why: Own _config_steps; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L254-L272
+    why: Own _key_steps; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L275-L278
+    why: Own _migrate_from_assignment; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/master_key_boot_check.py#L281-L291
+    why: Own _migration_lead; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: strong_key, missing_key_with_secrets,
+      environment_placeholder, default_key_refusal, migration_required, sanitized_refusal, whitespace_key_refused,
+      other_short_key_accepted, development_override_warning.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^master_key_boot::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/master_key_boot.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/master-key-boot-*")"
+        && grep -rlq "master_key_boot" tools/oracle/fuzz/corpus/helper_case/master-key-boot-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/master-key-boot/strong-key.yaml
+  - tools/oracle/cases/helpers/master-key-boot/missing-key-with-secrets.yaml
+  - tools/oracle/cases/helpers/master-key-boot/environment-placeholder.yaml
+  - tools/oracle/cases/helpers/master-key-boot/default-key-refusal.yaml
+  - tools/oracle/cases/helpers/master-key-boot/migration-required.yaml
+  - tools/oracle/cases/helpers/master-key-boot/sanitized-refusal.yaml
+  - tools/oracle/cases/helpers/master-key-boot/whitespace-key-refused.yaml
+  - tools/oracle/cases/helpers/master-key-boot/other-short-key-accepted.yaml
+  - tools/oracle/cases/helpers/master-key-boot/development-override-warning.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Only the stripped known default sk-1234 is specially refused; do not invent minimum entropy rules.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

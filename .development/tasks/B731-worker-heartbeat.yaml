@@ -1,0 +1,147 @@
+id: B731
+title: Database worker heartbeats and lifecycle
+description: >-
+  Implement WorkerHeartbeat with injected process instance ID and clock, same heartbeat table/TTL and
+  deregistration on shutdown; emit structured migration/database logs through tracing. DynamoDBWrapper
+  and set_env_vars_based_on_arn have no call sites in the MIT package at the pin and the module declares
+  Postgres-only support: do not port these dead helpers; report the dynamodb database setting unsupported
+  at startup. No DynamoDB fallback may bypass the Postgres schema decision. Native-only deviation tests
+  (not oracle equality cases): dynamodb-startup-error.
+
+
+  Build the production worker_heartbeat module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/proxy_worker_heartbeat.py:
+  ProxyWorkerHeartbeat.__init__ (L61-L64; 4 source lines), ProxyWorkerHeartbeat.beat (L66-L71; 6 source
+  lines), ProxyWorkerHeartbeat.deregister (L73-L77; 5 source lines), count_live_proxy_workers (L80-L93;
+  14 source lines). litellm-proxy-extras/litellm_proxy_extras/_logging.py: JsonFormatter.formatTime (L8-L10;
+  3 source lines), JsonFormatter.format (L12-L20; 9 source lines), _is_json_enabled (L23-L29; 6 source
+  lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): JSON_LOGS='false'.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::worker_heartbeat::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 47 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  65 production, 148 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 293 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/worker_heartbeat.rs
+    - crates/betterlite-db/src/worker_heartbeat/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/worker_heartbeat/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/worker_heartbeat.rs
+    - crates/betterlite-config/src/worker_heartbeat/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/worker-heartbeat-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L1-L93
+    why: Pinned implementation and exact ownership boundary for worker_heartbeat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L1-L43
+    why: Pinned implementation and exact ownership boundary for worker_heartbeat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/dynamo_db.py#L1-L72
+    why: Pinned implementation and exact ownership boundary for worker_heartbeat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2463-L2481
+    why: DynamoDBArgs request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L61-L64
+    why: Own ProxyWorkerHeartbeat.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L66-L71
+    why: Own ProxyWorkerHeartbeat.beat; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L73-L77
+    why: Own ProxyWorkerHeartbeat.deregister; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L80-L93
+    why: Own count_live_proxy_workers; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L8-L10
+    why: Own JsonFormatter.formatTime; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L12-L20
+    why: Own JsonFormatter.format; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L23-L29
+    why: Own _is_json_enabled; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L29-L34
+    why: JSON_LOGS default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: heartbeat_upsert, expired_worker_excluded,
+      deregister_idempotent, heartbeat_failure_diagnostic, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^worker_heartbeat::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/worker_heartbeat::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/worker_heartbeat::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^worker_heartbeat::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/worker-heartbeat-*")"
+        && grep -rlq "JSON_LOGS" crates/betterlite-config/fuzz/corpus/config_yaml/worker-heartbeat-* &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - 'dynamo_db.py: DynamoDBWrapper.__init__ and set_env_vars_based_on_arn are dead compatibility helpers
+    with no MIT-package call sites at this pin; Postgres-only support is declared at module start.'
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/db/dynamo_db.py::DynamoDBWrapper.__init__: no production caller at the pin; deprecated
+    DynamoDBWrapper is the unused CustomDB subclass.'
+  - 'litellm/proxy/db/dynamo_db.py::DynamoDBWrapper.set_env_vars_based_on_arn: no production caller at
+    the pin; deprecated DynamoDBWrapper is the unused CustomDB subclass.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Worker deregistration is joined during shutdown even if the last heartbeat failed.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

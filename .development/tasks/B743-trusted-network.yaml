@@ -1,0 +1,286 @@
+id: B743
+title: Trusted proxies and client network identity
+description: >-
+  Implement TrustedProxyConfig and NetworkContext with a maintained CIDR/IP parser. Keep IPv4-mapped IPv6
+  normalization, trusted-proxy ranges, X-Forwarded-For hop selection and HTTPS source precedence. Only
+  a trusted immediate peer can supply proxy-auth headers; malformed and missing addresses preserve the
+  source fallback/denial distinction.
+
+
+  Build the production trusted_network module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/network.py:
+  normalize_cidr_ranges (L26-L38; 13 source lines), parse_trusted_proxy_ranges (L41-L50; 10 source lines),
+  _unmapped (L53-L56; 4 source lines), ip_in_networks (L59-L67; 9 source lines), _is_valid_ip (L70-L75;
+  6 source lines), resolve_client_ip (L78-L92; 15 source lines), resolve_network_context (L95-L101; 7
+  source lines). litellm/proxy/auth/ip_address_utils.py: IPAddressUtils.parse_internal_networks (L67-L79;
+  13 source lines), IPAddressUtils.parse_trusted_proxy_networks (L82-L97; 16 source lines), IPAddressUtils.is_trusted_proxy
+  (L100-L111; 12 source lines), IPAddressUtils.is_internal_ip (L114-L138; 19 source lines), IPAddressUtils.is_request_from_trusted_proxy
+  (L141-L194; 47 source lines), IPAddressUtils.is_request_https (L197-L224; 25 source lines), IPAddressUtils.extract_client_ip_from_xff_hops
+  (L227-L253; 25 source lines), IPAddressUtils._resolve_num_trusted_hops (L256-L278; 23 source lines),
+  IPAddressUtils.get_mcp_client_ip (L281-L371; 76 source lines). litellm/proxy/auth/trusted_proxy_utils.py:
+  _get_proxy_general_settings (L15-L21; 6 source lines), get_trusted_proxy_cidrs (L24-L37; 13 source lines),
+  _get_direct_client_ip (L40-L45; 6 source lines), require_trusted_proxy_request (L48-L84; 34 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.mcp_trusted_proxy_ranges=None;
+  general_settings.use_x_forwarded_for=False; PROXY_BASE_URL=''; general_settings.mcp_xff_num_trusted_hops=None;
+  mcp_trusted_proxy_ranges=None; use_x_forwarded_for=False; mcp_xff_num_trusted_hops=None.
+
+
+  Add the trusted_network operation under B856 Management::auth. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a trusted-network-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::trusted_network::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This task owns the outside-byte boundary trusted_network::decode_network_headers(&[u8]) -> Result<TypedValue,DecodeError>
+  for Forwarded/X-Forwarded-For and CIDR strings. Production calls this decoder before its typed policy
+  functions; the cargo-fuzz target trusted_network calls that same function. Seed valid, truncated, malformed,
+  duplicate-field and limit-boundary inputs and add trusted_network::tests::replays_the_trusted_network_corpus.
+  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
+  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
+  fetching URLs. B733 owns crates/betterlite-auth/fuzz; depend on it and register this decoder target
+  without recreating the workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 379 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  379 production, 151 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
+  and 50 config lines, 755 changed lines estimated within a 775-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+
+
+  Server wiring tests live under betterlite-server::auth::trusted_network::tests: stage_is_registered
+  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
+  called. These tests are part of the behavior-test allowance already budgeted above.
+scope:
+  paths:
+    - crates/betterlite-auth/src/trusted_network.rs
+    - crates/betterlite-auth/src/trusted_network/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - Cargo.toml
+    - deny.toml
+    - tools/oracle/src/helpers/trusted_network.rs
+    - tools/oracle/src/helpers/trusted_network/**
+    - tools/oracle/helpers/trusted_network.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/trusted-network/**
+    - tools/oracle/fuzz/corpus/helper_case/trusted-network-*
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/trusted-network/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/trusted_network.rs
+    - crates/betterlite-config/src/trusted_network/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/trusted-network-*
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/trusted_network.rs
+    - crates/betterlite-auth/fuzz/corpus/trusted_network/**
+    - crates/betterlite-server/src/auth/trusted_network.rs
+    - crates/betterlite-server/src/auth/trusted_network/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L1-L101
+    why: Pinned implementation and exact ownership boundary for trusted_network.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L1-L371
+    why: Pinned implementation and exact ownership boundary for trusted_network.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/trusted_proxy_utils.py#L1-L84
+    why: Pinned implementation and exact ownership boundary for trusted_network.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L26-L38
+    why: Own normalize_cidr_ranges; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L41-L50
+    why: Own parse_trusted_proxy_ranges; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L53-L56
+    why: Own _unmapped; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L59-L67
+    why: Own ip_in_networks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L70-L75
+    why: Own _is_valid_ip; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L78-L92
+    why: Own resolve_client_ip; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L95-L101
+    why: Own resolve_network_context; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L67-L79
+    why: Own IPAddressUtils.parse_internal_networks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L82-L97
+    why: Own IPAddressUtils.parse_trusted_proxy_networks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L100-L111
+    why: Own IPAddressUtils.is_trusted_proxy; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L114-L138
+    why: Own IPAddressUtils.is_internal_ip; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L141-L194
+    why: Own IPAddressUtils.is_request_from_trusted_proxy; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L197-L224
+    why: Own IPAddressUtils.is_request_https; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L227-L253
+    why: Own IPAddressUtils.extract_client_ip_from_xff_hops; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L256-L278
+    why: Own IPAddressUtils._resolve_num_trusted_hops; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L281-L371
+    why: Own IPAddressUtils.get_mcp_client_ip; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/trusted_proxy_utils.py#L15-L21
+    why: Own _get_proxy_general_settings; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/trusted_proxy_utils.py#L24-L37
+    why: Own get_trusted_proxy_cidrs; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/trusted_proxy_utils.py#L40-L45
+    why: Own _get_direct_client_ip; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/trusted_proxy_utils.py#L48-L84
+    why: Own require_trusted_proxy_request; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L176-L181
+    why: general_settings.mcp_trusted_proxy_ranges default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L173-L178
+    why: general_settings.use_x_forwarded_for default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L215-L220
+    why: PROXY_BASE_URL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/ip_address_utils.py#L353-L358
+    why: general_settings.mcp_xff_num_trusted_hops default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L1-L6
+    why: mcp_xff_num_trusted_hops default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: untrusted_spoofed_xff,
+      trusted_rightmost_hop, ipv4_mapped_ipv6, invalid_cidr_warning, https_forwarded_trust, missing_client,
+      mcp_hop_limit.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: The production decode_network_headers decoder is used by the service and its fuzz target and
+      rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+  - text: The real server constructor invokes the production auth stage and its failures stop downstream
+      execution.
+    proof:
+      - stage-wiring-tests
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^trusted_network::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/trusted_network.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/trusted-network-*")"
+        && grep -rlq "trusted_network" tools/oracle/fuzz/corpus/helper_case/trusted-network-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^trusted_network::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/trusted-network-*")"
+        && grep -rlq "mcp_trusted_proxy_ranges" crates/betterlite-config/fuzz/corpus/config_yaml/trusted-network-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/trusted_network.rs && grep -q "trusted_network"
+        crates/betterlite-auth/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-auth/fuzz/corpus/trusted_network)" && cargo nextest run --locked -p betterlite-auth
+        --no-tests=fail -E 'test(replays_the_trusted_network_corpus)'
+    - id: stage-wiring-tests
+      why: The server does not register this production auth stage or discards its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::trusted_network::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/trusted-network/untrusted-spoofed-xff.yaml
+  - tools/oracle/cases/helpers/trusted-network/trusted-rightmost-hop.yaml
+  - tools/oracle/cases/helpers/trusted-network/ipv4-mapped-ipv6.yaml
+  - tools/oracle/cases/helpers/trusted-network/invalid-cidr-warning.yaml
+  - tools/oracle/cases/helpers/trusted-network/https-forwarded-trust.yaml
+  - tools/oracle/cases/helpers/trusted-network/missing-client.yaml
+  - tools/oracle/cases/helpers/trusted-network/mcp-hop-limit.yaml
+  - tools/oracle/cases/auth/trusted-network/untrusted-spoofed-xff.yaml
+  - tools/oracle/cases/auth/trusted-network/trusted-rightmost-hop.yaml
+  - tools/oracle/cases/auth/trusted-network/ipv4-mapped-ipv6.yaml
+  - tools/oracle/cases/auth/trusted-network/invalid-cidr-warning.yaml
+  - tools/oracle/cases/auth/trusted-network/https-forwarded-trust.yaml
+  - tools/oracle/cases/auth/trusted-network/missing-client.yaml
+  - tools/oracle/cases/auth/trusted-network/mcp-hop-limit.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/network.py#L26-L38
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+pitfalls:
+  - IPv4-mapped IPv6 must normalize before CIDR and forwarded-hop checks.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

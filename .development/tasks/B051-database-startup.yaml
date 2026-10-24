@@ -1,0 +1,406 @@
+id: B051
+title: Database startup, migration jobs and readiness
+description: >-
+  Compose DatabaseEndpoints, native pools, MigrationRecovery, RequestLogIndexes, heartbeat, credential
+  refresh and MigrationDriftCheck at startup; expose database state to B130 readiness without implementing
+  its HTTP route. Wire only startup services B710-B719, B731, B854 and B857 and tools/betterlite-db-admin
+  migrate. Preserve existing rows and drain owned tasks/pools at shutdown. The migration job waits for
+  index completion; the server schedules it without delaying readiness.
+
+
+  Build the production database_startup module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/prisma_client.py:
+  PrismaManager._apply_replica_identity_full_if_requested (L883-L895; 12 source lines), PrismaManager._raise_if_partitioned_spend_logs
+  (L898-L911; 14 source lines), PrismaManager.setup_database (L914-L985; 65 source lines), PrismaManager.build_request_log_indexes
+  (L988-L997; 10 source lines), PrismaManager.start_request_log_index_build (L1000-L1009; 10 source lines),
+  should_update_prisma_schema (L1012-L1036; 20 source lines). litellm-proxy-extras/litellm_proxy_extras/utils.py:
+  ProxyExtrasDBManager.setup_database (L1285-L1315; 28 source lines), ProxyExtrasDBManager.build_request_log_indexes
+  (L1318-L1330; 13 source lines), ProxyExtrasDBManager.run_migration_job (L1333-L1342; 10 source lines),
+  ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352; 8 source lines). litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py:
+  _timeout_from_env (L81-L100; 20 source lines), prisma_command_timeout (L103-L107; 5 source lines), migration_lock_timeout
+  (L110-L111; 2 source lines), prisma_migrate_deploy_timeout (L121-L127; 7 source lines). Pinned settings
+  read by this component (resolve once in betterlite-config, pass typed values): DISABLE_SCHEMA_UPDATE='false';
+  DATABASE_URL=None; DIRECT_URL=None; USE_V2_MIGRATION_RESOLVER='true'; USE_PRISMA_DB_PUSH=None.
+
+
+  general_settings.disable_prisma_schema_update defaults absent and overrides DISABLE_SCHEMA_UPDATE=false
+  even when explicitly false. Preserve LITELLM_PRISMA_COMMAND_TIMEOUT=60, LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT=600
+  and LITELLM_MIGRATION_LOCK_TIMEOUT=600 seconds with warning fallback for invalid, nonfinite or nonpositive
+  values and deploy-timeout precedence. Accept PRISMA_OFFLINE_MODE, PRISMA_CLI_PATH, PRISMA_NODEENV_CACHE_DIR,
+  LITELLM_PRISMA_BOOTSTRAP_TIMEOUT and LITELLM_MIGRATION_DIR as ignored bootstrap inputs and warn once.
+  NPM_CONFIG_CACHE is outside database settings and is not rejected; MCP uses it.
+
+
+  Add the database_startup operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a database-startup-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Also write tools/betterlite-db-admin::database_startup::tests::dispatches_native_operation and rejects_bad_arguments;
+  the admin command check must fail without these real CLI dispatch tests.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::database_startup::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: after B1232 extracts the executable shell, allow 200 native startup/command-adapter code, 180
+  behavior/Postgres tests, 65 helper adapters, 70 runtime wiring and 50 config lines, 565 within a 600-line
+  gate; fixture/corpus/lock exclusions alone apply.
+
+
+  Native-only deviation tests in this production module: native_prisma_bootstrap_variables_and_litellm_migration_dir_are_accepted_with,
+  native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_and_pris. Exercise the precise
+  changed setting/output branch and assert its configured status/error/side effects; do not add these
+  differing results to oracle equality cases.
+
+
+  B1232 creates the database-admin package and typed command dispatcher. Extend its registry for this
+  operation only; do not recreate its Cargo package or depend on betterlite-server from the admin tool.
+  The operation adapter assembles native betterlite-db services directly.
+scope:
+  paths:
+    - crates/betterlite-server/src/database_startup.rs
+    - crates/betterlite-server/src/database_startup/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.toml
+    - tools/betterlite-db-admin/Cargo.toml
+    - tools/betterlite-db-admin/src/main.rs
+    - tools/betterlite-db-admin/src/commands.rs
+    - tools/betterlite-db-admin/src/database_startup.rs
+    - tools/betterlite-db-admin/src/database_startup/**
+    - crates/betterlite-server/src/database_startup/fixtures/**
+    - tools/oracle/src/helpers/database_startup.rs
+    - tools/oracle/src/helpers/database_startup/**
+    - tools/oracle/helpers/database_startup.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/database-startup/**
+    - tools/oracle/fuzz/corpus/helper_case/database-startup-*
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/database_startup.rs
+    - crates/betterlite-config/src/database_startup/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/database-startup-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L876-L1036
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L36-L51
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L205-L320
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L733-L753
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1285-L1352
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L1-L278
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L1-L73
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prisma_migration.py#L1-L40
+    why: Pinned implementation and exact ownership boundary for database_startup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L883-L895
+    why: Own PrismaManager._apply_replica_identity_full_if_requested; preserve caller-visible values and
+      failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L898-L911
+    why: Own PrismaManager._raise_if_partitioned_spend_logs; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L914-L985
+    why: Own PrismaManager.setup_database; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L988-L997
+    why: Own PrismaManager.build_request_log_indexes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L1000-L1009
+    why: Own PrismaManager.start_request_log_index_build; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L1012-L1036
+    why: Own should_update_prisma_schema; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1285-L1315
+    why: Own ProxyExtrasDBManager.setup_database; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1318-L1330
+    why: Own ProxyExtrasDBManager.build_request_log_indexes; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1333-L1342
+    why: Own ProxyExtrasDBManager.run_migration_job; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1345-L1352
+    why: Own ProxyExtrasDBManager.start_request_log_index_build; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L81-L100
+    why: Own _timeout_from_env; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L103-L107
+    why: Own prisma_command_timeout; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L110-L111
+    why: Own migration_lock_timeout; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L121-L127
+    why: Own prisma_migrate_deploy_timeout; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L37-L69
+    why: Own main; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prisma_migration.py#L23-L36
+    why: Own main; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1835-L1873
+    why: B130 consumes DB state for 503 status/db readiness except the configured DB-unavailable fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L40-L55
+    why: Migration-job entrypoint replacement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L1031-L1036
+    why: DISABLE_SCHEMA_UPDATE default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1323-L1328
+    why: DATABASE_URL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1327-L1332
+    why: DIRECT_URL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L53-L58
+    why: USE_V2_MIGRATION_RESOLVER default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L54-L59
+    why: USE_PRISMA_DB_PUSH default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: existing_schema_no_rewrite,
+      disabled_updates_warn_only, startup_migration_failure, shutdown_drains, migration_job_waits, migration_exit_codes,
+      obsolete_bootstrap_warning, schema_update_setting_precedence, invalid_timeout_warning, deploy_timeout_precedence,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The offline admin command invokes the native operation and preserves its exit/error contract.
+    proof:
+      - admin-tests
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_prisma_bootstrap_variables_and_litellm_migration_dir_are_accepted_with,
+      native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_and_pris.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^database_startup::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/database_startup.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-startup-*")"
+        && grep -rlq "database_startup" tools/oracle/fuzz/corpus/helper_case/database-startup-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: admin-tests
+      why: The offline command does not dispatch the named native operation or reject bad arguments.
+      run: cargo nextest run --locked -p betterlite-db-admin --no-tests=fail -E 'test(/^database_startup::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/database_startup::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/database_startup::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_startup::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-startup-*")"
+        && grep -rlq "DISABLE_SCHEMA_UPDATE" crates/betterlite-config/fuzz/corpus/config_yaml/database-startup-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/database-startup/schema-update-setting-precedence.yaml
+  - tools/oracle/cases/helpers/database-startup/invalid-timeout-warning.yaml
+  - tools/oracle/cases/helpers/database-startup/deploy-timeout-precedence.yaml
+deviations:
+  - what: Prisma bootstrap variables and LITELLM_MIGRATION_DIR are accepted with one startup warning and
+      no toolchain side effects.
+    why: Official images set these obsolete native-runtime inputs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L57-L278
+  - what: betterlite-db-admin migrate replaces python migrations/run.py and prisma_migration.py; exit
+      2 is unrecoverable migration failure, exit 1 is exhausted retries. B121 owns --skip_server_startup
+      and forwards to this operation.
+    why: Native SQL migrations do not run Prisma or Node.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1426-L1447
+out_of_scope:
+  - migrations/Dockerfile packaging belongs to B151; py.typed is a Python typing marker with no native
+    runtime counterpart, while migration_lock.toml records the already-preserved PostgreSQL provider.
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::prisma_bootstrap_timeout: Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::nodeenv_cache_dir: Prisma/Node subprocess
+    bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::node_binary_path: Prisma/Node subprocess
+    bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::heal_incomplete_nodeenv_cache: Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::_kill_process_group: Prisma/Node subprocess
+    bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::prisma_cli_available: Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::resolve_prisma_argv: Prisma/Node subprocess
+    bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::run_prisma: Prisma/Node subprocess
+    bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::ensure_prisma_toolchain: Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B710 owns str_to_bool (L36-L39).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B711 owns ProxyExtrasDBManager._libpq_tls_params
+    (L733-L753), ProxyExtrasDBManager._strip_prisma_query_params (L716-L730).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B716 owns _MigrateAttemptBudget.exhausted (L108-L109),
+    _MigrateAttemptBudget.attempt_number (L112-L113), _MigrateAttemptBudget.spend (L115-L116), _MigrateAttemptBudget.after_contention
+    (L118-L125), _migration_timestamp (L188-L195), _max_migration_timestamp (L198-L202), ProxyExtrasDBManager._get_migration_names
+    (L323-L327), ProxyExtrasDBManager._read_migration_ledger (L356-L376), ProxyExtrasDBManager._failed_migration_logs
+    (L379-L387), ProxyExtrasDBManager._failed_migration_recovered (L390-L396).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B717 owns ProxyExtrasDBManager._is_permission_error
+    (L409-L433), ProxyExtrasDBManager._setup_database_v2 (L951-L990), ProxyExtrasDBManager._run_database_v2
+    (L993-L1101), ProxyExtrasDBManager._v2_failed_migration_name (L1104-L1111), ProxyExtrasDBManager._v2_failed_migration_started_at
+    (L1114-L1116), ProxyExtrasDBManager._v2_roll_back_migration_best_effort (L1119-L1129), ProxyExtrasDBManager._budget_after_deploy_failure
+    (L1132-L1226), ProxyExtrasDBManager.apply_replica_identity_full_if_requested (L1252-L1282).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B857 owns ProxyExtrasDBManager.raise_if_lens_rename_pending
+    (L630-L657), ProxyExtrasDBManager.spend_logs_is_partitioned (L660-L702), ProxyExtrasDBManager._warn_if_db_ahead_of_head
+    (L756-L825), ProxyExtrasDBManager._invalid_litellm_indexes (L828-L832), ProxyExtrasDBManager._index_repair
+    (L835-L841), ProxyExtrasDBManager._repair_index (L844-L860), ProxyExtrasDBManager.repair_invalid_indexes
+    (L863-L926), ProxyExtrasDBManager._repair_under_migration_lock (L929-L948).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._create_baseline_migration:
+    v1 only; native v2 recovery does not call it.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_env: Prisma filesystem/tool discovery
+    is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_command: Prisma filesystem/tool discovery
+    is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._get_prisma_dir: Prisma
+    filesystem/tool discovery is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_sql_comments: v1 only; native startup
+    always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_spend_logs_pk_clauses: v1 only; native
+    startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::filter_partitioned_spend_logs_diff: v1 only;
+    native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration: v1
+    only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_specific_migration:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration_best_effort:
+    no caller at the pin.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._is_idempotent_error: v1
+    only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_all_migrations:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migrations_applied:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._run_migrations: v1 only;
+    native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migration_applied:
+    no caller at the pin.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
+    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
+  - 'litellm/proxy/db/prisma_client.py: B713 owns _PrismaEngine.process (L48-L48), _PrismaEngine.query
+    (L50-L50), _PrismaEngine.start_transaction (L52-L52), _PrismaEngine.commit_transaction (L54-L54),
+    _PrismaEngine.rollback_transaction (L56-L56), _PrismaClient._engine (L63-L63), _PrismaDrainTracker.__init__
+    (L67-L71), _PrismaDrainTracker.begin_operation (L73-L76), _PrismaDrainTracker.end_operation (L78-L81),
+    _PrismaDrainTracker.transaction_started (L83-L84), _PrismaDrainTracker.transaction_finished (L86-L90),
+    _PrismaDrainTracker.wait_until_drained (L92-L93), _TrackedPrismaEngine.__init__ (L97-L99), _TrackedPrismaEngine.process
+    (L102-L103), _TrackedPrismaEngine.__getattr__ (L105-L106), _TrackedPrismaEngine.query (L108-L113),
+    _TrackedPrismaEngine.start_transaction (L115-L123), _TrackedPrismaEngine.commit_transaction (L125-L131),
+    _TrackedPrismaEngine.rollback_transaction (L133-L139), PrismaWrapper.__init__ (L169-L220), PrismaWrapper.token_auth
+    (L223-L225), PrismaWrapper.token_label (L228-L230), PrismaWrapper.iam_token_db_auth (L233-L239), PrismaWrapper._read_engine
+    (L242-L243), PrismaWrapper._write_engine (L246-L247), PrismaWrapper._instrument_prisma_client (L249-L260),
+    PrismaWrapper._retire_engine_when_drained (L282-L296), PrismaWrapper._schedule_engine_retirement (L298-L303),
+    PrismaWrapper._retirement_finished (L305-L306), PrismaWrapper.connect (L308-L313), PrismaWrapper.engine_generation
+    (L479-L487), PrismaWrapper._reconnection_settled (L489-L491), PrismaWrapper.wait_for_planned_engine_replacement
+    (L493-L508), PrismaWrapper.recreate_prisma_client (L510-L546), PrismaWrapper._recreate_prisma_client_locked
+    (L548-L605), PrismaWrapper._replace_prisma_client_for_token_refresh_locked (L607-L644), PrismaWrapper.__getattr__
+    (L808-L871).'
+  - 'litellm/proxy/db/prisma_client.py: B854 owns PrismaWrapper._extract_token_from_db_url (L349-L368),
+    PrismaWrapper._parse_token_expiration (L370-L378), PrismaWrapper._calculate_seconds_until_refresh
+    (L380-L415), PrismaWrapper.is_token_expired (L417-L430), PrismaWrapper.get_rds_iam_token (L432-L450),
+    PrismaWrapper._endpoint_from_env (L453-L476), PrismaWrapper.start_token_refresh_task (L646-L667),
+    PrismaWrapper.stop_token_refresh_task (L669-L688), PrismaWrapper._token_refresh_loop (L690-L744),
+    PrismaWrapper._safe_refresh_token (L746-L789), PrismaWrapper._token_refresh_not_needed (L791-L806).'
+  - 'litellm/proxy/db/prisma_client.py::PrismaManager._get_prisma_dir: Prisma filesystem/tool discovery
+    is absent from the native runner.'
+  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._get_engine_pid: Prisma engine process supervision
+    has no equivalent process in native SQLx; owned pool tasks replace it.'
+  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
+    has no equivalent process in native SQLx; owned pool tasks replace it.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._create_baseline_migration
+    (L261-L320): v1 only; native v2 recovery does not call it.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::prisma_bootstrap_timeout (L114-L118):
+    Prisma/Node subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::nodeenv_cache_dir (L130-L146): Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::node_binary_path (L149-L153): Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::heal_incomplete_nodeenv_cache (L156-L182):
+    Prisma/Node subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::_kill_process_group (L185-L192): Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::prisma_cli_available (L195-L199):
+    Prisma/Node subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::resolve_prisma_argv (L202-L214): Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::run_prisma (L217-L247): Prisma/Node
+    subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py::ensure_prisma_toolchain (L250-L278):
+    Prisma/Node subprocess bootstrap is replaced by the compiled native migration runner.'
+  - 'litellm/proxy/db/prisma_client.py::PrismaManager._get_prisma_dir (L876-L880): Prisma filesystem/tool
+    discovery is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_env (L42-L51): Prisma filesystem/tool
+    discovery is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_command (L205-L229): Prisma filesystem/tool
+    discovery is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._get_prisma_dir (L234-L258):
+    Prisma filesystem/tool discovery is absent from the native runner.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - 'migrations/run.py: B1232 owns main as the executable/exit boundary; this task installs the native
+    migration backend.'
+  - 'litellm/proxy/prisma_migration.py: B1232 owns main as the executable/exit boundary; this task installs
+    the native migration backend.'
+pitfalls:
+  - An explicit false disable_prisma_schema_update overrides an enabled DISABLE_SCHEMA_UPDATE environment
+    value.
+  - The index job is awaited by the migration command but does not delay serving readiness.
+  - NPM_CONFIG_CACHE remains meaningful to MCP npx execution and is not a database error.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

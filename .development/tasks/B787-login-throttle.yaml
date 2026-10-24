@@ -1,0 +1,221 @@
+id: B787
+title: Distributed login throttling and source grouping
+description: >-
+  Implement LoginThrottle with B126 atomic Redis scripts and bounded local fallback counters. Preserve
+  source/group and user-pair keys, IPv6 /64 grouping, longest CIDR override precedence and block timing.
+  Defaults are 10 failed source attempts, 60-second window, 300-second block; zero source override exempts
+  that source from both pair and source limiting. Match source max counter/block capacities 20000/10000
+  and warning-only fallback on Redis outage. Pair limit is max(source_limit // 2, 1); an undeclared trusted_proxy_ranges
+  disables cross-username source limiting with a warning; LITELLM_DISABLE_LOGIN_RATE_LIMIT defaults false.
+
+
+  Build the production login_throttle module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/login_throttle.py:
+  LocalStore.get_cache (L69-L69; 1 source lines), LocalStore.set_cache (L71-L71; 1 source lines), LocalStore.increment_cache
+  (L73-L73; 1 source lines), LocalStore.delete_cache (L75-L75; 1 source lines), _rate_limit_disabled (L106-L107;
+  2 source lines), warn_login_counters_are_per_worker (L111-L118; 8 source lines), warn_source_login_limit_is_off
+  (L122-L128; 7 source lines), declared_proxy_ranges (L131-L141; 10 source lines), _configured_range_entries
+  (L144-L158; 15 source lines), _positive_int (L161-L172; 12 source lines), _int_setting (L175-L176; 2
+  source lines), _override_limit (L179-L183; 5 source lines), _parse_address (L186-L194; 9 source lines),
+  _parse_network (L197-L202; 6 source lines), _precedence (L205-L207; 3 source lines), _source_limit (L210-L235;
+  25 source lines), user_limit_for (L238-L240; 3 source lines), source_group (L243-L250; 8 source lines),
+  LoginThrottle.from_request (L287-L310; 24 source lines), LoginThrottle._keys (L312-L320; 9 source lines),
+  LoginThrottle.attempt (L322-L336; 15 source lines), LoginThrottle._active_block (L338-L347; 10 source
+  lines), LoginThrottle._shared_block_ttls (L349-L358; 10 source lines), LoginThrottle._local_block_ttls
+  (L360-L361; 2 source lines), LoginThrottle._local_block_ttl (L363-L367; 5 source lines), LoginThrottle.record_failure
+  (L369-L384; 16 source lines), LoginThrottle._local_bump (L386-L394; 9 source lines), LoginThrottle.clear_pair
+  (L396-L403; 8 source lines), LoginThrottle._warn_redis (L405-L410; 6 source lines), LoginThrottle.refused
+  (L413-L420; 8 source lines), LoginAttempt.succeeded (L428-L431; 4 source lines), LoginAttempt.failed
+  (L433-L445; 13 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): LITELLM_DISABLE_LOGIN_RATE_LIMIT=False.
+
+
+  Add the login_throttle operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a login-throttle-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Write betterlite-config::login_throttle::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 258 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  258 production, 157 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 560 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/login_throttle.rs
+    - crates/betterlite-server/src/login_throttle/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/login_throttle.rs
+    - tools/oracle/src/helpers/login_throttle/**
+    - tools/oracle/helpers/login_throttle.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/login-throttle/**
+    - tools/oracle/fuzz/corpus/helper_case/login-throttle-*
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/login_throttle.rs
+    - crates/betterlite-config/src/login_throttle/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/login-throttle-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L1-L445
+    why: Pinned implementation and exact ownership boundary for login_throttle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L69-L69
+    why: Own LocalStore.get_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L71-L71
+    why: Own LocalStore.set_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L73-L73
+    why: Own LocalStore.increment_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L75-L75
+    why: Own LocalStore.delete_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L106-L107
+    why: Own _rate_limit_disabled; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L111-L118
+    why: Own warn_login_counters_are_per_worker; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L122-L128
+    why: Own warn_source_login_limit_is_off; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L131-L141
+    why: Own declared_proxy_ranges; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L144-L158
+    why: Own _configured_range_entries; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L161-L172
+    why: Own _positive_int; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L175-L176
+    why: Own _int_setting; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L179-L183
+    why: Own _override_limit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L186-L194
+    why: Own _parse_address; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L197-L202
+    why: Own _parse_network; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L205-L207
+    why: Own _precedence; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L210-L235
+    why: Own _source_limit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L238-L240
+    why: Own user_limit_for; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L243-L250
+    why: Own source_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L287-L310
+    why: Own LoginThrottle.from_request; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L312-L320
+    why: Own LoginThrottle._keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L322-L336
+    why: Own LoginThrottle.attempt; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L338-L347
+    why: Own LoginThrottle._active_block; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L349-L358
+    why: Own LoginThrottle._shared_block_ttls; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L360-L361
+    why: Own LoginThrottle._local_block_ttls; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L363-L367
+    why: Own LoginThrottle._local_block_ttl; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L369-L384
+    why: Own LoginThrottle.record_failure; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L386-L394
+    why: Own LoginThrottle._local_bump; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L396-L403
+    why: Own LoginThrottle.clear_pair; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L405-L410
+    why: Own LoginThrottle._warn_redis; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L413-L420
+    why: Own LoginThrottle.refused; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L428-L431
+    why: Own LoginAttempt.succeeded; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L433-L445
+    why: Own LoginAttempt.failed; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/login_throttle.py#L107-L112
+    why: LITELLM_DISABLE_LOGIN_RATE_LIMIT default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: pair_limit, source_limit,
+      blocked_pair_does_not_charge_source, ipv6_group, cidr_precedence, redis_warning_local_fallback,
+      success_clears_pair, undeclared_topology_source_off, zero_override_exempts_all.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^login_throttle::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/login_throttle.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/login-throttle-*")"
+        && grep -rlq "login_throttle" tools/oracle/fuzz/corpus/helper_case/login-throttle-* && cargo nextest
+        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^login_throttle::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/login-throttle-*")"
+        && grep -rlq "LITELLM_DISABLE_LOGIN_RATE_LIMIT" crates/betterlite-config/fuzz/corpus/config_yaml/login-throttle-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/login-throttle/pair-limit.yaml
+  - tools/oracle/cases/helpers/login-throttle/source-limit.yaml
+  - tools/oracle/cases/helpers/login-throttle/blocked-pair-does-not-charge-source.yaml
+  - tools/oracle/cases/helpers/login-throttle/ipv6-group.yaml
+  - tools/oracle/cases/helpers/login-throttle/cidr-precedence.yaml
+  - tools/oracle/cases/helpers/login-throttle/redis-warning-local-fallback.yaml
+  - tools/oracle/cases/helpers/login-throttle/success-clears-pair.yaml
+  - tools/oracle/cases/helpers/login-throttle/undeclared-topology-source-off.yaml
+  - tools/oracle/cases/helpers/login-throttle/zero-override-exempts-all.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A zero source override exempts both source and user-pair throttling.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: security

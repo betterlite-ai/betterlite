@@ -1,0 +1,136 @@
+id: B831
+title: Customer update and deletion routes
+description: >-
+  Implement customer/end_user update and delete aliases with typed patch semantics and object-permission
+  updates. Use shared BudgetRepository and end-user cache invalidation; keep source unknown-ID and linked-budget
+  behavior.
+
+
+  Build the production customer_update module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/customer_endpoints.py:
+  update_end_user (L592-L756; 127 source lines), delete_end_user (L771-L834; 51 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /customer/update -> update_end_user;
+  POST /end_user/update -> update_end_user; POST /customer/delete -> delete_end_user; POST /end_user/delete
+  -> delete_end_user. For each route send a typed successful request, an invalid or missing target, and
+  a caller lacking that route permission through B001 HttpCase against the running pinned MIT proxy and
+  betterlite. Public login/session routes instead prove bad credentials or invalid/expired codes. Compare
+  status, response model including null/absent fields, error type/param/code, content-type, redirect/cookie
+  headers and litellm-changed-by where read. Do not reduce endpoint checks to direct helper invocations.
+  handle_exception_on_proxy controls management error mapping; keep source partial writes visible in fixture
+  inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 178 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  178 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 391 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/customer_update.rs
+    - crates/betterlite-server/src/customer_update/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/customer-update/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L592-L834
+    why: Pinned implementation and exact ownership boundary for customer_update.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2118-L2133
+    why: UpdateCustomerRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2136-L2141
+    why: DeleteCustomerRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L592-L756
+    why: Own update_end_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L771-L834
+    why: Own delete_end_user; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: update_customer, clear_permissions,
+      omitted_budget, delete_customer, unknown_customer, cache_invalidated.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_update::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/customer-update/post--customer-update-success.yaml
+  - tools/oracle/cases/management/customer-update/post--customer-update-invalid-target.yaml
+  - tools/oracle/cases/management/customer-update/post--customer-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-update/post--end-user-update-success.yaml
+  - tools/oracle/cases/management/customer-update/post--end-user-update-invalid-target.yaml
+  - tools/oracle/cases/management/customer-update/post--end-user-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-update/post--customer-delete-success.yaml
+  - tools/oracle/cases/management/customer-update/post--customer-delete-invalid-target.yaml
+  - tools/oracle/cases/management/customer-update/post--customer-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-update/post--end-user-delete-success.yaml
+  - tools/oracle/cases/management/customer-update/post--end-user-delete-invalid-target.yaml
+  - tools/oracle/cases/management/customer-update/post--end-user-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/customer-update/update-customer.yaml
+  - tools/oracle/cases/management/customer-update/clear-permissions.yaml
+  - tools/oracle/cases/management/customer-update/omitted-budget.yaml
+  - tools/oracle/cases/management/customer-update/delete-customer.yaml
+  - tools/oracle/cases/management/customer-update/unknown-customer.yaml
+  - tools/oracle/cases/management/customer-update/cache-invalidated.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B059 owns resolve_customer_daily_activity_scope
+    (L500-L512), customer_daily_activity_is_admin (L515-L519), end_user_info (L534-L577), list_end_user
+    (L849-L891), get_customer_daily_activity (L906-L958).'
+  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B830 owns _typed_table (L98-L98), _typed_table
+    (L100-L100), _typed_table (L101-L102), _evict_end_user_cache_keys (L108-L119), _end_user_cache_keys
+    (L122-L124), _to_customer_response (L127-L134), block_user (L149-L190), unblock_user (L205-L249),
+    new_budget_request (L252-L275), _handle_customer_object_permission_update (L278-L305), new_end_user
+    (L320-L492).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Customer and end_user update aliases use the same permission-clear semantics.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,138 @@
+id: B842
+title: Discoverable and healthy model visibility
+description: >-
+  Implement ModelVisibility using typed configured deployment metadata, public team names, aliases, wildcard
+  provider resolution and B304 health snapshots. Preserve source defaults for healthy_only and undiscoverable
+  metadata; visibility filtering is separate from model access authorization. general_settings.model_list_healthy_only
+  defaults false; only a literal true enables the proxy-wide filter.
+
+
+  Build the production model_visibility module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/discoverable_model_filter.py:
+  is_undiscoverable_deployment (L19-L23; 5 source lines), is_undiscoverable_model_name (L26-L32; 7 source
+  lines), _team_public_model_name (L35-L37; 3 source lines), _alias_target (L40-L41; 2 source lines),
+  _undiscoverable_served_names (L44-L55; 12 source lines), _undiscoverable_patterns (L58-L70; 13 source
+  lines), _resolved_provider (L73-L77; 5 source lines), _matches_undiscoverable_pattern (L80-L86; 7 source
+  lines), undiscoverable_model_names (L89-L109; 21 source lines), discoverable_rows (L112-L118; 7 source
+  lines). litellm/proxy/common_utils/healthy_model_filter.py: is_healthy_only_listing_default (L34-L41;
+  7 source lines), is_healthy_only_enabled (L44-L57; 13 source lines), get_hidden_unhealthy_model_names
+  (L60-L79; 19 source lines).
+
+
+  Add the model_visibility operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a model-visibility-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 121 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  121 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 364 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_visibility.rs
+    - crates/betterlite-server/src/model_visibility/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/model_visibility.rs
+    - tools/oracle/src/helpers/model_visibility/**
+    - tools/oracle/helpers/model_visibility.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/model-visibility/**
+    - tools/oracle/fuzz/corpus/helper_case/model-visibility-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L1-L118
+    why: Pinned implementation and exact ownership boundary for model_visibility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/healthy_model_filter.py#L1-L79
+    why: Pinned implementation and exact ownership boundary for model_visibility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L19-L23
+    why: Own is_undiscoverable_deployment; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L26-L32
+    why: Own is_undiscoverable_model_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L35-L37
+    why: Own _team_public_model_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L40-L41
+    why: Own _alias_target; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L44-L55
+    why: Own _undiscoverable_served_names; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L58-L70
+    why: Own _undiscoverable_patterns; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L73-L77
+    why: Own _resolved_provider; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L80-L86
+    why: Own _matches_undiscoverable_pattern; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L89-L109
+    why: Own undiscoverable_model_names; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L112-L118
+    why: Own discoverable_rows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/healthy_model_filter.py#L34-L41
+    why: Own is_healthy_only_listing_default; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/healthy_model_filter.py#L44-L57
+    why: Own is_healthy_only_enabled; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/healthy_model_filter.py#L60-L79
+    why: Own get_hidden_unhealthy_model_names; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: undiscoverable_model,
+      team_public_alias, wildcard_hidden, healthy_only_default, explicit_healthy_only, unknown_health.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_visibility::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/model_visibility.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-visibility-*")"
+        && grep -rlq "model_visibility" tools/oracle/fuzz/corpus/helper_case/model-visibility-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/model-visibility/undiscoverable-model.yaml
+  - tools/oracle/cases/helpers/model-visibility/team-public-alias.yaml
+  - tools/oracle/cases/helpers/model-visibility/wildcard-hidden.yaml
+  - tools/oracle/cases/helpers/model-visibility/healthy-only-default.yaml
+  - tools/oracle/cases/helpers/model-visibility/explicit-healthy-only.yaml
+  - tools/oracle/cases/helpers/model-visibility/unknown-health.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Only literal true enables model_list_healthy_only; truthy strings are not equivalent.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

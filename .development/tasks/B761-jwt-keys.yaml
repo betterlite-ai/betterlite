@@ -1,0 +1,334 @@
+id: B761
+title: JWKS and OIDC discovery caching
+description: >-
+  Implement JwksResolver with configured issuer/discovery/JWKS destinations, injected HTTP pool, clock
+  and cache. Preserve fresh/stale cache windows, transient retry classes, single-flight refresh and typed
+  503 on unavailable keys. The JWKS URI may come only from a configured trusted discovery document; token
+  jku/x5u and arbitrary issuer URLs never become outbound destinations. public_key_ttl defaults 600 seconds
+  and public_key_stale_ttl defaults 3600 seconds. Preserve the unconstrained public_key_ttl value at this
+  boundary; public_key_stale_ttl is constrained to >=0, with zero disabling stale fallback and a negative
+  value producing settings validation failure. Do not invent a warning-and-default path. Retain three
+  transport-error fetch attempts with 0.25 and 0.5-second delays, 30-second unreachable-result backoff,
+  and the distinct HTTP-status error path; these are injected-clock tests, not live sleeps.
+
+
+  Build the production jwt_keys module in betterlite-auth; reuse the typed dependencies listed in the
+  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/handle_jwt.py:
+  _JWTAuthSettings.issuers (L116-L116; 1 source lines), _JWTAuthSettings.public_key_ttl (L119-L119; 1
+  source lines), _JWTAuthSettings.public_key_stale_ttl (L122-L122; 1 source lines), _OIDCDiscoveryResponse.json
+  (L134-L134; 1 source lines), _UserInfoResponse.json (L140-L140; 1 source lines), AgentLookup.get_agent_list
+  (L165-L165; 1 source lines), AgentLookup.get_agent_by_id (L167-L168; 2 source lines), AgentLookup.get_agent_by_name
+  (L170-L171; 2 source lines), _NoRegisteredAgents.get_agent_list (L177-L178; 2 source lines), _NoRegisteredAgents.get_agent_by_id
+  (L180-L181; 2 source lines), _NoRegisteredAgents.get_agent_by_name (L183-L184; 2 source lines), _discovery_document
+  (L187-L189; 3 source lines), _userinfo_document (L192-L194; 3 source lines), jwks_unavailable_exception
+  (L197-L206; 10 source lines), JWTHandler._resolve_jwks_url (L748-L763; 15 source lines), JWTHandler._get_with_transient_retries
+  (L765-L784; 19 source lines), JWTHandler._get_cached_value (L786-L788; 3 source lines), JWTHandler._get_cached_timestamp
+  (L790-L793; 3 source lines), JWTHandler._put_cached_value (L795-L796; 2 source lines), JWTHandler._cached_with_stale_fallback
+  (L798-L817; 19 source lines), JWTHandler._refresh_or_serve_stale (L819-L859; 39 source lines), JWTHandler._stale_copy_age
+  (L861-L863; 3 source lines), JWTHandler._refresh_or_record_outage (L865-L898; 31 source lines), JWTHandler._fetch_jwks_uri_from_discovery
+  (L900-L917; 16 source lines), JWTHandler._get_public_key_cache_ttl (L919-L923; 5 source lines), JWTHandler._get_public_key_stale_ttl
+  (L925-L929; 5 source lines), JWTHandler._fetch_jwks_keys (L931-L945; 13 source lines), JWTHandler._get_public_key_from_jwks_url
+  (L947-L960; 12 source lines), JWTHandler.get_public_key (L962-L979; 14 source lines), JWTHandler.parse_keys
+  (L981-L997; 16 source lines), JWTHandler.is_allowed_domain (L999-L1007; 8 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): JWT_PUBLIC_KEY_URL=None;
+  litellm_jwtauth.user_allowed_email_domain=None; litellm_jwtauth.public_key_ttl=600; litellm_jwtauth.public_key_stale_ttl=DEFAULT_JWKS_STALE_TTL.
+
+
+  Add the jwt_keys operation under B856 Management::jwt. Python calls only the owned MIT helper with injected
+  clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm. Rust
+  invokes the production module. Compare typed values, exception status/type/param/code, ordered warnings
+  and effects; exclude only random IDs and message text with a reason per pointer. Add a jwt-keys-* seed
+  to B171 helper_case, which already owns this decoder.
+
+
+  Write betterlite-config::jwt_keys::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This task owns the outside-byte boundary jwt_keys::decode_discovery_document(&[u8]) -> Result<TypedValue,DecodeError>
+  for OIDC discovery, JWKS and userinfo response JSON. Production calls this decoder before its typed
+  policy functions; the cargo-fuzz target jwt_keys calls that same function. Seed valid, truncated, malformed,
+  duplicate-field and limit-boundary inputs and add jwt_keys::tests::replays_the_jwt_keys_corpus. Reuse
+  B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder
+  cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching
+  URLs. B733 owns crates/betterlite-auth/fuzz; depend on it and register this decoder target without recreating
+  the workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 255 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  255 production, 172 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 50 config lines, 617 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+
+
+  Pin externally visible verification/key-fetch failures through B001 HTTP cases against the real MIT
+  proxy and betterlite, using B860 independent databases and a configured local JWKS mock. Register this
+  production pre-identity stage through B732; a rejected signature or unavailable key must pass through
+  the real HTTP auth exception mapper before any identity lookup or downstream handler. Compare status
+  and error type/param/code, including unavailable-key 503 versus invalid-token 401. Successful claim
+  projections remain helper cases until B053 installs the complete JWT identity backend; do not use a
+  fabricated HTTP success. Server registration tests live at auth::jwt_keys::tests::stage_is_registered
+  and failure_stops_downstream, within the existing behavior-test allowance.
+scope:
+  paths:
+    - crates/betterlite-auth/src/jwt_keys.rs
+    - crates/betterlite-auth/src/jwt_keys/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/jwt_keys.rs
+    - tools/oracle/src/helpers/jwt_keys/**
+    - tools/oracle/helpers/jwt_keys.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/jwt.rs
+    - tools/oracle/helpers/management/jwt.py
+    - tools/oracle/cases/helpers/jwt-keys/**
+    - tools/oracle/fuzz/corpus/helper_case/jwt-keys-*
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/jwt_keys.rs
+    - crates/betterlite-config/src/jwt_keys/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-keys-*
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/jwt_keys.rs
+    - crates/betterlite-auth/fuzz/corpus/jwt_keys/**
+    - tools/oracle/cases/auth/jwt-keys/**
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-server/src/auth/jwt_keys.rs
+    - crates/betterlite-server/src/auth/jwt_keys/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L116-L206
+    why: Pinned implementation and exact ownership boundary for jwt_keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L748-L1007
+    why: Pinned implementation and exact ownership boundary for jwt_keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5465
+    why: JWT settings declaration; only the fields consumed by this task are enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L116-L116
+    why: Own _JWTAuthSettings.issuers; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L119-L119
+    why: Own _JWTAuthSettings.public_key_ttl; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L122-L122
+    why: Own _JWTAuthSettings.public_key_stale_ttl; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L134-L134
+    why: Own _OIDCDiscoveryResponse.json; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L140-L140
+    why: Own _UserInfoResponse.json; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L165-L165
+    why: Own AgentLookup.get_agent_list; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L167-L168
+    why: Own AgentLookup.get_agent_by_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L170-L171
+    why: Own AgentLookup.get_agent_by_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L177-L178
+    why: Own _NoRegisteredAgents.get_agent_list; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L180-L181
+    why: Own _NoRegisteredAgents.get_agent_by_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L183-L184
+    why: Own _NoRegisteredAgents.get_agent_by_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L187-L189
+    why: Own _discovery_document; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L192-L194
+    why: Own _userinfo_document; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L197-L206
+    why: Own jwks_unavailable_exception; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L748-L763
+    why: Own JWTHandler._resolve_jwks_url; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L765-L784
+    why: Own JWTHandler._get_with_transient_retries; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L786-L788
+    why: Own JWTHandler._get_cached_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L790-L793
+    why: Own JWTHandler._get_cached_timestamp; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L795-L796
+    why: Own JWTHandler._put_cached_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L798-L817
+    why: Own JWTHandler._cached_with_stale_fallback; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L819-L859
+    why: Own JWTHandler._refresh_or_serve_stale; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L861-L863
+    why: Own JWTHandler._stale_copy_age; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L865-L898
+    why: Own JWTHandler._refresh_or_record_outage; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L900-L917
+    why: Own JWTHandler._fetch_jwks_uri_from_discovery; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L919-L923
+    why: Own JWTHandler._get_public_key_cache_ttl; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L925-L929
+    why: Own JWTHandler._get_public_key_stale_ttl; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L931-L945
+    why: Own JWTHandler._fetch_jwks_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L947-L960
+    why: Own JWTHandler._get_public_key_from_jwks_url; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L962-L979
+    why: Own JWTHandler.get_public_key; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L981-L997
+    why: Own JWTHandler.parse_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L999-L1007
+    why: Own JWTHandler.is_allowed_domain; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L963-L968
+    why: JWT_PUBLIC_KEY_URL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
+    why: litellm_jwtauth.public_key_stale_ttl default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: configured_jwks, oidc_discovery,
+      fresh_cache, stale_on_transient_outage, stale_window_exhausted, kid_mismatch, malformed_jwks, negative_stale_ttl_validation,
+      zero_stale_ttl_fail_closed, configured_stale_ttl, transport_three_attempts, http_error_no_transport_retry,
+      outage_backoff_30_seconds, concurrent_refresh_single_flight.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: The production decode_discovery_document decoder is used by the service and its fuzz target
+      and rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+  - text: The real HTTP exception mapper preserves invalid-token and unavailable-key failures before identity
+      lookup.
+    proof:
+      - oracle
+      - stage-wiring-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^jwt_keys::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/jwt_keys.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-keys-*")"
+        && grep -rlq "jwt_keys" tools/oracle/fuzz/corpus/helper_case/jwt-keys-* && cargo nextest run --locked
+        -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_keys::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-keys-*")"
+        && grep -rlq "JWT_PUBLIC_KEY_URL" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-keys-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/jwt_keys.rs && grep -q "jwt_keys" crates/betterlite-auth/fuzz/Cargo.toml
+        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/jwt_keys)"
+        && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_jwt_keys_corpus)'
+    - id: stage-wiring-tests
+      why: The actual server fails to invoke the verification stage or map its public failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_keys::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/jwt-keys/configured-jwks.yaml
+  - tools/oracle/cases/helpers/jwt-keys/oidc-discovery.yaml
+  - tools/oracle/cases/helpers/jwt-keys/fresh-cache.yaml
+  - tools/oracle/cases/helpers/jwt-keys/stale-on-transient-outage.yaml
+  - tools/oracle/cases/helpers/jwt-keys/stale-window-exhausted.yaml
+  - tools/oracle/cases/helpers/jwt-keys/kid-mismatch.yaml
+  - tools/oracle/cases/helpers/jwt-keys/malformed-jwks.yaml
+  - tools/oracle/cases/helpers/jwt-keys/negative-stale-ttl-validation.yaml
+  - tools/oracle/cases/helpers/jwt-keys/zero-stale-ttl-fail-closed.yaml
+  - tools/oracle/cases/helpers/jwt-keys/configured-stale-ttl.yaml
+  - tools/oracle/cases/helpers/jwt-keys/transport-three-attempts.yaml
+  - tools/oracle/cases/helpers/jwt-keys/http-error-no-transport-retry.yaml
+  - tools/oracle/cases/helpers/jwt-keys/outage-backoff-30-seconds.yaml
+  - tools/oracle/cases/helpers/jwt-keys/concurrent-refresh-single-flight.yaml
+  - tools/oracle/cases/auth/jwt-keys/jwks-unavailable-503.yaml
+  - tools/oracle/cases/auth/jwt-keys/unknown-kid-401.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L116-L116
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
+    (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
+    (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
+    (L2488-L2629).'
+  - 'litellm/proxy/auth/handle_jwt.py: B760 owns JWTHandler.__init__ (L251-L258), JWTHandler.bind_agent_lookup
+    (L260-L261), JWTHandler.update_environment (L263-L273), JWTHandler.is_jwt (L276-L280), JWTHandler.get_unverified_claims
+    (L283-L302), JWTHandler._is_trusted_issuer_normalized_token (L376-L383), JWTHandler._has_trusted_issuer_normalized_claim
+    (L385-L386), JWTHandler.get_team_ids_from_jwt (L388-L409), JWTHandler.get_all_jwt_team_ids (L411-L448),
+    JWTHandler.get_end_user_id (L450-L466), JWTHandler.is_required_team_id (L468-L476), JWTHandler.is_enforced_email_domain
+    (L478-L489), JWTHandler.get_team_id (L491-L533), JWTHandler.get_team_alias (L535-L558), JWTHandler.is_upsert_user_id
+    (L560-L568), JWTHandler.get_user_id (L570-L585), JWTHandler.get_user_email (L656-L671), JWTHandler.get_object_id
+    (L673-L685), JWTHandler.get_agent_claim (L687-L691), JWTHandler.get_org_id (L693-L708), JWTHandler.get_org_alias
+    (L710-L733).'
+  - 'litellm/proxy/auth/handle_jwt.py: B762 owns JWTHandler.get_oidc_userinfo (L1009-L1066), JWTHandler._build_decode_kwargs
+    (L1071-L1107), JWTHandler.managed_issuer_is_trusted (L1109-L1116), JWTHandler._get_configured_issuer
+    (L1118-L1139), JWTHandler._get_jwks_url_for_issuer (L1141-L1146), JWTHandler._get_claim_value_for_issuer_mapping
+    (L1148-L1163), JWTHandler._apply_issuer_claim_mappings (L1165-L1187), JWTHandler._get_jwk_from_public_key
+    (L1189-L1194), JWTHandler._get_decode_options (L1196-L1215), JWTHandler._decode_jwt_with_public_key
+    (L1217-L1261), JWTHandler._auth_jwt_with_issuer (L1263-L1293), JWTHandler.auth_jwt (L1295-L1335),
+    JWTHandler.close (L1337-L1338).'
+  - 'litellm/proxy/auth/handle_jwt.py: B763 owns JWTAuthManager.can_rbac_role_call_route (L1345-L1369),
+    JWTAuthManager.can_rbac_role_call_model (L1372-L1394), JWTAuthManager.check_scope_based_access (L1397-L1426),
+    JWTAuthManager.check_rbac_role (L1429-L1453), JWTAuthManager.check_admin_access (L1456-L1496).'
+  - 'litellm/proxy/auth/handle_jwt.py: B764 owns JWTAuthManager.resolve_agent_id (L1499-L1520), JWTAuthManager.find_and_validate_specific_team_id
+    (L1523-L1620), JWTAuthManager.get_all_team_ids (L1623-L1629), JWTAuthManager._team_has_passthrough_route_access
+    (L1632-L1653), JWTAuthManager._raise_team_passthrough_route_denial (L1656-L1663), JWTAuthManager.find_team_with_model_access
+    (L1666-L1750), JWTAuthManager.validate_object_id (L1890-L1902), JWTAuthManager._team_header_value
+    (L1905-L1909), JWTAuthManager._raise_header_team_not_allowed (L1912-L1919), JWTAuthManager._team_id_by_alias
+    (L1922-L1943), JWTAuthManager.resolve_team_from_header (L1946-L2006), JWTAuthManager._raise_header_team_membership_denial
+    (L2358-L2371).'
+  - 'litellm/proxy/auth/handle_jwt.py: B765 owns JWTAuthManager.get_user_info (L1753-L1763), JWTAuthManager._canonical_user_id_from_db
+    (L1766-L1776), JWTAuthManager.get_objects (L1779-L1887), JWTAuthManager.map_user_to_teams (L2009-L2057),
+    JWTAuthManager.sync_user_role_and_teams (L2060-L2130).'
+  - 'litellm/proxy/auth/handle_jwt.py: B877 owns JWTAuthManager.authorize_jwt.team_stage (L2630-L2929).'
+  - 'litellm/proxy/auth/handle_jwt.py: B890 owns JWTHandler._rbac_role_from_role_mapping (L304-L333),
+    JWTHandler.get_rbac_role (L335-L369), JWTHandler.is_admin (L371-L374), JWTHandler.get_user_roles (L587-L604),
+    JWTHandler.map_jwt_role_to_litellm_role (L606-L619), JWTHandler.get_jwt_role (L621-L640), JWTHandler.is_allowed_user_role
+    (L642-L654), JWTHandler.get_scopes (L735-L746).'
+  - 'litellm/proxy/auth/handle_jwt.py: B891 owns JWTAuthManager._attach_team_from_header_for_admin (L2133-L2175),
+    JWTAuthManager._resolve_single_team_fallback (L2178-L2233), JWTAuthManager._resolve_db_team_fallback
+    (L2236-L2335), JWTAuthManager._is_team_route_allowed (L2338-L2355), JWTAuthManager._validate_header_team_in_db_membership
+    (L2374-L2388).'
+pitfalls:
+  - A negative public_key_stale_ttl is validation failure, while zero disables stale fallback.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

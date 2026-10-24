@@ -1,0 +1,231 @@
+id: B857
+title: Migration drift checks and invalid-index repair
+description: >-
+  Implement warning-only native schema comparison against B701 SchemaContract whenever schema updates
+  are disabled, including database-ahead-of-shipped-history warnings using B709 catalog names. Separately
+  expose pending Lens rename and partitioned-spend-log guards and invalid-index repair under MigrationLock
+  for active migration recovery. A failed or mismatching disabled-update comparison logs a warning and
+  never prevents startup.
+
+
+  Build the production migration_drift module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm-proxy-extras/litellm_proxy_extras/utils.py:
+  ProxyExtrasDBManager.raise_if_lens_rename_pending (L630-L657; 28 source lines), ProxyExtrasDBManager.spend_logs_is_partitioned
+  (L660-L702; 41 source lines), ProxyExtrasDBManager._warn_if_db_ahead_of_head (L756-L825; 54 source lines),
+  ProxyExtrasDBManager._invalid_litellm_indexes (L828-L832; 5 source lines), ProxyExtrasDBManager._index_repair
+  (L835-L841; 6 source lines), ProxyExtrasDBManager._repair_index (L844-L860; 16 source lines), ProxyExtrasDBManager.repair_invalid_indexes
+  (L863-L926; 62 source lines), ProxyExtrasDBManager._repair_under_migration_lock (L929-L948; 20 source
+  lines). litellm/proxy/db/check_migration.py: check_prisma_schema_diff_helper (L47-L108; 57 source lines),
+  check_prisma_schema_diff (L111-L122; 12 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DATABASE_URL=None;
+  DIRECT_URL=None.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::migration_drift::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 301 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  301 production, 151 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 532 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_native_pg_catalog_comparison_replaces_prisma_migrate_diff_and_remains.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-db/src/migration_drift.rs
+    - crates/betterlite-db/src/migration_drift/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/migration_drift/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/migration_drift.rs
+    - crates/betterlite-config/src/migration_drift/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/migration-drift-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L465-L477
+    why: Pinned implementation and exact ownership boundary for migration_drift.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L630-L702
+    why: Pinned implementation and exact ownership boundary for migration_drift.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L756-L948
+    why: Pinned implementation and exact ownership boundary for migration_drift.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/check_migration.py#L1-L122
+    why: Pinned implementation and exact ownership boundary for migration_drift.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L630-L657
+    why: Own ProxyExtrasDBManager.raise_if_lens_rename_pending; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L660-L702
+    why: Own ProxyExtrasDBManager.spend_logs_is_partitioned; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L756-L825
+    why: Own ProxyExtrasDBManager._warn_if_db_ahead_of_head; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L828-L832
+    why: Own ProxyExtrasDBManager._invalid_litellm_indexes; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L835-L841
+    why: Own ProxyExtrasDBManager._index_repair; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L844-L860
+    why: Own ProxyExtrasDBManager._repair_index; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L863-L926
+    why: Own ProxyExtrasDBManager.repair_invalid_indexes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L929-L948
+    why: Own ProxyExtrasDBManager._repair_under_migration_lock; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/check_migration.py#L47-L108
+    why: Own check_prisma_schema_diff_helper; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/check_migration.py#L111-L122
+    why: Own check_prisma_schema_diff; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L631-L636
+    why: DATABASE_URL default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L893-L898
+    why: DIRECT_URL default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: disabled_updates_difference_warns,
+      comparison_failure_warns, newer_db_warns, invalid_index_repair, lens_rename_guard, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_native_pg_catalog_comparison_replaces_prisma_migrate_diff_and_remains.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^migration_drift::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_drift::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_drift::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^migration_drift::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/migration-drift-*")"
+        && grep -rlq "DATABASE_URL" crates/betterlite-config/fuzz/corpus/config_yaml/migration-drift-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations:
+  - what: Native pg_catalog comparison replaces prisma migrate diff and remains warning-only when updates
+      are disabled.
+    why: Schema checks must work without the Prisma toolchain and cannot turn the upstream warning path
+      into a startup failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/check_migration.py#L47-L84
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B051 owns ProxyExtrasDBManager.setup_database
+    (L1285-L1315), ProxyExtrasDBManager.build_request_log_indexes (L1318-L1330), ProxyExtrasDBManager.run_migration_job
+    (L1333-L1342), ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B710 owns str_to_bool (L36-L39).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B711 owns ProxyExtrasDBManager._libpq_tls_params
+    (L733-L753), ProxyExtrasDBManager._strip_prisma_query_params (L716-L730).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B716 owns _MigrateAttemptBudget.exhausted (L108-L109),
+    _MigrateAttemptBudget.attempt_number (L112-L113), _MigrateAttemptBudget.spend (L115-L116), _MigrateAttemptBudget.after_contention
+    (L118-L125), _migration_timestamp (L188-L195), _max_migration_timestamp (L198-L202), ProxyExtrasDBManager._get_migration_names
+    (L323-L327), ProxyExtrasDBManager._read_migration_ledger (L356-L376), ProxyExtrasDBManager._failed_migration_logs
+    (L379-L387), ProxyExtrasDBManager._failed_migration_recovered (L390-L396).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B717 owns ProxyExtrasDBManager._is_permission_error
+    (L409-L433), ProxyExtrasDBManager._setup_database_v2 (L951-L990), ProxyExtrasDBManager._run_database_v2
+    (L993-L1101), ProxyExtrasDBManager._v2_failed_migration_name (L1104-L1111), ProxyExtrasDBManager._v2_failed_migration_started_at
+    (L1114-L1116), ProxyExtrasDBManager._v2_roll_back_migration_best_effort (L1119-L1129), ProxyExtrasDBManager._budget_after_deploy_failure
+    (L1132-L1226), ProxyExtrasDBManager.apply_replica_identity_full_if_requested (L1252-L1282).'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._create_baseline_migration:
+    v1 only; native v2 recovery does not call it.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_env: Prisma filesystem/tool discovery
+    is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_command: Prisma filesystem/tool discovery
+    is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._get_prisma_dir: Prisma
+    filesystem/tool discovery is absent from the native runner.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_sql_comments: v1 only; native startup
+    always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_spend_logs_pk_clauses: v1 only; native
+    startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::filter_partitioned_spend_logs_diff: v1 only;
+    native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration: v1
+    only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_specific_migration:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration_best_effort:
+    no caller at the pin.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._is_idempotent_error: v1
+    only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_all_migrations:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migrations_applied:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._run_migrations: v1 only;
+    native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migration_applied:
+    no caller at the pin.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
+    v1 only; native startup always uses the v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
+    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
+  - 'litellm/proxy/db/check_migration.py::extract_sql_commands: v1 only; native startup always uses the
+    v2 resolver.'
+  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift
+    (L465-L477): v1 only; native startup always uses the v2 resolver.'
+  - 'litellm/proxy/db/check_migration.py::extract_sql_commands (L10-L44): v1 only; native startup always
+    uses the v2 resolver.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Disabled schema updates are a normal Helm deployment mode; schema comparison must not raise.
+  - A database newer than the shipped migration head warns without truncating its ledger.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security
