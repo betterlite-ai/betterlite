@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/routing-state/**
-  - tools/oracle/src/router_probes/routing-state/**
+  - tools/oracle/src/router_probes/routing_state/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/routing_state.py
   - tools/oracle/litellm/probes/registry.py
@@ -32,15 +32,16 @@ references:
   why: Delta flushing, merging and strategy retirement.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/routing_read_batch.py#L35-L235
   why: Scoped batched reads and prefetch cancellation.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L28-L142
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L28-L113
   why: Minute counters and already-counted usage metadata.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the routing_state prefix so the required filter
+    runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
