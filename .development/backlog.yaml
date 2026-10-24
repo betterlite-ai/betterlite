@@ -2190,6 +2190,7 @@ tasks:
     - B196
     - B183
     - B258
+    - B193
     file: tasks/B197-media-tokens.yaml
     covers:
     - litellm/litellm_core_utils/token_counter.py
