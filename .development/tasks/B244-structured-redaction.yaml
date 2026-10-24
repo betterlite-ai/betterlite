@@ -1,0 +1,105 @@
+id: B244
+title: Structured credential masking
+description: >-
+  Create dependency-light betterlite-redact with typed bounded traversal of the existing named opaque payload field.
+  Implement every SensitiveDataMasker method, mask_sensitive_structure, mask_credentials_in_payload, _PayloadWalker,
+  mask_sensitive_keys, redact_credentials_in_payload and private mapping/entry/sequence walkers from sensitive_data_masker.py.
+  At the depth or byte-work bound replace the container with REDACTED rather than returning a raw object or failing
+  with its content. Preserve ordinary shape and values and never mutate inputs. Budget 270 walkers/types, 100 adapters,
+  310 tests/fuzz and 70 crate wiring (750 total). Add the structured_redaction cargo-fuzz target, call the production
+  parser, and commit/replay malformed and boundary seeds. Write the behavior rstest functions b244_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations structured_redaction in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-redact/Cargo.toml
+  - crates/betterlite-redact/src/lib.rs
+  - crates/betterlite-redact/src/error.rs
+  - crates/betterlite-redact/src/structured.rs
+  - crates/betterlite-redact/src/structured/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/structured-redaction/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-redact/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L33-L288
+  why: All structured masking functions and the depth fallback differences.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - structured_redaction-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-redact --no-tests=fail -E 'test(/::b244_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'structured_redaction' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: structured_redaction-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-redact/fuzz/corpus/structured_redaction)"
+      && test -f crates/betterlite-redact/fuzz/fuzz_targets/structured_redaction.rs && test -n "$(ls -A crates/betterlite-redact/fuzz/corpus/structured_redaction)"
+      && cargo nextest run --locked -p betterlite-redact --no-tests=fail -E 'test(replays_the_structured_redaction_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/structured-redaction/sensitive-keys.yaml
+- tools/oracle/cases/helpers/structured-redaction/short-secret.yaml
+- tools/oracle/cases/helpers/structured-redaction/nested-sequence.yaml
+- tools/oracle/cases/helpers/structured-redaction/excluded-key.yaml
+- tools/oracle/cases/helpers/structured-redaction/payload-depth.yaml
+- tools/oracle/cases/helpers/structured-redaction/redact-depth.yaml
+- tools/oracle/cases/helpers/structured-redaction/nonsecret-shape.yaml
+deviations:
+- what: >-
+    mask_dict replaces over-depth containers with REDACTED instead of returning them unmasked; exhausted byte-work
+    bounds do the same.
+  why: >-
+    Fail closed against credential leaks; the payload/redact walkers already use this sentinel at their depth limit.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/sensitive_data_masker.py#L117-L145
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B187 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
