@@ -128,7 +128,13 @@ optional:
     run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
   - id: mutants
     why: every mutant in the changed Rust code is caught by a test
-    run: git diff "$GATE_BASE" -- '*.rs' > "$GATE_LOG_DIR/mutants.diff" && cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --output "$GATE_LOG_DIR"
+    run: |-
+      set -e
+      scratch="$GATE_LOG_DIR/mutants-tmp"
+      mkdir -p "$scratch"
+      trap 'rm -rf "$scratch"' EXIT
+      git diff "$GATE_BASE" -- '*.rs' > "$GATE_LOG_DIR/mutants.diff"
+      TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --output "$GATE_LOG_DIR"
   - id: oracle
     why: betterlite answers the oracle cases the same way the pinned LiteLLM does
     run: cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- $GATE_ORACLE_CASES
