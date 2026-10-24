@@ -1,0 +1,95 @@
+id: B200
+title: Mock calls, rules and JSON response validation
+description: >-
+  Add core mock-result builders, pre/post rule decision evaluation and bounded JSON response validation. Keep actual
+  Python callables for B164-B165: native code consumes a closed RuleDecision enum and a statically injected evaluator,
+  initially tested with synthetic allow/deny decisions, without accepting arbitrary executable code in config. Build
+  typed mock chat/stream/embedding/image responses using injected IDs/time and B004-B006 wire records; an explicit
+  mock invocation performs no upstream HTTP. Implement schema-type normalization and output validation using an
+  existing JSON Schema library, with file/HTTP reference resolution disabled and finite input/depth/work limits.
+  Schemas stay in the named provider passthrough field; errors retain concrete sources and B184 classification.
+  Add rule_decision, mock_result and schema_validation helper cases, and response_schema fuzz target/replay. Budget
+  300 rule/mock/schema adapter lines, 100 wiring and 330 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/rules.rs
+  - crates/betterlite-core/src/rules/**
+  - crates/betterlite-core/src/mock.rs
+  - crates/betterlite-core/src/mock/**
+  - crates/betterlite-core/src/schema.rs
+  - crates/betterlite-core/src/schema/**
+  - crates/betterlite-core/fuzz/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/call-rules/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/rules.py#L4-L59
+  why: Pre/post decision handling and validation failures.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/mock_functions.py#L10-L25
+  why: Embedding and image mock outputs.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_validation_rule.py#L7-L119
+  why: Schema type normalization and response validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L1-L140
+  why: Shared response types and utilities; use existing wire records rather than porting the module.
+- url: https://docs.rs/jsonschema/latest/jsonschema/
+  why: Maintained validator with explicit offline retrieval policy.
+dod:
+- text: Pre/post rule decisions, mock response shape and JSON schema validation match listed helper cases.
+  proof:
+  - oracle
+- text: Mocks do not call HTTP, and IDs/time are deterministic through constructors without mutable globals.
+  proof:
+  - call-rules-tests
+- text: External schema references, excessive expansion/depth and invalid output fail with typed errors before file
+    or network access.
+  proof:
+  - call-rules-tests
+  - response-schema-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: call-rules-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/call_rules|mock_result|schema_validation/)'
+  - id: response-schema-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-core/fuzz/fuzz_targets/response_schema.rs && test -n "$(ls -A crates/betterlite-core/fuzz/corpus/response_schema)"
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_response_schema_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/call-rules/pre-allow-deny.yaml
+- tools/oracle/cases/helpers/call-rules/post-decision-dict.yaml
+- tools/oracle/cases/helpers/call-rules/post-none.yaml
+- tools/oracle/cases/helpers/call-rules/mock-chat.yaml
+- tools/oracle/cases/helpers/call-rules/mock-stream.yaml
+- tools/oracle/cases/helpers/call-rules/mock-embedding.yaml
+- tools/oracle/cases/helpers/call-rules/mock-image.yaml
+- tools/oracle/cases/helpers/call-rules/uppercase-types.yaml
+- tools/oracle/cases/helpers/call-rules/valid-output.yaml
+- tools/oracle/cases/helpers/call-rules/invalid-json.yaml
+- tools/oracle/cases/helpers/call-rules/schema-mismatch.yaml
+deviations: []
+out_of_scope:
+- Python function loading and config-selected arbitrary hooks are B165.
+- Provider-generated structured-output retries and fallbacks are B017-B018.
+pitfalls:
+- The pre-call and post-call rule functions do not interpret every decision shape identically.
+- A JSON Schema validator may fetch remote references by default; disable both HTTP and file retrieval explicitly.
+- Never let a mock response silently override a configured real provider without an explicit core invocation.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 2
