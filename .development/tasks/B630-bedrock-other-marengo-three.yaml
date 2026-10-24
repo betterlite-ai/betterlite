@@ -1,0 +1,187 @@
+id: B630
+title: Bedrock TwelveLabs Marengo 3 input validation
+description: >-
+  Add typed Marengo3Request and route-specific option validation. Preserve multiple named media sources, bucketOwner
+  requirements, text versus timed media shape, 2.7-only option rejection/drop and input-type selection. This leaf
+  owns only Marengo 3 input validation/building; B629 reuses it and owns vector responses, and B631 executes the
+  call.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py:
+  is_marengo_3_model L56-L57; Marengo3Params.resolved_input_type L81-L82; Marengo3Params.timed_media_options L84-L85;
+  Marengo3Params.given_timed_media_options L87-L88; Marengo3Params.given_2_7_only_params L90-L91; _require_bucket_owner
+  L94-L100; _media_source L103-L109; _named_media_source L112-L118; _timed_media_input L121-L126; _describe L129-L132;
+  _validated_params L135-L139; _reject_unless_dropped L142-L145; _require L148-L151; _require_media_sources L154-L160;
+  _request_base L163-L168; build_marengo_3_request L171-L239.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/marengo_three.rs with adjacent tests under marengo_three/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_marengo_three in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function marengo_three_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  marengo3_model_detection, named_media_sources, required_bucket_owner, text_versus_timed_options, reject_27_only_options,
+  drop_policy, require_input_media. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
+  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three* using HelperCase:
+  kind: helper and the externally tagged bedrock_other_marengo_three variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_marengo_three that parses
+  every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds;
+  then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 136 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 165 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 381 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/marengo_three.rs
+  - crates/betterlite-bedrock/src/marengo_three/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_marengo_three.rs
+  - tools/oracle/src/helpers/bedrock_other_marengo_three/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_marengo_three.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py#L56-L57
+  why: Own is_marengo_3_model. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py#L81-L239
+  why: >-
+    Own Marengo3Params.resolved_input_type, Marengo3Params.timed_media_options, Marengo3Params.given_timed_media_options,
+    Marengo3Params.given_2_7_only_params, _require_bucket_owner, _media_source, _named_media_source, _timed_media_input,
+    _describe, _validated_params, _reject_unless_dropped, _require, _require_media_sources, _request_base, build_marengo_3_request.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    marengo3 model detection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/marengo3-model-detection.yaml.
+  proof:
+  - case-marengo3-model-detection
+  - oracle
+  - helper-python
+- text: >-
+    named media sources: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/named-media-sources.yaml.
+  proof:
+  - case-named-media-sources
+  - oracle
+  - helper-python
+- text: >-
+    required bucket owner: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/required-bucket-owner.yaml.
+  proof:
+  - case-required-bucket-owner
+  - oracle
+  - helper-python
+- text: >-
+    text versus timed options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/text-versus-timed-options.yaml.
+  proof:
+  - case-text-versus-timed-options
+  - oracle
+  - helper-python
+- text: >-
+    reject 27 only options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/reject-27-only-options.yaml.
+  proof:
+  - case-reject-27-only-options
+  - oracle
+  - helper-python
+- text: 'drop policy: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/drop-policy.yaml.'
+  proof:
+  - case-drop-policy
+  - oracle
+  - helper-python
+- text: >-
+    require input media: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/require-input-media.yaml.
+  proof:
+  - case-require-input-media
+  - oracle
+  - helper-python
+- text: New bedrock_other_marengo_three seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-marengo3-model-detection
+    why: The marengo3-model-detection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_marengo3_model_detection$/)'
+  - id: case-named-media-sources
+    why: The named-media-sources behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_named_media_sources$/)'
+  - id: case-required-bucket-owner
+    why: The required-bucket-owner behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_required_bucket_owner$/)'
+  - id: case-text-versus-timed-options
+    why: The text-versus-timed-options behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_text_versus_timed_options$/)'
+  - id: case-reject-27-only-options
+    why: The reject-27-only-options behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_reject_27_only_options$/)'
+  - id: case-drop-policy
+    why: The drop-policy behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_drop_policy$/)'
+  - id: case-require-input-media
+    why: The require-input-media behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_require_input_media$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_marengo_three.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three*")"
+      && grep -lq 'bedrock_other_marengo_three' tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_marengo_three$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/marengo3-model-detection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/named-media-sources.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/required-bucket-owner.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/text-versus-timed-options.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/reject-27-only-options.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/drop-policy.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/require-input-media.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve multiple named media sources, bucketOwner requirements, text versus timed media shape, 2.7-only option
+  rejection/drop and task selection.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,446 @@
+id: B596
+title: Bedrock trusted request metadata and SDK projection
+description: >-
+  Add BedrockRequestPolicy with requestMetadata ownership, configuration/auth aliases, regional metadata and live
+  SDK request parameter projection. Resolve litellm_settings.bedrock_request_metadata_fields (default empty/off)
+  through config; deduplicate the ordered allowlist, reserve user_api_key_ names to injected proxy identity, and
+  allow spend_logs_metadata only by explicit allowlisting. Preserve the 16-pair limit, key lengths 1..256, value
+  lengths 0..256, allowed character regex, invalid-pair dropping and owned-but-empty header eviction. Live SDK dynamic
+  event headers become explicit request headers; FakeResponseIterator is one owned terminal response, not a second
+  stream parser.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/common_utils.py:
+  error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params L108-L129; get_cached_model_info
+  L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params
+  L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params L465-L470; AmazonBedrockGlobalConfig.get_all_regions
+  L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496;
+  AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions
+  L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; ModelResponseIterator.__init__
+  L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__ L736-L740; ModelResponseIterator.__aiter__
+  L743-L744; ModelResponseIterator.__anext__ L746-L750. litellm/llms/bedrock/request_metadata.py: _is_forwardable
+  L36-L37; _text_pairs L40-L43; _allowed_fields L46-L56; _metadata_sources L59-L68; _identity_pairs L71-L81; _first_text
+  L84-L85; _client_pairs L88-L108; resolve_bedrock_request_metadata L111-L136; bedrock_request_metadata_is_owned
+  L139-L149; bedrock_request_metadata_headers L152-L170; merge_bedrock_invoke_headers L173-L199. litellm/llms/bedrock/chat/converse_transformation.py:
+  AmazonConverseConfig._validate_request_metadata L316-L385.
+
+
+  init_bedrock_client has no caller at the pin and is excluded; the live _get_boto_credentials/get_credentials paths
+  remain in their own tasks, so no endpoint/SSL constructor case is needed here.
+
+
+  Implement crates/betterlite-bedrock/src/request_policy.rs with adjacent tests under request_policy/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_request_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function request_policy_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): request_metadata_owner, request_metadata_size_characters, unowned_user_metadata, auth_alias_mapping, region_groups,
+  one_response_iterator, owned_empty_removes_spoofed_header, identity_before_client_budget, allowlist_duplicate_first,
+  invalid_pairs_dropped. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_request_policy* using HelperCase: kind:
+  helper and the externally tagged bedrock_request_policy variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_request_policy that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/bedrock/request_policy.rs
+  and its loader wiring: bedrock_request_metadata_fields. Module-level settings enter litellm_settings; deployment
+  settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified above
+  and in the linked branches; existing key owners remain unchanged. Write config rstest bedrock_request_policy_config_cases
+  with named cases loads_bedrock_request_metadata_fields, plus rejects_unrelated_key. Each loads case calls the
+  real config loader with that key and asserts the resolved value, default, precedence and secret redaction where
+  applicable. Seed B002 config_yaml with new bedrock_request_policy* files for every key; reuse its parser/fuzz
+  target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_request_policy_credential_identity_isolation in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone bedrock_request_policy_secret_safe_failure in betterlite-bedrock for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 349 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 365 production lines, 172 behavior/config-test lines,
+  95 combined Rust/Python adapter lines, 0 parser target/replay lines, 28 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 685 planned, 700 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/request_policy.rs
+  - crates/betterlite-bedrock/src/request_policy/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_request_policy.rs
+  - tools/oracle/src/helpers/bedrock_request_policy/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_request_policy.py
+  - tools/oracle/cases/helpers/providers/bedrock-request-policy/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_request_policy*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/request_policy.rs
+  - crates/betterlite-config/src/providers/bedrock/request_policy/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_request_policy_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_request_policy*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L59-L75
+  why: Own error_response_text, _synthesize_error_response. Other functions in this file remain with the owners
+    listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L108-L129
+  why: Own merge_bedrock_aws_request_params. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L156-L176
+  why: Own get_cached_model_info, _get_local_model_cost_map. Other functions in this file remain with the owners
+    listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L456-L552
+  why: >-
+    Own AmazonBedrockGlobalConfig.__init__, AmazonBedrockGlobalConfig.get_mapped_special_auth_params, AmazonBedrockGlobalConfig.map_special_auth_params,
+    AmazonBedrockGlobalConfig.get_all_regions, AmazonBedrockGlobalConfig.get_ap_regions, AmazonBedrockGlobalConfig.get_sa_regions,
+    AmazonBedrockGlobalConfig.get_eu_regions, AmazonBedrockGlobalConfig.get_ca_regions, AmazonBedrockGlobalConfig.get_us_regions,
+    add_custom_header, _get_bedrock_client_ssl_verify. Other functions in this file remain with the owners listed
+    below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L728-L750
+  why: >-
+    Own ModelResponseIterator.__init__, ModelResponseIterator.__iter__, ModelResponseIterator.__next__, ModelResponseIterator.__aiter__,
+    ModelResponseIterator.__anext__. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/request_metadata.py#L36-L199
+  why: >-
+    Own _is_forwardable, _text_pairs, _allowed_fields, _metadata_sources, _identity_pairs, _first_text, _client_pairs,
+    resolve_bedrock_request_metadata, bedrock_request_metadata_is_owned, bedrock_request_metadata_headers, merge_bedrock_invoke_headers.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L316-L385
+  why: Own AmazonConverseConfig._validate_request_metadata. Other functions in this file remain with the owners
+    listed below.
+dod:
+- text: >-
+    request metadata owner: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/request-metadata-owner.yaml.
+  proof:
+  - case-request-metadata-owner
+  - oracle
+  - helper-python
+- text: >-
+    request metadata size characters: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/request-metadata-size-characters.yaml.
+  proof:
+  - case-request-metadata-size-characters
+  - oracle
+  - helper-python
+- text: >-
+    unowned user metadata: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/unowned-user-metadata.yaml.
+  proof:
+  - case-unowned-user-metadata
+  - oracle
+  - helper-python
+- text: 'auth alias mapping: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/auth-alias-mapping.yaml.'
+  proof:
+  - case-auth-alias-mapping
+  - oracle
+  - helper-python
+- text: 'region groups: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/region-groups.yaml.'
+  proof:
+  - case-region-groups
+  - oracle
+  - helper-python
+- text: >-
+    one response iterator: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/one-response-iterator.yaml.
+  proof:
+  - case-one-response-iterator
+  - oracle
+  - helper-python
+- text: >-
+    owned empty removes spoofed header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/owned-empty-removes-spoofed-header.yaml.
+  proof:
+  - case-owned-empty-removes-spoofed-header
+  - oracle
+  - helper-python
+- text: >-
+    identity before client budget: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/identity-before-client-budget.yaml.
+  proof:
+  - case-identity-before-client-budget
+  - oracle
+  - helper-python
+- text: >-
+    allowlist duplicate first: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/allowlist-duplicate-first.yaml.
+  proof:
+  - case-allowlist-duplicate-first
+  - oracle
+  - helper-python
+- text: >-
+    invalid pairs dropped: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-request-policy/invalid-pairs-dropped.yaml.
+  proof:
+  - case-invalid-pairs-dropped
+  - oracle
+  - helper-python
+- text: New bedrock_request_policy seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: bedrock_request_metadata_fields is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-bedrock-request-metadata-fields
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-request-metadata-owner
+    why: The request-metadata-owner behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_request_metadata_owner$/)'
+  - id: case-request-metadata-size-characters
+    why: The request-metadata-size-characters behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_request_metadata_size_characters$/)'
+  - id: case-unowned-user-metadata
+    why: The unowned-user-metadata behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_unowned_user_metadata$/)'
+  - id: case-auth-alias-mapping
+    why: The auth-alias-mapping behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_auth_alias_mapping$/)'
+  - id: case-region-groups
+    why: The region-groups behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_region_groups$/)'
+  - id: case-one-response-iterator
+    why: The one-response-iterator behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_one_response_iterator$/)'
+  - id: case-owned-empty-removes-spoofed-header
+    why: The owned-empty-removes-spoofed-header behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_owned_empty_removes_spoofed_header$/)'
+  - id: case-identity-before-client-budget
+    why: The identity-before-client-budget behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_identity_before_client_budget$/)'
+  - id: case-allowlist-duplicate-first
+    why: The allowlist-duplicate-first behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_allowlist_duplicate_first$/)'
+  - id: case-invalid-pairs-dropped
+    why: The invalid-pairs-dropped behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::request_policy_cases::case_[0-9]+_invalid_pairs_dropped$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_request_policy.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_request_policy*")"
+      && grep -lq 'bedrock_request_policy' tools/oracle/fuzz/corpus/helper_case/bedrock_request_policy* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_request_policy$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-bedrock-request-metadata-fields
+    why: The bedrock_request_metadata_fields setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_request_policy_config_cases::case_[0-9]+_loads_bedrock_request_metadata_fields$/)'
+      && grep -lq 'bedrock_request_metadata_fields' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_request_policy*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_request_policy_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_request_policy*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_request_policy_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_request_policy_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/request-metadata-owner.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/request-metadata-size-characters.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/unowned-user-metadata.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/auth-alias-mapping.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/region-groups.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/one-response-iterator.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/owned-empty-removes-spoofed-header.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/identity-before-client-budget.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/allowlist-duplicate-first.yaml
+- tools/oracle/cases/helpers/providers/bedrock-request-policy/invalid-pairs-dropped.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
+  or its injected typed boundary.'
+- >-
+  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
+  L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
+  BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
+- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
+  or its injected typed boundary.'
+- >-
+  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
+  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
+  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
+  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
+  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
+  _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
+  L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
+  L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
+  L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
+  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
+  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
+  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
+  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
+  its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
+  bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
+  L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
+  normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
+  belong to B690; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
+  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
+  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
+  that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
+  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
+  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
+  injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
+  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__ L143-L154; AmazonConverseConfig.custom_llm_provider
+  L157-L158; AmazonConverseConfig.get_config_blocks L161-L166; AmazonConverseConfig.get_config L299-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model
+  L388-L389; AmazonConverseConfig._requires_min_max_tokens L392-L393; AmazonConverseConfig._is_nova_2_model L395-L444;
+  AmazonConverseConfig._map_web_search_options L446-L473; AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config
+  L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort
+  L572-L591; AmazonConverseConfig._clamp_thinking_budget_tokens L594-L609; AmazonConverseConfig._is_deepseek_model
+  L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615; AmazonConverseConfig._model_accepts_anthropic_thinking_param
+  L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param L633-L639; AmazonConverseConfig._supports_sampling_params
+  L642-L656; AmazonConverseConfig.get_supported_openai_params L658-L733; AmazonConverseConfig._auto_tool_choice
+  L736-L737 belong to B600; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
+  L169-L218; AmazonConverseConfig._has_orphaned_tool_blocks L221-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
+  L228-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L281-L296; AmazonConverseConfig._assistant_has_tool_calls
+  L1356-L1357; AmazonConverseConfig._opens_with_tool_result L1360-L1371; AmazonConverseConfig._system_run_before
+  L1373-L1378; AmazonConverseConfig._system_run_end L1380-L1384; AmazonConverseConfig._reordered_around_tool_results
+  L1386-L1423; AmazonConverseConfig._system_role_message_as_user L1425-L1441; AmazonConverseConfig._converted_or_kept
+  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1462-L1465;
+  AmazonConverseConfig._converted_text_block L1468-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
+  belong to B603; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_tool_choice_values L739-L768; AmazonConverseConfig.get_supported_image_types
+  L770-L771; AmazonConverseConfig.get_supported_document_types L773-L774; AmazonConverseConfig.get_supported_video_types
+  L776-L777; AmazonConverseConfig.is_computer_use_tool_used L782-L793; AmazonConverseConfig._transform_computer_use_tools
+  L795-L833; AmazonConverseConfig._separate_computer_use_tools L835-L866; AmazonConverseConfig._create_json_tool_call_for_response_format
+  L868-L906; AmazonConverseConfig._supports_native_structured_outputs L909-L919; AmazonConverseConfig._add_additional_properties_to_schema
+  L922-L955; AmazonConverseConfig._create_output_config_for_response_format L958-L996; AmazonConverseConfig._apply_tool_call_transformation
+  L998-L1008; AmazonConverseConfig._translate_response_format_param L1201-L1269 belong to B601; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
+  have no caller at the pin; do not port them.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params L1010-L1165; AmazonConverseConfig._map_request_metadata_param
+  L1167-L1170; AmazonConverseConfig._map_context_management_param L1172-L1187; AmazonConverseConfig._map_service_tier_param
+  L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens L1271-L1294; AmazonConverseConfig.get_cache_point_block
+  L1297-L1306; AmazonConverseConfig.get_cache_point_block L1309-L1318; AmazonConverseConfig.get_cache_point_block
+  L1320-L1338; AmazonConverseConfig._build_cache_point_block L1341-L1353; AmazonConverseConfig._transform_inference_params
+  L1508-L1511; AmazonConverseConfig._handle_top_k_value L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config
+  L1540-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config L1556-L1567 belong to B602;
+  reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params L1569-L1684;
+  AmazonConverseConfig._filter_context_management_for_bedrock_converse L1830-L1859; AmazonConverseConfig._transform_request_helper
+  L1861-L1970; AmazonConverseConfig._async_transform_request L1972-L2014; AmazonConverseConfig.transform_request
+  L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077 belong to B604; reuse that implementation or
+  its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta L1686-L1827
+  belong to B683; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response L2079-L2105; AmazonConverseConfig._transform_response
+  L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709; AmazonConverseConfig.validate_environment L2711-L2724;
+  AmazonConverseConfig.should_fake_stream L2726-L2752 belong to B607; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content L2107-L2117;
+  AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details L2142-L2159;
+  AmazonConverseConfig.thinking_tokens_from_additional_fields L2162-L2170; AmazonConverseConfig.is_converse_usage_shape
+  L2173-L2175; AmazonConverseConfig._usage_count L2178-L2183; AmazonConverseConfig._cache_read_count L2186-L2188;
+  AmazonConverseConfig._cache_write_count L2191-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
+  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605; reuse that implementation or its injected typed
+  boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed
+  L2287-L2317; AmazonConverseConfig._translate_message_content L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations
+  L2391-L2457; AmazonConverseConfig._unwrap_bedrock_properties L2460-L2480; AmazonConverseConfig._filter_json_mode_tools
+  L2483-L2525 belong to B606; reuse that implementation or its injected typed boundary.
+pitfalls:
+- >-
+  Resolve litellm_settings.bedrock_request_metadata_fields (default empty/off) through config; deduplicate the ordered
+  allowlist, reserve user_api_key_ names to injected proxy identity, and allow spend_logs_metadata only by explicit
+  allowlisting.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

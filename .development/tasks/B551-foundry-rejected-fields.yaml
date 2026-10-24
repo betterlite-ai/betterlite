@@ -1,0 +1,199 @@
+id: B551
+title: Foundry bounded 422 request repair
+description: >-
+  Implement FoundryRepair and connect it to B010 TransformRetry in betterlite-provider/src/transform_retry.rs; the
+  leaf returns a repair decision and never imports betterlite-provider. Match bounded error text for extra top-level
+  fields, tool-level fields, invalid tool-call index and pass-through hints, then run at most two provider-local
+  transform retries. Do not increment or replace router retries. Use parsed field names only to remove existing
+  body fields; never alter auth, base URL or deadline.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/chat/transformation.py:
+  AzureAIStudioConfig.should_retry_llm_api_inside_llm_translation_on_http_error L327-L340; AzureAIStudioConfig._error_has_tool_level_extra_fields
+  L342-L343; AzureAIStudioConfig.max_retry_on_unprocessable_entity_error L346-L347; AzureAIStudioConfig.transform_request_on_unprocessable_entity_error
+  L349-L361; AzureAIStudioConfig._drop_tool_level_extra_fields L363-L371; AzureAIStudioConfig._drop_extra_params_from_request_data
+  L373-L379; AzureAIStudioConfig._extract_params_to_drop_from_error_text L381-L398.
+
+
+  Reuse drop_params_from_unprocessable_entity_error from B505 (litellm/llms/openai/common_utils.py); its implementation
+  remains with that prerequisite.
+
+
+  Implement crates/betterlite-foundry/src/rejected_fields.rs with adjacent tests under rejected_fields/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_rejected_fields in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function rejected_fields_cases in betterlite-foundry with these exact named cases (one per oracle
+  file): drop_top_level_loc, drop_tool_level_extra_fields, remove_tool_call_index, extra_parameters_list, repair_without_drop_policy_for_tools,
+  unrelated_error_no_retry, two_repairs_only. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_rejected_fields* using HelperCase: kind:
+  helper and the externally tagged foundry_rejected_fields variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_rejected_fields that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 61 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 95 production lines, 108 behavior/config-test lines, 83 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 311 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/rejected_fields.rs
+  - crates/betterlite-foundry/src/rejected_fields/**
+  - crates/betterlite-provider/src/transform_retry.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/Cargo.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_rejected_fields.rs
+  - tools/oracle/src/helpers/foundry_rejected_fields/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_rejected_fields.py
+  - tools/oracle/cases/helpers/providers/foundry-rejected-fields/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_rejected_fields*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/chat/transformation.py#L327-L398
+  why: >-
+    Own AzureAIStudioConfig.should_retry_llm_api_inside_llm_translation_on_http_error, AzureAIStudioConfig._error_has_tool_level_extra_fields,
+    AzureAIStudioConfig.max_retry_on_unprocessable_entity_error, AzureAIStudioConfig.transform_request_on_unprocessable_entity_error,
+    AzureAIStudioConfig._drop_tool_level_extra_fields, AzureAIStudioConfig._drop_extra_params_from_request_data,
+    AzureAIStudioConfig._extract_params_to_drop_from_error_text. Other functions in this file remain with the owners
+    listed below.
+dod:
+- text: 'drop top level loc: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rejected-fields/drop-top-level-loc.yaml.'
+  proof:
+  - case-drop-top-level-loc
+  - oracle
+  - helper-python
+- text: >-
+    drop tool level extra fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rejected-fields/drop-tool-level-extra-fields.yaml.
+  proof:
+  - case-drop-tool-level-extra-fields
+  - oracle
+  - helper-python
+- text: >-
+    remove tool call index: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rejected-fields/remove-tool-call-index.yaml.
+  proof:
+  - case-remove-tool-call-index
+  - oracle
+  - helper-python
+- text: >-
+    extra parameters list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rejected-fields/extra-parameters-list.yaml.
+  proof:
+  - case-extra-parameters-list
+  - oracle
+  - helper-python
+- text: >-
+    repair without drop policy for tools: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rejected-fields/repair-without-drop-policy-for-tools.yaml.
+  proof:
+  - case-repair-without-drop-policy-for-tools
+  - oracle
+  - helper-python
+- text: >-
+    unrelated error no retry: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rejected-fields/unrelated-error-no-retry.yaml.
+  proof:
+  - case-unrelated-error-no-retry
+  - oracle
+  - helper-python
+- text: 'two repairs only: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rejected-fields/two-repairs-only.yaml.'
+  proof:
+  - case-two-repairs-only
+  - oracle
+  - helper-python
+- text: New foundry_rejected_fields seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-drop-top-level-loc
+    why: The drop-top-level-loc behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_drop_top_level_loc$/)'
+  - id: case-drop-tool-level-extra-fields
+    why: The drop-tool-level-extra-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_drop_tool_level_extra_fields$/)'
+  - id: case-remove-tool-call-index
+    why: The remove-tool-call-index behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_remove_tool_call_index$/)'
+  - id: case-extra-parameters-list
+    why: The extra-parameters-list behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_extra_parameters_list$/)'
+  - id: case-repair-without-drop-policy-for-tools
+    why: The repair-without-drop-policy-for-tools behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_repair_without_drop_policy_for_tools$/)'
+  - id: case-unrelated-error-no-retry
+    why: The unrelated-error-no-retry behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_unrelated_error_no_retry$/)'
+  - id: case-two-repairs-only
+    why: The two-repairs-only behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_two_repairs_only$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_rejected_fields.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_rejected_fields*")"
+      && grep -lq 'foundry_rejected_fields' tools/oracle/fuzz/corpus/helper_case/foundry_rejected_fields* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_rejected_fields$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-rejected-fields/drop-top-level-loc.yaml
+- tools/oracle/cases/helpers/providers/foundry-rejected-fields/drop-tool-level-extra-fields.yaml
+- tools/oracle/cases/helpers/providers/foundry-rejected-fields/remove-tool-call-index.yaml
+- tools/oracle/cases/helpers/providers/foundry-rejected-fields/extra-parameters-list.yaml
+- tools/oracle/cases/helpers/providers/foundry-rejected-fields/repair-without-drop-policy-for-tools.yaml
+- tools/oracle/cases/helpers/providers/foundry-rejected-fields/unrelated-error-no-retry.yaml
+- tools/oracle/cases/helpers/providers/foundry-rejected-fields/two-repairs-only.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure_ai/chat/transformation.py: AzureAIGPT5Config._model_map_lookup_name L50-L63; AzureAIStudioConfig.get_supported_openai_params
+  L70-L90; AzureAIStudioConfig.map_openai_params L92-L111; AzureAIStudioConfig._supports_stop_reason L113-L121;
+  AzureAIStudioConfig.validate_environment L123-L145; AzureAIStudioConfig._should_use_api_key_header L147-L151;
+  AzureAIStudioConfig.get_complete_url L153-L203; AzureAIStudioConfig.get_required_params L205-L220; AzureAIStudioConfig._transform_messages
+  L222-L254; AzureAIStudioConfig._is_foundry_model_inference_base L256-L257; AzureAIStudioConfig._is_azure_openai_model
+  L259-L267; AzureAIStudioConfig._get_openai_compatible_provider_info L269-L282; AzureAIStudioConfig.transform_request
+  L284-L296; AzureAIStudioConfig.transform_response L298-L325 belong to B550; reuse that implementation or its injected
+  typed boundary.
+pitfalls:
+- >-
+  Implement FoundryRepair and connect it to B010 TransformRetry in betterlite-provider/src/transform_retry.rs; the
+  leaf returns a repair decision and never imports betterlite-provider.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

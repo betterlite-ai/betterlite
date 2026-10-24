@@ -1,0 +1,237 @@
+id: B517
+title: OpenAI batch lifecycle
+description: >-
+  Add BatchCreate/BatchQuery/BatchObject provider methods for create, retrieve, cancel and list. Model completion_window,
+  endpoint, input_file_id, metadata, status and counts explicitly; this is upstream asynchronous batch API, not
+  B201 parallel synchronous completion calls.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__
+  L2038-L2039; OpenAIBatchesAPI.get_openai_client L2041-L2069; OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch
+  L2079-L2112; OpenAIBatchesAPI.aretrieve_batch L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch
+  L2157-L2164; OpenAIBatchesAPI.cancel_batch L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches
+  L2214-L2247.
+
+
+  Implement crates/betterlite-openai/src/batches.rs with adjacent tests under batches/. Keep each Rust module at
+  most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation openai_batches in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function batches_cases in betterlite-openai with these exact named cases (one per oracle file): create_window_endpoint,
+  metadata, retrieve_status_counts, cancel_batch, list_after_limit, batch_error. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert
+  both client response and captured upstream request. Existing API tasks retain route registration; this task must
+  not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_batches* using HelperCase: kind: helper
+  and the externally tagged openai_batches variant inside call. Do not put the Python stdin operation field in a
+  HelperCase. Add oracle test helper_seeds_select_openai_batches that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_batch_object consumes batch lifecycle JSON response bytes in crates/betterlite-openai/src/batches.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/openai_batches.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-openai/fuzz/corpus/openai_batches.
+  The adjacent test replays_the_openai_batches_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 193 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 220 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 478 planned, 500 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/batches.rs
+  - crates/betterlite-openai/src/batches/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_batches.rs
+  - tools/oracle/src/helpers/openai_batches/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_batches.py
+  - tools/oracle/cases/helpers/providers/openai-batches/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_batches*
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/openai_batches.rs
+  - crates/betterlite-openai/fuzz/corpus/openai_batches/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2038-L2247
+  why: >-
+    Own OpenAIBatchesAPI.__init__, OpenAIBatchesAPI.get_openai_client, OpenAIBatchesAPI.acreate_batch, OpenAIBatchesAPI.create_batch,
+    OpenAIBatchesAPI.aretrieve_batch, OpenAIBatchesAPI.retrieve_batch, OpenAIBatchesAPI.acancel_batch, OpenAIBatchesAPI.cancel_batch,
+    OpenAIBatchesAPI.alist_batches, OpenAIBatchesAPI.list_batches. Other functions in this file remain with the
+    owners listed below.
+dod:
+- text: 'create window endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-batches/create-window-endpoint.yaml.'
+  proof:
+  - case-create-window-endpoint
+  - oracle
+  - helper-python
+- text: 'metadata: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-batches/metadata.yaml.'
+  proof:
+  - case-metadata
+  - oracle
+  - helper-python
+- text: 'retrieve status counts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-batches/retrieve-status-counts.yaml.'
+  proof:
+  - case-retrieve-status-counts
+  - oracle
+  - helper-python
+- text: 'cancel batch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-batches/cancel-batch.yaml.'
+  proof:
+  - case-cancel-batch
+  - oracle
+  - helper-python
+- text: 'list after limit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-batches/list-after-limit.yaml.'
+  proof:
+  - case-list-after-limit
+  - oracle
+  - helper-python
+- text: 'batch error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-batches/batch-error.yaml.'
+  proof:
+  - case-batch-error
+  - oracle
+  - helper-python
+- text: New openai_batches seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_batch_object has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-create-window-endpoint
+    why: The create-window-endpoint behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_create_window_endpoint$/)'
+  - id: case-metadata
+    why: The metadata behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_metadata$/)'
+  - id: case-retrieve-status-counts
+    why: The retrieve-status-counts behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_retrieve_status_counts$/)'
+  - id: case-cancel-batch
+    why: The cancel-batch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_cancel_batch$/)'
+  - id: case-list-after-limit
+    why: The list-after-limit behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_list_after_limit$/)'
+  - id: case-batch-error
+    why: The batch-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::batches_cases::case_[0-9]+_batch_error$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_batches.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_batches*")"
+      && grep -lq 'openai_batches' tools/oracle/fuzz/corpus/helper_case/openai_batches* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_batches$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_batches)"
+      && grep -q 'decode_batch_object' crates/betterlite-openai/fuzz/fuzz_targets/openai_batches.rs && cargo nextest
+      run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_batches_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-batches/create-window-endpoint.yaml
+- tools/oracle/cases/helpers/providers/openai-batches/metadata.yaml
+- tools/oracle/cases/helpers/providers/openai-batches/retrieve-status-counts.yaml
+- tools/oracle/cases/helpers/providers/openai-batches/cancel-batch.yaml
+- tools/oracle/cases/helpers/providers/openai-batches/list-after-limit.yaml
+- tools/oracle/cases/helpers/providers/openai-batches/batch-error.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config L82-L98;
+  MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params L105-L109
+  belong to B036; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356; OpenAIChatCompletion.make_openai_embedding_request
+  L1201-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request L1218-L1232; OpenAIChatCompletion.aembedding
+  L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to B006; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
+  L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
+  L465-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L506-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
+  L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
+  L889-L1011 belong to B004; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
+  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005; reuse that implementation or
+  its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454; OpenAIChatCompletion.image_generation
+  L1456-L1554 belong to B511; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
+  L1620-L1666 belong to B514; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client L1683-L1711;
+  OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
+  L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
+  L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
+  L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
+  L1986-L2026 belong to B516; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
+  L2254-L2277; OpenAIAssistantsAPI.async_get_openai_client L2279-L2302; OpenAIAssistantsAPI.async_get_assistants
+  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2343-L2353; OpenAIAssistantsAPI.get_assistants L2356-L2366; OpenAIAssistantsAPI.get_assistants
+  L2370-L2414; OpenAIAssistantsAPI.async_create_assistants L2417-L2438; OpenAIAssistantsAPI.create_assistants L2440-L2471;
+  OpenAIAssistantsAPI.async_delete_assistant L2474-L2495; OpenAIAssistantsAPI.delete_assistant L2497-L2528 belong
+  to B519; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
+  L2568-L2580; OpenAIAssistantsAPI.add_message L2583-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
+  L2644-L2665; OpenAIAssistantsAPI.get_messages L2670-L2681; OpenAIAssistantsAPI.get_messages L2684-L2695; OpenAIAssistantsAPI.get_messages
+  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2773-L2785;
+  OpenAIAssistantsAPI.create_thread L2788-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
+  L2861-L2887; OpenAIAssistantsAPI.get_thread L2892-L2903; OpenAIAssistantsAPI.get_thread L2906-L2917; OpenAIAssistantsAPI.get_thread
+  L2921-L2958 belong to B520; reuse that implementation or its injected typed boundary.
+- 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
+  port them.'
+- >-
+  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
+  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3074-L3093; OpenAIAssistantsAPI.run_thread
+  L3096-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config L175-L176; OpenAIConfig.get_supported_openai_params
+  L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params L207-L212; OpenAIConfig._transform_messages
+  L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class L254-L259; OpenAIConfig.transform_request
+  L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment L300-L313; OpenAIConfig.get_model_response_iterator
+  L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser L329-L336 belong to B668; reuse that implementation
+  or its injected typed boundary.
+pitfalls:
+- Batch completion_window and endpoint are upstream asynchronous job inputs, unrelated to parallel chat completion
+  calls.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: standard

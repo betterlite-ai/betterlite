@@ -1,0 +1,182 @@
+id: B634
+title: Bedrock image generation execution
+description: >-
+  Execute Bedrock image generation via typed signed Invoke requests and map results with image_models. Preserve
+  extra-header extraction, model-family selection, optional params and upstream status; do not introduce file downloads
+  to return URL mode.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/image_generation/image_handler.py:
+  BedrockImageGeneration.get_config_class L66-L74; BedrockImageGeneration.image_generation L76-L139; BedrockImageGeneration.async_image_generation
+  L141-L188; BedrockImageGeneration._extract_headers_from_optional_params L190-L203; BedrockImageGeneration._prepare_request
+  L205-L292; BedrockImageGeneration._get_request_body L294-L310; BedrockImageGeneration._transform_response_dict_to_openai_response
+  L312-L345.
+
+
+  Reuse the existing image reply decoder from the image-generation result owner; this slice adds no parallel JSON
+  parser.
+
+
+  Reuse AmazonNovaCanvasConfig._is_nova_model from B633 (litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py);
+  its implementation remains with that prerequisite.
+
+
+  Reuse AmazonStability3Config._is_stability_3_model from B633 (litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py);
+  its implementation remains with that prerequisite.
+
+
+  Reuse AmazonTitanImageGenerationConfig._is_titan_model from B633 (litellm/llms/bedrock/image_generation/amazon_titan_transformation.py);
+  its implementation remains with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/image_call.rs with adjacent tests under image_call/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_image_call in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function image_call_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  image_family_dispatch, image_runtime_url, signed_json_body, extra_headers_outside_body, base64_image_result, image_http_error.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call* using HelperCase: kind:
+  helper and the externally tagged bedrock_other_image_call variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_image_call that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 246 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 270 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 473 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/image_call.rs
+  - crates/betterlite-bedrock/src/image_call/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_image_call.rs
+  - tools/oracle/src/helpers/bedrock_other_image_call/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_image_call.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-image-call/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L66-L345
+  why: >-
+    Own BedrockImageGeneration.get_config_class, BedrockImageGeneration.image_generation, BedrockImageGeneration.async_image_generation,
+    BedrockImageGeneration._extract_headers_from_optional_params, BedrockImageGeneration._prepare_request, BedrockImageGeneration._get_request_body,
+    BedrockImageGeneration._transform_response_dict_to_openai_response. Other functions in this file remain with
+    the owners listed below.
+dod:
+- text: >-
+    image family dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-family-dispatch.yaml.
+  proof:
+  - case-image-family-dispatch
+  - oracle
+  - helper-python
+- text: 'image runtime url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-runtime-url.yaml.'
+  proof:
+  - case-image-runtime-url
+  - oracle
+  - helper-python
+- text: 'signed json body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/signed-json-body.yaml.'
+  proof:
+  - case-signed-json-body
+  - oracle
+  - helper-python
+- text: >-
+    extra headers outside body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/extra-headers-outside-body.yaml.
+  proof:
+  - case-extra-headers-outside-body
+  - oracle
+  - helper-python
+- text: 'base64 image result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/base64-image-result.yaml.'
+  proof:
+  - case-base64-image-result
+  - oracle
+  - helper-python
+- text: 'image http error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-http-error.yaml.'
+  proof:
+  - case-image-http-error
+  - oracle
+  - helper-python
+- text: New bedrock_other_image_call seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-image-family-dispatch
+    why: The image-family-dispatch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_family_dispatch$/)'
+  - id: case-image-runtime-url
+    why: The image-runtime-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_runtime_url$/)'
+  - id: case-signed-json-body
+    why: The signed-json-body behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_signed_json_body$/)'
+  - id: case-extra-headers-outside-body
+    why: The extra-headers-outside-body behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_extra_headers_outside_body$/)'
+  - id: case-base64-image-result
+    why: The base64-image-result behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_base64_image_result$/)'
+  - id: case-image-http-error
+    why: The image-http-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_http_error$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_call.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call*")"
+      && grep -lq 'bedrock_other_image_call' tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_image_call$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-family-dispatch.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-runtime-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-call/signed-json-body.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-call/extra-headers-outside-body.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-call/base64-image-result.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-http-error.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve extra-header extraction, model-family selection, optional params and upstream status; do not introduce
+  file downloads to return URL mode.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

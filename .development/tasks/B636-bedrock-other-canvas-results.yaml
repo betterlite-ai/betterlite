@@ -1,0 +1,192 @@
+id: B636
+title: Bedrock Nova Canvas edit results
+description: >-
+  Add CanvasEditReply normalization, preserving images/errors, usage, size and creation metadata. Reuse exact typed
+  image response models and keep multiple image results ordered; tests include provider filter/error variants and
+  optional field absence.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py:
+  BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response L387-L466.
+
+
+  The output_cost_per_image response metadata calculation is B068; pass its exact decimal result into the image
+  reply projection.
+
+
+  Implement crates/betterlite-bedrock/src/canvas_results.rs with adjacent tests under canvas_results/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_canvas_results in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function canvas_results_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): canvas_images_array, canvas_error_object, canvas_response_usage, canvas_result_size, canvas_empty_images,
+  canvas_malformed_reply. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results* using HelperCase:
+  kind: helper and the externally tagged bedrock_other_canvas_results variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_canvas_results that parses
+  every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds;
+  then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_canvas_reply consumes Nova Canvas JSON reply bytes in crates/betterlite-bedrock/src/canvas_results.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_canvas_results.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_other_canvas_results.
+  The adjacent test replays_the_bedrock_other_canvas_results_corpus uses the same function and asserts expected
+  success/failure categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 69 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 100 production lines, 99 behavior/config-test lines, 79 combined
+  Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 358 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/canvas_results.rs
+  - crates/betterlite-bedrock/src/canvas_results/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_canvas_results.rs
+  - tools/oracle/src/helpers/bedrock_other_canvas_results/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_canvas_results.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_canvas_results.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_other_canvas_results/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L387-L466
+  why: Own BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response. Other functions in this file remain
+    with the owners listed below.
+dod:
+- text: >-
+    canvas images array: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-images-array.yaml.
+  proof:
+  - case-canvas-images-array
+  - oracle
+  - helper-python
+- text: >-
+    canvas error object: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-error-object.yaml.
+  proof:
+  - case-canvas-error-object
+  - oracle
+  - helper-python
+- text: >-
+    canvas response usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-response-usage.yaml.
+  proof:
+  - case-canvas-response-usage
+  - oracle
+  - helper-python
+- text: >-
+    canvas result size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-result-size.yaml.
+  proof:
+  - case-canvas-result-size
+  - oracle
+  - helper-python
+- text: >-
+    canvas empty images: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-empty-images.yaml.
+  proof:
+  - case-canvas-empty-images
+  - oracle
+  - helper-python
+- text: >-
+    canvas malformed reply: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-malformed-reply.yaml.
+  proof:
+  - case-canvas-malformed-reply
+  - oracle
+  - helper-python
+- text: New bedrock_other_canvas_results seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_canvas_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-canvas-images-array
+    why: The canvas-images-array behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_images_array$/)'
+  - id: case-canvas-error-object
+    why: The canvas-error-object behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_error_object$/)'
+  - id: case-canvas-response-usage
+    why: The canvas-response-usage behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_response_usage$/)'
+  - id: case-canvas-result-size
+    why: The canvas-result-size behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_result_size$/)'
+  - id: case-canvas-empty-images
+    why: The canvas-empty-images behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_empty_images$/)'
+  - id: case-canvas-malformed-reply
+    why: The canvas-malformed-reply behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_results_cases::case_[0-9]+_canvas_malformed_reply$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_canvas_results.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results*")"
+      && grep -lq 'bedrock_other_canvas_results' tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_results*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_canvas_results$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_canvas_results)"
+      && grep -q 'decode_canvas_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_canvas_results.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_canvas_results_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-images-array.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-error-object.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-response-usage.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-result-size.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-empty-images.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-results/canvas-malformed-reply.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py: _nova_canvas_task_body L41-L129;
+  _file_types_to_b64 L132-L153; _supports_nova_canvas_image_edit_from_model_cost L156-L215; BedrockAmazonNovaCanvasImageEditConfig._is_nova_canvas_image_edit_model
+  L224-L230; BedrockAmazonNovaCanvasImageEditConfig.get_error_class L232-L238; BedrockAmazonNovaCanvasImageEditConfig.get_supported_openai_params
+  L240-L255; BedrockAmazonNovaCanvasImageEditConfig.map_openai_params L257-L305; BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_request
+  L307-L385; BedrockAmazonNovaCanvasImageEditConfig.use_multipart_form_data L468-L469; BedrockAmazonNovaCanvasImageEditConfig.get_complete_url
+  L471-L481; BedrockAmazonNovaCanvasImageEditConfig.validate_environment L483-L495; get_bedrock_image_edit_config_for_model
+  L498-L519 belong to B635; reuse that implementation or its injected typed boundary.
+pitfalls:
+- >-
+  The BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response branch must retain the literal defaults
+  and omissions in the linked range; use the named fixtures to distinguish them.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

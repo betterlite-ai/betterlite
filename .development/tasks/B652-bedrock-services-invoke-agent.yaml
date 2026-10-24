@@ -1,0 +1,216 @@
+id: B652
+title: Bedrock InvokeAgent requests and trace replies
+description: >-
+  Add InvokeAgentRequest/Reply with agent id/alias/session inputs, signed agent-runtime URLs and event stream reply
+  aggregation. Preserve trace/preprocessing/orchestration usage and decoded text chunks without exposing trace payloads
+  in logs. The public agent gateway API remains B050/B141; this is a provider adapter callable as chat.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_agent/transformation.py:
+  AmazonInvokeAgentConfig.__init__ L49-L51; AmazonInvokeAgentConfig.get_supported_openai_params L53-L61; AmazonInvokeAgentConfig.map_openai_params
+  L63-L73; AmazonInvokeAgentConfig.get_complete_url L75-L106; AmazonInvokeAgentConfig.sign_request L108-L129; AmazonInvokeAgentConfig._get_agent_id_and_alias_id
+  L131-L142; AmazonInvokeAgentConfig._get_session_id L144-L146; AmazonInvokeAgentConfig.transform_request L148-L162;
+  AmazonInvokeAgentConfig._parse_aws_event_stream L164-L224; AmazonInvokeAgentConfig._parse_message_from_event L226-L264;
+  AmazonInvokeAgentConfig._extract_headers_from_event L266-L280; AmazonInvokeAgentConfig._get_response_stream_shape
+  L282-L285; AmazonInvokeAgentConfig._extract_response_content L287-L308; AmazonInvokeAgentConfig._extract_usage_info
+  L310-L341; AmazonInvokeAgentConfig._is_trace_event L343-L348; AmazonInvokeAgentConfig._get_trace_data L350-L357;
+  AmazonInvokeAgentConfig._extract_and_update_preprocessing_usage L359-L382; AmazonInvokeAgentConfig._extract_orchestration_model
+  L384-L396; AmazonInvokeAgentConfig._build_model_response L398-L428; AmazonInvokeAgentConfig.transform_response
+  L430-L473; AmazonInvokeAgentConfig.validate_environment L475-L485; AmazonInvokeAgentConfig.get_error_class L487-L488;
+  AmazonInvokeAgentConfig.should_fake_stream L490-L496.
+
+
+  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse get_bedrock_response_stream_shape from B599 (litellm/llms/bedrock/common_utils.py); its implementation remains
+  with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/invoke_agent.rs with adjacent tests under invoke_agent/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_invoke_agent in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function invoke_agent_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  agent_id_alias_path, session_id, agent_input_text, agent_event_stream_content, preprocess_trace_usage, orchestration_model,
+  agent_error_frame. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_invoke_agent variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_invoke_agent that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_agent_trace consumes AWS frame payload JSON and nested base64 chunk bytes in crates/betterlite-bedrock/src/invoke_agent.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_invoke_agent.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_invoke_agent.
+  The adjacent test replays_the_bedrock_services_invoke_agent_corpus uses the same function and asserts expected
+  success/failure categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 354 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 370 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 641 planned, 650 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/invoke_agent.rs
+  - crates/betterlite-bedrock/src/invoke_agent/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_invoke_agent.rs
+  - tools/oracle/src/helpers/bedrock_services_invoke_agent/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_invoke_agent.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_invoke_agent.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_invoke_agent/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock_invoke_agents.py#L1-L129
+  why: Reuse or declare the typed records and aliases consumed by this slice.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_agent/transformation.py#L49-L496
+  why: >-
+    Own AmazonInvokeAgentConfig.__init__, AmazonInvokeAgentConfig.get_supported_openai_params, AmazonInvokeAgentConfig.map_openai_params,
+    AmazonInvokeAgentConfig.get_complete_url, AmazonInvokeAgentConfig.sign_request, AmazonInvokeAgentConfig._get_agent_id_and_alias_id,
+    AmazonInvokeAgentConfig._get_session_id, AmazonInvokeAgentConfig.transform_request, AmazonInvokeAgentConfig._parse_aws_event_stream,
+    AmazonInvokeAgentConfig._parse_message_from_event, AmazonInvokeAgentConfig._extract_headers_from_event, AmazonInvokeAgentConfig._get_response_stream_shape,
+    AmazonInvokeAgentConfig._extract_response_content, AmazonInvokeAgentConfig._extract_usage_info, AmazonInvokeAgentConfig._is_trace_event,
+    AmazonInvokeAgentConfig._get_trace_data, AmazonInvokeAgentConfig._extract_and_update_preprocessing_usage, AmazonInvokeAgentConfig._extract_orchestration_model,
+    AmazonInvokeAgentConfig._build_model_response, AmazonInvokeAgentConfig.transform_response, AmazonInvokeAgentConfig.validate_environment,
+    AmazonInvokeAgentConfig.get_error_class, AmazonInvokeAgentConfig.should_fake_stream. Other functions in this
+    file remain with the owners listed below.
+dod:
+- text: >-
+    agent id alias path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-id-alias-path.yaml.
+  proof:
+  - case-agent-id-alias-path
+  - oracle
+  - helper-python
+- text: 'session id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/session-id.yaml.'
+  proof:
+  - case-session-id
+  - oracle
+  - helper-python
+- text: 'agent input text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-input-text.yaml.'
+  proof:
+  - case-agent-input-text
+  - oracle
+  - helper-python
+- text: >-
+    agent event stream content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-event-stream-content.yaml.
+  proof:
+  - case-agent-event-stream-content
+  - oracle
+  - helper-python
+- text: >-
+    preprocess trace usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/preprocess-trace-usage.yaml.
+  proof:
+  - case-preprocess-trace-usage
+  - oracle
+  - helper-python
+- text: >-
+    orchestration model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/orchestration-model.yaml.
+  proof:
+  - case-orchestration-model
+  - oracle
+  - helper-python
+- text: 'agent error frame: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-error-frame.yaml.'
+  proof:
+  - case-agent-error-frame
+  - oracle
+  - helper-python
+- text: New bedrock_services_invoke_agent seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_agent_trace has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-agent-id-alias-path
+    why: The agent-id-alias-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_cases::case_[0-9]+_agent_id_alias_path$/)'
+  - id: case-session-id
+    why: The session-id behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_cases::case_[0-9]+_session_id$/)'
+  - id: case-agent-input-text
+    why: The agent-input-text behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_cases::case_[0-9]+_agent_input_text$/)'
+  - id: case-agent-event-stream-content
+    why: The agent-event-stream-content behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_cases::case_[0-9]+_agent_event_stream_content$/)'
+  - id: case-preprocess-trace-usage
+    why: The preprocess-trace-usage behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_cases::case_[0-9]+_preprocess_trace_usage$/)'
+  - id: case-orchestration-model
+    why: The orchestration-model behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_cases::case_[0-9]+_orchestration_model$/)'
+  - id: case-agent-error-frame
+    why: The agent-error-frame behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_agent_cases::case_[0-9]+_agent_error_frame$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_invoke_agent.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent*")"
+      && grep -lq 'bedrock_services_invoke_agent' tools/oracle/fuzz/corpus/helper_case/bedrock_services_invoke_agent*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_invoke_agent$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_invoke_agent)"
+      && grep -q 'decode_agent_trace' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_invoke_agent.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_invoke_agent_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-id-alias-path.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/session-id.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-input-text.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-event-stream-content.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/preprocess-trace-usage.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/orchestration-model.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-invoke-agent/agent-error-frame.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve trace/preprocessing/orchestration usage and decoded text chunks without exposing trace payloads in logs.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: standard

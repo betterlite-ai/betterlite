@@ -1,0 +1,547 @@
+id: B024
+title: OpenAI provider endpoint composition
+description: >-
+  Compose OpenAI chat, embeddings, Responses and text/moderation calls using the installed provider modules and
+  the closed operation dispatcher. B668 supplies base parameter policy before B004, B502 and B504; B669 installs
+  media, B670 resources and B671 assistants/session operations. Own the OpenAI branch of main.py _complete_custom_openai
+  and _complete_text_completion_openai, including configuration default merging without replacing explicit call
+  parameters. Reuse B500 resolved key/base/organization values rather than rereading environment at dispatch.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/main.py: _complete_text_completion_openai
+  L1771-L1850; _complete_custom_openai L2590-L2728. litellm/utils.py: get_requester_metadata L10327-L10341.
+
+
+  unsupported_operation is a Rust-only dispatcher test, because no corresponding LiteLLM operation exists. Cases
+  cover the normal and EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER branches (default false), extra_headers precedence
+  and enable_preview_features metadata forwarding; This slice owns get_requester_metadata and uses B527 add_openai_metadata.
+
+
+  Provider composition changes existing chat dispatch, not route registration: add the HTTP dispatch case through
+  the booted proxy for POST /v1/chat/completions and /chat/completions with the source provider prefix. Assert upstream
+  request, auth, response status, error type/param/code and response headers. Keep the existing router as the sole
+  route owner; pure helper cases exercise the other typed provider operations without calling FastAPI globals.
+
+
+  Add a separate Rust-only unsupported_operation case against the executable dispatcher; do not invent a Python
+  oracle operation for it.
+
+
+  Implement crates/betterlite-provider/src/openai_dispatch.rs with adjacent tests under openai_dispatch/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation openai_provider in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function openai_dispatch_cases in betterlite-provider with these exact named cases (one per oracle
+  file): chat_dispatch, embeddings_dispatch, responses_operation, explicit_param_before_config, experimental_handler,
+  preview_metadata, openai_provider_dispatch_http. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_provider* using HelperCase: kind: helper
+  and the externally tagged openai_provider variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_openai_provider that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/openai/openai_dispatch.rs
+  and its loader wiring: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER, enable_preview_features. Module-level settings
+  enter litellm_settings; deployment settings enter litellm_params; environment lookup is injected. Keep the defaults
+  and precedence specified above and in the linked branches; existing key owners remain unchanged. Write config
+  rstest openai_provider_config_cases with named cases loads_experimental_openai_base_llm_http_handler, loads_enable_preview_features,
+  plus rejects_unrelated_key. Each loads case calls the real config loader with that key and asserts the resolved
+  value, default, precedence and secret redaction where applicable. Seed B002 config_yaml with new openai_provider*
+  files for every key; reuse its parser/fuzz target.
+
+
+  Write standalone openai_provider_unsupported_operation in betterlite-provider for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 199 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 225 production lines, 137 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 31 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 501 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/openai_dispatch.rs
+  - crates/betterlite-provider/src/openai_dispatch/**
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/Cargo.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_provider.rs
+  - tools/oracle/src/helpers/openai_provider/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_provider.py
+  - tools/oracle/cases/helpers/providers/openai-provider/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_provider*
+  - tools/oracle/cases/chat/openai_provider-dispatch-http.yaml
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/openai.rs
+  - crates/betterlite-config/src/providers/openai/openai_dispatch.rs
+  - crates/betterlite-config/src/providers/openai/openai_dispatch/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/openai_provider_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2590-L2730
+  why: OpenAI dispatch defaults and handler selection; Copilot-only authorization belongs to its provider owner.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1771-L1851
+  why: OpenAI text-completion dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1771-L1850
+  why: Own _complete_text_completion_openai. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2590-L2728
+  why: Own _complete_custom_openai. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10327-L10341
+  why: Own get_requester_metadata. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'chat dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-provider/chat-dispatch.yaml.'
+  proof:
+  - case-chat-dispatch
+  - oracle
+  - helper-python
+- text: 'embeddings dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-provider/embeddings-dispatch.yaml.'
+  proof:
+  - case-embeddings-dispatch
+  - oracle
+  - helper-python
+- text: 'responses operation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-provider/responses-operation.yaml.'
+  proof:
+  - case-responses-operation
+  - oracle
+  - helper-python
+- text: >-
+    explicit param before config: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-provider/explicit-param-before-config.yaml.
+  proof:
+  - case-explicit-param-before-config
+  - oracle
+  - helper-python
+- text: 'experimental handler: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-provider/experimental-handler.yaml.'
+  proof:
+  - case-experimental-handler
+  - oracle
+  - helper-python
+- text: 'preview metadata: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-provider/preview-metadata.yaml.'
+  proof:
+  - case-preview-metadata
+  - oracle
+  - helper-python
+- text: 'openai_provider dispatch http: the production result, omission or failure matches tools/oracle/cases/chat/openai_provider-dispatch-http.yaml.'
+  proof:
+  - case-openai-provider-dispatch-http
+  - oracle
+- text: New openai_provider seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER is accepted by the config loader with the documented default and
+    precedence.
+  proof:
+  - config-experimental-openai-base-llm-http-handler
+  - config-corpus
+- text: enable_preview_features is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-enable-preview-features
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: unsupported operation holds at this task’s owned boundary.
+  proof:
+  - unsupported-operation
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-chat-dispatch
+    why: The chat-dispatch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_chat_dispatch$/)'
+  - id: case-embeddings-dispatch
+    why: The embeddings-dispatch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_embeddings_dispatch$/)'
+  - id: case-responses-operation
+    why: The responses-operation behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_responses_operation$/)'
+  - id: case-explicit-param-before-config
+    why: The explicit-param-before-config behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_explicit_param_before_config$/)'
+  - id: case-experimental-handler
+    why: The experimental-handler behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_experimental_handler$/)'
+  - id: case-preview-metadata
+    why: The preview-metadata behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_preview_metadata$/)'
+  - id: case-openai-provider-dispatch-http
+    why: The openai_provider-dispatch-http behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_openai_provider_dispatch_http$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_provider.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_provider*")"
+      && grep -lq 'openai_provider' tools/oracle/fuzz/corpus/helper_case/openai_provider* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_provider$/)' && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-experimental-openai-base-llm-http-handler
+    why: The EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_loads_experimental_openai_base_llm_http_handler$/)'
+      && grep -lq 'EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER' crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*
+  - id: config-enable-preview-features
+    why: The enable_preview_features setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_loads_enable_preview_features$/)'
+      && grep -lq 'enable_preview_features' crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_provider_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/openai_provider*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: unsupported-operation
+    why: The unsupported operation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_provider_unsupported_operation$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-provider/chat-dispatch.yaml
+- tools/oracle/cases/helpers/providers/openai-provider/embeddings-dispatch.yaml
+- tools/oracle/cases/helpers/providers/openai-provider/responses-operation.yaml
+- tools/oracle/cases/helpers/providers/openai-provider/explicit-param-before-config.yaml
+- tools/oracle/cases/helpers/providers/openai-provider/experimental-handler.yaml
+- tools/oracle/cases/helpers/providers/openai-provider/preview-metadata.yaml
+- tools/oracle/cases/chat/openai_provider-dispatch-http.yaml
+deviations: []
+out_of_scope:
+- >-
+  B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
+  B157-B166 own Python SDK facades, callable hooks and SDK module globals.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config L82-L98;
+  MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params L105-L109
+  belong to B036; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356; OpenAIChatCompletion.make_openai_embedding_request
+  L1201-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request L1218-L1232; OpenAIChatCompletion.aembedding
+  L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to B006; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
+  L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
+  L465-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L506-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
+  L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
+  L889-L1011 belong to B004; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
+  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005; reuse that implementation or
+  its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454; OpenAIChatCompletion.image_generation
+  L1456-L1554 belong to B511; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
+  L1620-L1666 belong to B514; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client L1683-L1711;
+  OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
+  L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
+  L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
+  L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
+  L1986-L2026 belong to B516; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client L2041-L2069;
+  OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
+  L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch L2157-L2164; OpenAIBatchesAPI.cancel_batch
+  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517;
+  reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
+  L2254-L2277; OpenAIAssistantsAPI.async_get_openai_client L2279-L2302; OpenAIAssistantsAPI.async_get_assistants
+  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2343-L2353; OpenAIAssistantsAPI.get_assistants L2356-L2366; OpenAIAssistantsAPI.get_assistants
+  L2370-L2414; OpenAIAssistantsAPI.async_create_assistants L2417-L2438; OpenAIAssistantsAPI.create_assistants L2440-L2471;
+  OpenAIAssistantsAPI.async_delete_assistant L2474-L2495; OpenAIAssistantsAPI.delete_assistant L2497-L2528 belong
+  to B519; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
+  L2568-L2580; OpenAIAssistantsAPI.add_message L2583-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
+  L2644-L2665; OpenAIAssistantsAPI.get_messages L2670-L2681; OpenAIAssistantsAPI.get_messages L2684-L2695; OpenAIAssistantsAPI.get_messages
+  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2773-L2785;
+  OpenAIAssistantsAPI.create_thread L2788-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
+  L2861-L2887; OpenAIAssistantsAPI.get_thread L2892-L2903; OpenAIAssistantsAPI.get_thread L2906-L2917; OpenAIAssistantsAPI.get_thread
+  L2921-L2958 belong to B520; reuse that implementation or its injected typed boundary.
+- 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
+  port them.'
+- >-
+  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
+  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3074-L3093; OpenAIAssistantsAPI.run_thread
+  L3096-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig.contains_pdf_url L233-L238; OpenAIGPTConfig._handle_pdf_url
+  L240-L248; OpenAIGPTConfig._async_handle_pdf_url L250-L257; OpenAIGPTConfig._common_file_data_check L259-L264;
+  OpenAIGPTConfig._apply_common_transform_content_item L266-L296; OpenAIGPTConfig._transform_content_item L298-L313;
+  OpenAIGPTConfig._async_transform_content_item L315-L329; OpenAIGPTConfig._transform_messages L334-L337; OpenAIGPTConfig._transform_messages
+  L340-L346; OpenAIGPTConfig._transform_messages L350-L382; OpenAIGPTConfig.remove_cache_control_flag_from_messages_and_tools
+  L384-L406; OpenAIGPTConfig._targets_openai_hosted_endpoint L408-L421; OpenAIGPTConfig._should_preserve_cache_control_for_endpoint
+  L423-L436; OpenAIGPTConfig._sanitized_tools_update_for_openai L438-L465; OpenAIGPTConfig._prompt_cache_ordered_messages
+  L467-L474; OpenAIGPTConfig.transform_request L476-L511; OpenAIGPTConfig.async_transform_request L513-L548 belong
+  to B503; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig._passed_in_tools L550-L551; OpenAIGPTConfig._check_and_fix_if_content_is_tool_call
+  L553-L580; OpenAIGPTConfig._get_finish_reason L582-L586; OpenAIGPTConfig._transform_choices L588-L659; OpenAIGPTConfig.transform_response
+  L661-L708; OpenAIGPTConfig.get_error_class L710-L715; OpenAIGPTConfig.get_complete_url L717-L743; OpenAIGPTConfig.validate_environment
+  L745-L762; OpenAIGPTConfig.get_models L764-L789; OpenAIGPTConfig.get_api_key L792-L793; OpenAIGPTConfig.get_api_base
+  L796-L803; OpenAIGPTConfig.get_base_model L806-L807; OpenAIGPTConfig.get_token_counter L809-L814; OpenAIGPTConfig.get_model_response_iterator
+  L816-L826; OpenAIChatCompletionStreamingHandler._map_reasoning_to_reasoning_content L838-L855; OpenAIChatCompletionStreamingHandler._extract_error_from_chunk
+  L858-L870; OpenAIChatCompletionStreamingHandler.chunk_parser L872-L898 belong to B504; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig.__init__ L118-L137; OpenAIGPTConfig.get_config
+  L140-L141; OpenAIGPTConfig.get_supported_openai_params L143-L185; OpenAIGPTConfig.is_openai_catalog_model L188-L193;
+  OpenAIGPTConfig._map_openai_params L195-L217; OpenAIGPTConfig.map_openai_params L219-L231; OpenAIUnknownModelConfig.get_supported_openai_params
+  L833-L834 belong to B668; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config L175-L176; OpenAIConfig.get_supported_openai_params
+  L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params L207-L212; OpenAIConfig._transform_messages
+  L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class L254-L259; OpenAIConfig.transform_request
+  L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment L300-L313; OpenAIConfig.get_model_response_iterator
+  L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser L329-L336 belong to B668; reuse that implementation
+  or its injected typed boundary.
+- 'litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong to B025; reuse that implementation
+  or its injected typed boundary.'
+- 'litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026; reuse that implementation or its injected typed
+  boundary.'
+- 'litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945 belong to B027; reuse
+  that implementation or its injected typed boundary.'
+- >-
+  litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178; _complete_bedrock L4178-L4304
+  belong to B028; reuse that implementation or its injected typed boundary.
+- 'litellm/utils.py: extract_duration_from_srt_or_vtt L10168-L10194 belong to B515; reuse that implementation or
+  its injected typed boundary.'
+- 'litellm/utils.py: add_openai_metadata L10292-L10324 belong to B527; reuse that implementation or its injected
+  typed boundary.'
+- >-
+  litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375; Chat.__init__ L379-L385; Completions.__init__
+  L389-L391; Completions.create L393-L401; AsyncCompletions.__init__ L405-L407; AsyncCompletions.create L409-L417;
+  acompletion L422-L740; _resolve_dispatched_chat_response L743-L746; _model_response_from_cached_dict L749-L750;
+  _transcription_response_from_cached_dict L753-L754; _async_streaming L757-L771; _handle_mock_potential_exceptions
+  L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async L831-L842; _sleep_for_timeout L845-L851;
+  _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883; admitted_prompt_token_counter L886-L889;
+  mock_completion L892-L1057; _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base L1069-L1080; responses_api_bridge_check
+  L1083-L1194; _is_claude_tool_target L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys
+  L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers L1229-L1229; _proxy_auth_headers L1232-L1233; _provider_config_items
+  L1236-L1237; _locals_snapshot L1240-L1241; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
+  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _dispatch_metadata L1320-L1321; _dispatch_client_http
+  L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai L1334-L1335; _custom_api_first_output
+  L4909-L4910; completion L5145-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136;
+  responses_with_retries L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6196-L6250; embedding L6257-L6278;
+  embedding L6283-L6304; embedding L6310-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
+  L7385-L7386; atext_completion L7390-L7456; text_completion L7460-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
+  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7793-L7864; atranscription L7871-L7929;
+  transcription L7933-L8195; aspeech L8199-L8234; speech L8238-L8719; ahealth_check L8725-L8831; print_verbose L8836-L8842;
+  config_completion L8845-L8853; stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
+  L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations L8935-L8938; _stream_builder_model_map_cost
+  L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost L8961-L8968; _stream_choice_delta
+  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271;
+  acount_tokens L9277-L9372; _load_module_encoding L9379-L9382; _get_encoding L9385-L9391; _load_default_encoding
+  L9394-L9397; __getattr__ L9400-L9411 belong to B158; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception L4045-L4106 belong to B038;
+  reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957; _complete_groq L2111-L2170;
+  _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface L3181-L3221; _complete_openrouter
+  L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649; _complete_predibase L3936-L3992;
+  _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041; reuse that implementation or its
+  injected typed boundary.
+- >-
+  litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci L3224-L3256; _complete_databricks
+  L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker L4146-L4171;
+  _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake L4655-L4705; _complete_gdc
+  L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042; reuse that implementation or its injected typed boundary.
+- 'litellm/main.py: _complete_ragflow L2010-L2057 belong to B049; reuse that implementation or its injected typed
+  boundary.'
+- >-
+  litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
+  L3995-L4042 belong to B036; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow L5094-L5140 belong
+  to B050; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995; _complete_aleph_alpha L2998-L3044;
+  _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir L3521-L3545; _complete_gradient_ai
+  L4708-L4740 belong to B043; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979; _complete_custom_providers
+  L4982-L5042 belong to B044; reuse that implementation or its injected typed boundary.
+- 'litellm/main.py: _complete_minimax L2500-L2543 belong to B039; reuse that implementation or its injected typed
+  boundary.'
+- >-
+  litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332; _complete_vllm L4421-L4455;
+  _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton L4540-L4573; _complete_petals
+  L4615-L4652; _complete_lemonade L4822-L4859 belong to B040; reuse that implementation or its injected typed boundary.
+- 'litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037; reuse that implementation or its injected
+  typed boundary.'
+- 'litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046; reuse that implementation or its injected typed
+  boundary.'
+- 'litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933 belong to B031; reuse
+  that implementation or its injected typed boundary.'
+- >-
+  litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class L118-L126; _snapshot_exception_for_hook
+  L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response L168-L179; _get_cached_llm_caching_handler
+  L182-L193; _get_cached_audio_utils L201-L212; print_verbose L544-L559; _print_verbose_is_active L562-L567; custom_llm_setup
+  L572-L581; _add_custom_logger_callback_to_specific_event L584-L621; _custom_logger_class_exists_in_success_callbacks
+  L624-L639; _custom_logger_class_exists_in_failure_callbacks L642-L657; _is_same_registered_custom_logger L660-L668;
+  get_request_guardrails L671-L678; get_applied_guardrails L681-L696; load_credentials_from_list L699-L719; get_dynamic_callbacks
+  L722-L728; _is_gemini_model L731-L742; _remove_thought_signature_from_id L745-L751; _process_assistant_message_tool_calls
+  L754-L782; _process_tool_message_id L785-L795; _remove_thought_signatures_from_messages L798-L823; _restore_correlation_context_if_supported
+  L826-L838; _is_streaming_response_for_correlation L841-L873; _is_converted_stream_result L876-L880; _run_success_deployment_hook_on_converted_chat_stream
+  L883-L906; _NamedFile.name L912-L912; _LoggingClassGetter.__call__ L916-L916; _ResponseMetadataUpdater.__call__
+  L920-L929; _SupportedOpenAIParamsGetter.__call__ L933-L939; _NestedPathChecker.__call__ L943-L943; _NestedValueDeleter.__call__
+  L947-L947; _BaseModelFromMetadataGetter.__call__ L951-L951; _ocr_document_summary L954-L971; function_setup L981-L1344;
+  _dispatch_success_logging L1347-L1368; _schedule_async_success_logging L1371-L1408; _client_async_logging_helper
+  L1411-L1431; _get_wrapper_num_retries L1434-L1456; _get_wrapper_timeout L1459-L1467; check_coroutine L1470-L1472;
+  async_pre_call_deployment_hook L1475-L1495; async_post_call_success_deployment_hook L1498-L1531; async_post_call_failure_deployment_hook
+  L1534-L1584; post_call_processing L1587-L1671; client L1674-L2315; _is_async_request L2318-L2348; _is_streaming_request
+  L2361-L2373; _select_tokenizer L2376-L2384; _huggingface_tokenizer_backend L2387-L2392; _select_custom_tokenizer_helper
+  L2396-L2400; _select_tokenizer_helper L2403-L2419; _return_openai_tokenizer L2422-L2423; uses_anthropic_tokenizer
+  L2426-L2427; huggingface_tokenizer_kind L2433-L2443; _return_huggingface_tokenizer L2446-L2453; _load_huggingface_tokenizer
+  L2457-L2469; supports_httpx_timeout L2589-L2598; supports_system_messages L2601-L2619; supports_web_search L2622-L2640;
+  supports_url_context L2643-L2661; supports_native_streaming L2664-L2695; supports_response_schema L2698-L2739;
+  supports_parallel_function_calling L2742-L2750; supports_function_calling L2753-L2771; supports_tool_choice L2774-L2778;
+  _supports_provider_info_factory L2781-L2790; _supports_factory L2793-L2852; declared_value_factory L2855-L2892;
+  is_explicitly_disabled_factory L2895-L2938; supports_audio_input L2941-L2943; supports_pdf_input L2946-L2948;
+  supports_audio_output L2951-L2953; supports_prompt_caching L2956-L2974; supports_prompt_cache_breakpoint L2977-L2982;
+  supports_thinking_cache_preservation L2985-L2990; supports_computer_use L2993-L3011; is_vision_explicitly_disabled
+  L3014-L3020; supports_vision L3023-L3038; supports_reasoning L3041-L3045; supports_anthropic_thinking_payload
+  L3048-L3051; supports_none_reasoning_effort L3054-L3058; supports_mid_conversation_system L3061-L3067; supports_native_structured_output
+  L3070-L3078; get_supported_regions L3081-L3121; supports_embedding_image_input L3124-L3132; _update_dictionary
+  L3136-L3151; _convert_stringified_numbers L3154-L3167; _resolve_builtin_model_cost_entry L3190-L3221; is_generalized_model_info
+  L3224-L3235; _get_builtin_model_info_for_registration L3238-L3250; set_live_deployment_replay L3266-L3274; reapply_runtime_model_cost_registrations
+  L3277-L3298; cost_map_omits_token_price L3301-L3314; register_model L3317-L3479; _should_drop_param L3482-L3486;
+  _bedrock_route_for_request L3489-L3494; _get_non_default_params L3497-L3507; get_optional_params_transcription
+  L3510-L3597; _map_openai_size_to_vertex_ai_aspect_ratio L3600-L3614; get_optional_params_image_gen L3617-L3744;
+  get_optional_params_embeddings L3747-L4101; _remove_additional_properties L4104-L4124; _remove_strict_from_schema
+  L4127-L4145; _remove_json_schema_refs L4148-L4178; _remove_unsupported_params L4181-L4193; filter_out_litellm_params
+  L4196-L4199; _provider_supports_vertex_params L4202-L4210; PreProcessNonDefaultParams.base_pre_process_non_default_params
+  L4215-L4257; PreProcessNonDefaultParams.embedding_pre_process_non_default_params L4260-L4278; pre_process_non_default_params
+  L4281-L4339; remove_sensitive_keys_from_dict L4342-L4353; pre_process_optional_params L4356-L4431; add_provider_specific_params_to_optional_params
+  L5049-L5087; _apply_openai_param_overrides L5090-L5110; provider_rejectable_params L5116-L5126; get_non_default_params
+  L5129-L5142; calculate_max_parallel_requests L5145-L5185; _get_deployment_order L5188-L5198; get_order_filtered_deployments
+  L5201-L5217; get_excluded_filtered_deployments L5220-L5242; _get_model_region L5245-L5267; _infer_model_region
+  L5270-L5310; _is_region_eu L5313-L5324; _is_region_us L5327-L5338; is_region_allowed L5341-L5347; get_model_region
+  L5350-L5371; get_first_chars_messages L5374-L5380; _count_characters L5383-L5386; get_response_string L5389-L5432;
+  get_utc_datetime L5435-L5436; _strip_stable_vertex_version L5501-L5502; _strip_dated_snapshot_suffix L5508-L5509;
+  _get_base_bedrock_model L5512-L5521; _strip_openai_finetune_model_name L5524-L5540; _strip_model_name L5543-L5559;
+  get_model_cost_mutation_generation L5572-L5573; _invalidate_model_cost_lowercase_map L5576-L5588; _rebuild_model_cost_lowercase_map
+  L5591-L5599; _handle_stale_map_entry_rebuild L5602-L5618; _handle_new_key_with_scan L5621-L5637; _get_model_cost_key
+  L5640-L5678; _get_model_info_from_model_cost L5681-L5682; _check_provider_match L5685-L5727; _get_model_info_from_generalization
+  L5742-L5777; _strip_mantle_region_prefix L5780-L5783; _get_potential_model_names L5786-L5844; _get_max_position_embeddings
+  L5847-L5867; _cached_get_model_info_helper L5871-L5885; get_provider_info L5888-L5903; _is_potential_model_name_in_model_cost
+  L5906-L5915; _model_not_mapped_message L5921-L5925; _get_model_info_helper L5928-L6377; _build_model_info L6380-L6404;
+  _cached_get_model_info L6408-L6413; json_schema_type L6504-L6527; modify_url L6619-L6622; load_test_model L6625-L6665;
+  get_provider_fields L6668-L6681; create_proxy_transport_and_mounts L6684-L6706; validate_environment L6709-L7128;
+  acreate L7131-L7132; valid_model L7135-L7144; check_valid_key L7147-L7165; _should_retry L7168-L7194; _get_retry_after_from_exception_header
+  L7197-L7228; _calculate_retry_after L7231-L7254; register_prompt_template L7258-L7322; TextCompletionStreamWrapper.__init__
+  L7326-L7336; TextCompletionStreamWrapper.__iter__ L7338-L7339; TextCompletionStreamWrapper.__aiter__ L7341-L7342;
+  TextCompletionStreamWrapper.convert_to_text_completion_object L7344-L7367; TextCompletionStreamWrapper.__next__
+  L7369-L7389; TextCompletionStreamWrapper.__anext__ L7391-L7400; mock_stream_usage_chunk L7403-L7413; mock_completion_streaming_obj
+  L7416-L7443; async_mock_completion_streaming_obj L7446-L7473; read_config_args L7477-L7488; process_system_message
+  L7494-L7504; process_messages L7507-L7531; attempt_message_addition L7534-L7551; can_add_message L7554-L7557;
+  get_token_count L7560-L7561; shorten_message_to_fit_limit L7564-L7614; trim_messages L7620-L7718; AvailableModelsCache.__init__
+  L7725-L7727; AvailableModelsCache._get_env_hash L7729-L7732; AvailableModelsCache._check_env_changed L7734-L7740;
+  AvailableModelsCache._get_cache_key L7742-L7753; AvailableModelsCache.get_cached_model_info L7755-L7772; AvailableModelsCache.set_cached_model_info
+  L7774-L7782; _infer_valid_provider_from_env_vars L7789-L7810; _get_valid_models_from_provider_api L7813-L7832;
+  get_valid_models L7835-L7906; print_args_passed_to_litellm L7909-L7949; get_logging_id L7952-L7957; _get_base_model_from_metadata
+  L7960-L7983; ModelResponseIterator.__init__ L7987-L7994; ModelResponseIterator.__iter__ L7997-L7998; ModelResponseIterator.__next__
+  L8000-L8004; ModelResponseIterator.__aiter__ L8007-L8008; ModelResponseIterator.__anext__ L8010-L8014; ModelResponseListIterator.__init__
+  L8018-L8021; ModelResponseListIterator.__iter__ L8024-L8025; ModelResponseListIterator.__next__ L8027-L8034; ModelResponseListIterator.__aiter__
+  L8037-L8038; ModelResponseListIterator.__anext__ L8040-L8047; CustomModelResponseIterator.__init__ L8051-L8052;
+  is_cached_message L8055-L8101; is_base64_encoded L8104-L8120; get_base64_str L8123-L8129; has_tool_call_blocks
+  L8132-L8141; any_assistant_message_has_thinking_blocks L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks
+  L8165-L8194; add_dummy_tool L8197-L8215; convert_to_dict L8228-L8243; convert_list_message_to_dict L8246-L8252;
+  validate_and_fix_openai_messages L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param
+  L8289-L8311; cleanup_none_field_in_message L8314-L8321; validate_chat_completion_user_messages L8324-L8362; validate_chat_completion_tool_choice
+  L8365-L8396; validate_openai_optional_params L8399-L8415; _get_bundled_model_cost_map L8419-L8424; _get_model_cost_entry_for_provider_config
+  L8427-L8442; ProviderConfigManager._build_provider_config_map L8452-L8625; ProviderConfigManager._get_azure_config
+  L8628-L8642; ProviderConfigManager._get_azure_ai_config L8645-L8649; ProviderConfigManager._get_vertex_ai_config
+  L8652-L8671; ProviderConfigManager._get_bedrock_config L8674-L8678; ProviderConfigManager._get_cohere_config L8681-L8687;
+  ProviderConfigManager._get_sail_chat_config L8690-L8693; ProviderConfigManager._get_langgraph_config L8696-L8700;
+  ProviderConfigManager._get_langflow_config L8703-L8707; ProviderConfigManager.get_provider_chat_config L8710-L8765;
+  ProviderConfigManager.get_provider_embedding_config L8768-L8858; ProviderConfigManager.get_provider_rerank_config
+  L8861-L8908; ProviderConfigManager.get_provider_decisions_config L8911-L8928; ProviderConfigManager.get_provider_anthropic_messages_config
+  L8931-L8935; ProviderConfigManager._get_provider_anthropic_messages_config_cached L8939-L9010; ProviderConfigManager.get_provider_audio_transcription_config
+  L9013-L9110; ProviderConfigManager.get_provider_responses_api_config L9113-L9148; ProviderConfigManager._get_python_responses_api_config
+  L9151-L9243; ProviderConfigManager.get_provider_skills_api_config L9246-L9260; ProviderConfigManager.get_provider_evals_api_config
+  L9263-L9279; ProviderConfigManager.get_provider_text_completion_config L9282-L9292; ProviderConfigManager.get_provider_model_info
+  L9295-L9342; ProviderConfigManager.get_provider_passthrough_config L9345-L9397; ProviderConfigManager.get_provider_image_variation_config
+  L9400-L9408; ProviderConfigManager.get_provider_files_config L9411-L9445; ProviderConfigManager.get_provider_batches_config
+  L9448-L9460; ProviderConfigManager.get_provider_vector_store_config L9463-L9472; ProviderConfigManager.get_provider_vector_stores_config
+  L9475-L9561; ProviderConfigManager.get_provider_vector_store_files_config L9564-L9573; ProviderConfigManager.get_provider_image_generation_config
+  L9576-L9688; ProviderConfigManager.get_provider_video_config L9691-L9725; ProviderConfigManager.get_provider_container_config
+  L9728-L9743; ProviderConfigManager.get_provider_realtime_config L9746-L9758; ProviderConfigManager.get_provider_realtime_http_config
+  L9761-L9782; ProviderConfigManager.get_provider_image_edit_config L9785-L9857; ProviderConfigManager.get_provider_search_config
+  L9860-L9916; ProviderConfigManager.get_provider_sandbox_config L9919-L9934; ProviderConfigManager.get_provider_harness_config
+  L9937-L9965; ProviderConfigManager.get_provider_text_to_speech_config L9968-L10033; ProviderConfigManager.get_provider_google_genai_generate_content_config
+  L10036-L10067; get_end_user_id_for_cost_tracking L10070-L10096; should_use_cohere_v1_client L10099-L10105; get_prompt_cache_min_tokens
+  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; _add_path_to_api_base L10197-L10232; get_standard_openai_params
+  L10235-L10236; get_non_default_completion_params L10239-L10240; peek_reasoning_summary_aliases L10243-L10258;
+  strip_reasoning_summary_aliases_from_optional_params L10261-L10283; get_non_default_transcription_params L10286-L10289;
+  return_raw_request L10344-L10389; jsonify_tools L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion
+  L10417-L10424; __getattr__ L10427-L10439 belong to B157; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer L2518-L2532; create_tokenizer
+  L2535-L2547 belong to B195; reuse that implementation or its injected typed boundary.
+- 'litellm/utils.py: token_counter L2550-L2586 belong to B196; reuse that implementation or its injected typed boundary.'
+- 'litellm/utils.py: get_optional_params L4434-L5043 belong to B175; reuse that implementation or its injected typed
+  boundary.'
+- 'litellm/utils.py: get_max_tokens L5439-L5498; get_model_info L6416-L6497 belong to B205; reuse that implementation
+  or its injected typed boundary.'
+- 'litellm/utils.py: function_to_dict L6530-L6616 belong to B178; reuse that implementation or its injected typed
+  boundary.'
+pitfalls:
+- The _complete_text_completion_openai branch must retain the literal defaults and omissions in the linked range;
+  use the named fixtures to distinguish them.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

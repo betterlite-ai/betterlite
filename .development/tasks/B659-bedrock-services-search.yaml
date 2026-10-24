@@ -1,0 +1,313 @@
+id: B659
+title: Bedrock AgentCore MCP web search
+description: >-
+  Add AgentCoreSearchRequest/Reply and configured gateway auth. Load AGENTCORE_GATEWAY_URL (required), AGENTCORE_SEARCH_TOOL_NAME
+  (web-search-tool___WebSearch) and AGENTCORE_MCP_PROTOCOL_VERSION (2025-03-26) in config. Preserve maxResults=10,
+  query truncation to 200 characters, JSON-RPC id=1, ___WebSearch suffix restriction, gateway host/transport checks
+  and region selection. Parse JSON and SSE MCP text results through typed bounded records; only the configured search
+  connector can be invoked.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/search/transformation.py:
+  _gateway_host_match L85-L86; _credential_safe_transport L92-L94; _string_field L97-L101; _to_search_result L104-L111;
+  _result_items L114-L118; _parse_result_items L121-L134; _iter_sse_events L137-L154; AgentCoreSearchConfig.__init__
+  L158-L160; AgentCoreSearchConfig.ui_friendly_name L163-L164; AgentCoreSearchConfig.validate_environment L166-L187;
+  AgentCoreSearchConfig.get_complete_url L189-L203; AgentCoreSearchConfig.transform_search_request L205-L248; AgentCoreSearchConfig.sign_request
+  L250-L321; AgentCoreSearchConfig._is_configured_gateway L324-L328; AgentCoreSearchConfig._signing_region L331-L358;
+  AgentCoreSearchConfig.transform_search_response L360-L403; AgentCoreSearchConfig._tool_error_message L405-L409;
+  AgentCoreSearchConfig._text_blocks L412-L417; AgentCoreSearchConfig._parse_mcp_body L420-L445; AgentCoreSearchConfig.get_error_class
+  L447-L457.
+
+
+  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/search.rs with adjacent tests under search/. Keep each Rust module at
+  most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation bedrock_services_search in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function search_cases in betterlite-bedrock with these exact named cases (one per oracle file): configured_gateway_required,
+  websearch_tool_suffix, query_list_and_200_char_cap, default_max_results, gateway_host_signing, https_or_loopback_only,
+  mcp_json_results, mcp_sse_results, mcp_tool_error. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_search* using HelperCase: kind:
+  helper and the externally tagged bedrock_services_search variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_search that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  Outside-byte boundary: decode_mcp_search_reply consumes MCP JSON response bytes or individual SSE data payloads
+  in crates/betterlite-bedrock/src/search.rs (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_search.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_search.
+  The adjacent test replays_the_bedrock_services_search_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/bedrock/search.rs
+  and its loader wiring: AGENTCORE_GATEWAY_URL, AGENTCORE_SEARCH_TOOL_NAME, AGENTCORE_MCP_PROTOCOL_VERSION. Module-level
+  settings enter litellm_settings; deployment settings enter litellm_params; environment lookup is injected. Keep
+  the defaults and precedence specified above and in the linked branches; existing key owners remain unchanged.
+  Write config rstest bedrock_services_search_config_cases with named cases loads_agentcore_gateway_url, loads_agentcore_search_tool_name,
+  loads_agentcore_mcp_protocol_version, plus rejects_unrelated_key. Each loads case calls the real config loader
+  with that key and asserts the resolved value, default, precedence and secret redaction where applicable. Seed
+  B002 config_yaml with new bedrock_services_search* files for every key; reuse its parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_services_search_credential_identity_isolation in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone bedrock_services_search_secret_safe_failure in betterlite-bedrock for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 302 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 320 production lines, 177 behavior/config-test lines,
+  91 combined Rust/Python adapter lines, 55 parser target/replay lines, 34 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 702 planned, 725 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/search.rs
+  - crates/betterlite-bedrock/src/search/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_search.rs
+  - tools/oracle/src/helpers/bedrock_services_search/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_search.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-search/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_search*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_search.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_search/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/search.rs
+  - crates/betterlite-config/src/providers/bedrock/search/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_services_search_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_search*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L85-L457
+  why: >-
+    Own _gateway_host_match, _credential_safe_transport, _string_field, _to_search_result, _result_items, _parse_result_items,
+    _iter_sse_events, AgentCoreSearchConfig.__init__, AgentCoreSearchConfig.ui_friendly_name, AgentCoreSearchConfig.validate_environment,
+    AgentCoreSearchConfig.get_complete_url, AgentCoreSearchConfig.transform_search_request, AgentCoreSearchConfig.sign_request,
+    AgentCoreSearchConfig._is_configured_gateway, AgentCoreSearchConfig._signing_region, AgentCoreSearchConfig.transform_search_response,
+    AgentCoreSearchConfig._tool_error_message, AgentCoreSearchConfig._text_blocks, AgentCoreSearchConfig._parse_mcp_body,
+    AgentCoreSearchConfig.get_error_class. Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    configured gateway required: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/configured-gateway-required.yaml.
+  proof:
+  - case-configured-gateway-required
+  - oracle
+  - helper-python
+- text: >-
+    websearch tool suffix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/websearch-tool-suffix.yaml.
+  proof:
+  - case-websearch-tool-suffix
+  - oracle
+  - helper-python
+- text: >-
+    query list and 200 char cap: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/query-list-and-200-char-cap.yaml.
+  proof:
+  - case-query-list-and-200-char-cap
+  - oracle
+  - helper-python
+- text: 'default max results: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/default-max-results.yaml.'
+  proof:
+  - case-default-max-results
+  - oracle
+  - helper-python
+- text: 'gateway host signing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/gateway-host-signing.yaml.'
+  proof:
+  - case-gateway-host-signing
+  - oracle
+  - helper-python
+- text: >-
+    https or loopback only: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/https-or-loopback-only.yaml.
+  proof:
+  - case-https-or-loopback-only
+  - oracle
+  - helper-python
+- text: 'mcp json results: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/mcp-json-results.yaml.'
+  proof:
+  - case-mcp-json-results
+  - oracle
+  - helper-python
+- text: 'mcp sse results: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/mcp-sse-results.yaml.'
+  proof:
+  - case-mcp-sse-results
+  - oracle
+  - helper-python
+- text: 'mcp tool error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-search/mcp-tool-error.yaml.'
+  proof:
+  - case-mcp-tool-error
+  - oracle
+  - helper-python
+- text: New bedrock_services_search seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_mcp_search_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+- text: AGENTCORE_GATEWAY_URL is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-agentcore-gateway-url
+  - config-corpus
+- text: AGENTCORE_SEARCH_TOOL_NAME is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-agentcore-search-tool-name
+  - config-corpus
+- text: AGENTCORE_MCP_PROTOCOL_VERSION is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-agentcore-mcp-protocol-version
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-configured-gateway-required
+    why: The configured-gateway-required behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_configured_gateway_required$/)'
+  - id: case-websearch-tool-suffix
+    why: The websearch-tool-suffix behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_websearch_tool_suffix$/)'
+  - id: case-query-list-and-200-char-cap
+    why: The query-list-and-200-char-cap behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_query_list_and_200_char_cap$/)'
+  - id: case-default-max-results
+    why: The default-max-results behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_default_max_results$/)'
+  - id: case-gateway-host-signing
+    why: The gateway-host-signing behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_gateway_host_signing$/)'
+  - id: case-https-or-loopback-only
+    why: The https-or-loopback-only behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_https_or_loopback_only$/)'
+  - id: case-mcp-json-results
+    why: The mcp-json-results behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_mcp_json_results$/)'
+  - id: case-mcp-sse-results
+    why: The mcp-sse-results behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_mcp_sse_results$/)'
+  - id: case-mcp-tool-error
+    why: The mcp-tool-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::search_cases::case_[0-9]+_mcp_tool_error$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_search.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_search*")"
+      && grep -lq 'bedrock_services_search' tools/oracle/fuzz/corpus/helper_case/bedrock_services_search* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_search$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_search)"
+      && grep -q 'decode_mcp_search_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_search.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_search_corpus$/)'
+  - id: config-agentcore-gateway-url
+    why: The AGENTCORE_GATEWAY_URL setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_search_config_cases::case_[0-9]+_loads_agentcore_gateway_url$/)'
+      && grep -lq 'AGENTCORE_GATEWAY_URL' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_search*
+  - id: config-agentcore-search-tool-name
+    why: The AGENTCORE_SEARCH_TOOL_NAME setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_search_config_cases::case_[0-9]+_loads_agentcore_search_tool_name$/)'
+      && grep -lq 'AGENTCORE_SEARCH_TOOL_NAME' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_search*
+  - id: config-agentcore-mcp-protocol-version
+    why: The AGENTCORE_MCP_PROTOCOL_VERSION setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_search_config_cases::case_[0-9]+_loads_agentcore_mcp_protocol_version$/)'
+      && grep -lq 'AGENTCORE_MCP_PROTOCOL_VERSION' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_search*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_search_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_search*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_search_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_search_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-search/configured-gateway-required.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/websearch-tool-suffix.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/query-list-and-200-char-cap.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/default-max-results.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/gateway-host-signing.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/https-or-loopback-only.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/mcp-json-results.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/mcp-sse-results.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-search/mcp-tool-error.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Load AGENTCORE_GATEWAY_URL (required), AGENTCORE_SEARCH_TOOL_NAME (web-search-tool___WebSearch) and AGENTCORE_MCP_PROTOCOL_VERSION
+  (2025-03-26) in config.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

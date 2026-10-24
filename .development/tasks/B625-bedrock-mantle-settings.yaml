@@ -1,0 +1,292 @@
+id: B625
+title: Bedrock Mantle standalone provider configuration
+description: >-
+  Add BedrockMantleSettings and standalone bedrock_mantle provider mappings for OpenAI chat, native Messages and
+  passthrough preparation. Preserve provider identity, credential/base/env selection and metadata-derived model
+  names. Reuse existing transport/request models; raw native relay remains B101/B103. Bearer precedence is explicit
+  api_key, BEDROCK_MANTLE_API_KEY, AWS_BEARER_TOKEN_BEDROCK. Region precedence is aws_region_name, recognized configured
+  Mantle hostname, BEDROCK_MANTLE_REGION, AWS_REGION_NAME, AWS_REGION, then us-east-1.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock_mantle/common_utils.py:
+  resolve_mantle_bearer_token L37-L38; split_mantle_region_prefix L41-L45; resolve_mantle_region L48-L64; BedrockMantleAuthMixin._resolve_bearer_token
+  L71-L72; BedrockMantleAuthMixin._resolve_region L75-L76; BedrockMantleAuthMixin.sign_request L78-L127; mantle_supports_responses
+  L130-L145; mantle_base_segment L148-L160. litellm/llms/bedrock_mantle/chat/transformation.py: BedrockMantleChatConfig.__init__
+  L41-L43; BedrockMantleChatConfig.custom_llm_provider L46-L47; BedrockMantleChatConfig.get_config L50-L51; BedrockMantleChatConfig.get_error_class
+  L53-L56; BedrockMantleChatConfig._get_openai_compatible_provider_info L58-L84; BedrockMantleChatConfig.validate_environment
+  L86-L108; BedrockMantleChatConfig.get_supported_openai_params L110-L120; BedrockMantleChatConfig._supports_reasoning
+  L122-L127; BedrockMantleChatConfig.get_model_response_iterator L129-L143. litellm/llms/bedrock_mantle/messages/transformation.py:
+  build_mantle_native_messages_url L26-L36; BedrockMantleAnthropicMessagesConfig.__init__ L47-L49; BedrockMantleAnthropicMessagesConfig.custom_llm_provider
+  L52-L53; BedrockMantleAnthropicMessagesConfig.uses_get_llm_provider_api_base L55-L56; BedrockMantleAnthropicMessagesConfig.get_complete_url
+  L58-L67. litellm/llms/bedrock_mantle/passthrough/transformation.py: BedrockMantlePassthroughConfig._get_aws_region_name
+  L26-L32; BedrockMantlePassthroughConfig.get_runtime_endpoint L34-L47; BedrockMantlePassthroughConfig.get_bedrock_bearer_token
+  L49-L51; BedrockMantlePassthroughConfig.logging_non_streaming_response L53-L71.
+
+
+  Reuse is_gpt_reasoning_series_name from B502 (litellm/llms/openai/chat/gpt_5_transformation.py); its implementation
+  remains with that prerequisite.
+
+
+  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse BaseAWSLLM._validate_aws_region_name from B591 (litellm/llms/bedrock/base_aws_llm.py); its implementation
+  remains with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/mantle_settings.rs with adjacent tests under mantle_settings/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_mantle_settings in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function mantle_settings_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): standalone_mantle_base, standalone_mantle_auth, chat_provider_prefix, messages_auth_and_url, mantle_passthrough_path.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_settings* using HelperCase: kind:
+  helper and the externally tagged bedrock_mantle_settings variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_mantle_settings that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/bedrock/mantle_settings.rs
+  and its loader wiring: BEDROCK_MANTLE_API_BASE, BEDROCK_MANTLE_API_KEY, BEDROCK_MANTLE_REGION, aws_bedrock_project_id.
+  Module-level settings enter litellm_settings; deployment settings enter litellm_params; environment lookup is
+  injected. Keep the defaults and precedence specified above and in the linked branches; existing key owners remain
+  unchanged. Write config rstest bedrock_mantle_settings_config_cases with named cases loads_bedrock_mantle_api_base,
+  loads_bedrock_mantle_api_key, loads_bedrock_mantle_region, loads_aws_bedrock_project_id, plus rejects_unrelated_key.
+  Each loads case calls the real config loader with that key and asserts the resolved value, default, precedence
+  and secret redaction where applicable. Seed B002 config_yaml with new bedrock_mantle_settings* files for every
+  key; reuse its parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_mantle_settings_credential_identity_isolation in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone bedrock_mantle_settings_secret_safe_failure in betterlite-bedrock for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 262 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 285 production lines, 148 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 37 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 570 planned, 575 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/mantle_settings.rs
+  - crates/betterlite-bedrock/src/mantle_settings/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_mantle_settings.rs
+  - tools/oracle/src/helpers/bedrock_mantle_settings/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_mantle_settings.py
+  - tools/oracle/cases/helpers/providers/bedrock-mantle-settings/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_settings*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/mantle_settings.rs
+  - crates/betterlite-config/src/providers/bedrock/mantle_settings/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_mantle_settings_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_mantle_settings*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/common_utils.py#L37-L160
+  why: >-
+    Own resolve_mantle_bearer_token, split_mantle_region_prefix, resolve_mantle_region, BedrockMantleAuthMixin._resolve_bearer_token,
+    BedrockMantleAuthMixin._resolve_region, BedrockMantleAuthMixin.sign_request, mantle_supports_responses, mantle_base_segment.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/chat/transformation.py#L41-L143
+  why: >-
+    Own BedrockMantleChatConfig.__init__, BedrockMantleChatConfig.custom_llm_provider, BedrockMantleChatConfig.get_config,
+    BedrockMantleChatConfig.get_error_class, BedrockMantleChatConfig._get_openai_compatible_provider_info, BedrockMantleChatConfig.validate_environment,
+    BedrockMantleChatConfig.get_supported_openai_params, BedrockMantleChatConfig._supports_reasoning, BedrockMantleChatConfig.get_model_response_iterator.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/messages/transformation.py#L26-L67
+  why: >-
+    Own build_mantle_native_messages_url, BedrockMantleAnthropicMessagesConfig.__init__, BedrockMantleAnthropicMessagesConfig.custom_llm_provider,
+    BedrockMantleAnthropicMessagesConfig.uses_get_llm_provider_api_base, BedrockMantleAnthropicMessagesConfig.get_complete_url.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/passthrough/transformation.py#L26-L71
+  why: >-
+    Own BedrockMantlePassthroughConfig._get_aws_region_name, BedrockMantlePassthroughConfig.get_runtime_endpoint,
+    BedrockMantlePassthroughConfig.get_bedrock_bearer_token, BedrockMantlePassthroughConfig.logging_non_streaming_response.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    standalone mantle base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-settings/standalone-mantle-base.yaml.
+  proof:
+  - case-standalone-mantle-base
+  - oracle
+  - helper-python
+- text: >-
+    standalone mantle auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-settings/standalone-mantle-auth.yaml.
+  proof:
+  - case-standalone-mantle-auth
+  - oracle
+  - helper-python
+- text: 'chat provider prefix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-settings/chat-provider-prefix.yaml.'
+  proof:
+  - case-chat-provider-prefix
+  - oracle
+  - helper-python
+- text: >-
+    messages auth and url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-settings/messages-auth-and-url.yaml.
+  proof:
+  - case-messages-auth-and-url
+  - oracle
+  - helper-python
+- text: >-
+    mantle passthrough path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-settings/mantle-passthrough-path.yaml.
+  proof:
+  - case-mantle-passthrough-path
+  - oracle
+  - helper-python
+- text: New bedrock_mantle_settings seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: BEDROCK_MANTLE_API_BASE is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-bedrock-mantle-api-base
+  - config-corpus
+- text: BEDROCK_MANTLE_API_KEY is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-bedrock-mantle-api-key
+  - config-corpus
+- text: BEDROCK_MANTLE_REGION is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-bedrock-mantle-region
+  - config-corpus
+- text: aws_bedrock_project_id is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-aws-bedrock-project-id
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-standalone-mantle-base
+    why: The standalone-mantle-base behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_settings_cases::case_[0-9]+_standalone_mantle_base$/)'
+  - id: case-standalone-mantle-auth
+    why: The standalone-mantle-auth behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_settings_cases::case_[0-9]+_standalone_mantle_auth$/)'
+  - id: case-chat-provider-prefix
+    why: The chat-provider-prefix behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_settings_cases::case_[0-9]+_chat_provider_prefix$/)'
+  - id: case-messages-auth-and-url
+    why: The messages-auth-and-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_settings_cases::case_[0-9]+_messages_auth_and_url$/)'
+  - id: case-mantle-passthrough-path
+    why: The mantle-passthrough-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_settings_cases::case_[0-9]+_mantle_passthrough_path$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_settings.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_settings*")"
+      && grep -lq 'bedrock_mantle_settings' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_settings* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_settings$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-bedrock-mantle-api-base
+    why: The BEDROCK_MANTLE_API_BASE setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_settings_config_cases::case_[0-9]+_loads_bedrock_mantle_api_base$/)'
+      && grep -lq 'BEDROCK_MANTLE_API_BASE' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_mantle_settings*
+  - id: config-bedrock-mantle-api-key
+    why: The BEDROCK_MANTLE_API_KEY setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_settings_config_cases::case_[0-9]+_loads_bedrock_mantle_api_key$/)'
+      && grep -lq 'BEDROCK_MANTLE_API_KEY' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_mantle_settings*
+  - id: config-bedrock-mantle-region
+    why: The BEDROCK_MANTLE_REGION setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_settings_config_cases::case_[0-9]+_loads_bedrock_mantle_region$/)'
+      && grep -lq 'BEDROCK_MANTLE_REGION' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_mantle_settings*
+  - id: config-aws-bedrock-project-id
+    why: The aws_bedrock_project_id setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_settings_config_cases::case_[0-9]+_loads_aws_bedrock_project_id$/)'
+      && grep -lq 'aws_bedrock_project_id' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_mantle_settings*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_mantle_settings_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_mantle_settings*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_mantle_settings_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_mantle_settings_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-mantle-settings/standalone-mantle-base.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-settings/standalone-mantle-auth.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-settings/chat-provider-prefix.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-settings/messages-auth-and-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-settings/mantle-passthrough-path.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve provider identity, credential/base/env selection and metadata-derived model names.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: security

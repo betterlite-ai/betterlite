@@ -1,0 +1,287 @@
+id: B530
+title: Azure federated OIDC token exchange
+description: >-
+  Implement AzureOidcExchange with injected configured authority, secret resolver, clock and cache. AZURE_AUTHORITY_HOST
+  defaults to https://login.microsoftonline.com; resolve the caller deployment tenant/client ids, scope and oidc/
+  reference through config/secret-manager seams. Keep client assertion and access_token secret, key the cache by
+  authority/tenant/client/scope/assertion identity, and retain the source expiry and missing-token-field errors.
+  All token URLs derive from operator configuration, never request payloads.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/common_utils.py:
+  get_azure_ad_token_from_oidc L199-L284.
+
+
+  The OIDC grant is a lower-level input to B529 selection; it depends on the shared Azure error/credential records
+  from B673, never on the composed credential resolver.
+
+
+  Implement crates/betterlite-azure/src/oidc_exchange.rs with adjacent tests under oidc_exchange/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation azure_oidc_exchange in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function oidc_exchange_cases in betterlite-azure with these exact named cases (one per oracle file):
+  oidc_form_grant, authority_tenant_path, missing_client_tenant, unresolved_oidc_token, missing_access_token, missing_expires_in,
+  cached_unexpired_token, expired_token_refresh. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_oidc_exchange* using HelperCase: kind:
+  helper and the externally tagged azure_oidc_exchange variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_azure_oidc_exchange that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_azure_oidc_token consumes OAuth token response bytes in crates/betterlite-azure/src/oidc_exchange.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-azure/fuzz/fuzz_targets/azure_oidc_exchange.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-azure/fuzz/corpus/azure_oidc_exchange.
+  The adjacent test replays_the_azure_oidc_exchange_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/azure/oidc_exchange.rs
+  and its loader wiring: AZURE_AUTHORITY_HOST. Module-level settings enter litellm_settings; deployment settings
+  enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified above and in
+  the linked branches; existing key owners remain unchanged. Write config rstest azure_oidc_exchange_config_cases
+  with named cases loads_azure_authority_host, plus rejects_unrelated_key. Each loads case calls the real config
+  loader with that key and asserts the resolved value, default, precedence and secret redaction where applicable.
+  Seed B002 config_yaml with new azure_oidc_exchange* files for every key; reuse its parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone azure_oidc_exchange_credential_identity_isolation in betterlite-azure for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone azure_oidc_exchange_secret_safe_failure in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 72 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 105 production lines, 154 behavior/config-test lines, 87 combined
+  Rust/Python adapter lines, 55 parser target/replay lines, 28 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 454 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/oidc_exchange.rs
+  - crates/betterlite-azure/src/oidc_exchange/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_oidc_exchange.rs
+  - tools/oracle/src/helpers/azure_oidc_exchange/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_oidc_exchange.py
+  - tools/oracle/cases/helpers/providers/azure-oidc-exchange/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_oidc_exchange*
+  - crates/betterlite-azure/fuzz/Cargo.toml
+  - crates/betterlite-azure/fuzz/fuzz_targets/azure_oidc_exchange.rs
+  - crates/betterlite-azure/fuzz/corpus/azure_oidc_exchange/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/oidc_exchange.rs
+  - crates/betterlite-config/src/providers/azure/oidc_exchange/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_oidc_exchange_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_oidc_exchange*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L199-L284
+  why: Own get_azure_ad_token_from_oidc. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'oidc form grant: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/oidc-form-grant.yaml.'
+  proof:
+  - case-oidc-form-grant
+  - oracle
+  - helper-python
+- text: 'authority tenant path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/authority-tenant-path.yaml.'
+  proof:
+  - case-authority-tenant-path
+  - oracle
+  - helper-python
+- text: 'missing client tenant: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/missing-client-tenant.yaml.'
+  proof:
+  - case-missing-client-tenant
+  - oracle
+  - helper-python
+- text: 'unresolved oidc token: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/unresolved-oidc-token.yaml.'
+  proof:
+  - case-unresolved-oidc-token
+  - oracle
+  - helper-python
+- text: 'missing access token: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/missing-access-token.yaml.'
+  proof:
+  - case-missing-access-token
+  - oracle
+  - helper-python
+- text: 'missing expires in: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/missing-expires-in.yaml.'
+  proof:
+  - case-missing-expires-in
+  - oracle
+  - helper-python
+- text: 'cached unexpired token: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/cached-unexpired-token.yaml.'
+  proof:
+  - case-cached-unexpired-token
+  - oracle
+  - helper-python
+- text: 'expired token refresh: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-oidc-exchange/expired-token-refresh.yaml.'
+  proof:
+  - case-expired-token-refresh
+  - oracle
+  - helper-python
+- text: New azure_oidc_exchange seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_azure_oidc_token has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+- text: AZURE_AUTHORITY_HOST is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-azure-authority-host
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-oidc-form-grant
+    why: The oidc-form-grant behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_oidc_form_grant$/)'
+  - id: case-authority-tenant-path
+    why: The authority-tenant-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_authority_tenant_path$/)'
+  - id: case-missing-client-tenant
+    why: The missing-client-tenant behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_missing_client_tenant$/)'
+  - id: case-unresolved-oidc-token
+    why: The unresolved-oidc-token behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_unresolved_oidc_token$/)'
+  - id: case-missing-access-token
+    why: The missing-access-token behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_missing_access_token$/)'
+  - id: case-missing-expires-in
+    why: The missing-expires-in behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_missing_expires_in$/)'
+  - id: case-cached-unexpired-token
+    why: The cached-unexpired-token behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_cached_unexpired_token$/)'
+  - id: case-expired-token-refresh
+    why: The expired-token-refresh behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::oidc_exchange_cases::case_[0-9]+_expired_token_refresh$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_oidc_exchange.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_oidc_exchange*")"
+      && grep -lq 'azure_oidc_exchange' tools/oracle/fuzz/corpus/helper_case/azure_oidc_exchange* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_oidc_exchange$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_oidc_exchange)"
+      && grep -q 'decode_azure_oidc_token' crates/betterlite-azure/fuzz/fuzz_targets/azure_oidc_exchange.rs && cargo
+      nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_oidc_exchange_corpus$/)'
+  - id: config-azure-authority-host
+    why: The AZURE_AUTHORITY_HOST setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_oidc_exchange_config_cases::case_[0-9]+_loads_azure_authority_host$/)'
+      && grep -lq 'AZURE_AUTHORITY_HOST' crates/betterlite-config/fuzz/corpus/config_yaml/azure_oidc_exchange*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_oidc_exchange_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_oidc_exchange*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_oidc_exchange_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_oidc_exchange_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/oidc-form-grant.yaml
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/authority-tenant-path.yaml
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/missing-client-tenant.yaml
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/unresolved-oidc-token.yaml
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/missing-access-token.yaml
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/missing-expires-in.yaml
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/cached-unexpired-token.yaml
+- tools/oracle/cases/helpers/providers/azure-oidc-exchange/expired-token-refresh.yaml
+deviations:
+- what: Azure OIDC cache identity includes scope.
+  why: The pinned cache omits scope; separating audiences prevents reusing a token for a different resource.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L199-L284
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure/common_utils.py: select_azure_base_url_or_endpoint L287-L296; BaseAzureLLM.get_azure_openai_client
+  L480-L600; BaseAzureLLM.initialize_azure_sdk_client L602-L696; BaseAzureLLM._init_azure_client_for_cloudflare_ai_gateway
+  L698-L750; BaseAzureLLM._base_validate_azure_environment L753-L778; BaseAzureLLM._get_base_azure_url L781-L830;
+  BaseAzureLLM.get_azure_v1_image_url L833-L856; BaseAzureLLM._is_azure_v1_api_version L859-L862; BaseAzureLLM._resolve_env_var
+  L864-L876; get_azure_credentials L885-L904 belong to B531; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/common_utils.py: process_azure_headers L66-L78; _cached_entra_id_token_provider L82-L96; _cached_azure_ad_token_refresh_provider
+  L100-L101; get_azure_ad_token L299-L411; _resolve_azure_ad_token L418-L424; get_azure_request_auth_headers L427-L439;
+  redact_azure_auth_headers L442-L446 belong to B529; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/common_utils.py: AzureOpenAIError.__init__ L47-L63; get_azure_ad_token_from_entra_id L104-L157
+  belong to B673; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/common_utils.py: get_azure_ad_token_from_username_password L160-L196 belong to B675; reuse
+  that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/common_utils.py: BaseAzureLLM._try_get_default_azure_credential_provider L451-L478 belong to
+  B677; reuse that implementation or its injected typed boundary.
+pitfalls:
+- >-
+  AZURE_AUTHORITY_HOST defaults to https://login.microsoftonline.com; resolve the caller deployment tenant/client
+  ids, scope and oidc/ reference through config/secret-manager seams.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

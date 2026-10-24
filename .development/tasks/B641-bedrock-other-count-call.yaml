@@ -1,0 +1,191 @@
+id: B641
+title: Bedrock count-token transport and local fallback
+description: >-
+  Execute typed CountTokens requests with per-deployment credentials and native counter selection. Preserve count
+  failure warnings and local fallback, optional configured timeout and provider-native input validation. The injected
+  local tokenizer cannot fetch Hugging Face assets.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/count_tokens/handler.py:
+  BedrockCountTokensHandler.handle_count_tokens_request L26-L140. litellm/llms/bedrock/count_tokens/bedrock_token_counter.py:
+  BedrockTokenCounter.should_use_token_counting_api L18-L25; BedrockTokenCounter.count_tokens L27-L114.
+
+
+  Reuse get_bedrock_base_model from B591 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse run_aws_signing from B595 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that prerequisite.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/count_call.rs with adjacent tests under count_call/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_count_call in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function count_call_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  count_token_http_request, native_count_selection, count_api_failure_warning, fallback_local_count, count_credentials,
+  count_timeout. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_call* using HelperCase: kind:
+  helper and the externally tagged bedrock_other_count_call variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_count_call that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  Outside-byte boundary: decode_bedrock_count_reply consumes CountTokens JSON response bytes in crates/betterlite-bedrock/src/count_call.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_count_call.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_other_count_call.
+  The adjacent test replays_the_bedrock_other_count_call_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 168 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 195 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 453 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/count_call.rs
+  - crates/betterlite-bedrock/src/count_call/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_count_call.rs
+  - tools/oracle/src/helpers/bedrock_other_count_call/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_count_call.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-count-call/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_call*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_count_call.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_other_count_call/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/count_tokens/handler.py#L26-L140
+  why: Own BedrockCountTokensHandler.handle_count_tokens_request. Other functions in this file remain with the owners
+    listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/count_tokens/bedrock_token_counter.py#L18-L114
+  why: Own BedrockTokenCounter.should_use_token_counting_api, BedrockTokenCounter.count_tokens. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: >-
+    count token http request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-token-http-request.yaml.
+  proof:
+  - case-count-token-http-request
+  - oracle
+  - helper-python
+- text: >-
+    native count selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-call/native-count-selection.yaml.
+  proof:
+  - case-native-count-selection
+  - oracle
+  - helper-python
+- text: >-
+    count api failure warning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-api-failure-warning.yaml.
+  proof:
+  - case-count-api-failure-warning
+  - oracle
+  - helper-python
+- text: >-
+    fallback local count: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-call/fallback-local-count.yaml.
+  proof:
+  - case-fallback-local-count
+  - oracle
+  - helper-python
+- text: 'count credentials: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-credentials.yaml.'
+  proof:
+  - case-count-credentials
+  - oracle
+  - helper-python
+- text: 'count timeout: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-timeout.yaml.'
+  proof:
+  - case-count-timeout
+  - oracle
+  - helper-python
+- text: New bedrock_other_count_call seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_bedrock_count_reply has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-count-token-http-request
+    why: The count-token-http-request behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_call_cases::case_[0-9]+_count_token_http_request$/)'
+  - id: case-native-count-selection
+    why: The native-count-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_call_cases::case_[0-9]+_native_count_selection$/)'
+  - id: case-count-api-failure-warning
+    why: The count-api-failure-warning behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_call_cases::case_[0-9]+_count_api_failure_warning$/)'
+  - id: case-fallback-local-count
+    why: The fallback-local-count behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_call_cases::case_[0-9]+_fallback_local_count$/)'
+  - id: case-count-credentials
+    why: The count-credentials behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_call_cases::case_[0-9]+_count_credentials$/)'
+  - id: case-count-timeout
+    why: The count-timeout behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_call_cases::case_[0-9]+_count_timeout$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_count_call.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_call*")"
+      && grep -lq 'bedrock_other_count_call' tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_call* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_count_call$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_count_call)"
+      && grep -q 'decode_bedrock_count_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_count_call.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_count_call_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-token-http-request.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-call/native-count-selection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-api-failure-warning.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-call/fallback-local-count.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-credentials.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-call/count-timeout.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve count failure warnings and local fallback, optional configured timeout and provider-native input validation.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

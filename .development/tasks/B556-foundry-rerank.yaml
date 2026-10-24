@@ -1,0 +1,162 @@
+id: B556
+title: Foundry rerank requests
+description: >-
+  Add typed FoundryRerankRequest/Reply for query, document list, top_n, return_documents and relevance scores. Preserve
+  Foundry provider endpoint paths, native auth policy and model/usage normalization. Exact-decimal scores use the
+  existing wire decimal parser; B085 supplies the public rerank API.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/rerank/transformation.py:
+  AzureAIRerankConfig.get_complete_url L24-L61; AzureAIRerankConfig.validate_environment L63-L85; AzureAIRerankConfig.transform_rerank_response
+  L87-L110; AzureAIRerankConfig._get_base_model L112-L119.
+
+
+  Reuse get_azure_ai_auth_headers from B549 (litellm/llms/azure_ai/common_utils.py); its implementation remains
+  with that prerequisite.
+
+
+  Implement crates/betterlite-foundry/src/rerank.rs with adjacent tests under rerank/. Keep each Rust module at
+  most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation foundry_rerank in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function rerank_cases in betterlite-foundry with these exact named cases (one per oracle file): rerank_url_api_version,
+  query_documents_top_n, model_group_normalization, relevance_scores, return_documents, rerank_error. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use
+  the booted proxy and assert both client response and captured upstream request. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_rerank* using HelperCase: kind: helper
+  and the externally tagged foundry_rerank variant inside call. Do not put the Python stdin operation field in a
+  HelperCase. Add oracle test helper_seeds_select_foundry_rerank that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 80 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 115 production lines, 99 behavior/config-test lines, 79 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 318 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/rerank.rs
+  - crates/betterlite-foundry/src/rerank/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_rerank.rs
+  - tools/oracle/src/helpers/foundry_rerank/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_rerank.py
+  - tools/oracle/cases/helpers/providers/foundry-rerank/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_rerank*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L24-L119
+  why: >-
+    Own AzureAIRerankConfig.get_complete_url, AzureAIRerankConfig.validate_environment, AzureAIRerankConfig.transform_rerank_response,
+    AzureAIRerankConfig._get_base_model. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'rerank url api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/rerank-url-api-version.yaml.'
+  proof:
+  - case-rerank-url-api-version
+  - oracle
+  - helper-python
+- text: 'query documents top n: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/query-documents-top-n.yaml.'
+  proof:
+  - case-query-documents-top-n
+  - oracle
+  - helper-python
+- text: >-
+    model group normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/model-group-normalization.yaml.
+  proof:
+  - case-model-group-normalization
+  - oracle
+  - helper-python
+- text: 'relevance scores: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/relevance-scores.yaml.'
+  proof:
+  - case-relevance-scores
+  - oracle
+  - helper-python
+- text: 'return documents: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/return-documents.yaml.'
+  proof:
+  - case-return-documents
+  - oracle
+  - helper-python
+- text: 'rerank error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/rerank-error.yaml.'
+  proof:
+  - case-rerank-error
+  - oracle
+  - helper-python
+- text: New foundry_rerank seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-rerank-url-api-version
+    why: The rerank-url-api-version behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_url_api_version$/)'
+  - id: case-query-documents-top-n
+    why: The query-documents-top-n behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_query_documents_top_n$/)'
+  - id: case-model-group-normalization
+    why: The model-group-normalization behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_model_group_normalization$/)'
+  - id: case-relevance-scores
+    why: The relevance-scores behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_relevance_scores$/)'
+  - id: case-return-documents
+    why: The return-documents behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_return_documents$/)'
+  - id: case-rerank-error
+    why: The rerank-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_error$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_rerank.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_rerank*")"
+      && grep -lq 'foundry_rerank' tools/oracle/fuzz/corpus/helper_case/foundry_rerank* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_rerank$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-rerank/rerank-url-api-version.yaml
+- tools/oracle/cases/helpers/providers/foundry-rerank/query-documents-top-n.yaml
+- tools/oracle/cases/helpers/providers/foundry-rerank/model-group-normalization.yaml
+- tools/oracle/cases/helpers/providers/foundry-rerank/relevance-scores.yaml
+- tools/oracle/cases/helpers/providers/foundry-rerank/return-documents.yaml
+- tools/oracle/cases/helpers/providers/foundry-rerank/rerank-error.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve Foundry provider endpoint paths, native auth policy and model/usage normalization.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

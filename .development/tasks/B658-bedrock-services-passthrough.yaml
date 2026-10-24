@@ -1,0 +1,201 @@
+id: B658
+title: Bedrock passthrough and typed logging collectors
+description: >-
+  Add BedrockPassthroughPlan with endpoint-aware model-id encoding, configured native path and signing policy. Provide
+  bounded stream collectors that project decoded events into safe normalized logging metadata, preserving text-run
+  order. B101/B103 own HTTP route permissions and raw forwarding.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/passthrough/transformation.py:
+  _plain_text_delta L28-L39; _CoalescedChunks.__init__ L46-L48; _CoalescedChunks.add L50-L58; _CoalescedChunks._seal_text_run
+  L60-L63; _CoalescedChunks.chunks L65-L67; _translate_message L70-L82; _build_logged_response L85-L92; BedrockEventStreamCollector.__init__
+  L98-L108; BedrockEventStreamCollector.add L110-L115; BedrockEventStreamCollector._add_event L117-L121; BedrockEventStreamCollector.build_logged_response
+  L123-L124; BedrockPassthroughConfig.get_error_class L128-L134; BedrockPassthroughConfig.is_streaming_request L136-L137;
+  BedrockPassthroughConfig._encode_model_id_for_endpoint L139-L169; BedrockPassthroughConfig.get_complete_url L171-L210;
+  BedrockPassthroughConfig.get_bedrock_bearer_token L212-L213; BedrockPassthroughConfig.sign_request L215-L232;
+  BedrockPassthroughConfig.logging_non_streaming_response L234-L275; BedrockPassthroughConfig.create_stream_collector
+  L277-L283; BedrockPassthroughConfig._get_event_stream_decoder L285-L305.
+
+
+  Reuse AmazonInvokeConfig.get_bedrock_invoke_provider from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  its implementation remains with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/passthrough.rs with adjacent tests under passthrough/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_passthrough in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function passthrough_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  invoke_id_encoding, converse_id_encoding, bearer_selection, native_reply_log, text_run_sealing, event_stream_collector,
+  passthrough_url. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_passthrough* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_passthrough variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_passthrough that parses
+  every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds;
+  then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_passthrough_log_event consumes AWS passthrough logging event JSON bytes in crates/betterlite-bedrock/src/passthrough.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_passthrough.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_passthrough.
+  The adjacent test replays_the_bedrock_services_passthrough_corpus uses the same function and asserts expected
+  success/failure categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 219 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 245 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 516 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/passthrough.rs
+  - crates/betterlite-bedrock/src/passthrough/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_passthrough.rs
+  - tools/oracle/src/helpers/bedrock_services_passthrough/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_passthrough.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-passthrough/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_passthrough*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_passthrough.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_passthrough/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L28-L305
+  why: >-
+    Own _plain_text_delta, _CoalescedChunks.__init__, _CoalescedChunks.add, _CoalescedChunks._seal_text_run, _CoalescedChunks.chunks,
+    _translate_message, _build_logged_response, BedrockEventStreamCollector.__init__, BedrockEventStreamCollector.add,
+    BedrockEventStreamCollector._add_event, BedrockEventStreamCollector.build_logged_response, BedrockPassthroughConfig.get_error_class,
+    BedrockPassthroughConfig.is_streaming_request, BedrockPassthroughConfig._encode_model_id_for_endpoint, BedrockPassthroughConfig.get_complete_url,
+    BedrockPassthroughConfig.get_bedrock_bearer_token, BedrockPassthroughConfig.sign_request, BedrockPassthroughConfig.logging_non_streaming_response,
+    BedrockPassthroughConfig.create_stream_collector, BedrockPassthroughConfig._get_event_stream_decoder. Other
+    functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    invoke id encoding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-passthrough/invoke-id-encoding.yaml.
+  proof:
+  - case-invoke-id-encoding
+  - oracle
+  - helper-python
+- text: >-
+    converse id encoding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-passthrough/converse-id-encoding.yaml.
+  proof:
+  - case-converse-id-encoding
+  - oracle
+  - helper-python
+- text: 'bearer selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-passthrough/bearer-selection.yaml.'
+  proof:
+  - case-bearer-selection
+  - oracle
+  - helper-python
+- text: 'native reply log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-passthrough/native-reply-log.yaml.'
+  proof:
+  - case-native-reply-log
+  - oracle
+  - helper-python
+- text: 'text run sealing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-passthrough/text-run-sealing.yaml.'
+  proof:
+  - case-text-run-sealing
+  - oracle
+  - helper-python
+- text: >-
+    event stream collector: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-passthrough/event-stream-collector.yaml.
+  proof:
+  - case-event-stream-collector
+  - oracle
+  - helper-python
+- text: 'passthrough url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-passthrough/passthrough-url.yaml.'
+  proof:
+  - case-passthrough-url
+  - oracle
+  - helper-python
+- text: New bedrock_services_passthrough seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_passthrough_log_event has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-invoke-id-encoding
+    why: The invoke-id-encoding behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_invoke_id_encoding$/)'
+  - id: case-converse-id-encoding
+    why: The converse-id-encoding behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_converse_id_encoding$/)'
+  - id: case-bearer-selection
+    why: The bearer-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_bearer_selection$/)'
+  - id: case-native-reply-log
+    why: The native-reply-log behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_native_reply_log$/)'
+  - id: case-text-run-sealing
+    why: The text-run-sealing behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_text_run_sealing$/)'
+  - id: case-event-stream-collector
+    why: The event-stream-collector behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_event_stream_collector$/)'
+  - id: case-passthrough-url
+    why: The passthrough-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_passthrough_url$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_passthrough.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_passthrough*")"
+      && grep -lq 'bedrock_services_passthrough' tools/oracle/fuzz/corpus/helper_case/bedrock_services_passthrough*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_passthrough$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_passthrough)"
+      && grep -q 'decode_passthrough_log_event' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_passthrough.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_passthrough_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-passthrough/invoke-id-encoding.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-passthrough/converse-id-encoding.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-passthrough/bearer-selection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-passthrough/native-reply-log.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-passthrough/text-run-sealing.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-passthrough/event-stream-collector.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-passthrough/passthrough-url.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- The logging collector joins text-only runs but must seal them before non-text events.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

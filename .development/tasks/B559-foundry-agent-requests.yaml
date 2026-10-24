@@ -1,0 +1,206 @@
+id: B559
+title: Foundry agent request and run URL construction
+description: >-
+  Add AgentCallRequest/PreparedAgentCall plus typed endpoint builders for threads/messages/runs. Resolve agent_id
+  then assistant_id then agents/ model suffix; api_version defaults to 2025-05-01. Preserve optional thread_id and
+  instructions, and pass explicit credentials and cancellation through all calls.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/agents/transformation.py:
+  AzureAIAgentsConfig.__init__ L77-L78; AzureAIAgentsConfig.get_agent_id_from_model L90-L102; AzureAIAgentsConfig._get_openai_compatible_provider_info
+  L104-L120; AzureAIAgentsConfig.get_supported_openai_params L122-L126; AzureAIAgentsConfig.map_openai_params L128-L138;
+  AzureAIAgentsConfig._get_api_version L140-L142; AzureAIAgentsConfig.get_complete_url L144-L172; AzureAIAgentsConfig._get_agent_id
+  L174-L185; AzureAIAgentsConfig.transform_request L187-L234; AzureAIAgentsConfig.validate_environment L236-L261;
+  AzureAIAgentsConfig.get_error_class L263-L264; AzureAIAgentsConfig.should_fake_stream L266-L275; AzureAIAgentsConfig.has_custom_stream_wrapper
+  L278-L280; AzureAIAgentsConfig.supports_stream_param_in_request_body L283-L287; AzureAIAgentsConfig.transform_response
+  L289-L307. litellm/llms/azure_ai/agents/handler.py: _SyncAgentRequest.__call__ L106-L106; _AsyncAgentRequest.__call__
+  L110-L112; AzureAIAgentsHandler.__init__ L122-L123; AzureAIAgentsHandler._build_thread_url L131-L132; AzureAIAgentsHandler._build_messages_url
+  L134-L136; AzureAIAgentsHandler._build_runs_url L138-L140; AzureAIAgentsHandler._build_run_status_url L142-L145;
+  AzureAIAgentsHandler._build_list_messages_url L147-L149; AzureAIAgentsHandler._build_create_thread_and_run_url
+  L151-L153; AzureAIAgentsHandler._prepare_completion_params L258-L289; AzureAIAgentsHandler._check_response L291-L297.
+
+
+  Implement crates/betterlite-foundry/src/agent_requests.rs with adjacent tests under agent_requests/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_agent_requests in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function agent_requests_cases in betterlite-foundry with these exact named cases (one per oracle
+  file): agent_model_id, assistant_id_override, default_api_version, existing_thread, message_content_conversion,
+  thread_and_run_paths, missing_api_base. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests* using HelperCase: kind:
+  helper and the externally tagged foundry_agent_requests variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_agent_requests that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 225 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 250 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 466 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/agent_requests.rs
+  - crates/betterlite-foundry/src/agent_requests/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_agent_requests.rs
+  - tools/oracle/src/helpers/foundry_agent_requests/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_agent_requests.py
+  - tools/oracle/cases/helpers/providers/foundry-agent-requests/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L77-L307
+  why: >-
+    Own AzureAIAgentsConfig.__init__, AzureAIAgentsConfig.get_agent_id_from_model, AzureAIAgentsConfig._get_openai_compatible_provider_info,
+    AzureAIAgentsConfig.get_supported_openai_params, AzureAIAgentsConfig.map_openai_params, AzureAIAgentsConfig._get_api_version,
+    AzureAIAgentsConfig.get_complete_url, AzureAIAgentsConfig._get_agent_id, AzureAIAgentsConfig.transform_request,
+    AzureAIAgentsConfig.validate_environment, AzureAIAgentsConfig.get_error_class, AzureAIAgentsConfig.should_fake_stream,
+    AzureAIAgentsConfig.has_custom_stream_wrapper, AzureAIAgentsConfig.supports_stream_param_in_request_body, AzureAIAgentsConfig.transform_response.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L106-L153
+  why: >-
+    Own _SyncAgentRequest.__call__, _AsyncAgentRequest.__call__, AzureAIAgentsHandler.__init__, AzureAIAgentsHandler._build_thread_url,
+    AzureAIAgentsHandler._build_messages_url, AzureAIAgentsHandler._build_runs_url, AzureAIAgentsHandler._build_run_status_url,
+    AzureAIAgentsHandler._build_list_messages_url, AzureAIAgentsHandler._build_create_thread_and_run_url. Other
+    functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L258-L297
+  why: Own AzureAIAgentsHandler._prepare_completion_params, AzureAIAgentsHandler._check_response. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'agent model id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/agent-model-id.yaml.'
+  proof:
+  - case-agent-model-id
+  - oracle
+  - helper-python
+- text: >-
+    assistant id override: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/assistant-id-override.yaml.
+  proof:
+  - case-assistant-id-override
+  - oracle
+  - helper-python
+- text: 'default api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/default-api-version.yaml.'
+  proof:
+  - case-default-api-version
+  - oracle
+  - helper-python
+- text: 'existing thread: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/existing-thread.yaml.'
+  proof:
+  - case-existing-thread
+  - oracle
+  - helper-python
+- text: >-
+    message content conversion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/message-content-conversion.yaml.
+  proof:
+  - case-message-content-conversion
+  - oracle
+  - helper-python
+- text: 'thread and run paths: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/thread-and-run-paths.yaml.'
+  proof:
+  - case-thread-and-run-paths
+  - oracle
+  - helper-python
+- text: 'missing api base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-requests/missing-api-base.yaml.'
+  proof:
+  - case-missing-api-base
+  - oracle
+  - helper-python
+- text: New foundry_agent_requests seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-agent-model-id
+    why: The agent-model-id behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_agent_model_id$/)'
+  - id: case-assistant-id-override
+    why: The assistant-id-override behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_assistant_id_override$/)'
+  - id: case-default-api-version
+    why: The default-api-version behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_default_api_version$/)'
+  - id: case-existing-thread
+    why: The existing-thread behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_existing_thread$/)'
+  - id: case-message-content-conversion
+    why: The message-content-conversion behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_message_content_conversion$/)'
+  - id: case-thread-and-run-paths
+    why: The thread-and-run-paths behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_thread_and_run_paths$/)'
+  - id: case-missing-api-base
+    why: The missing-api-base behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_requests_cases::case_[0-9]+_missing_api_base$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_requests.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests*")"
+      && grep -lq 'foundry_agent_requests' tools/oracle/fuzz/corpus/helper_case/foundry_agent_requests* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_agent_requests$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/agent-model-id.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/assistant-id-override.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/default-api-version.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/existing-thread.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/message-content-conversion.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/thread-and-run-paths.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-requests/missing-api-base.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.completion L310-L397 belong to B560; reuse
+  that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler._extract_content_from_messages L158-L175; AzureAIAgentsHandler._transform_annotations
+  L177-L210; AzureAIAgentsHandler._build_model_response L212-L256; AzureAIAgentsHandler.acompletion_stream L554-L620;
+  AzureAIAgentsHandler._process_sse_stream L622-L710 belong to B561; reuse that implementation or its injected typed
+  boundary.
+- >-
+  litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler.completion L302-L350; AzureAIAgentsHandler._execute_agent_flow_sync
+  L352-L421; AzureAIAgentsHandler.acompletion L426-L478; AzureAIAgentsHandler._execute_agent_flow_async L480-L549
+  belong to B560; reuse that implementation or its injected typed boundary.
+- 'litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.is_azure_ai_agents_route L81-L87 have no
+  caller at the pin; do not port them.'
+pitfalls:
+- Resolve agent_id then assistant_id then agents/ model suffix; api_version defaults to 2025-05-01.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

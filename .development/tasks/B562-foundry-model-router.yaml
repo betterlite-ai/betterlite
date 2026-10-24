@@ -1,0 +1,186 @@
+id: B562
+title: Foundry model-router metadata and selection
+description: >-
+  Add FoundryRoute and SelectedModel metadata over model-router prefixes and the returned underlying model. Preserve
+  route-family selection, prefix stripping and get_models projections. calculate_additional_costs delegates the
+  opaque selected-model accounting input to B068; no floating point pricing runs here.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/common_utils.py:
+  AzureFoundryModelInfo.__init__ L165-L166; AzureFoundryModelInfo.get_model_router_selected_model L194-L205; AzureFoundryModelInfo.is_model_router_call
+  L208-L226; AzureFoundryModelInfo.get_api_version L237-L238; AzureFoundryModelInfo.api_version L241-L242; AzureFoundryModelInfo.get_token_counter
+  L244-L258; AzureFoundryModelInfo.get_models L260-L267; AzureFoundryModelInfo.strip_model_router_prefix L274-L293;
+  AzureFoundryModelInfo.get_base_model L296-L308; AzureFoundryModelInfo.get_azure_ai_config_for_model L311-L343;
+  AzureFoundryModelInfo.validate_environment L345-L356. litellm/llms/azure_ai/azure_model_router/transformation.py:
+  AzureModelRouterConfig.transform_request L31-L50; AzureModelRouterConfig.transform_response L52-L109.
+
+
+  Implement crates/betterlite-foundry/src/model_router.rs with adjacent tests under model_router/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_model_router in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function model_router_cases in betterlite-foundry with these exact named cases (one per oracle file):
+  route_selection, strip_model_router_prefix, response_selected_model, unknown_selected_model_fallback, catalog_model_list,
+  native_token_counter_selection. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
+  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_model_router* using HelperCase: kind:
+  helper and the externally tagged foundry_model_router variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_model_router that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 184 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 210 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 413 planned, 425 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/model_router.rs
+  - crates/betterlite-foundry/src/model_router/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_model_router.rs
+  - tools/oracle/src/helpers/foundry_model_router/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_model_router.py
+  - tools/oracle/cases/helpers/providers/foundry-model-router/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_model_router*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/common_utils.py#L165-L166
+  why: Own AzureFoundryModelInfo.__init__. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/common_utils.py#L194-L356
+  why: >-
+    Own AzureFoundryModelInfo.get_model_router_selected_model, AzureFoundryModelInfo.is_model_router_call, AzureFoundryModelInfo.get_api_version,
+    AzureFoundryModelInfo.api_version, AzureFoundryModelInfo.get_token_counter, AzureFoundryModelInfo.get_models,
+    AzureFoundryModelInfo.strip_model_router_prefix, AzureFoundryModelInfo.get_base_model, AzureFoundryModelInfo.get_azure_ai_config_for_model,
+    AzureFoundryModelInfo.validate_environment. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/azure_model_router/transformation.py#L31-L109
+  why: Own AzureModelRouterConfig.transform_request, AzureModelRouterConfig.transform_response. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'route selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-model-router/route-selection.yaml.'
+  proof:
+  - case-route-selection
+  - oracle
+  - helper-python
+- text: >-
+    strip model router prefix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-model-router/strip-model-router-prefix.yaml.
+  proof:
+  - case-strip-model-router-prefix
+  - oracle
+  - helper-python
+- text: >-
+    response selected model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-model-router/response-selected-model.yaml.
+  proof:
+  - case-response-selected-model
+  - oracle
+  - helper-python
+- text: >-
+    unknown selected model fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-model-router/unknown-selected-model-fallback.yaml.
+  proof:
+  - case-unknown-selected-model-fallback
+  - oracle
+  - helper-python
+- text: 'catalog model list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-model-router/catalog-model-list.yaml.'
+  proof:
+  - case-catalog-model-list
+  - oracle
+  - helper-python
+- text: >-
+    native token counter selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-model-router/native-token-counter-selection.yaml.
+  proof:
+  - case-native-token-counter-selection
+  - oracle
+  - helper-python
+- text: New foundry_model_router seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-route-selection
+    why: The route-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::model_router_cases::case_[0-9]+_route_selection$/)'
+  - id: case-strip-model-router-prefix
+    why: The strip-model-router-prefix behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::model_router_cases::case_[0-9]+_strip_model_router_prefix$/)'
+  - id: case-response-selected-model
+    why: The response-selected-model behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::model_router_cases::case_[0-9]+_response_selected_model$/)'
+  - id: case-unknown-selected-model-fallback
+    why: The unknown-selected-model-fallback behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::model_router_cases::case_[0-9]+_unknown_selected_model_fallback$/)'
+  - id: case-catalog-model-list
+    why: The catalog-model-list behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::model_router_cases::case_[0-9]+_catalog_model_list$/)'
+  - id: case-native-token-counter-selection
+    why: The native-token-counter-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::model_router_cases::case_[0-9]+_native_token_counter_selection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_model_router.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_model_router*")"
+      && grep -lq 'foundry_model_router' tools/oracle/fuzz/corpus/helper_case/foundry_model_router* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_model_router$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-model-router/route-selection.yaml
+- tools/oracle/cases/helpers/providers/foundry-model-router/strip-model-router-prefix.yaml
+- tools/oracle/cases/helpers/providers/foundry-model-router/response-selected-model.yaml
+- tools/oracle/cases/helpers/providers/foundry-model-router/unknown-selected-model-fallback.yaml
+- tools/oracle/cases/helpers/providers/foundry-model-router/catalog-model-list.yaml
+- tools/oracle/cases/helpers/providers/foundry-model-router/native-token-counter-selection.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure_ai/common_utils.py: is_foundry_model_inference_base L18-L23; is_azure_openai_v1_host L26-L28;
+  api_key_header_for_base L31-L32; get_azure_ai_entra_token L35-L47; has_azure_entra_params L61-L64; _resolve_config_secret
+  L67-L70; get_azure_ai_agent_entra_token L73-L106; resolve_azure_ai_agent_auth_header L109-L111; get_azure_ai_auth_headers
+  L114-L137; azure_ai_supports_native_responses L143-L151; foundry_chat_rejects_function_tools_while_reasoning L154-L159;
+  AzureFoundryModelInfo.get_azure_ai_route L169-L191; AzureFoundryModelInfo.get_api_base L229-L230; AzureFoundryModelInfo.get_api_key
+  L233-L234 belong to B549; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/azure_model_router/transformation.py: AzureModelRouterConfig.calculate_additional_costs
+  L111-L134 belong to B068; reuse that implementation or its injected typed boundary.
+pitfalls:
+- >-
+  Preserve route-family selection, prefix stripping and get_models projections. calculate_additional_costs delegates
+  the opaque selected-model accounting input to B068; no floating point pricing runs here.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: standard

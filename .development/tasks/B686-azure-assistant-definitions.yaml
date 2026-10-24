@@ -1,0 +1,159 @@
+id: B686
+title: Azure assistant definition operations
+description: >-
+  Port Azure assistant client preparation and list/create/delete definition operations using B519 wire records,
+  the Azure endpoint resolver and assistants=v2 header. Keep threads/messages/runs in their own parts.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/assistants.py:
+  AzureAssistantsAPI.__init__ L37-L38; AzureAssistantsAPI.get_azure_client L40-L64; AzureAssistantsAPI.async_get_azure_client
+  L66-L92; AzureAssistantsAPI.async_get_assistants L96-L120; AzureAssistantsAPI.get_assistants L125-L136; AzureAssistantsAPI.get_assistants
+  L139-L150; AzureAssistantsAPI.get_assistants L154-L190; AzureAssistantsAPI.async_create_assistants L908-L932;
+  AzureAssistantsAPI.create_assistants L934-L971; AzureAssistantsAPI.async_delete_assistant L974-L998; AzureAssistantsAPI.delete_assistant
+  L1000-L1037.
+
+
+  Implement crates/betterlite-azure/src/azure_assistant_definitions.rs with adjacent tests under azure_assistant_definitions/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation azure_assistant_definitions in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function azure_assistant_definitions_cases in betterlite-azure with these exact named cases (one
+  per oracle file): list_assistants, create_assistant, delete_assistant, azure_beta_header. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
+  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_assistant_definitions* using HelperCase:
+  kind: helper and the externally tagged azure_assistant_definitions variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_azure_assistant_definitions that parses
+  every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds;
+  then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 254 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 275 production lines, 81 behavior/config-test lines,
+  71 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 467 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/azure_assistant_definitions.rs
+  - crates/betterlite-azure/src/azure_assistant_definitions/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_assistant_definitions.rs
+  - tools/oracle/src/helpers/azure_assistant_definitions/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_assistant_definitions.py
+  - tools/oracle/cases/helpers/providers/azure-assistant-definitions/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_assistant_definitions*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L37-L190
+  why: >-
+    Own AzureAssistantsAPI.__init__, AzureAssistantsAPI.get_azure_client, AzureAssistantsAPI.async_get_azure_client,
+    AzureAssistantsAPI.async_get_assistants, AzureAssistantsAPI.get_assistants, AzureAssistantsAPI.get_assistants,
+    AzureAssistantsAPI.get_assistants. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L908-L1037
+  why: >-
+    Own AzureAssistantsAPI.async_create_assistants, AzureAssistantsAPI.create_assistants, AzureAssistantsAPI.async_delete_assistant,
+    AzureAssistantsAPI.delete_assistant. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'list assistants: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistant-definitions/list-assistants.yaml.'
+  proof:
+  - case-list-assistants
+  - oracle
+  - helper-python
+- text: 'create assistant: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistant-definitions/create-assistant.yaml.'
+  proof:
+  - case-create-assistant
+  - oracle
+  - helper-python
+- text: 'delete assistant: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistant-definitions/delete-assistant.yaml.'
+  proof:
+  - case-delete-assistant
+  - oracle
+  - helper-python
+- text: 'azure beta header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistant-definitions/azure-beta-header.yaml.'
+  proof:
+  - case-azure-beta-header
+  - oracle
+  - helper-python
+- text: New azure_assistant_definitions seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-list-assistants
+    why: The list-assistants behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_assistant_definitions_cases::case_[0-9]+_list_assistants$/)'
+  - id: case-create-assistant
+    why: The create-assistant behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_assistant_definitions_cases::case_[0-9]+_create_assistant$/)'
+  - id: case-delete-assistant
+    why: The delete-assistant behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_assistant_definitions_cases::case_[0-9]+_delete_assistant$/)'
+  - id: case-azure-beta-header
+    why: The azure-beta-header behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_assistant_definitions_cases::case_[0-9]+_azure_beta_header$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_assistant_definitions.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_assistant_definitions*")"
+      && grep -lq 'azure_assistant_definitions' tools/oracle/fuzz/corpus/helper_case/azure_assistant_definitions*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_assistant_definitions$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-assistant-definitions/list-assistants.yaml
+- tools/oracle/cases/helpers/providers/azure-assistant-definitions/create-assistant.yaml
+- tools/oracle/cases/helpers/providers/azure-assistant-definitions/delete-assistant.yaml
+- tools/oracle/cases/helpers/providers/azure-assistant-definitions/azure-beta-header.yaml
+deviations: []
+out_of_scope:
+- >-
+  litellm/llms/azure/assistants.py: AzureAssistantsAPI.arun_thread L663-L703; AzureAssistantsAPI.async_run_thread_stream
+  L705-L730; AzureAssistantsAPI.run_thread_stream L732-L757; AzureAssistantsAPI.run_thread L762-L781; AzureAssistantsAPI.run_thread
+  L784-L803; AzureAssistantsAPI.run_thread L807-L905 belong to B543; reuse that implementation or its injected typed
+  boundary.
+- >-
+  litellm/llms/azure/assistants.py: AzureAssistantsAPI.async_create_thread L425-L457; AzureAssistantsAPI.create_thread
+  L462-L476; AzureAssistantsAPI.create_thread L479-L493; AzureAssistantsAPI.create_thread L497-L553; AzureAssistantsAPI.async_get_thread
+  L555-L580; AzureAssistantsAPI.get_thread L585-L598; AzureAssistantsAPI.get_thread L601-L614; AzureAssistantsAPI.get_thread
+  L618-L656 belong to B687; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/assistants.py: AzureAssistantsAPI.a_add_message L194-L229; AzureAssistantsAPI.add_message L234-L248;
+  AzureAssistantsAPI.add_message L251-L265; AzureAssistantsAPI.add_message L269-L318; AzureAssistantsAPI.async_get_messages
+  L320-L345; AzureAssistantsAPI.get_messages L350-L363; AzureAssistantsAPI.get_messages L366-L379; AzureAssistantsAPI.get_messages
+  L383-L421 belong to B697; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Azure assistant definitions reuse OpenAI wire types but use the Azure resource endpoint and api-version.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

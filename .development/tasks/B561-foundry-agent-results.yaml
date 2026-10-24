@@ -1,0 +1,201 @@
+id: B561
+title: Foundry agent replies and SSE events
+description: >-
+  Add AgentMessage/AgentEvent decoding and OpenAI response projection. Preserve first assistant text selection,
+  citations/index relocation, hidden thread id and gpt-3.5-turbo local token-count fallback with warning. Incremental
+  stream parsing consumes existing SSE framing; it must yield before later events and release upstream on cancellation.
+  AgentMessage is the reply record exposed by agent_requests; this decoder is independent of run execution, which
+  invokes it after polling.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/agents/handler.py:
+  AzureAIAgentsHandler._extract_content_from_messages L158-L175; AzureAIAgentsHandler._transform_annotations L177-L210;
+  AzureAIAgentsHandler._build_model_response L212-L256; AzureAIAgentsHandler.acompletion_stream L554-L620; AzureAIAgentsHandler._process_sse_stream
+  L622-L710.
+
+
+  Implement crates/betterlite-foundry/src/agent_results.rs with adjacent tests under agent_results/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_agent_results in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function agent_results_cases in betterlite-foundry with these exact named cases (one per oracle file):
+  assistant_first_text, citation_index_relocation, thread_id_metadata, token_count_warning, message_delta_stream,
+  run_terminal_stream, split_sse_event. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_agent_results* using HelperCase: kind:
+  helper and the externally tagged foundry_agent_results variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_agent_results that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_agent_event consumes Foundry agent stream data bytes in crates/betterlite-foundry/src/agent_results.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-foundry/fuzz/fuzz_targets/foundry_agent_results.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-foundry/fuzz/corpus/foundry_agent_results.
+  The adjacent test replays_the_foundry_agent_results_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 211 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 235 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 506 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/agent_results.rs
+  - crates/betterlite-foundry/src/agent_results/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_agent_results.rs
+  - tools/oracle/src/helpers/foundry_agent_results/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_agent_results.py
+  - tools/oracle/cases/helpers/providers/foundry-agent-results/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_agent_results*
+  - crates/betterlite-foundry/fuzz/Cargo.toml
+  - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_agent_results.rs
+  - crates/betterlite-foundry/fuzz/corpus/foundry_agent_results/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L158-L256
+  why: >-
+    Own AzureAIAgentsHandler._extract_content_from_messages, AzureAIAgentsHandler._transform_annotations, AzureAIAgentsHandler._build_model_response.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L554-L710
+  why: Own AzureAIAgentsHandler.acompletion_stream, AzureAIAgentsHandler._process_sse_stream. Other functions in
+    this file remain with the owners listed below.
+dod:
+- text: 'assistant first text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/assistant-first-text.yaml.'
+  proof:
+  - case-assistant-first-text
+  - oracle
+  - helper-python
+- text: >-
+    citation index relocation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/citation-index-relocation.yaml.
+  proof:
+  - case-citation-index-relocation
+  - oracle
+  - helper-python
+- text: 'thread id metadata: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/thread-id-metadata.yaml.'
+  proof:
+  - case-thread-id-metadata
+  - oracle
+  - helper-python
+- text: 'token count warning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/token-count-warning.yaml.'
+  proof:
+  - case-token-count-warning
+  - oracle
+  - helper-python
+- text: 'message delta stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/message-delta-stream.yaml.'
+  proof:
+  - case-message-delta-stream
+  - oracle
+  - helper-python
+- text: 'run terminal stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/run-terminal-stream.yaml.'
+  proof:
+  - case-run-terminal-stream
+  - oracle
+  - helper-python
+- text: 'split sse event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/split-sse-event.yaml.'
+  proof:
+  - case-split-sse-event
+  - oracle
+  - helper-python
+- text: New foundry_agent_results seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_agent_event has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-assistant-first-text
+    why: The assistant-first-text behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_assistant_first_text$/)'
+  - id: case-citation-index-relocation
+    why: The citation-index-relocation behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_citation_index_relocation$/)'
+  - id: case-thread-id-metadata
+    why: The thread-id-metadata behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_thread_id_metadata$/)'
+  - id: case-token-count-warning
+    why: The token-count-warning behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_token_count_warning$/)'
+  - id: case-message-delta-stream
+    why: The message-delta-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_message_delta_stream$/)'
+  - id: case-run-terminal-stream
+    why: The run-terminal-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_run_terminal_stream$/)'
+  - id: case-split-sse-event
+    why: The split-sse-event behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_split_sse_event$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_results.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_results*")"
+      && grep -lq 'foundry_agent_results' tools/oracle/fuzz/corpus/helper_case/foundry_agent_results* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_agent_results$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_agent_results)"
+      && grep -q 'decode_agent_event' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_agent_results.rs && cargo
+      nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_agent_results_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-agent-results/assistant-first-text.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/citation-index-relocation.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/thread-id-metadata.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/token-count-warning.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/message-delta-stream.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/run-terminal-stream.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/split-sse-event.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler.completion L302-L350; AzureAIAgentsHandler._execute_agent_flow_sync
+  L352-L421; AzureAIAgentsHandler.acompletion L426-L478; AzureAIAgentsHandler._execute_agent_flow_async L480-L549
+  belong to B560; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/agents/handler.py: _SyncAgentRequest.__call__ L106-L106; _AsyncAgentRequest.__call__ L110-L112;
+  AzureAIAgentsHandler.__init__ L122-L123; AzureAIAgentsHandler._build_thread_url L131-L132; AzureAIAgentsHandler._build_messages_url
+  L134-L136; AzureAIAgentsHandler._build_runs_url L138-L140; AzureAIAgentsHandler._build_run_status_url L142-L145;
+  AzureAIAgentsHandler._build_list_messages_url L147-L149; AzureAIAgentsHandler._build_create_thread_and_run_url
+  L151-L153; AzureAIAgentsHandler._prepare_completion_params L258-L289; AzureAIAgentsHandler._check_response L291-L297
+  belong to B559; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Preserve first assistant text selection, citations/index relocation, hidden thread id and gpt-3.5-turbo local
+  token-count fallback with warning.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

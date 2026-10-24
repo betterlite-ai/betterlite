@@ -1,0 +1,189 @@
+id: B586
+title: Legacy Anthropic completions
+description: >-
+  Add legacy Anthropic completion configuration, Human/Assistant prompt formation and /v1/complete request/response/stream
+  conversion. Select this path only for the source legacy text-model names; share existing text-completion and chat
+  bridge records and stream framing.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/completion/transformation.py:
+  AnthropicTextError.__init__ L40-L50; AnthropicTextConfig.__init__ L67-L79; AnthropicTextConfig.validate_environment
+  L82-L103; AnthropicTextConfig.transform_request L105-L128; AnthropicTextConfig.get_supported_openai_params L130-L143;
+  AnthropicTextConfig.map_openai_params L145-L176; AnthropicTextConfig.transform_response L178-L223; AnthropicTextConfig.get_error_class
+  L225-L229; AnthropicTextConfig._is_anthropic_text_model L232-L233; AnthropicTextConfig._get_anthropic_text_prompt_from_messages
+  L235-L249; AnthropicTextConfig.get_model_response_iterator L251-L261; AnthropicTextCompletionResponseIterator.chunk_parser
+  L265-L293.
+
+
+  Reuse B576 _map_stop_sequences and the B195 litellm.encoding-equivalent engine for the completion token estimate;
+  no new tokenizer acquisition is owned here.
+
+
+  Implement crates/betterlite-anthropic/src/completion.rs with adjacent tests under completion/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation anthropic_completion in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function completion_cases in betterlite-anthropic with these exact named cases (one per oracle file):
+  legacy_model_selection, human_assistant_prompt, legacy_options, legacy_response_stop_reason, legacy_stream_chunk,
+  legacy_auth. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports.
+  HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks
+  retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_completion* using HelperCase: kind:
+  helper and the externally tagged anthropic_completion variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_anthropic_completion that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_legacy_anthropic_reply consumes legacy completion JSON/event bytes in crates/betterlite-anthropic/src/completion.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_completion.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-anthropic/fuzz/corpus/anthropic_completion.
+  The adjacent test replays_the_anthropic_completion_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 211 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 235 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 493 planned, 500 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-anthropic/Cargo.toml
+  - crates/betterlite-anthropic/src/lib.rs
+  - crates/betterlite-anthropic/src/error.rs
+  - crates/betterlite-anthropic/src/completion.rs
+  - crates/betterlite-anthropic/src/completion/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/anthropic_completion.rs
+  - tools/oracle/src/helpers/anthropic_completion/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/anthropic_completion.py
+  - tools/oracle/cases/helpers/providers/anthropic-completion/**
+  - tools/oracle/fuzz/corpus/helper_case/anthropic_completion*
+  - crates/betterlite-anthropic/fuzz/Cargo.toml
+  - crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_completion.rs
+  - crates/betterlite-anthropic/fuzz/corpus/anthropic_completion/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L40-L293
+  why: >-
+    Own AnthropicTextError.__init__, AnthropicTextConfig.__init__, AnthropicTextConfig.validate_environment, AnthropicTextConfig.transform_request,
+    AnthropicTextConfig.get_supported_openai_params, AnthropicTextConfig.map_openai_params, AnthropicTextConfig.transform_response,
+    AnthropicTextConfig.get_error_class, AnthropicTextConfig._is_anthropic_text_model, AnthropicTextConfig._get_anthropic_text_prompt_from_messages,
+    AnthropicTextConfig.get_model_response_iterator, AnthropicTextCompletionResponseIterator.chunk_parser. Other
+    functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    legacy model selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-model-selection.yaml.
+  proof:
+  - case-legacy-model-selection
+  - oracle
+  - helper-python
+- text: >-
+    human assistant prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/human-assistant-prompt.yaml.
+  proof:
+  - case-human-assistant-prompt
+  - oracle
+  - helper-python
+- text: 'legacy options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-options.yaml.'
+  proof:
+  - case-legacy-options
+  - oracle
+  - helper-python
+- text: >-
+    legacy response stop reason: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-response-stop-reason.yaml.
+  proof:
+  - case-legacy-response-stop-reason
+  - oracle
+  - helper-python
+- text: 'legacy stream chunk: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-stream-chunk.yaml.'
+  proof:
+  - case-legacy-stream-chunk
+  - oracle
+  - helper-python
+- text: 'legacy auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-completion/legacy-auth.yaml.'
+  proof:
+  - case-legacy-auth
+  - oracle
+  - helper-python
+- text: New anthropic_completion seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_legacy_anthropic_reply has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-legacy-model-selection
+    why: The legacy-model-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_model_selection$/)'
+  - id: case-human-assistant-prompt
+    why: The human-assistant-prompt behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_human_assistant_prompt$/)'
+  - id: case-legacy-options
+    why: The legacy-options behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_options$/)'
+  - id: case-legacy-response-stop-reason
+    why: The legacy-response-stop-reason behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_response_stop_reason$/)'
+  - id: case-legacy-stream-chunk
+    why: The legacy-stream-chunk behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_stream_chunk$/)'
+  - id: case-legacy-auth
+    why: The legacy-auth behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_legacy_auth$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_completion.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_completion*")"
+      && grep -lq 'anthropic_completion' tools/oracle/fuzz/corpus/helper_case/anthropic_completion* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_completion$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_completion)"
+      && grep -q 'decode_legacy_anthropic_reply' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_completion.rs
+      && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_completion_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/anthropic-completion/legacy-model-selection.yaml
+- tools/oracle/cases/helpers/providers/anthropic-completion/human-assistant-prompt.yaml
+- tools/oracle/cases/helpers/providers/anthropic-completion/legacy-options.yaml
+- tools/oracle/cases/helpers/providers/anthropic-completion/legacy-response-stop-reason.yaml
+- tools/oracle/cases/helpers/providers/anthropic-completion/legacy-stream-chunk.yaml
+- tools/oracle/cases/helpers/providers/anthropic-completion/legacy-auth.yaml
+deviations: []
+out_of_scope:
+- B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Select this path only for the source legacy text-model names; share existing text-completion and chat bridge records
+  and stream framing.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,186 @@
+id: B565
+title: Foundry Anthropic token counting
+description: >-
+  Add Foundry Anthropic count-token endpoint and auth overrides with the same native-count selection/fallback contract
+  as Anthropic. Preserve configured base and count route construction, including native messages transformations;
+  no tokenizer assets are downloaded.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/anthropic/count_tokens/handler.py:
+  AzureAIAnthropicCountTokensHandler.handle_count_tokens_request L27-L127. litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py:
+  AzureAIAnthropicTokenCounter.should_use_token_counting_api L22-L26; AzureAIAnthropicTokenCounter.count_tokens
+  L28-L121. litellm/llms/azure_ai/anthropic/count_tokens/transformation.py: AzureAIAnthropicCountTokensConfig.get_required_headers
+  L25-L64; AzureAIAnthropicCountTokensConfig.get_count_tokens_endpoint L66-L88.
+
+
+  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  remains with that prerequisite.
+
+
+  Reuse AnthropicError.__init__ from B567 (litellm/llms/anthropic/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-foundry/src/anthropic_count.rs with adjacent tests under anthropic_count/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_anthropic_count in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function anthropic_count_cases in betterlite-foundry with these exact named cases (one per oracle
+  file): count_tokens_endpoint, azure_auth_and_beta, native_count_result, count_failure_local_fallback, optional_native_selection.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count* using HelperCase: kind:
+  helper and the externally tagged foundry_anthropic_count variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_anthropic_count that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  Outside-byte boundary: decode_foundry_count_reply consumes native Anthropic count response JSON bytes in crates/betterlite-foundry/src/anthropic_count.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-foundry/fuzz/fuzz_targets/foundry_anthropic_count.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-foundry/fuzz/corpus/foundry_anthropic_count.
+  The adjacent test replays_the_foundry_anthropic_count_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 203 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 230 production lines, 90 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 475 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/anthropic_count.rs
+  - crates/betterlite-foundry/src/anthropic_count/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_anthropic_count.rs
+  - tools/oracle/src/helpers/foundry_anthropic_count/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_anthropic_count.py
+  - tools/oracle/cases/helpers/providers/foundry-anthropic-count/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count*
+  - crates/betterlite-foundry/fuzz/Cargo.toml
+  - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_anthropic_count.rs
+  - crates/betterlite-foundry/fuzz/corpus/foundry_anthropic_count/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L27-L127
+  why: Own AzureAIAnthropicCountTokensHandler.handle_count_tokens_request. Other functions in this file remain with
+    the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py#L22-L121
+  why: >-
+    Own AzureAIAnthropicTokenCounter.should_use_token_counting_api, AzureAIAnthropicTokenCounter.count_tokens. Other
+    functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/transformation.py#L25-L88
+  why: >-
+    Own AzureAIAnthropicCountTokensConfig.get_required_headers, AzureAIAnthropicCountTokensConfig.get_count_tokens_endpoint.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    count tokens endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-tokens-endpoint.yaml.
+  proof:
+  - case-count-tokens-endpoint
+  - oracle
+  - helper-python
+- text: 'azure auth and beta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/azure-auth-and-beta.yaml.'
+  proof:
+  - case-azure-auth-and-beta
+  - oracle
+  - helper-python
+- text: 'native count result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/native-count-result.yaml.'
+  proof:
+  - case-native-count-result
+  - oracle
+  - helper-python
+- text: >-
+    count failure local fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-failure-local-fallback.yaml.
+  proof:
+  - case-count-failure-local-fallback
+  - oracle
+  - helper-python
+- text: >-
+    optional native selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic-count/optional-native-selection.yaml.
+  proof:
+  - case-optional-native-selection
+  - oracle
+  - helper-python
+- text: New foundry_anthropic_count seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_foundry_count_reply has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-count-tokens-endpoint
+    why: The count-tokens-endpoint behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_count_tokens_endpoint$/)'
+  - id: case-azure-auth-and-beta
+    why: The azure-auth-and-beta behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_azure_auth_and_beta$/)'
+  - id: case-native-count-result
+    why: The native-count-result behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_native_count_result$/)'
+  - id: case-count-failure-local-fallback
+    why: The count-failure-local-fallback behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_count_failure_local_fallback$/)'
+  - id: case-optional-native-selection
+    why: The optional-native-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_count_cases::case_[0-9]+_optional_native_selection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_anthropic_count.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count*")"
+      && grep -lq 'foundry_anthropic_count' tools/oracle/fuzz/corpus/helper_case/foundry_anthropic_count* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_anthropic_count$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_anthropic_count)"
+      && grep -q 'decode_foundry_count_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_anthropic_count.rs
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_anthropic_count_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-tokens-endpoint.yaml
+- tools/oracle/cases/helpers/providers/foundry-anthropic-count/azure-auth-and-beta.yaml
+- tools/oracle/cases/helpers/providers/foundry-anthropic-count/native-count-result.yaml
+- tools/oracle/cases/helpers/providers/foundry-anthropic-count/count-failure-local-fallback.yaml
+- tools/oracle/cases/helpers/providers/foundry-anthropic-count/optional-native-selection.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve configured base and count route construction, including native messages transformations; no tokenizer
+  assets are downloaded.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

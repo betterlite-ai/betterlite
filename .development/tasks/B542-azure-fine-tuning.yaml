@@ -1,0 +1,159 @@
+id: B542
+title: Azure fine-tuning jobs
+description: >-
+  Add Azure fine-tuning methods over the shared job types, including training_type defaults and Azure status/null
+  normalization. Preserve input extra_body precedence and delegation to the inherited list operation.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/fine_tuning/handler.py:
+  AzureOpenAIFineTuningAPI._ensure_training_type L22-L32; AzureOpenAIFineTuningAPI.acreate_fine_tuning_job L34-L40;
+  AzureOpenAIFineTuningAPI.acancel_fine_tuning_job L42-L48; AzureOpenAIFineTuningAPI.aretrieve_fine_tuning_job L50-L56;
+  AzureOpenAIFineTuningAPI.create_fine_tuning_job L58-L99; AzureOpenAIFineTuningAPI.cancel_fine_tuning_job L101-L139;
+  AzureOpenAIFineTuningAPI.retrieve_fine_tuning_job L141-L179; AzureOpenAIFineTuningAPI.get_openai_client L181-L204.
+
+
+  Reuse _litellm_fine_tuning_job_from_response from B518 (litellm/llms/openai/fine_tuning/handler.py); its implementation
+  remains with that prerequisite.
+
+
+  Implement crates/betterlite-azure/src/fine_tuning.rs with adjacent tests under fine_tuning/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation azure_fine_tuning in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function fine_tuning_cases in betterlite-azure with these exact named cases (one per oracle file):
+  training_type_default, explicit_training_type, create_cancel_retrieve, azure_status_normalization, organization_result_files_null.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_fine_tuning* using HelperCase: kind: helper
+  and the externally tagged azure_fine_tuning variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_azure_fine_tuning that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 167 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 195 production lines, 90 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 385 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/fine_tuning.rs
+  - crates/betterlite-azure/src/fine_tuning/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_fine_tuning.rs
+  - tools/oracle/src/helpers/azure_fine_tuning/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_fine_tuning.py
+  - tools/oracle/cases/helpers/providers/azure-fine-tuning/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_fine_tuning*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/fine_tuning/handler.py#L22-L204
+  why: >-
+    Own AzureOpenAIFineTuningAPI._ensure_training_type, AzureOpenAIFineTuningAPI.acreate_fine_tuning_job, AzureOpenAIFineTuningAPI.acancel_fine_tuning_job,
+    AzureOpenAIFineTuningAPI.aretrieve_fine_tuning_job, AzureOpenAIFineTuningAPI.create_fine_tuning_job, AzureOpenAIFineTuningAPI.cancel_fine_tuning_job,
+    AzureOpenAIFineTuningAPI.retrieve_fine_tuning_job, AzureOpenAIFineTuningAPI.get_openai_client. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'training type default: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-fine-tuning/training-type-default.yaml.'
+  proof:
+  - case-training-type-default
+  - oracle
+  - helper-python
+- text: 'explicit training type: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-fine-tuning/explicit-training-type.yaml.'
+  proof:
+  - case-explicit-training-type
+  - oracle
+  - helper-python
+- text: 'create cancel retrieve: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-fine-tuning/create-cancel-retrieve.yaml.'
+  proof:
+  - case-create-cancel-retrieve
+  - oracle
+  - helper-python
+- text: >-
+    azure status normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-fine-tuning/azure-status-normalization.yaml.
+  proof:
+  - case-azure-status-normalization
+  - oracle
+  - helper-python
+- text: >-
+    organization result files null: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-fine-tuning/organization-result-files-null.yaml.
+  proof:
+  - case-organization-result-files-null
+  - oracle
+  - helper-python
+- text: New azure_fine_tuning seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-training-type-default
+    why: The training-type-default behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_training_type_default$/)'
+  - id: case-explicit-training-type
+    why: The explicit-training-type behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_explicit_training_type$/)'
+  - id: case-create-cancel-retrieve
+    why: The create-cancel-retrieve behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_create_cancel_retrieve$/)'
+  - id: case-azure-status-normalization
+    why: The azure-status-normalization behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_azure_status_normalization$/)'
+  - id: case-organization-result-files-null
+    why: The organization-result-files-null behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::fine_tuning_cases::case_[0-9]+_organization_result_files_null$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_fine_tuning.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_fine_tuning*")"
+      && grep -lq 'azure_fine_tuning' tools/oracle/fuzz/corpus/helper_case/azure_fine_tuning* && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_fine_tuning$/)' && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-fine-tuning/training-type-default.yaml
+- tools/oracle/cases/helpers/providers/azure-fine-tuning/explicit-training-type.yaml
+- tools/oracle/cases/helpers/providers/azure-fine-tuning/create-cancel-retrieve.yaml
+- tools/oracle/cases/helpers/providers/azure-fine-tuning/azure-status-normalization.yaml
+- tools/oracle/cases/helpers/providers/azure-fine-tuning/organization-result-files-null.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Add Azure fine-tuning methods over the shared job types, including training_type defaults and Azure status/null
+  normalization.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

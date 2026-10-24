@@ -1,0 +1,197 @@
+id: B548
+title: Azure native passthrough preparation and logging
+description: >-
+  Add AzurePassthroughPlan and typed response/stream logging projection for configured native paths. Preserve model-router
+  body-model inference, foreign deployment handling and api-version removal rules. B101/B103 own route registration
+  and raw forwarding; this leaf plan never authorizes an arbitrary caller URL.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/passthrough/transformation.py:
+  _relayed_messages L38-L43; logged_responses_stream L55-L63; is_azure_body_model_inference_endpoint L72-L76; azure_router_model_in_endpoint
+  L79-L83; foreign_azure_deployment L86-L96; without_api_version L99-L102; AzurePassthroughConfig.is_streaming_request
+  L106-L107; AzurePassthroughConfig.get_complete_url L109-L140; AzurePassthroughConfig.validate_environment L142-L155;
+  AzurePassthroughConfig.get_api_base L158-L161; AzurePassthroughConfig.get_api_key L164-L167; AzurePassthroughConfig.get_base_model
+  L170-L171; AzurePassthroughConfig.get_models L173-L174; AzurePassthroughConfig.logging_non_streaming_response
+  L176-L207; AzurePassthroughConfig.handle_logging_collected_chunks L209-L231.
+
+
+  B101 owns RelayShape, logged_relay_shape, replace_path_segment and strip_leading_model_segment; B103 owns OpenAIPassthroughLoggingHandler._build_complete_streaming_response.
+
+
+  Reuse OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks from B508 (litellm/llms/openai/responses/transformation.py);
+  its implementation remains with that prerequisite.
+
+
+  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  remains with that prerequisite.
+
+
+  Reuse BaseAzureLLM._get_base_azure_url from B531 (litellm/llms/azure/common_utils.py); its implementation remains
+  with that prerequisite.
+
+
+  Reuse OpenAIGPTConfig.__init__ from B668 (litellm/llms/openai/chat/gpt_transformation.py); its implementation
+  remains with that prerequisite.
+
+
+  Implement crates/betterlite-azure/src/passthrough.rs with adjacent tests under passthrough/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation azure_passthrough in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function passthrough_cases in betterlite-azure with these exact named cases (one per oracle file):
+  body_model_inference_endpoint, router_model_in_path, foreign_deployment, api_version_removal, responses_stream_log,
+  messages_relay_log, nonstream_usage. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_passthrough* using HelperCase: kind: helper
+  and the externally tagged azure_passthrough variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_azure_passthrough that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 145 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 175 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 391 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/passthrough.rs
+  - crates/betterlite-azure/src/passthrough/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_passthrough.rs
+  - tools/oracle/src/helpers/azure_passthrough/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_passthrough.py
+  - tools/oracle/cases/helpers/providers/azure-passthrough/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_passthrough*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L38-L231
+  why: >-
+    Own _relayed_messages, logged_responses_stream, is_azure_body_model_inference_endpoint, azure_router_model_in_endpoint,
+    foreign_azure_deployment, without_api_version, AzurePassthroughConfig.is_streaming_request, AzurePassthroughConfig.get_complete_url,
+    AzurePassthroughConfig.validate_environment, AzurePassthroughConfig.get_api_base, AzurePassthroughConfig.get_api_key,
+    AzurePassthroughConfig.get_base_model, AzurePassthroughConfig.get_models, AzurePassthroughConfig.logging_non_streaming_response,
+    AzurePassthroughConfig.handle_logging_collected_chunks. Other functions in this file remain with the owners
+    listed below.
+dod:
+- text: >-
+    body model inference endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/body-model-inference-endpoint.yaml.
+  proof:
+  - case-body-model-inference-endpoint
+  - oracle
+  - helper-python
+- text: 'router model in path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/router-model-in-path.yaml.'
+  proof:
+  - case-router-model-in-path
+  - oracle
+  - helper-python
+- text: 'foreign deployment: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/foreign-deployment.yaml.'
+  proof:
+  - case-foreign-deployment
+  - oracle
+  - helper-python
+- text: 'api version removal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/api-version-removal.yaml.'
+  proof:
+  - case-api-version-removal
+  - oracle
+  - helper-python
+- text: 'responses stream log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/responses-stream-log.yaml.'
+  proof:
+  - case-responses-stream-log
+  - oracle
+  - helper-python
+- text: 'messages relay log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/messages-relay-log.yaml.'
+  proof:
+  - case-messages-relay-log
+  - oracle
+  - helper-python
+- text: 'nonstream usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/nonstream-usage.yaml.'
+  proof:
+  - case-nonstream-usage
+  - oracle
+  - helper-python
+- text: New azure_passthrough seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-body-model-inference-endpoint
+    why: The body-model-inference-endpoint behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_body_model_inference_endpoint$/)'
+  - id: case-router-model-in-path
+    why: The router-model-in-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_router_model_in_path$/)'
+  - id: case-foreign-deployment
+    why: The foreign-deployment behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_foreign_deployment$/)'
+  - id: case-api-version-removal
+    why: The api-version-removal behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_api_version_removal$/)'
+  - id: case-responses-stream-log
+    why: The responses-stream-log behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_responses_stream_log$/)'
+  - id: case-messages-relay-log
+    why: The messages-relay-log behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_messages_relay_log$/)'
+  - id: case-nonstream-usage
+    why: The nonstream-usage behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_nonstream_usage$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_passthrough.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_passthrough*")"
+      && grep -lq 'azure_passthrough' tools/oracle/fuzz/corpus/helper_case/azure_passthrough* && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_passthrough$/)' && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-passthrough/body-model-inference-endpoint.yaml
+- tools/oracle/cases/helpers/providers/azure-passthrough/router-model-in-path.yaml
+- tools/oracle/cases/helpers/providers/azure-passthrough/foreign-deployment.yaml
+- tools/oracle/cases/helpers/providers/azure-passthrough/api-version-removal.yaml
+- tools/oracle/cases/helpers/providers/azure-passthrough/responses-stream-log.yaml
+- tools/oracle/cases/helpers/providers/azure-passthrough/messages-relay-log.yaml
+- tools/oracle/cases/helpers/providers/azure-passthrough/nonstream-usage.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve model-router body-model inference, foreign deployment handling and api-version removal rules.
+- The deployment lookbehind regex cannot be copied into Rust regex; parse the deployment path segment instead.
+- Removing api-version must reproduce httpx.URL query reserialization, not byte-splice the original query.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

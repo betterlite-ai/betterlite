@@ -1,0 +1,233 @@
+id: B666
+title: Bedrock bidirectional realtime transport
+description: >-
+  Add owned Bedrock bidirectional-stream connection via a maintained AWS Bedrock Runtime SDK/client and injected
+  HTTP connector housed in betterlite-http. Reuse established credentials, TLS/proxy and deadlines; no SDK may read
+  ambient env or create a hidden production client. Expose a bounded session input/output pair consumed by the event
+  bridge. Preserve first-message configuration, credential failure, provider failure and close sequencing; track
+  and join all session work. Split connection setup from the source _run_session/_bridge orchestration through an
+  injected session-runner callback: this slice opens/closes the native connection and calls that typed callback,
+  while B667 supplies event pumping. Local fixture callbacks prove setup and cleanup without importing the later
+  bridge.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/realtime/handler.py:
+  BedrockRealtime.async_realtime L242-L346; BedrockRealtime._run_session L348-L411; BedrockRealtime._bridge L413-L457.
+
+
+  Use aws-sdk-bedrockruntime Client::invoke_model_with_bidirectional_stream, which is present in the Rust SDK; configure
+  an injected Smithy HttpClient/connector, credentials, region and disabled retries through B173. A reqwest-only
+  connector does not prove bidirectional HTTP/2 support: test interleaved request/response events through the chosen
+  HTTP/2 connector.
+
+
+  Implement crates/betterlite-bedrock/src/realtime_transport.rs with adjacent tests under realtime_transport/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_realtime_transport in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function realtime_transport_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): bidirectional_runtime_target, initial_session_configuration, credential_failure, upstream_session_failure,
+  session_close_sequence. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_realtime_transport variant inside call. Do not put the
+  Python stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_realtime_transport
+  that parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on
+  zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_services_realtime_transport_credential_identity_isolation in betterlite-bedrock for this
+  Rust-specific invariant; it is not a Python oracle case.
+
+
+  Write standalone bedrock_services_realtime_transport_secret_safe_failure in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  The HTTP/2 connector lives in betterlite-http/src/aws_duplex.rs. Write standalone aws_duplex_interleaved_events
+  and aws_duplex_cancel_reaps_io in betterlite-http, using a fixture peer to prove that response events arrive before
+  request EOF and cancellation joins both IO directions.
+
+
+  Budget from 191 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 335 production lines, 170 behavior/config-test lines,
+  95 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 625 planned, 625 maximum changed lines. The production allowance includes 120 lines for the referenced
+  SDK protocol that LiteLLM delegates.
+
+   Keep at most one event per direction in flight and await its sink before pulling the next event, matching the
+  source forwarding awaits; introduce no queue-size setting or unbounded intermediate event list.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/realtime_transport.rs
+  - crates/betterlite-bedrock/src/realtime_transport/**
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-http/Cargo.toml
+  - crates/betterlite-http/src/lib.rs
+  - crates/betterlite-http/src/error.rs
+  - crates/betterlite-http/src/aws_duplex.rs
+  - crates/betterlite-http/src/aws_duplex/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_realtime_transport.rs
+  - tools/oracle/src/helpers/bedrock_services_realtime_transport/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_realtime_transport.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*
+  lint_tables: false
+references:
+- url: https://docs.rs/aws-sdk-bedrockruntime/1.150.0/aws_sdk_bedrockruntime/client/struct.Client.html#method.invoke_model_with_bidirectional_stream
+  why: The actual bidirectional operation and input/output event stream builders.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L457
+  why: Own BedrockRealtime.async_realtime, BedrockRealtime._run_session, BedrockRealtime._bridge. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: >-
+    bidirectional runtime target: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/bidirectional-runtime-target.yaml.
+  proof:
+  - case-bidirectional-runtime-target
+  - oracle
+  - helper-python
+- text: >-
+    initial session configuration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/initial-session-configuration.yaml.
+  proof:
+  - case-initial-session-configuration
+  - oracle
+  - helper-python
+- text: >-
+    credential failure: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/credential-failure.yaml.
+  proof:
+  - case-credential-failure
+  - oracle
+  - helper-python
+- text: >-
+    upstream session failure: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/upstream-session-failure.yaml.
+  proof:
+  - case-upstream-session-failure
+  - oracle
+  - helper-python
+- text: >-
+    session close sequence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/session-close-sequence.yaml.
+  proof:
+  - case-session-close-sequence
+  - oracle
+  - helper-python
+- text: New bedrock_services_realtime_transport seeds parse as the intended call variant and replay through the
+    shared production parser.
+  proof:
+  - helper-case-corpus
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+- text: The HTTP connector delivers interleaved request/response events before EOF.
+  proof:
+  - duplex-interleaving
+- text: Connector cancellation joins both IO directions.
+  proof:
+  - duplex-cancellation
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-bidirectional-runtime-target
+    why: The bidirectional-runtime-target behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_bidirectional_runtime_target$/)'
+  - id: case-initial-session-configuration
+    why: The initial-session-configuration behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_initial_session_configuration$/)'
+  - id: case-credential-failure
+    why: The credential-failure behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_credential_failure$/)'
+  - id: case-upstream-session-failure
+    why: The upstream-session-failure behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_upstream_session_failure$/)'
+  - id: case-session-close-sequence
+    why: The session-close-sequence behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_transport_cases::case_[0-9]+_session_close_sequence$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_transport.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*")"
+      && grep -lq 'bedrock_services_realtime_transport' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_transport*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_transport$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_realtime_transport_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_realtime_transport_secret_safe_failure$/)'
+  - id: duplex-interleaving
+    why: The chosen HTTP/2 connector buffers the request to EOF instead of supporting duplex IO.
+    run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/::aws_duplex_interleaved_events$/)'
+  - id: duplex-cancellation
+    why: Dropping a duplex session leaves request or response IO running.
+    run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/::aws_duplex_cancel_reaps_io$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/bidirectional-runtime-target.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/initial-session-configuration.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/credential-failure.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/upstream-session-failure.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-transport/session-close-sequence.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/realtime/handler.py: BedrockRealtime._forward_client_to_bedrock L459-L511; BedrockRealtime._forward_bedrock_to_client
+  L513-L589 belong to B667; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/realtime/handler.py: _as_bedrock_error L63-L67; _json_dict L70-L71; _json_str L74-L75; _should_log_event
+  L78-L86; RealtimeClientWebSocket.receive_text L94-L94; RealtimeClientWebSocket.send_text L96-L96; RealtimeClientWebSocket.close
+  L98-L98; BedrockInputStream.send L102-L102; BedrockInputStream.close L104-L104; BedrockPayloadPart.bytes_ L109-L109;
+  BedrockOutputChunk.value L114-L114; BedrockOutputStream.receive L118-L118; BedrockBidirectionalStream.input_stream
+  L123-L123; BedrockBidirectionalStream.await_output L125-L125; ClosableBedrockRuntimeClient.close L130-L130; _installed_sdk_version
+  L133-L137; _sdk_import_error L140-L149; _close_bedrock_client L152-L157; _client_messages L167-L175; _pending_session_update
+  L178-L190; _raise_provider_failure L193-L198; _parse_client_message L201-L205; _ack_session_update L208-L232;
+  BedrockRealtime.__init__ L238-L240 belong to B665; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Preserve first-message configuration, credential failure, provider failure and close sequencing; track and join
+  all session work.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

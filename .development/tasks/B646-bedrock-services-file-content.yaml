@@ -1,0 +1,225 @@
+id: B646
+title: Bedrock file content and S3 result conversion
+description: >-
+  Add authorized file content streaming and result-file conversion, preserving S3 metadata, content bytes and OpenAI
+  file object fields. The unused BedrockJsonlFilesTransformation helpers are excluded; live content transforms use
+  B648 batch-record callbacks. Use per-operation byte/line limits from the shared transport and release every upstream
+  body on cancellation.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/files/transformation.py:
+  BedrockFilesConfig.transform_file_content_response L1490-L1503; BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content
+  L1530-L1537; BedrockJsonlFilesTransformation._get_s3_object_name L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file
+  L1555-L1590. litellm/llms/bedrock/files/handler.py: BedrockFilesHandler.afile_content L69-L132; BedrockFilesHandler.file_content
+  L134-L173.
+
+
+  Implement crates/betterlite-bedrock/src/file_content.rs with adjacent tests under file_content/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_file_content in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function file_content_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  authorized_file_content, file_content_binary, empty_file_content, foreign_id_before_network. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
+  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_file_content* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_file_content variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_file_content that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_services_file_content_credential_identity_isolation in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone bedrock_services_file_content_secret_safe_failure in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Budget from 149 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 180 production lines, 111 behavior/config-test lines,
+  71 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 387 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/file_content.rs
+  - crates/betterlite-bedrock/src/file_content/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_file_content.rs
+  - tools/oracle/src/helpers/bedrock_services_file_content/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_file_content.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-file-content/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_file_content*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1490-L1503
+  why: Own BedrockFilesConfig.transform_file_content_response. Other functions in this file remain with the owners
+    listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1530-L1590
+  why: >-
+    Own BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content, BedrockJsonlFilesTransformation._get_s3_object_name,
+    BedrockJsonlFilesTransformation._get_content_from_openai_file. Other functions in this file remain with the
+    owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/handler.py#L69-L173
+  why: Own BedrockFilesHandler.afile_content, BedrockFilesHandler.file_content. Other functions in this file remain
+    with the owners listed below.
+dod:
+- text: >-
+    authorized file content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-file-content/authorized-file-content.yaml.
+  proof:
+  - case-authorized-file-content
+  - oracle
+  - helper-python
+- text: >-
+    file content binary: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-file-content/file-content-binary.yaml.
+  proof:
+  - case-file-content-binary
+  - oracle
+  - helper-python
+- text: >-
+    empty file content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-file-content/empty-file-content.yaml.
+  proof:
+  - case-empty-file-content
+  - oracle
+  - helper-python
+- text: >-
+    foreign id before network: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-file-content/foreign-id-before-network.yaml.
+  proof:
+  - case-foreign-id-before-network
+  - oracle
+  - helper-python
+- text: New bedrock_services_file_content seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-authorized-file-content
+    why: The authorized-file-content behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::case_[0-9]+_authorized_file_content$/)'
+  - id: case-file-content-binary
+    why: The file-content-binary behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::case_[0-9]+_file_content_binary$/)'
+  - id: case-empty-file-content
+    why: The empty-file-content behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::case_[0-9]+_empty_file_content$/)'
+  - id: case-foreign-id-before-network
+    why: The foreign-id-before-network behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::file_content_cases::case_[0-9]+_foreign_id_before_network$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_file_content.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_file_content*")"
+      && grep -lq 'bedrock_services_file_content' tools/oracle/fuzz/corpus/helper_case/bedrock_services_file_content*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_file_content$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_file_content_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_file_content_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/authorized-file-content.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/file-content-binary.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/empty-file-content.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-file-content/foreign-id-before-network.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298; _listing_query L301-L305; _requested_listing_purpose
+  L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted L318-L321; _listing_bucket_name
+  L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372; BedrockFilesConfig.transform_retrieve_file_request
+  L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response L1276-L1282; BedrockFilesConfig.transform_delete_file_request
+  L1284-L1292; BedrockFilesConfig.transform_delete_file_response L1294-L1307; BedrockFilesConfig.transform_list_files_request
+  L1309-L1317; BedrockFilesConfig.transform_list_files_next_request L1319-L1335; BedrockFilesConfig._signed_listing_request
+  L1337-L1361; BedrockFilesConfig.transform_list_files_response L1363-L1391; BedrockFilesConfig.transform_file_content_request
+  L1393-L1412; BedrockFilesConfig._transform_s3_file_request L1414-L1432; BedrockFilesConfig._s3_request_target
+  L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body L1459-L1488 belong to B645; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__ L392-L394;
+  BedrockFilesConfig.custom_llm_provider L397-L398; BedrockFilesConfig.file_upload_http_method L401-L405; BedrockFilesConfig.validate_environment
+  L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460; BedrockFilesConfig._get_s3_object_name_from_batch_jsonl
+  L462-L478; BedrockFilesConfig.get_object_name L480-L504; BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params
+  L549-L550; BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
+  L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
+  L1265-L1266 belong to B644; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record L575-L614; BedrockFilesConfig._is_titan_v2_embed_model
+  L639-L681; BedrockFilesConfig._lookup_provider_specific_field L684-L715; BedrockFilesConfig._coerce_embedding_input_to_string
+  L718-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params L773-L819 belong to B647; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
+  L822-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L846-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
+  L858-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
+  L954-L965; BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content L967-L1024; BedrockFilesConfig.transform_create_file_request
+  L1026-L1108 belong to B648; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
+  no caller at the pin; do not port them.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model L95-L96; _strip_llm_routing_prefix
+  L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials L192-L198; get_configured_s3_bucket_name
+  L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets L233-L250; _rejected_file_id
+  L256-L266; _resolve_managed_s3_object L269-L279 belong to B643; reuse that implementation or its injected typed
+  boundary.
+- >-
+  litellm/llms/bedrock/files/handler.py: BedrockFilesHandler.__init__ L30-L34; BedrockFilesHandler._extract_s3_uri_from_file_id
+  L36-L39; BedrockFilesHandler._parse_s3_uri L41-L62; BedrockFilesHandler._get_configured_s3_bucket_name L64-L67
+  belong to B643; reuse that implementation or its injected typed boundary.
+pitfalls:
+- The unused BedrockJsonlFilesTransformation functions must not create a new reachable conversion path.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,293 @@
+id: B676
+title: Azure managed-identity grant
+description: >-
+  Implement managed-identity environment selection and the IMDS protocol, reusing B699 hosted-environment variants
+  and B530 workload federation. Inject resolved settings, transport and clock; preserve host-selection order and
+  .default scope-to-resource conversion. IMDS sends Metadata=true and api-version=2018-02-01 with client_id only
+  for user-assigned identity.
+
+
+  This slice adds native composition or ports the SDK protocol called by the parent; it owns no additional LiteLLM
+  function body. The references and concrete operations below bound that work.
+
+
+  Endpoint selection matches the pinned ManagedIdentityCredential: IDENTITY_ENDPOINT+IDENTITY_HEADER uses Service
+  Fabric when IDENTITY_SERVER_THUMBPRINT exists or App Service otherwise; IDENTITY_ENDPOINT+IMDS_ENDPOINT uses Azure
+  Arc; MSI_ENDPOINT uses Azure ML with MSI_SECRET or Cloud Shell without it; complete workload identity settings
+  use B530 federation; otherwise use IMDS.
+
+
+  Implement crates/betterlite-azure/src/azure_managed_identity.rs with adjacent tests under azure_managed_identity/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation azure_managed_identity in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function azure_managed_identity_cases in betterlite-azure with these exact named cases (one per oracle
+  file): system_assigned_imds, client_id_query, imds_unavailable, token_expiry, workload_selection. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
+  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_managed_identity* using HelperCase: kind:
+  helper and the externally tagged azure_managed_identity variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_azure_managed_identity that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_imds_token consumes IMDS token response bytes in crates/betterlite-azure/src/azure_managed_identity.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-azure/fuzz/fuzz_targets/azure_managed_identity.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-azure/fuzz/corpus/azure_managed_identity.
+  The adjacent test replays_the_azure_managed_identity_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/azure/azure_managed_identity.rs
+  and its loader wiring: IDENTITY_ENDPOINT, IDENTITY_HEADER, IDENTITY_SERVER_THUMBPRINT, IMDS_ENDPOINT, MSI_ENDPOINT,
+  MSI_SECRET, AZURE_POD_IDENTITY_AUTHORITY_HOST. Module-level settings enter litellm_settings; deployment settings
+  enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified above and in
+  the linked branches; existing key owners remain unchanged. Write config rstest azure_managed_identity_config_cases
+  with named cases loads_identity_endpoint, loads_identity_header, loads_identity_server_thumbprint, loads_imds_endpoint,
+  loads_msi_endpoint, loads_msi_secret, loads_azure_pod_identity_authority_host, plus rejects_unrelated_key. Each
+  loads case calls the real config loader with that key and asserts the resolved value, default, precedence and
+  secret redaction where applicable. Seed B002 config_yaml with new azure_managed_identity* files for every key;
+  reuse its parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone azure_managed_identity_credential_identity_isolation in betterlite-azure for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone azure_managed_identity_secret_safe_failure in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 230 production lines, 169 behavior/config-test lines, 95 combined
+  Rust/Python adapter lines, 55 parser target/replay lines, 46 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 635 planned, 650 maximum changed lines. The production allowance includes 195 lines for the referenced
+  SDK protocol that LiteLLM delegates.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-azure/src/azure_managed_identity.rs
+  - crates/betterlite-azure/src/azure_managed_identity/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_managed_identity.rs
+  - tools/oracle/src/helpers/azure_managed_identity/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_managed_identity.py
+  - tools/oracle/cases/helpers/providers/azure-managed-identity/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_managed_identity*
+  - crates/betterlite-azure/fuzz/Cargo.toml
+  - crates/betterlite-azure/fuzz/fuzz_targets/azure_managed_identity.rs
+  - crates/betterlite-azure/fuzz/corpus/azure_managed_identity/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/azure_managed_identity.rs
+  - crates/betterlite-config/src/providers/azure/azure_managed_identity/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_managed_identity_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  lint_tables: false
+references:
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/managed_identity.py#L73-L151
+  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
+    copying its Python SDK internals.
+dod:
+- text: 'system assigned imds: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/system-assigned-imds.yaml.'
+  proof:
+  - case-system-assigned-imds
+  - oracle
+  - helper-python
+- text: 'client id query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/client-id-query.yaml.'
+  proof:
+  - case-client-id-query
+  - oracle
+  - helper-python
+- text: 'imds unavailable: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/imds-unavailable.yaml.'
+  proof:
+  - case-imds-unavailable
+  - oracle
+  - helper-python
+- text: 'token expiry: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/token-expiry.yaml.'
+  proof:
+  - case-token-expiry
+  - oracle
+  - helper-python
+- text: 'workload selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-managed-identity/workload-selection.yaml.'
+  proof:
+  - case-workload-selection
+  - oracle
+  - helper-python
+- text: New azure_managed_identity seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_imds_token has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+- text: IDENTITY_ENDPOINT is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-identity-endpoint
+  - config-corpus
+- text: IDENTITY_HEADER is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-identity-header
+  - config-corpus
+- text: IDENTITY_SERVER_THUMBPRINT is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-identity-server-thumbprint
+  - config-corpus
+- text: IMDS_ENDPOINT is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-imds-endpoint
+  - config-corpus
+- text: MSI_ENDPOINT is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-msi-endpoint
+  - config-corpus
+- text: MSI_SECRET is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-msi-secret
+  - config-corpus
+- text: AZURE_POD_IDENTITY_AUTHORITY_HOST is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-azure-pod-identity-authority-host
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-system-assigned-imds
+    why: The system-assigned-imds behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_system_assigned_imds$/)'
+  - id: case-client-id-query
+    why: The client-id-query behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_client_id_query$/)'
+  - id: case-imds-unavailable
+    why: The imds-unavailable behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_imds_unavailable$/)'
+  - id: case-token-expiry
+    why: The token-expiry behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_token_expiry$/)'
+  - id: case-workload-selection
+    why: The workload-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_cases::case_[0-9]+_workload_selection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_managed_identity.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_managed_identity*")"
+      && grep -lq 'azure_managed_identity' tools/oracle/fuzz/corpus/helper_case/azure_managed_identity* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_managed_identity$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_managed_identity)"
+      && grep -q 'decode_imds_token' crates/betterlite-azure/fuzz/fuzz_targets/azure_managed_identity.rs && cargo
+      nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_managed_identity_corpus$/)'
+  - id: config-identity-endpoint
+    why: The IDENTITY_ENDPOINT setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_endpoint$/)'
+      && grep -lq 'IDENTITY_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - id: config-identity-header
+    why: The IDENTITY_HEADER setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_header$/)'
+      && grep -lq 'IDENTITY_HEADER' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - id: config-identity-server-thumbprint
+    why: The IDENTITY_SERVER_THUMBPRINT setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_identity_server_thumbprint$/)'
+      && grep -lq 'IDENTITY_SERVER_THUMBPRINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - id: config-imds-endpoint
+    why: The IMDS_ENDPOINT setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_imds_endpoint$/)'
+      && grep -lq 'IMDS_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - id: config-msi-endpoint
+    why: The MSI_ENDPOINT setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_msi_endpoint$/)'
+      && grep -lq 'MSI_ENDPOINT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - id: config-msi-secret
+    why: The MSI_SECRET setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_msi_secret$/)'
+      && grep -lq 'MSI_SECRET' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - id: config-azure-pod-identity-authority-host
+    why: The AZURE_POD_IDENTITY_AUTHORITY_HOST setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_loads_azure_pod_identity_authority_host$/)'
+      && grep -lq 'AZURE_POD_IDENTITY_AUTHORITY_HOST' crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_managed_identity_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_managed_identity*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_managed_identity_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-managed-identity/system-assigned-imds.yaml
+- tools/oracle/cases/helpers/providers/azure-managed-identity/client-id-query.yaml
+- tools/oracle/cases/helpers/providers/azure-managed-identity/imds-unavailable.yaml
+- tools/oracle/cases/helpers/providers/azure-managed-identity/token-expiry.yaml
+- tools/oracle/cases/helpers/providers/azure-managed-identity/workload-selection.yaml
+deviations: []
+out_of_scope: []
+pitfalls:
+- The client-id inference branch precedes certificate inference in the Python provider selector.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

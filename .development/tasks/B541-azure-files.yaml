@@ -1,0 +1,139 @@
+id: B541
+title: Azure files and batch lifecycle
+description: >-
+  Implement Azure batch create/retrieve/cancel/list operations with B517 wire records and B531 endpoints; B694 owns
+  file lifecycle. Keep api-version query handling and batch payload fields identical to the SDK calls.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/batches/handler.py:
+  AzureBatchesAPI.__init__ L31-L32; AzureBatchesAPI.acreate_batch L34-L40; AzureBatchesAPI.create_batch L42-L74;
+  AzureBatchesAPI.aretrieve_batch L76-L82; AzureBatchesAPI.retrieve_batch L84-L116; AzureBatchesAPI.acancel_batch
+  L118-L124; AzureBatchesAPI.cancel_batch L126-L164; AzureBatchesAPI.alist_batches L166-L173; AzureBatchesAPI.list_batches
+  L175-L208.
+
+
+  Implement crates/betterlite-azure/src/files.rs with adjacent tests under files/. Keep each Rust module at most
+  300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation azure_files in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function files_cases in betterlite-azure with these exact named cases (one per oracle file): batch_create,
+  batch_retrieve_cancel_list, resource_api_version. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_files* using HelperCase: kind: helper and
+  the externally tagged azure_files variant inside call. Do not put the Python stdin operation field in a HelperCase.
+  Add oracle test helper_seeds_select_azure_files that parses every prefixed seed with the production HelperCase
+  parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 164 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 190 production lines, 72 behavior/config-test lines,
+  67 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 354 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/files.rs
+  - crates/betterlite-azure/src/files/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_files.rs
+  - tools/oracle/src/helpers/azure_files/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_files.py
+  - tools/oracle/cases/helpers/providers/azure-files/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_files*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/batches/handler.py#L31-L208
+  why: >-
+    Own AzureBatchesAPI.__init__, AzureBatchesAPI.acreate_batch, AzureBatchesAPI.create_batch, AzureBatchesAPI.aretrieve_batch,
+    AzureBatchesAPI.retrieve_batch, AzureBatchesAPI.acancel_batch, AzureBatchesAPI.cancel_batch, AzureBatchesAPI.alist_batches,
+    AzureBatchesAPI.list_batches. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'batch create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-files/batch-create.yaml.'
+  proof:
+  - case-batch-create
+  - oracle
+  - helper-python
+- text: 'batch retrieve cancel list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-files/batch-retrieve-cancel-list.yaml.'
+  proof:
+  - case-batch-retrieve-cancel-list
+  - oracle
+  - helper-python
+- text: 'resource api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-files/resource-api-version.yaml.'
+  proof:
+  - case-resource-api-version
+  - oracle
+  - helper-python
+- text: New azure_files seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-batch-create
+    why: The batch-create behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_batch_create$/)'
+  - id: case-batch-retrieve-cancel-list
+    why: The batch-retrieve-cancel-list behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_batch_retrieve_cancel_list$/)'
+  - id: case-resource-api-version
+    why: The resource-api-version behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::files_cases::case_[0-9]+_resource_api_version$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_files.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+      --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_files*")"
+      && grep -lq 'azure_files' tools/oracle/fuzz/corpus/helper_case/azure_files* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_files$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-files/batch-create.yaml
+- tools/oracle/cases/helpers/providers/azure-files/batch-retrieve-cancel-list.yaml
+- tools/oracle/cases/helpers/providers/azure-files/resource-api-version.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure/files/handler.py: AzureOpenAIFilesAPI.__init__ L25-L26; AzureOpenAIFilesAPI._prepare_create_file_data
+  L29-L41; AzureOpenAIFilesAPI.acreate_file L43-L51; AzureOpenAIFilesAPI.create_file L53-L87; AzureOpenAIFilesAPI.afile_content
+  L89-L95; AzureOpenAIFilesAPI.file_content L97-L133; AzureOpenAIFilesAPI.aretrieve_file L135-L141; AzureOpenAIFilesAPI.retrieve_file
+  L143-L179; AzureOpenAIFilesAPI.adelete_file L181-L190; AzureOpenAIFilesAPI.delete_file L192-L232; AzureOpenAIFilesAPI.alist_files
+  L234-L243; AzureOpenAIFilesAPI.list_files L245-L285 belong to B694; reuse that implementation or its injected
+  typed boundary.
+pitfalls:
+- Preserve source GET/DELETE/list semantics and query api-version, and keep credentials resolved per call.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

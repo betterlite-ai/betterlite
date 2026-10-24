@@ -1,0 +1,224 @@
+id: B657
+title: Bedrock Responses and inline-image policy
+description: >-
+  Add BedrockResponsesConfig for model-selected Mantle/runtime URLs, bearer/signature preparation and Responses
+  request projection. Preserve supported parameter gates and native file-search capability. Remote image traversal
+  identifies URL blocks but cannot download them under the current policy; supplied inline images use existing bounded
+  media processing.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/responses/transformation.py:
+  _without_chat_completions_route L80-L81; resolve_bedrock_bearer_token L84-L85; _remote_image_url L88-L94; _blocks_under
+  L97-L102; _image_blocks L105-L109; collect_remote_image_urls L112-L120; _inline_block L123-L127; _inline_value
+  L130-L133; _inline_item L136-L144; inline_remote_image_urls L147-L154; BedrockOpenAIResponsesConfig.__init__ L160-L167;
+  BedrockOpenAIResponsesConfig.for_model L170-L184; BedrockOpenAIResponsesConfig.custom_llm_provider L187-L188;
+  BedrockOpenAIResponsesConfig.get_error_class L190-L194; BedrockOpenAIResponsesConfig.get_complete_url L196-L216;
+  BedrockOpenAIResponsesConfig.supports_native_file_search L218-L219; BedrockOpenAIResponsesConfig.validate_environment
+  L221-L231; BedrockOpenAIResponsesConfig.sign_request L233-L256; BedrockOpenAIResponsesConfig.map_openai_params
+  L258-L288; BedrockOpenAIResponsesConfig.transform_responses_api_request L290-L305; BedrockOpenAIResponsesConfig.async_transform_responses_api_request
+  L307-L323; BedrockOpenAIResponsesConfig._transform_inlined_request L325-L345.
+
+
+  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
+  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
+  and no copied helper algorithm is permitted.
+
+
+  remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
+  status 400 before transport under the current open request-download decision; inject the same failed-download
+  seam into the pinned helper. Inline bytes continue to compare normally; provider-forwardable URL descriptors remain
+  unchanged where the source forwards them.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse bedrock_supports_openai_responses from B690 (litellm/llms/bedrock/common_utils.py); its implementation remains
+  with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/responses.rs with adjacent tests under responses/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_responses in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function responses_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  bedrock_responses_model_route, responses_bearer_auth, responses_sigv4, response_option_gates, native_file_search_flag,
+  inline_image_traversal, remote_image_no_fetch, remote_url_current_rejection. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert
+  both client response and captured upstream request. Existing API tasks retain route registration; this task must
+  not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_responses variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_responses that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 225 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 250 production lines, 117 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 479 planned, 500 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/responses.rs
+  - crates/betterlite-bedrock/src/responses/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_responses.rs
+  - tools/oracle/src/helpers/bedrock_services_responses/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_responses.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-responses/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L80-L345
+  why: >-
+    Own _without_chat_completions_route, resolve_bedrock_bearer_token, _remote_image_url, _blocks_under, _image_blocks,
+    collect_remote_image_urls, _inline_block, _inline_value, _inline_item, inline_remote_image_urls, BedrockOpenAIResponsesConfig.__init__,
+    BedrockOpenAIResponsesConfig.for_model, BedrockOpenAIResponsesConfig.custom_llm_provider, BedrockOpenAIResponsesConfig.get_error_class,
+    BedrockOpenAIResponsesConfig.get_complete_url, BedrockOpenAIResponsesConfig.supports_native_file_search, BedrockOpenAIResponsesConfig.validate_environment,
+    BedrockOpenAIResponsesConfig.sign_request, BedrockOpenAIResponsesConfig.map_openai_params, BedrockOpenAIResponsesConfig.transform_responses_api_request,
+    BedrockOpenAIResponsesConfig.async_transform_responses_api_request, BedrockOpenAIResponsesConfig._transform_inlined_request.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    bedrock responses model route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/bedrock-responses-model-route.yaml.
+  proof:
+  - case-bedrock-responses-model-route
+  - oracle
+  - helper-python
+- text: >-
+    responses bearer auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-bearer-auth.yaml.
+  proof:
+  - case-responses-bearer-auth
+  - oracle
+  - helper-python
+- text: 'responses sigv4: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-sigv4.yaml.'
+  proof:
+  - case-responses-sigv4
+  - oracle
+  - helper-python
+- text: >-
+    response option gates: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/response-option-gates.yaml.
+  proof:
+  - case-response-option-gates
+  - oracle
+  - helper-python
+- text: >-
+    native file search flag: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/native-file-search-flag.yaml.
+  proof:
+  - case-native-file-search-flag
+  - oracle
+  - helper-python
+- text: >-
+    inline image traversal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/inline-image-traversal.yaml.
+  proof:
+  - case-inline-image-traversal
+  - oracle
+  - helper-python
+- text: >-
+    remote image no fetch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-image-no-fetch.yaml.
+  proof:
+  - case-remote-image-no-fetch
+  - oracle
+  - helper-python
+- text: >-
+    remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-url-current-rejection.yaml.
+  proof:
+  - case-remote-url-current-rejection
+  - oracle
+  - helper-python
+- text: New bedrock_services_responses seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-bedrock-responses-model-route
+    why: The bedrock-responses-model-route behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_bedrock_responses_model_route$/)'
+  - id: case-responses-bearer-auth
+    why: The responses-bearer-auth behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_responses_bearer_auth$/)'
+  - id: case-responses-sigv4
+    why: The responses-sigv4 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_responses_sigv4$/)'
+  - id: case-response-option-gates
+    why: The response-option-gates behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_response_option_gates$/)'
+  - id: case-native-file-search-flag
+    why: The native-file-search-flag behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_native_file_search_flag$/)'
+  - id: case-inline-image-traversal
+    why: The inline-image-traversal behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_inline_image_traversal$/)'
+  - id: case-remote-image-no-fetch
+    why: The remote-image-no-fetch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_remote_image_no_fetch$/)'
+  - id: case-remote-url-current-rejection
+    why: The remote-url-current-rejection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::responses_cases::case_[0-9]+_remote_url_current_rejection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_responses.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*")"
+      && grep -lq 'bedrock_services_responses' tools/oracle/fuzz/corpus/helper_case/bedrock_services_responses*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_responses$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/bedrock-responses-model-route.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-bearer-auth.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/responses-sigv4.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/response-option-gates.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/native-file-search-flag.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/inline-image-traversal.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-image-no-fetch.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-responses/remote-url-current-rejection.yaml
+deviations:
+- what: >-
+    Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled request-URL
+    downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local bytes are required;
+    only supplied bytes or already authorized local file handles may be read.
+  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
+    feature that depends on fetching.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L80-L345
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve supported parameter gates and native file-search capability.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: standard

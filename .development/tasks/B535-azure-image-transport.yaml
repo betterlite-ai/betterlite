@@ -1,0 +1,369 @@
+id: B535
+title: Azure image HTTP execution and operation polling
+description: >-
+  Provide AzureImageTransport for the direct HTTP image branches and asynchronous operation responses, with an injected
+  polling clock. Load AZURE_OPERATION_POLLING_TIMEOUT=120 seconds through config, preserve retry-after with a 10-second
+  fallback and terminal response/errors. Only configured provider origin may supply followed operation paths; never
+  accept a request URL as a destination.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request
+  L845-L971; AzureChatCompletion.make_sync_azure_httpx_request L973-L1088. litellm/llms/azure/image_generation/http_utils.py:
+  azure_deployment_image_generation_json_body L6-L30.
+
+
+  Reuse B009 assert_same_origin for operation-location; the pin already returns 502 for a foreign origin. Poll until
+  AZURE_OPERATION_POLLING_TIMEOUT, without a second caller-deadline cutoff in this loop. Missing operation-location
+  returns 500, missing status 502, polling timeout 408, failed operation 400 with the provider error body; non-integer
+  retry-after raises ValueError.
+
+
+  Implement crates/betterlite-azure/src/image_transport.rs with adjacent tests under image_transport/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation azure_image_transport in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function image_transport_cases in betterlite-azure with these exact named cases (one per oracle file):
+  image_immediate_result, operation_location_poll, retry_after_poll, failed_operation, missing_operation_location,
+  poll_deadline, poll_default_timeout_120, retry_after_default_10, foreign_operation_origin_rejected, same_origin_502,
+  missing_operation_location_500, missing_status_502, polling_timeout_408, failed_operation_400, retry_after_not_integer.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_image_transport* using HelperCase: kind:
+  helper and the externally tagged azure_image_transport variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_azure_image_transport that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_image_operation consumes polling operation response bytes in crates/betterlite-azure/src/image_transport.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-azure/fuzz/fuzz_targets/azure_image_transport.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-azure/fuzz/corpus/azure_image_transport.
+  The adjacent test replays_the_azure_image_transport_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/azure/image_transport.rs
+  and its loader wiring: AZURE_OPERATION_POLLING_TIMEOUT. Module-level settings enter litellm_settings; deployment
+  settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified above
+  and in the linked branches; existing key owners remain unchanged. Write config rstest azure_image_transport_config_cases
+  with named cases loads_azure_operation_polling_timeout, plus rejects_unrelated_key. Each loads case calls the
+  real config loader with that key and asserts the resolved value, default, precedence and secret redaction where
+  applicable. Seed B002 config_yaml with new azure_image_transport* files for every key; reuse its parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone azure_image_transport_credential_identity_isolation in betterlite-azure for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone azure_image_transport_secret_safe_failure in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 233 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 255 production lines, 217 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 55 parser target/replay lines, 28 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 695 planned, 700 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/image_transport.rs
+  - crates/betterlite-azure/src/image_transport/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_image_transport.rs
+  - tools/oracle/src/helpers/azure_image_transport/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_image_transport.py
+  - tools/oracle/cases/helpers/providers/azure-image-transport/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_image_transport*
+  - crates/betterlite-azure/fuzz/Cargo.toml
+  - crates/betterlite-azure/fuzz/fuzz_targets/azure_image_transport.rs
+  - crates/betterlite-azure/fuzz/corpus/azure_image_transport/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/image_transport.rs
+  - crates/betterlite-config/src/providers/azure/image_transport/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_image_transport_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_image_transport*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L502-L505
+  why: Polling timeout; this image path uses response retry-after or 10 seconds.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L845-L1088
+  why: >-
+    Own AzureChatCompletion.make_async_azure_httpx_request, AzureChatCompletion.make_sync_azure_httpx_request. Other
+    functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/image_generation/http_utils.py#L6-L30
+  why: Own azure_deployment_image_generation_json_body. Other functions in this file remain with the owners listed
+    below.
+dod:
+- text: >-
+    image immediate result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/image-immediate-result.yaml.
+  proof:
+  - case-image-immediate-result
+  - oracle
+  - helper-python
+- text: >-
+    operation location poll: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/operation-location-poll.yaml.
+  proof:
+  - case-operation-location-poll
+  - oracle
+  - helper-python
+- text: 'retry after poll: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/retry-after-poll.yaml.'
+  proof:
+  - case-retry-after-poll
+  - oracle
+  - helper-python
+- text: 'failed operation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/failed-operation.yaml.'
+  proof:
+  - case-failed-operation
+  - oracle
+  - helper-python
+- text: >-
+    missing operation location: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/missing-operation-location.yaml.
+  proof:
+  - case-missing-operation-location
+  - oracle
+  - helper-python
+- text: 'poll deadline: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/poll-deadline.yaml.'
+  proof:
+  - case-poll-deadline
+  - oracle
+  - helper-python
+- text: >-
+    poll default timeout 120: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/poll-default-timeout-120.yaml.
+  proof:
+  - case-poll-default-timeout-120
+  - oracle
+  - helper-python
+- text: >-
+    retry after default 10: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/retry-after-default-10.yaml.
+  proof:
+  - case-retry-after-default-10
+  - oracle
+  - helper-python
+- text: >-
+    foreign operation origin rejected: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/foreign-operation-origin-rejected.yaml.
+  proof:
+  - case-foreign-operation-origin-rejected
+  - oracle
+  - helper-python
+- text: 'same origin 502: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/same-origin-502.yaml.'
+  proof:
+  - case-same-origin-502
+  - oracle
+  - helper-python
+- text: >-
+    missing operation location 500: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/missing-operation-location-500.yaml.
+  proof:
+  - case-missing-operation-location-500
+  - oracle
+  - helper-python
+- text: 'missing status 502: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/missing-status-502.yaml.'
+  proof:
+  - case-missing-status-502
+  - oracle
+  - helper-python
+- text: 'polling timeout 408: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/polling-timeout-408.yaml.'
+  proof:
+  - case-polling-timeout-408
+  - oracle
+  - helper-python
+- text: 'failed operation 400: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/failed-operation-400.yaml.'
+  proof:
+  - case-failed-operation-400
+  - oracle
+  - helper-python
+- text: >-
+    retry after not integer: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-image-transport/retry-after-not-integer.yaml.
+  proof:
+  - case-retry-after-not-integer
+  - oracle
+  - helper-python
+- text: New azure_image_transport seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_image_operation has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+- text: AZURE_OPERATION_POLLING_TIMEOUT is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-azure-operation-polling-timeout
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-image-immediate-result
+    why: The image-immediate-result behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_image_immediate_result$/)'
+  - id: case-operation-location-poll
+    why: The operation-location-poll behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_operation_location_poll$/)'
+  - id: case-retry-after-poll
+    why: The retry-after-poll behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_retry_after_poll$/)'
+  - id: case-failed-operation
+    why: The failed-operation behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_failed_operation$/)'
+  - id: case-missing-operation-location
+    why: The missing-operation-location behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_missing_operation_location$/)'
+  - id: case-poll-deadline
+    why: The poll-deadline behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_poll_deadline$/)'
+  - id: case-poll-default-timeout-120
+    why: The poll-default-timeout-120 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_poll_default_timeout_120$/)'
+  - id: case-retry-after-default-10
+    why: The retry-after-default-10 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_retry_after_default_10$/)'
+  - id: case-foreign-operation-origin-rejected
+    why: The foreign-operation-origin-rejected behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_foreign_operation_origin_rejected$/)'
+  - id: case-same-origin-502
+    why: The same-origin-502 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_same_origin_502$/)'
+  - id: case-missing-operation-location-500
+    why: The missing-operation-location-500 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_missing_operation_location_500$/)'
+  - id: case-missing-status-502
+    why: The missing-status-502 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_missing_status_502$/)'
+  - id: case-polling-timeout-408
+    why: The polling-timeout-408 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_polling_timeout_408$/)'
+  - id: case-failed-operation-400
+    why: The failed-operation-400 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_failed_operation_400$/)'
+  - id: case-retry-after-not-integer
+    why: The retry-after-not-integer behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::image_transport_cases::case_[0-9]+_retry_after_not_integer$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_image_transport.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_image_transport*")"
+      && grep -lq 'azure_image_transport' tools/oracle/fuzz/corpus/helper_case/azure_image_transport* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_image_transport$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_image_transport)"
+      && grep -q 'decode_image_operation' crates/betterlite-azure/fuzz/fuzz_targets/azure_image_transport.rs &&
+      cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_image_transport_corpus$/)'
+  - id: config-azure-operation-polling-timeout
+    why: The AZURE_OPERATION_POLLING_TIMEOUT setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_image_transport_config_cases::case_[0-9]+_loads_azure_operation_polling_timeout$/)'
+      && grep -lq 'AZURE_OPERATION_POLLING_TIMEOUT' crates/betterlite-config/fuzz/corpus/config_yaml/azure_image_transport*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_image_transport_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_image_transport*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_image_transport_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_image_transport_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-image-transport/image-immediate-result.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/operation-location-poll.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/retry-after-poll.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/failed-operation.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/missing-operation-location.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/poll-deadline.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/poll-default-timeout-120.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/retry-after-default-10.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/foreign-operation-origin-rejected.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/same-origin-502.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/missing-operation-location-500.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/missing-status-502.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/polling-timeout-408.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/failed-operation-400.yaml
+- tools/oracle/cases/helpers/providers/azure-image-transport/retry-after-not-integer.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
+  that implementation or its injected typed boundary.
+- 'litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531; reuse that implementation
+  or its injected typed boundary.'
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
+  belong to B534; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
+  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
+  injected typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.make_sync_azure_openai_chat_completion_request
+  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L165-L194; AzureChatCompletion.completion
+  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming L577-L652
+  belong to B685; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Only configured provider origin may supply followed operation paths; never accept a request URL as a destination.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

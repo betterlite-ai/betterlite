@@ -1,0 +1,186 @@
+id: B543
+title: Azure assistants threads and runs
+description: >-
+  Implement Azure thread run/poll and run-stream operations using B521 wire/state records and B686 client preparation.
+  Preserve additional_instructions, tools and errors; B686 owns assistant definitions, B687 threads, and B697 message/attachment
+  policy.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/assistants.py:
+  AzureAssistantsAPI.arun_thread L663-L703; AzureAssistantsAPI.async_run_thread_stream L705-L730; AzureAssistantsAPI.run_thread_stream
+  L732-L757; AzureAssistantsAPI.run_thread L762-L781; AzureAssistantsAPI.run_thread L784-L803; AzureAssistantsAPI.run_thread
+  L807-L905.
+
+
+  Implement crates/betterlite-azure/src/assistants.rs with adjacent tests under assistants/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation azure_assistants in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function assistants_cases in betterlite-azure with these exact named cases (one per oracle file):
+  run_poll, run_stream, run_instructions_tools, run_failure. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
+  response and captured upstream request. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_assistants* using HelperCase: kind: helper
+  and the externally tagged azure_assistants variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_azure_assistants that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 227 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 250 production lines, 81 behavior/config-test lines,
+  71 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 427 planned, 450 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/assistants.rs
+  - crates/betterlite-azure/src/assistants/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_assistants.rs
+  - tools/oracle/src/helpers/azure_assistants/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_assistants.py
+  - tools/oracle/cases/helpers/providers/azure-assistants/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_assistants*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L663-L905
+  why: >-
+    Own AzureAssistantsAPI.arun_thread, AzureAssistantsAPI.async_run_thread_stream, AzureAssistantsAPI.run_thread_stream,
+    AzureAssistantsAPI.run_thread, AzureAssistantsAPI.run_thread, AzureAssistantsAPI.run_thread. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'run poll: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistants/run-poll.yaml.'
+  proof:
+  - case-run-poll
+  - oracle
+  - helper-python
+- text: 'run stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistants/run-stream.yaml.'
+  proof:
+  - case-run-stream
+  - oracle
+  - helper-python
+- text: 'run instructions tools: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistants/run-instructions-tools.yaml.'
+  proof:
+  - case-run-instructions-tools
+  - oracle
+  - helper-python
+- text: 'run failure: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-assistants/run-failure.yaml.'
+  proof:
+  - case-run-failure
+  - oracle
+  - helper-python
+- text: New azure_assistants seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-run-poll
+    why: The run-poll behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_run_poll$/)'
+  - id: case-run-stream
+    why: The run-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_run_stream$/)'
+  - id: case-run-instructions-tools
+    why: The run-instructions-tools behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_run_instructions_tools$/)'
+  - id: case-run-failure
+    why: The run-failure behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_run_failure$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_assistants.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_assistants*")"
+      && grep -lq 'azure_assistants' tools/oracle/fuzz/corpus/helper_case/azure_assistants* && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_assistants$/)' && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-assistants/run-poll.yaml
+- tools/oracle/cases/helpers/providers/azure-assistants/run-stream.yaml
+- tools/oracle/cases/helpers/providers/azure-assistants/run-instructions-tools.yaml
+- tools/oracle/cases/helpers/providers/azure-assistants/run-failure.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
+  that implementation or its injected typed boundary.
+- 'litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531; reuse that implementation
+  or its injected typed boundary.'
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
+  belong to B534; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request L845-L971; AzureChatCompletion.make_sync_azure_httpx_request
+  L973-L1088 belong to B535; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
+  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
+  injected typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.make_sync_azure_openai_chat_completion_request
+  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L165-L194; AzureChatCompletion.completion
+  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming L577-L652
+  belong to B685; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/assistants.py: AzureAssistantsAPI.__init__ L37-L38; AzureAssistantsAPI.get_azure_client L40-L64;
+  AzureAssistantsAPI.async_get_azure_client L66-L92; AzureAssistantsAPI.async_get_assistants L96-L120; AzureAssistantsAPI.get_assistants
+  L125-L136; AzureAssistantsAPI.get_assistants L139-L150; AzureAssistantsAPI.get_assistants L154-L190; AzureAssistantsAPI.async_create_assistants
+  L908-L932; AzureAssistantsAPI.create_assistants L934-L971; AzureAssistantsAPI.async_delete_assistant L974-L998;
+  AzureAssistantsAPI.delete_assistant L1000-L1037 belong to B686; reuse that implementation or its injected typed
+  boundary.
+- >-
+  litellm/llms/azure/assistants.py: AzureAssistantsAPI.async_create_thread L425-L457; AzureAssistantsAPI.create_thread
+  L462-L476; AzureAssistantsAPI.create_thread L479-L493; AzureAssistantsAPI.create_thread L497-L553; AzureAssistantsAPI.async_get_thread
+  L555-L580; AzureAssistantsAPI.get_thread L585-L598; AzureAssistantsAPI.get_thread L601-L614; AzureAssistantsAPI.get_thread
+  L618-L656 belong to B687; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure/assistants.py: AzureAssistantsAPI.a_add_message L194-L229; AzureAssistantsAPI.add_message L234-L248;
+  AzureAssistantsAPI.add_message L251-L265; AzureAssistantsAPI.add_message L269-L318; AzureAssistantsAPI.async_get_messages
+  L320-L345; AzureAssistantsAPI.get_messages L350-L363; AzureAssistantsAPI.get_messages L366-L379; AzureAssistantsAPI.get_messages
+  L383-L421 belong to B697; reuse that implementation or its injected typed boundary.
+pitfalls:
+- The source has over a thousand lines of repeated SDK wrappers; only Azure deltas are new logic.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,328 @@
+id: B527
+title: OpenAI vector stores and attached files
+description: >-
+  Add typed VectorStoreSearch/Create and attached-file create/list/retrieve/content/update/delete operations with
+  their response records. Preserve chunking strategy, attributes, ranking filters and pagination. B090 owns the
+  public resource API; query embedding is not performed by the OpenAI adapter.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/vector_stores/transformation.py:
+  OpenAIVectorStoreConfig.get_auth_credentials L34-L42; OpenAIVectorStoreConfig.get_vector_store_endpoints_by_type
+  L44-L48; OpenAIVectorStoreConfig.validate_environment L50-L70; OpenAIVectorStoreConfig.get_complete_url L72-L91;
+  OpenAIVectorStoreConfig.transform_search_vector_store_request L93-L115; OpenAIVectorStoreConfig.transform_search_vector_store_response
+  L117-L128; OpenAIVectorStoreConfig.transform_create_vector_store_request L130-L148; OpenAIVectorStoreConfig.transform_create_vector_store_response
+  L150-L159. litellm/llms/openai/vector_store_files/transformation.py: _clean_dict L26-L27; OpenAIVectorStoreFilesConfig.get_auth_credentials
+  L34-L42; OpenAIVectorStoreFilesConfig.get_vector_store_file_endpoints_by_type L44-L61; OpenAIVectorStoreFilesConfig.validate_environment
+  L63-L79; OpenAIVectorStoreFilesConfig.get_complete_url L81-L97; OpenAIVectorStoreFilesConfig.transform_create_vector_store_file_request
+  L99-L115; OpenAIVectorStoreFilesConfig.transform_create_vector_store_file_response L117-L129; OpenAIVectorStoreFilesConfig.transform_list_vector_store_files_request
+  L131-L139; OpenAIVectorStoreFilesConfig.transform_list_vector_store_files_response L141-L153; OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_request
+  L155-L163; OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_response L165-L177; OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_content_request
+  L179-L187; OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_content_response L189-L201; OpenAIVectorStoreFilesConfig.transform_update_vector_store_file_request
+  L203-L220; OpenAIVectorStoreFilesConfig.transform_update_vector_store_file_response L222-L234; OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_request
+  L236-L244; OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_response L246-L258. litellm/utils.py:
+  add_openai_metadata L10292-L10324.
+
+
+  Implement crates/betterlite-openai/src/vector_stores.rs with adjacent tests under vector_stores/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation openai_vector_stores in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function vector_stores_cases in betterlite-openai with these exact named cases (one per oracle file):
+  store_create, search_ranking_filter, file_create_chunking, file_list_pagination, file_retrieve_content, file_update_attributes,
+  file_delete. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports.
+  HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks
+  retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_vector_stores* using HelperCase: kind:
+  helper and the externally tagged openai_vector_stores variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_openai_vector_stores that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_vector_reply consumes vector-store query/lifecycle JSON response bytes in crates/betterlite-openai/src/vector_stores.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/openai_vector_stores.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-openai/fuzz/corpus/openai_vector_stores.
+  The adjacent test replays_the_openai_vector_stores_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 346 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 365 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 636 planned, 650 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/vector_stores.rs
+  - crates/betterlite-openai/src/vector_stores/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_vector_stores.rs
+  - tools/oracle/src/helpers/openai_vector_stores/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_vector_stores.py
+  - tools/oracle/cases/helpers/providers/openai-vector-stores/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_vector_stores*
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/openai_vector_stores.rs
+  - crates/betterlite-openai/fuzz/corpus/openai_vector_stores/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L34-L159
+  why: >-
+    Own OpenAIVectorStoreConfig.get_auth_credentials, OpenAIVectorStoreConfig.get_vector_store_endpoints_by_type,
+    OpenAIVectorStoreConfig.validate_environment, OpenAIVectorStoreConfig.get_complete_url, OpenAIVectorStoreConfig.transform_search_vector_store_request,
+    OpenAIVectorStoreConfig.transform_search_vector_store_response, OpenAIVectorStoreConfig.transform_create_vector_store_request,
+    OpenAIVectorStoreConfig.transform_create_vector_store_response. Other functions in this file remain with the
+    owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L26-L258
+  why: >-
+    Own _clean_dict, OpenAIVectorStoreFilesConfig.get_auth_credentials, OpenAIVectorStoreFilesConfig.get_vector_store_file_endpoints_by_type,
+    OpenAIVectorStoreFilesConfig.validate_environment, OpenAIVectorStoreFilesConfig.get_complete_url, OpenAIVectorStoreFilesConfig.transform_create_vector_store_file_request,
+    OpenAIVectorStoreFilesConfig.transform_create_vector_store_file_response, OpenAIVectorStoreFilesConfig.transform_list_vector_store_files_request,
+    OpenAIVectorStoreFilesConfig.transform_list_vector_store_files_response, OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_request,
+    OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_response, OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_content_request,
+    OpenAIVectorStoreFilesConfig.transform_retrieve_vector_store_file_content_response, OpenAIVectorStoreFilesConfig.transform_update_vector_store_file_request,
+    OpenAIVectorStoreFilesConfig.transform_update_vector_store_file_response, OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_request,
+    OpenAIVectorStoreFilesConfig.transform_delete_vector_store_file_response. Other functions in this file remain
+    with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10292-L10324
+  why: Own add_openai_metadata. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'store create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/store-create.yaml.'
+  proof:
+  - case-store-create
+  - oracle
+  - helper-python
+- text: 'search ranking filter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/search-ranking-filter.yaml.'
+  proof:
+  - case-search-ranking-filter
+  - oracle
+  - helper-python
+- text: 'file create chunking: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-create-chunking.yaml.'
+  proof:
+  - case-file-create-chunking
+  - oracle
+  - helper-python
+- text: 'file list pagination: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-list-pagination.yaml.'
+  proof:
+  - case-file-list-pagination
+  - oracle
+  - helper-python
+- text: 'file retrieve content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-retrieve-content.yaml.'
+  proof:
+  - case-file-retrieve-content
+  - oracle
+  - helper-python
+- text: >-
+    file update attributes: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-update-attributes.yaml.
+  proof:
+  - case-file-update-attributes
+  - oracle
+  - helper-python
+- text: 'file delete: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-vector-stores/file-delete.yaml.'
+  proof:
+  - case-file-delete
+  - oracle
+  - helper-python
+- text: New openai_vector_stores seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_vector_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-store-create
+    why: The store-create behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_store_create$/)'
+  - id: case-search-ranking-filter
+    why: The search-ranking-filter behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_search_ranking_filter$/)'
+  - id: case-file-create-chunking
+    why: The file-create-chunking behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_create_chunking$/)'
+  - id: case-file-list-pagination
+    why: The file-list-pagination behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_list_pagination$/)'
+  - id: case-file-retrieve-content
+    why: The file-retrieve-content behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_retrieve_content$/)'
+  - id: case-file-update-attributes
+    why: The file-update-attributes behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_update_attributes$/)'
+  - id: case-file-delete
+    why: The file-delete behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_file_delete$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_vector_stores.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_vector_stores*")"
+      && grep -lq 'openai_vector_stores' tools/oracle/fuzz/corpus/helper_case/openai_vector_stores* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_vector_stores$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_vector_stores)"
+      && grep -q 'decode_vector_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_vector_stores.rs && cargo
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_vector_stores_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-vector-stores/store-create.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/search-ranking-filter.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/file-create-chunking.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/file-list-pagination.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/file-retrieve-content.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/file-update-attributes.yaml
+- tools/oracle/cases/helpers/providers/openai-vector-stores/file-delete.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- 'litellm/utils.py: get_requester_metadata L10327-L10341 belong to B024; reuse that implementation or its injected
+  typed boundary.'
+- 'litellm/utils.py: extract_duration_from_srt_or_vtt L10168-L10194 belong to B515; reuse that implementation or
+  its injected typed boundary.'
+- >-
+  litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class L118-L126; _snapshot_exception_for_hook
+  L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response L168-L179; _get_cached_llm_caching_handler
+  L182-L193; _get_cached_audio_utils L201-L212; print_verbose L544-L559; _print_verbose_is_active L562-L567; custom_llm_setup
+  L572-L581; _add_custom_logger_callback_to_specific_event L584-L621; _custom_logger_class_exists_in_success_callbacks
+  L624-L639; _custom_logger_class_exists_in_failure_callbacks L642-L657; _is_same_registered_custom_logger L660-L668;
+  get_request_guardrails L671-L678; get_applied_guardrails L681-L696; load_credentials_from_list L699-L719; get_dynamic_callbacks
+  L722-L728; _is_gemini_model L731-L742; _remove_thought_signature_from_id L745-L751; _process_assistant_message_tool_calls
+  L754-L782; _process_tool_message_id L785-L795; _remove_thought_signatures_from_messages L798-L823; _restore_correlation_context_if_supported
+  L826-L838; _is_streaming_response_for_correlation L841-L873; _is_converted_stream_result L876-L880; _run_success_deployment_hook_on_converted_chat_stream
+  L883-L906; _NamedFile.name L912-L912; _LoggingClassGetter.__call__ L916-L916; _ResponseMetadataUpdater.__call__
+  L920-L929; _SupportedOpenAIParamsGetter.__call__ L933-L939; _NestedPathChecker.__call__ L943-L943; _NestedValueDeleter.__call__
+  L947-L947; _BaseModelFromMetadataGetter.__call__ L951-L951; _ocr_document_summary L954-L971; function_setup L981-L1344;
+  _dispatch_success_logging L1347-L1368; _schedule_async_success_logging L1371-L1408; _client_async_logging_helper
+  L1411-L1431; _get_wrapper_num_retries L1434-L1456; _get_wrapper_timeout L1459-L1467; check_coroutine L1470-L1472;
+  async_pre_call_deployment_hook L1475-L1495; async_post_call_success_deployment_hook L1498-L1531; async_post_call_failure_deployment_hook
+  L1534-L1584; post_call_processing L1587-L1671; client L1674-L2315; _is_async_request L2318-L2348; _is_streaming_request
+  L2361-L2373; _select_tokenizer L2376-L2384; _huggingface_tokenizer_backend L2387-L2392; _select_custom_tokenizer_helper
+  L2396-L2400; _select_tokenizer_helper L2403-L2419; _return_openai_tokenizer L2422-L2423; uses_anthropic_tokenizer
+  L2426-L2427; huggingface_tokenizer_kind L2433-L2443; _return_huggingface_tokenizer L2446-L2453; _load_huggingface_tokenizer
+  L2457-L2469; supports_httpx_timeout L2589-L2598; supports_system_messages L2601-L2619; supports_web_search L2622-L2640;
+  supports_url_context L2643-L2661; supports_native_streaming L2664-L2695; supports_response_schema L2698-L2739;
+  supports_parallel_function_calling L2742-L2750; supports_function_calling L2753-L2771; supports_tool_choice L2774-L2778;
+  _supports_provider_info_factory L2781-L2790; _supports_factory L2793-L2852; declared_value_factory L2855-L2892;
+  is_explicitly_disabled_factory L2895-L2938; supports_audio_input L2941-L2943; supports_pdf_input L2946-L2948;
+  supports_audio_output L2951-L2953; supports_prompt_caching L2956-L2974; supports_prompt_cache_breakpoint L2977-L2982;
+  supports_thinking_cache_preservation L2985-L2990; supports_computer_use L2993-L3011; is_vision_explicitly_disabled
+  L3014-L3020; supports_vision L3023-L3038; supports_reasoning L3041-L3045; supports_anthropic_thinking_payload
+  L3048-L3051; supports_none_reasoning_effort L3054-L3058; supports_mid_conversation_system L3061-L3067; supports_native_structured_output
+  L3070-L3078; get_supported_regions L3081-L3121; supports_embedding_image_input L3124-L3132; _update_dictionary
+  L3136-L3151; _convert_stringified_numbers L3154-L3167; _resolve_builtin_model_cost_entry L3190-L3221; is_generalized_model_info
+  L3224-L3235; _get_builtin_model_info_for_registration L3238-L3250; set_live_deployment_replay L3266-L3274; reapply_runtime_model_cost_registrations
+  L3277-L3298; cost_map_omits_token_price L3301-L3314; register_model L3317-L3479; _should_drop_param L3482-L3486;
+  _bedrock_route_for_request L3489-L3494; _get_non_default_params L3497-L3507; get_optional_params_transcription
+  L3510-L3597; _map_openai_size_to_vertex_ai_aspect_ratio L3600-L3614; get_optional_params_image_gen L3617-L3744;
+  get_optional_params_embeddings L3747-L4101; _remove_additional_properties L4104-L4124; _remove_strict_from_schema
+  L4127-L4145; _remove_json_schema_refs L4148-L4178; _remove_unsupported_params L4181-L4193; filter_out_litellm_params
+  L4196-L4199; _provider_supports_vertex_params L4202-L4210; PreProcessNonDefaultParams.base_pre_process_non_default_params
+  L4215-L4257; PreProcessNonDefaultParams.embedding_pre_process_non_default_params L4260-L4278; pre_process_non_default_params
+  L4281-L4339; remove_sensitive_keys_from_dict L4342-L4353; pre_process_optional_params L4356-L4431; add_provider_specific_params_to_optional_params
+  L5049-L5087; _apply_openai_param_overrides L5090-L5110; provider_rejectable_params L5116-L5126; get_non_default_params
+  L5129-L5142; calculate_max_parallel_requests L5145-L5185; _get_deployment_order L5188-L5198; get_order_filtered_deployments
+  L5201-L5217; get_excluded_filtered_deployments L5220-L5242; _get_model_region L5245-L5267; _infer_model_region
+  L5270-L5310; _is_region_eu L5313-L5324; _is_region_us L5327-L5338; is_region_allowed L5341-L5347; get_model_region
+  L5350-L5371; get_first_chars_messages L5374-L5380; _count_characters L5383-L5386; get_response_string L5389-L5432;
+  get_utc_datetime L5435-L5436; _strip_stable_vertex_version L5501-L5502; _strip_dated_snapshot_suffix L5508-L5509;
+  _get_base_bedrock_model L5512-L5521; _strip_openai_finetune_model_name L5524-L5540; _strip_model_name L5543-L5559;
+  get_model_cost_mutation_generation L5572-L5573; _invalidate_model_cost_lowercase_map L5576-L5588; _rebuild_model_cost_lowercase_map
+  L5591-L5599; _handle_stale_map_entry_rebuild L5602-L5618; _handle_new_key_with_scan L5621-L5637; _get_model_cost_key
+  L5640-L5678; _get_model_info_from_model_cost L5681-L5682; _check_provider_match L5685-L5727; _get_model_info_from_generalization
+  L5742-L5777; _strip_mantle_region_prefix L5780-L5783; _get_potential_model_names L5786-L5844; _get_max_position_embeddings
+  L5847-L5867; _cached_get_model_info_helper L5871-L5885; get_provider_info L5888-L5903; _is_potential_model_name_in_model_cost
+  L5906-L5915; _model_not_mapped_message L5921-L5925; _get_model_info_helper L5928-L6377; _build_model_info L6380-L6404;
+  _cached_get_model_info L6408-L6413; json_schema_type L6504-L6527; modify_url L6619-L6622; load_test_model L6625-L6665;
+  get_provider_fields L6668-L6681; create_proxy_transport_and_mounts L6684-L6706; validate_environment L6709-L7128;
+  acreate L7131-L7132; valid_model L7135-L7144; check_valid_key L7147-L7165; _should_retry L7168-L7194; _get_retry_after_from_exception_header
+  L7197-L7228; _calculate_retry_after L7231-L7254; register_prompt_template L7258-L7322; TextCompletionStreamWrapper.__init__
+  L7326-L7336; TextCompletionStreamWrapper.__iter__ L7338-L7339; TextCompletionStreamWrapper.__aiter__ L7341-L7342;
+  TextCompletionStreamWrapper.convert_to_text_completion_object L7344-L7367; TextCompletionStreamWrapper.__next__
+  L7369-L7389; TextCompletionStreamWrapper.__anext__ L7391-L7400; mock_stream_usage_chunk L7403-L7413; mock_completion_streaming_obj
+  L7416-L7443; async_mock_completion_streaming_obj L7446-L7473; read_config_args L7477-L7488; process_system_message
+  L7494-L7504; process_messages L7507-L7531; attempt_message_addition L7534-L7551; can_add_message L7554-L7557;
+  get_token_count L7560-L7561; shorten_message_to_fit_limit L7564-L7614; trim_messages L7620-L7718; AvailableModelsCache.__init__
+  L7725-L7727; AvailableModelsCache._get_env_hash L7729-L7732; AvailableModelsCache._check_env_changed L7734-L7740;
+  AvailableModelsCache._get_cache_key L7742-L7753; AvailableModelsCache.get_cached_model_info L7755-L7772; AvailableModelsCache.set_cached_model_info
+  L7774-L7782; _infer_valid_provider_from_env_vars L7789-L7810; _get_valid_models_from_provider_api L7813-L7832;
+  get_valid_models L7835-L7906; print_args_passed_to_litellm L7909-L7949; get_logging_id L7952-L7957; _get_base_model_from_metadata
+  L7960-L7983; ModelResponseIterator.__init__ L7987-L7994; ModelResponseIterator.__iter__ L7997-L7998; ModelResponseIterator.__next__
+  L8000-L8004; ModelResponseIterator.__aiter__ L8007-L8008; ModelResponseIterator.__anext__ L8010-L8014; ModelResponseListIterator.__init__
+  L8018-L8021; ModelResponseListIterator.__iter__ L8024-L8025; ModelResponseListIterator.__next__ L8027-L8034; ModelResponseListIterator.__aiter__
+  L8037-L8038; ModelResponseListIterator.__anext__ L8040-L8047; CustomModelResponseIterator.__init__ L8051-L8052;
+  is_cached_message L8055-L8101; is_base64_encoded L8104-L8120; get_base64_str L8123-L8129; has_tool_call_blocks
+  L8132-L8141; any_assistant_message_has_thinking_blocks L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks
+  L8165-L8194; add_dummy_tool L8197-L8215; convert_to_dict L8228-L8243; convert_list_message_to_dict L8246-L8252;
+  validate_and_fix_openai_messages L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param
+  L8289-L8311; cleanup_none_field_in_message L8314-L8321; validate_chat_completion_user_messages L8324-L8362; validate_chat_completion_tool_choice
+  L8365-L8396; validate_openai_optional_params L8399-L8415; _get_bundled_model_cost_map L8419-L8424; _get_model_cost_entry_for_provider_config
+  L8427-L8442; ProviderConfigManager._build_provider_config_map L8452-L8625; ProviderConfigManager._get_azure_config
+  L8628-L8642; ProviderConfigManager._get_azure_ai_config L8645-L8649; ProviderConfigManager._get_vertex_ai_config
+  L8652-L8671; ProviderConfigManager._get_bedrock_config L8674-L8678; ProviderConfigManager._get_cohere_config L8681-L8687;
+  ProviderConfigManager._get_sail_chat_config L8690-L8693; ProviderConfigManager._get_langgraph_config L8696-L8700;
+  ProviderConfigManager._get_langflow_config L8703-L8707; ProviderConfigManager.get_provider_chat_config L8710-L8765;
+  ProviderConfigManager.get_provider_embedding_config L8768-L8858; ProviderConfigManager.get_provider_rerank_config
+  L8861-L8908; ProviderConfigManager.get_provider_decisions_config L8911-L8928; ProviderConfigManager.get_provider_anthropic_messages_config
+  L8931-L8935; ProviderConfigManager._get_provider_anthropic_messages_config_cached L8939-L9010; ProviderConfigManager.get_provider_audio_transcription_config
+  L9013-L9110; ProviderConfigManager.get_provider_responses_api_config L9113-L9148; ProviderConfigManager._get_python_responses_api_config
+  L9151-L9243; ProviderConfigManager.get_provider_skills_api_config L9246-L9260; ProviderConfigManager.get_provider_evals_api_config
+  L9263-L9279; ProviderConfigManager.get_provider_text_completion_config L9282-L9292; ProviderConfigManager.get_provider_model_info
+  L9295-L9342; ProviderConfigManager.get_provider_passthrough_config L9345-L9397; ProviderConfigManager.get_provider_image_variation_config
+  L9400-L9408; ProviderConfigManager.get_provider_files_config L9411-L9445; ProviderConfigManager.get_provider_batches_config
+  L9448-L9460; ProviderConfigManager.get_provider_vector_store_config L9463-L9472; ProviderConfigManager.get_provider_vector_stores_config
+  L9475-L9561; ProviderConfigManager.get_provider_vector_store_files_config L9564-L9573; ProviderConfigManager.get_provider_image_generation_config
+  L9576-L9688; ProviderConfigManager.get_provider_video_config L9691-L9725; ProviderConfigManager.get_provider_container_config
+  L9728-L9743; ProviderConfigManager.get_provider_realtime_config L9746-L9758; ProviderConfigManager.get_provider_realtime_http_config
+  L9761-L9782; ProviderConfigManager.get_provider_image_edit_config L9785-L9857; ProviderConfigManager.get_provider_search_config
+  L9860-L9916; ProviderConfigManager.get_provider_sandbox_config L9919-L9934; ProviderConfigManager.get_provider_harness_config
+  L9937-L9965; ProviderConfigManager.get_provider_text_to_speech_config L9968-L10033; ProviderConfigManager.get_provider_google_genai_generate_content_config
+  L10036-L10067; get_end_user_id_for_cost_tracking L10070-L10096; should_use_cohere_v1_client L10099-L10105; get_prompt_cache_min_tokens
+  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; _add_path_to_api_base L10197-L10232; get_standard_openai_params
+  L10235-L10236; get_non_default_completion_params L10239-L10240; peek_reasoning_summary_aliases L10243-L10258;
+  strip_reasoning_summary_aliases_from_optional_params L10261-L10283; get_non_default_transcription_params L10286-L10289;
+  return_raw_request L10344-L10389; jsonify_tools L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion
+  L10417-L10424; __getattr__ L10427-L10439 belong to B157; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer L2518-L2532; create_tokenizer
+  L2535-L2547 belong to B195; reuse that implementation or its injected typed boundary.
+- 'litellm/utils.py: token_counter L2550-L2586 belong to B196; reuse that implementation or its injected typed boundary.'
+- 'litellm/utils.py: get_optional_params L4434-L5043 belong to B175; reuse that implementation or its injected typed
+  boundary.'
+- 'litellm/utils.py: get_max_tokens L5439-L5498; get_model_info L6416-L6497 belong to B205; reuse that implementation
+  or its injected typed boundary.'
+- 'litellm/utils.py: function_to_dict L6530-L6616 belong to B178; reuse that implementation or its injected typed
+  boundary.'
+pitfalls:
+- Preserve chunking strategy, attributes, ranking filters and pagination.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: standard
