@@ -1,0 +1,19 @@
+target-version = "py311"
+line-length = 100
+[lint]
+select = ["ALL"]
+ignore = [
+  "C\u0050Y001",
+  "D",
+  "EM101",
+  "EM102",
+  "ISC001",
+  "RUF036",
+  "S603",
+  "S607",
+  "TC006",
+  "TRY003",
+  "TRY004",
+  "TRY301",
+  "COM812",
+]

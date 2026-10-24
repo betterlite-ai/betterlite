@@ -1,0 +1,21 @@
+[package]
+name = "betterlite-oracle-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-oracle = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "helper_case"
+path = "fuzz_targets/helper_case.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
