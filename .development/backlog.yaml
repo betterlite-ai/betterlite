@@ -225,11 +225,13 @@ tasks:
     milestone: M2 routing
     title: Latency, cost, usage and least-busy routing strategies
     status: todo
-    depends_on: [B016]
+    depends_on:
+    - B016
+    - B314
     file: null
     covers:
-      - "litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py"
-      - "litellm/router_utils/pre_call_checks/{model_rate_limit_check,io_token_rate_limit_check}.py"
+    - litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py
+    - litellm/router_utils/pre_call_checks/{model_rate_limit_check,io_token_rate_limit_check}.py
   - id: B020
     milestone: M2 routing
     title: Tag, budget, access window and affinity routing
@@ -2014,3 +2016,14 @@ tasks:
     file: tasks/B313-model-generalizations.yaml
     covers:
     - litellm/litellm_core_utils/fallback_generalizations.py
+
+  - id: B314
+    milestone: M2 routing
+    title: Least-busy selection and in-flight accounting
+    status: todo
+    depends_on:
+    - B016
+    - B304
+    file: tasks/B314-least-busy.yaml
+    covers:
+    - litellm/router_strategy/least_busy.py
