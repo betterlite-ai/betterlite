@@ -2469,18 +2469,16 @@ tasks:
     title: Auto-router identity, member permissions and inference checks
     status: todo
     depends_on:
-    - B329
-    - B331
+    - B377
+    - B378
     - B052
-    - B057
-    - B058
     - B060
+    - B301
+    - B361
     file: tasks/B343-auto-router-access.yaml
     covers:
-    - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
     - litellm/proxy/auth/auto_router_checks.py
-    - litellm/proxy/management_helpers/auto_router_permissions.py
-
+    - litellm/router_utils/auto_router_tuning_baseline.py
   - id: B344
     milestone: M2 routing
     title: Atomic auto-router session rollups
@@ -2917,6 +2915,33 @@ tasks:
     file: tasks/B376-feedback-signals.yaml
     covers:
     - litellm/router_strategy/adaptive_router/signals.py
+  - id: B377
+    milestone: M2 routing
+    title: Automatic router identity and dependency validation
+    status: todo
+    depends_on:
+    - B329
+    - B331
+    - B301
+    - B361
+    file: tasks/B377-router-dependencies.yaml
+    covers:
+    - litellm/router_utils/auto_router_model_naming.py
+  - id: B378
+    milestone: M2 routing
+    title: Member-owned automatic router writes
+    status: todo
+    depends_on:
+    - B377
+    - B052
+    - B057
+    - B058
+    - B060
+    - B301
+    - B361
+    file: tasks/B378-member-router-writes.yaml
+    covers:
+    - litellm/proxy/management_helpers/auto_router_permissions.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
