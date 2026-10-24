@@ -11,21 +11,36 @@ You turn backlog entries into task files that a cheaper model can finish without
 
 ## Write
 
+Size and split:
+
 - One task per backlog entry, 400 to 800 changed lines of work. When an entry needs more, split it. Append one entry per extra part with the next free ids (B999 is followed by B1000), give each part the covers globs it reimplements and the dependencies it needs, and add the parts to the original entry's depends_on. The original keeps its id, its dependents and the globs left over, so it becomes the last part. Then write a task file for every part.
-- The description says what to build and why, in prose a worker with no other context can start from.
-- scope.paths lists exactly what the task may touch.
-- Every DoD item names checks that fail when the outcome is missing. Behavior LiteLLM has goes into oracle cases, not prose. Test checks use `--no-tests=fail`.
-- References link LiteLLM at the pinned commit with line ranges, plus the docs a worker needs.
-- Pitfalls name the traps you found while reading, one sentence each.
-- review_level is security for tasks on auth, keys, secrets, budgets or spend, and standard for the rest.
-- A task on the config, router or wire-format crates lists mutants in checks.optional. A task that adds a parser of outside bytes (config, request bodies, SSE) adds a cargo-fuzz target and a check that replays its corpus.
-- Size a task by the LiteLLM code it rebuilds. The 800 lines include tests, fuzz targets and oracle adapters, so more than about 400 lines of LiteLLM logic means a split.
-- A test check filters on the module path, like `-E 'test(/^controls::/)'`, or the description names the exact test functions to write. Module and test names come from the domain; a task id never appears in code. The filter never matches a corpus replay test, so the check fails while behavior tests are missing.
-- Every check fails on the base branch. A corpus check greps for the new operation or key, not only for a corpus that replays, and every check a DoD item relies on is in its proof list.
-- Every function in a covered LiteLLM file is built or listed in out_of_scope with the task that owns it. Code nothing calls at the pinned commit is out of scope with that reason.
+- Count the LiteLLM lines a task owns (non-blank, non-comment) and size the budget from that count, never from a copied split. The 800 lines include tests, fuzz targets and the Rust and Python oracle adapters, so more than about 400 lines of LiteLLM logic means a split.
+- Split ownership by the call graph: a function goes to the task its callers depend on, and a task never calls a function owned by a task that depends on it.
 - depends_on lists what the task uses directly, never an umbrella task, so independent tasks can run in parallel.
-- Where LiteLLM falls back with a warning, betterlite does the same. Every place betterlite differs in what a LiteLLM user sees (config, wire format, headers, status or error codes, fetched URLs) is listed under deviations with its reason.
-- review_level is security also for code that gates permissions, like a route-to-call-type map behind an allowlist, or that moves credentials between deployments.
+- Edit backlog.yaml line by line in the style it already has. Never load and re-serialize it through a YAML library: a rewritten file conflicts with every other plan branch.
+
+Content:
+
+- The description says what to build and why, in prose a worker with no other context can start from. It names types, files, config keys and env vars with their defaults. Defaults are LiteLLM's, read from the same env vars and config keys, and litellm.* settings count as much as general_settings keys.
+- scope.paths lists exactly what the task may touch, including the shared dispatch file a new variant goes into (like tools/oracle/src/helpers/mod.rs).
+- References link LiteLLM at the pinned commit with line ranges you checked against the checkout, plus the docs a worker needs. A route's reference starts at its decorators, and the task lists every path and alias (/v1/..., /..., /openai/v1/..., /{provider}/v1/..., gateway aliases).
+- Pitfalls name the traps you found in this task's code, one sentence each, with the literals that matter (tool names, header names, config keys). No pitfall copied from another task.
+- Every function in a covered LiteLLM file is built or listed in out_of_scope with the task that owns it, and that owner's covers include the file. Grep for callers first: code nothing calls at the pinned commit is out of scope with "no caller at the pin", and its cases go too.
+- LiteLLM's per-provider dispatch functions in litellm/main.py (_complete_azure_ai, _complete_anthropic and the like) belong to that provider's umbrella task.
+- Code that exists only for LiteLLM's enterprise package (hooks registered from litellm_enterprise, branches taken only when it is installed) is not built. Follow what open-source LiteLLM does without it.
+- Where LiteLLM falls back with a warning, betterlite does the same. Every place betterlite differs in what a LiteLLM user sees (config, wire format, headers, status or error codes, fetched URLs) is listed under deviations with its reason. Don't claim transactions or atomicity LiteLLM doesn't have; keep its order of writes.
+- An open question becomes a deviation that states what betterlite does for now (what a user sees, with status and code), and the question goes in your notes.
+- A task that registers or changes a route gets HTTP oracle cases through the booted proxy: path, auth, status, error type, param and code, headers. Helper cases are for pure functions only, since a helper adapter can't call FastAPI handlers that read proxy_server globals. An umbrella composes the routes its parts register and never registers one again, because axum panics on a duplicate.
+- review_level is security for auth, keys, secrets, budgets, spend, code that gates permissions (like a route-to-call-type map behind an allowlist) and code that moves credentials between deployments. Standard for the rest.
+
+Checks:
+
+- Every DoD item names checks that fail when that item alone is missing, and every check it relies on (helper-python too) is in its proof list. Behavior LiteLLM has goes into oracle cases, not prose.
+- A test check uses `--no-tests=fail` and filters on the module path, like `-E 'test(/^controls::/)'`, or on the exact test functions the description names. Module and test names come from the domain; a task id never appears in code. Subtract the corpus replay test, `-E 'test(/^redaction::/) - test(replays_the_redaction_corpus)'`, so the check fails while behavior tests are missing.
+- A behavior-tests check runs every crate the description puts code and tests in.
+- Every check fails on the base branch. A corpus check first requires files this branch added, `test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- <dir>)"`, or greps for the new operation or key. A grep looks for what the parser reads: a helper seed names its operation as the variant tag under call.
+- A config key is supported only when a named betterlite-config test loads it. A grep for its name in a seed doesn't count.
+- A task on the config, router or wire-format crates lists mutants in checks.optional. A task that parses bytes from outside (config, request bodies, SSE) names the decoder function and its input, and adds a cargo-fuzz target in the decoder's crate plus a check that replays its corpus. A task that only transforms parsed records has no fuzz target.
 - Run `cargo gate validate` until it prints valid, then commit.
 
 ## Final answer
