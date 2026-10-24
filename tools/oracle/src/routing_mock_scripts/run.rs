@@ -11,10 +11,10 @@ use super::{CallOutcome, MAX_TRACE, MockScript, Outcome, ProviderCall, Wait};
 use crate::mock::ProviderRequest;
 
 pub(crate) struct Recording {
-    script: MockScript,
-    run: usize,
-    barriers: BTreeMap<String, Arc<Barrier>>,
-    trace: Vec<ProviderCall>,
+    pub(crate) script: MockScript,
+    pub(crate) run: usize,
+    pub(crate) barriers: BTreeMap<String, Arc<Barrier>>,
+    pub(crate) trace: Vec<ProviderCall>,
     pub(crate) failure: Option<Error>,
 }
 
@@ -40,16 +40,6 @@ pub(crate) struct CallGuard {
 }
 
 impl Recording {
-    pub(crate) const fn new(script: MockScript) -> Self {
-        Self {
-            script,
-            barriers: BTreeMap::new(),
-            run: 0,
-            trace: Vec::new(),
-            failure: None,
-        }
-    }
-
     pub(crate) fn admit(&mut self, request: ProviderRequest) -> Result<Ticket, Error> {
         if self.trace.len() >= MAX_TRACE {
             return Err(Error::other(format!(

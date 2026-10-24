@@ -39,7 +39,13 @@ fn parser_enforces_every_bound(#[case] bytes: Vec<u8>, #[case] error: &str) {
 
 #[test]
 fn trace_selects_each_reply_and_stops_at_its_bound() {
-    let mut recording = Recording::new(parse_script(&script(10, &[OK; 256])).unwrap());
+    let mut recording = Recording {
+        script: parse_script(&script(10, &[OK; 256])).unwrap(),
+        run: 0,
+        barriers: BTreeMap::new(),
+        trace: Vec::new(),
+        failure: None,
+    };
     let request = ProviderRequest {
         method: "POST".to_owned(),
         path: "/".to_owned(),

@@ -50,7 +50,13 @@ impl MockProvider {
             .enable_all()
             .build()
             .map_err(OracleError::MockIo)?;
-        let recording = Arc::new(Mutex::new(Recording::new(script)));
+        let recording = Arc::new(Mutex::new(Recording {
+            script,
+            run: 0,
+            barriers: BTreeMap::new(),
+            trace: Vec::new(),
+            failure: None,
+        }));
         let router = Router::new()
             .fallback(handle)
             .with_state(Arc::clone(&recording));
