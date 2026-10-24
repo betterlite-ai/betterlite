@@ -228,6 +228,7 @@ tasks:
     depends_on:
     - B016
     - B314
+    - B315
     file: null
     covers:
     - litellm/router_strategy/{least_busy,lowest_cost,lowest_latency,lowest_tpm_rpm,lowest_tpm_rpm_v2}.py
@@ -2027,3 +2028,15 @@ tasks:
     file: tasks/B314-least-busy.yaml
     covers:
     - litellm/router_strategy/least_busy.py
+
+  - id: B315
+    milestone: M2 routing
+    title: Latency and first-token latency selection
+    status: todo
+    depends_on:
+    - B016
+    - B304
+    - B013
+    file: tasks/B315-latency-routing.yaml
+    covers:
+    - litellm/router_strategy/lowest_latency.py
