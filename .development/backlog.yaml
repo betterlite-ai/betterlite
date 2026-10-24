@@ -2072,14 +2072,16 @@ tasks:
     milestone: M1 openai data plane
     title: Callback registry and configuration validation
     status: todo
-    depends_on: [B188]
+    depends_on:
+    - B188
+    - B246
     file: tasks/B189-callback-registry.yaml
     covers:
-      - "litellm/litellm_core_utils/{logging_callback_manager,custom_logger_registry}.py"
-      - "litellm/proxy/common_utils/{callback_utils,callback_config_validation}.py"
-      - "litellm/integrations/{__init__.py,custom_logger.py,Readme.md,callback_configs.json}"
-      - "litellm/integrations/_types/**"
-      - "litellm/types/integrations/{custom_logger,base_health_check}.py"
+    - litellm/litellm_core_utils/{logging_callback_manager,custom_logger_registry}.py
+    - litellm/proxy/common_utils/callback_utils.py
+    - litellm/integrations/{__init__.py,custom_logger.py,Readme.md,callback_configs.json}
+    - litellm/integrations/_types/**
+    - litellm/types/integrations/{custom_logger,base_health_check}.py
   - id: B190
     milestone: M1 openai data plane
     title: Typed request logging payloads
@@ -2632,3 +2634,12 @@ tasks:
     file: tasks/B243-sentry-scrubbing.yaml
     covers:
     - litellm/litellm_core_utils/sentry_scrubbing.py
+  - id: B246
+    milestone: M1 openai data plane
+    title: Callback config validators
+    status: todo
+    depends_on:
+    - B188
+    file: tasks/B246-callback-validation.yaml
+    covers:
+    - litellm/proxy/common_utils/callback_config_validation.py
