@@ -1,0 +1,21 @@
+name: auth-wrong-key
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers:
+    x-api-key: wrong-key
+  body:
+    model: test
+    messages: []
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own message

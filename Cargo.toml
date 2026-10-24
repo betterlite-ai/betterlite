@@ -10,11 +10,17 @@ license = "MIT"
 publish = false
 
 [workspace.dependencies]
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_ignored = "0.1.14"
 secrecy = "0.10.3"
+subtle = "2.6.1"
 thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["macros", "net", "rt-multi-thread", "signal"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json"] }
+tower = "0.5.3"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
