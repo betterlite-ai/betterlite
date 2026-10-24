@@ -1845,7 +1845,7 @@ tasks:
     title: Provider parameter capabilities and mapping
     status: todo
     depends_on: [B174]
-    file: null
+    file: tasks/B175-provider-params.yaml
     covers:
       - "litellm/litellm_core_utils/{get_supported_openai_params,model_param_helper,reasoning_effort_utils,service_tier_utils}.py"
   - id: B176
