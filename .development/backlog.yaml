@@ -2487,12 +2487,12 @@ tasks:
     - B342
     - B051
     - B070
+    - B301
     file: tasks/B344-auto-router-rollups.yaml
     covers:
     - litellm/proxy/db/autorouter_session_rollup.py
     - litellm/models/autorouter_session.py
     - litellm/repositories/autorouter_session_repository.py
-
   - id: B345
     milestone: M2 routing
     title: Shadow evaluation request and access validation
