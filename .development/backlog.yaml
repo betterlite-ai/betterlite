@@ -2539,16 +2539,13 @@ tasks:
     status: todo
     depends_on:
     - B016
-    - B017
-    - B019
-    - B020
     - B052
     - B066
+    - B301
     file: tasks/B348-router-settings.yaml
     covers:
     - litellm/proxy/management_endpoints/router_settings_endpoints.py
     - litellm/types/management_endpoints/router_settings_endpoints.py
-
   - id: B349
     milestone: M2 routing
     title: Validate and preview automatic-router configurations
