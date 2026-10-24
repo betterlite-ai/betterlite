@@ -1,0 +1,130 @@
+id: B065
+title: Attribute audit events and deliver them independently to callbacks and storage
+description: >-
+  Implement every function in management_helpers/audit_logs.py. Put record attribution,
+  create_object_audit_log and database insertion in betterlite-server's audit module;
+  put the typed AuditPayload, named callback cache and delivery path in betterlite-logging's
+  audit module. Resource-label lookup remains a separate service for its actual callers.
+  Reuse B124's LiteLLM_AuditLogs-compatible record validation, including changed_by string
+  coercion and B244 masking of key-bearing before/after values; do not bypass those model
+  constructors. Caller supplied litellm_changed_by wins only when truthy and key metadata
+  or team_metadata has allow_litellm_changed_by_header exactly Boolean true. Otherwise use
+  authenticated user_id or litellm_proxy_admin_name. Object events generate a UUID and UTC
+  timestamp, retaining the caller's action, table, object id and before/after values.
+  Load litellm_settings.store_audit_logs=None, audit_log_callbacks=[] and
+  s3_audit_callback_params=None. A non-null explicit/configured store flag wins over
+  LITELLM_STORE_AUDIT_LOGS, whose absent default is None; with neither set enable auditing
+  because betterlite has no paid tier. Remove the later premium-only return too.
+  Reuse B189's installed callback resolver and B165's configured Python instances. Unknown
+  names warn and skip. Cache only successful named resolutions, and expose reset on config
+  reload. s3_v2 with non-null s3_audit_callback_params constructs a dedicated B115 S3 sink,
+  separate from the normal callback singleton; ordinary names retain the shared resolver.
+  Build payload timestamps as ISO strings, table names as enum values, missing actor/key
+  as empty strings, and preserve before_value/updated_values fields. Normalize dict values
+  to JSON strings before both destinations. Submit each callback independently before
+  attempting the database write; failures in resolution, delivery or persistence must not
+  cancel the management operation or prevent other callbacks. Missing DB logs an error
+  after dispatch. Database inserts omit None fields. Keep callback cancellation quiet and
+  report actual delivery failures, using B191's bounded owned worker for shutdown safety.
+  Expose AuditService.try_submit for callers that schedule the whole audit write in the
+  background: a server-owned bounded queue uses the existing logging-worker capacity and
+  shutdown limits, retains the record until insertion finishes, and reports rejected
+  admission without waiting. Direct create_audit_log_for_update calls still await their
+  own database attempt. Test both entry paths and distinguish a rejected whole audit record
+  from a rejected callback whose database insert can still proceed.
+  loads_audit_settings exercises configuration precedence and callback/S3 options. Pure
+  audit_attribution helper cases compare actor selection and payload conversion; native
+  PostgreSQL/worker tests cover callback-before-DB ordering, no-DB delivery, cache reset,
+  dedicated S3 selection, delivery failures and queue saturation. This service registers
+  no route; management callers own HTTP comparisons. The 193 audit source lines allow
+  300 implementation, 80 config/wiring, 240 tests and 160 oracle/corpus lines, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/audit.rs
+    - crates/betterlite-server/src/audit/**
+    - crates/betterlite-logging/Cargo.toml
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/audit.rs
+    - crates/betterlite-logging/src/audit/**
+    - crates/betterlite-logging/src/registry.rs
+    - crates/betterlite-logging/src/worker.rs
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/audit.rs
+    - crates/betterlite-config/src/audit/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/audit-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/audit_attribution.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/audit_attribution.py
+    - tools/oracle/cases/helpers/audit-attribution/**
+    - tools/oracle/fuzz/corpus/helper_case/audit-attribution-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L1-L244
+    why: Complete enablement, attribution, callback resolution/delivery and best-effort DB writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3812-L3861
+    why: Dependency-owned audit action/record validation and sensitive-key masking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3551-L3564
+    why: Callback payload field contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6518-L6547
+    why: Config reload clears the callback cache and resolves dotted Python instances.
+dod:
+  - text: Audit attribution honors exact metadata permission and emits the pinned payload shape through validated records.
+    proof: [audit-server-tests, audit-delivery-tests, oracle, audit-python]
+  - text: Configured enablement and dedicated S3 options reach the service with explicit overrides taking precedence.
+    proof: [audit-settings-tests, audit-server-tests, audit-delivery-tests, audit-corpora]
+  - text: Callback admission precedes best-effort storage and owned delivery handles failures, cache reset and shutdown without blocking callers.
+    proof: [audit-server-tests, audit-delivery-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: audit-server-tests
+      why: Audit identity, record validation or independent database persistence has regressed.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^audit::/)'
+    - id: audit-delivery-tests
+      why: Callback selection, audit-specific S3 caching or bounded delivery loses its promised effects.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^audit::/)'
+    - id: audit-settings-tests
+      why: Audit configuration is not loaded with the defined precedence and no-license default.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^audit::tests::loads_audit_settings/)'
+    - id: audit-python
+      why: The audit attribution and payload comparison lacks checked Python adapters.
+      run: test -f tools/oracle/helpers/audit_attribution.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: audit-corpora
+      why: Audit configuration and helper operations have no newly committed decoder cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/audit-*')" && grep -rlq 'audit_attribution:' tools/oracle/fuzz/corpus/helper_case/audit-attribution-* && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/audit-attribution/team-metadata-permits-changed-by.yaml
+  - tools/oracle/cases/helpers/audit-attribution/truthy-string-does-not-permit-header.yaml
+  - tools/oracle/cases/helpers/audit-attribution/empty-header-falls-back-to-user.yaml
+  - tools/oracle/cases/helpers/audit-attribution/missing-actor-and-key-payload.yaml
+  - tools/oracle/cases/helpers/audit-attribution/validated-before-after-key-masking.yaml
+deviations:
+  - what: Audit storage and callbacks run without a license, and auditing defaults on when neither the setting nor environment supplies a value.
+    why: Removing paid tiers preserves the enabled-feature default rather than the stock OSS premium=false fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L27-L40
+  - what: Saturated callback delivery logs and counts a rejected audit callback event while still attempting the DB insert; accepted callbacks use the existing worker timeout and shutdown drain.
+    why: Repository async rules require bounded admission and owned tasks instead of detached create_task delivery.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L135-L159
+  - what: A caller submitting an entire audit record asynchronously can receive a logged admission rejection when the audit-write queue is full; that rejected record reaches neither destination.
+    why: The shared background submission API replaces caller-owned detached audit tasks with bounded work drained by the server.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L117-L132
+  - what: Diagnostic logs contain audit ids and sanitized failures rather than complete audit records or secret-bearing callback parameters.
+    why: Actor credentials and before/after fields must not escape through Debug or exception text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L219-L244
+out_of_scope:
+  - "management_helpers/utils.py has no unassigned production functions: B1227 owns protocols/accessors and user/member writes at L44-L177 and L393-L500; B862 owns budget handling at L180-L390."
+  - "B865 owns utils.py cache invalidators L503-L556 and management_endpoint_wrapper plus nested wrapper L755-L823; B1228 owns alerting L559-L606 and object/redaction/OTEL helpers L609-L752."
+  - B1645 owns all resource_display_names.py lookups; B115 owns actual S3 transport/batching and B165 owns execution of configured Python callbacks.
+  - B124 owns the audit row's public model contract and B244 its reusable masking algorithm; audit query HTTP routes belong to their proxy-server owner.
+pitfalls:
+  - store_audit_logs=false must defeat LITELLM_STORE_AUDIT_LOGS=true rather than being treated as an absent setting.
+  - A failed named callback resolution is not cached, so later dispatch can retry initialization.
+  - The metadata permission for litellm_changed_by accepts only Boolean true in either key or team metadata.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

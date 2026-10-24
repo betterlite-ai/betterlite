@@ -1,0 +1,67 @@
+id: B1636
+title: Provision unresolved SCIM group members and preserve retry failures
+description: >-
+  Implement the scim_member_provision service and GroupMemberExtractionResult in
+  betterlite-server, owning _ensure_group_member_user, _resolve_group_member_ids,
+  _extract_group_member_ids and _create_user_if_not_exists. Consume B1634's classifications
+  before writing anything: log skipped members, reject the first ambiguous value with
+  400, then reject the first unknown value with 400 when B1635's scim_upsert_user setting
+  is false. These checks precede creation of every unknown member, including earlier
+  valid unknowns in the request. Deduplicate unknown ids while retaining their order.
+  Create each placeholder through B056's new-user service with auto_create_key=false,
+  user_id=user_email=the raw member id, no alias, and metadata.created_via supplied by
+  the caller. The direct helper default is scim_group, full-group extraction uses
+  scim_group_membership, and group PATCH uses scim_group_patch. Reuse the configured
+  litellm.default_internal_user_params from B1616; absent parameters choose
+  internal_user_viewer, but a present dictionary lacking user_role supplies None.
+  Preserve the helper's catch/log/None result for every creation failure. The ensure
+  wrapper then rereads by exact id: a row created concurrently is accepted without
+  appearing in created_users, while a still-missing row raises 500 so the IdP retries.
+  Successful earlier placeholders survive a later failed creation; this is not a batch
+  transaction. Return duplicate existing_member_ids, newly created responses only, and
+  deduplicated all_member_ids in original member order. PostgreSQL tests exercise a unique
+  constraint race, a genuine create failure, strict-mode preflight and partial persistence;
+  service fault injection targets the new-user operation rather than substituting the
+  identity classifier. The 145 function lines plus the extraction result give room for
+  190 implementation and 270 database/concurrency test lines, capped at 525. Public SCIM
+  request decoding remains B1632's responsibility; route owners supply HTTP oracle cases.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_member_provision.rs
+    - crates/betterlite-server/src/scim_member_provision/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L250-L259
+    why: Extraction separates existing ids, newly created users and admitted roster order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L756-L787
+    why: Placeholder creation races and retryable failure details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L854-L949
+    why: Classification preflight, strict mode, ordered creation and group extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1097-L1142
+    why: Placeholder request defaults and swallowed creation errors.
+dod:
+  - text: Ambiguous and strict-mode requests fail before placeholder creation, preserving admitted-member ordering otherwise.
+    proof: [member-provision-tests]
+  - text: Concurrent creation is accepted after reread while unresolved failures remain retryable and keep earlier writes.
+    proof: [member-provision-tests]
+checks:
+  optional: []
+  commands:
+    - id: member-provision-tests
+      why: Group provisioning can silently drop a member, create one before preflight or lose source write ordering.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_member_provision::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "B1640's group write cases and B064's group PATCH cases drive this stateful service through the booted proxy; no helper adapter calls new_user or SCIM handlers."
+  - "Other scim_v2.py support ranges: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "Remaining scim_v2.py function ranges: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B1643 L1882-L1962; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - A swallowed new_user error is not successful provisioning until the ensure wrapper finds the user row.
+  - created_users excludes the winner of a concurrent insert even though all_member_ids includes that user.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: security

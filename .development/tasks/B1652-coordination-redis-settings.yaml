@@ -1,0 +1,96 @@
+id: B1652
+title: Resolve and redact the coordination Redis configuration
+description: >-
+  Implement coordination_redis_settings in betterlite-server, covering the settings helpers
+  L76-L225 and the complete field catalog in types/management_endpoints/coordination_redis_endpoints.py.
+  Expose persisted_settings for startup, current_settings for the management API, and typed
+  projections for the fifteen connection/cluster/sentinel fields. Read general_settings through
+  B725's ConfigRepository; no database, missing row or null value yields an empty section,
+  while a non-object row is an error. A dictionary-valued coordination_redis entry, including {},
+  overrides the file block. Otherwise consult B124's config snapshot. Source reporting is a
+  separate decision: a nonempty explicit block wins, then a plain Redis/RedisCluster response
+  cache, then B124's REDIS_* target predicate, then null. Thus an empty persisted block can
+  suppress file settings while the reported source still comes from a fallback.
+  Preserve raw os.environ/VAR references in saved/read settings; resolve them through B129's
+  secret lookup only for validation and connection attempts. Reuse B124's CoordinationRedisParams:
+  optional connection fields default null, extra keys survive, and has_connection_target checks
+  non-null presence rather than truthiness, so host="" or startup_nodes=[] passes that check.
+  Invalid field names are deduplicated, sorted and returned in the source's 400 detail.error;
+  missing targets use its distinct 400 message. The UI metadata has port=6379 and ssl,
+  aws_iam_auth and aws_iam_serverless=false defaults without inserting those values into settings.
+  Redact non-null password, sentinel_password and url as ***REDACTED***, including empty strings.
+  Restore an echoed marker only when that key exists in saved settings; this is a projection of
+  incoming keys, not a merge that retains omitted fields. Audit redaction replaces every value.
+  Error scrubbing replaces nonempty supplied string/integer credentials literally and leaves
+  unrelated text intact. Provide decode_coordination_settings(bytes) for the required settings
+  object and decode_persisted_coordination_settings(bytes) for database JSON, with a shared
+  coordination_settings fuzz target and replays_the_coordination_settings_corpus.
+  The pure helper operation coordination_settings_projection exercises marker restoration,
+  masking and error scrubbing against Python; database/config precedence uses native tests and
+  B1653's route cases. Add loads_coordination_redis_settings to betterlite-config, loading the
+  general_settings block and checking absent defaults and unresolved secret references.
+  About 250 source lines including the field catalog allow 260 implementation, 180 tests,
+  180 oracle/fuzz and 90 config-test lines within 775 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/coordination_redis_settings.rs
+    - crates/betterlite-server/src/coordination_redis_settings/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/coordination_settings.rs
+    - crates/betterlite-server/fuzz/corpus/coordination_settings/**
+    - crates/betterlite-config/src/tests/coordination_redis_settings.rs
+    - crates/betterlite-config/src/tests.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/coordination-redis-*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/coordination_settings.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/coordination_settings.py
+    - tools/oracle/cases/helpers/coordination-settings/**
+    - tools/oracle/fuzz/corpus/helper_case/coordination-settings-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/coordination_redis_endpoints.py#L53-L225
+    why: Secret references, credential handling, validation and persisted/file/source precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/coordination_redis_endpoints.py#L1-L142
+    why: Ordered field metadata, presentation defaults and source literals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2630-L2667
+    why: Dependency-owned connection params deliberately accept non-null empty targets.
+dod:
+  - text: Persisted settings and fallback source reporting retain their different empty-object semantics.
+    proof: [coordination-settings-tests, coordination-settings-config, coordination-settings-corpus]
+  - text: Marker handling and credential scrubbing match the pure Python projections without leaking values through field metadata.
+    proof: [coordination-settings-tests, oracle, helper-python, coordination-settings-corpus]
+  - text: Both byte boundaries reject malformed shapes and configuration loads the real coordination block.
+    proof: [coordination-settings-tests, coordination-settings-config, coordination-settings-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: coordination-settings-tests
+      why: Coordination settings resolve or redact differently from the saved representation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^coordination_redis_settings::/) - test(replays_the_coordination_settings_corpus)'
+    - id: coordination-settings-config
+      why: General settings do not reach the coordination configuration loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_coordination_redis_settings)'
+    - id: helper-python
+      why: Coordination projection fixtures do not execute a checked Python helper.
+      run: test -f tools/oracle/helpers/coordination_settings.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: coordination-settings-corpus
+      why: The new coordination decoders and configuration loader have no adversarial inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/coordination_settings)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/coordination-redis-*')" && grep -rlq 'coordination_settings_projection:' tools/oracle/fuzz/corpus/helper_case/coordination-settings-* && cargo nextest run --locked -p betterlite-server -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_coordination_settings_corpus) | test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/coordination-settings/redacted-roundtrip-does-not-keep-omitted-fields.yaml
+  - tools/oracle/cases/helpers/coordination-settings/null-empty-and-url-redaction.yaml
+  - tools/oracle/cases/helpers/coordination-settings/repeated-credential-literal-scrubbing.yaml
+  - tools/oracle/cases/helpers/coordination-settings/audit-keeps-keys-only.yaml
+deviations: []
+out_of_scope:
+  - B1653 owns _enforce_proxy_admin L68-L73, audit functions L228-L270, route request/response models L273-L290 and all handlers with decorators L292-L441.
+  - B124 owns CoordinationRedisParams and Redis startup/client selection; B126 supplies Redis clients and B129 resolves secret references.
+pitfalls:
+  - A saved empty coordination_redis object is authoritative for current_settings even though source reporting treats it as false.
+  - An incoming ***REDACTED*** with no saved value remains the literal marker rather than becoming null.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

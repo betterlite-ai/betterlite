@@ -1,0 +1,96 @@
+id: B1663
+title: Configure MCP search and report web-search interception activation
+description: >-
+  Implement search_settings_routes for GET /get/mcp_semantic_filter_settings,
+  /get/websearch_interception_settings and /get/mcp_tool_search_settings, plus PATCH at
+  /update/mcp_semantic_filter_settings, /update/websearch_interception_settings and
+  /update/mcp_tool_search_settings. Own the semantic-filter/web-search records, their response
+  wrappers and _with_websearch_enabled_resolved/_as_settings_section. Reuse B136's
+  MCPToolSearchSettings rather than introducing a second tool-ranking configuration.
+  Define search_settings in betterlite-config and loads_search_settings to load the three
+  litellm_settings blocks mcp_semantic_tool_filter, websearch_interception_params and
+  mcp_tool_search. Absent blocks stay absent until route/default resolution. Semantic defaults
+  are enabled=false, embedding_model=text-embedding-3-small, top_k=10 constrained to 1..100
+  and similarity_threshold=0.3 constrained to 0..1. Web-search defaults are enabled=false,
+  enabled_providers=[], search_tool_name=null and max_agentic_loops=null, with supplied loops
+  at least one; the eventual loop default of three belongs to B119. Native tool-search defaults
+  are embedding_model=null, top_k=5 in 1..100, similarity_threshold=0 in 0..1 and core_tools=[].
+  Route bodies use decode_search_settings(bytes, Semantic|WebSearch|ToolSearch), keeping the
+  corresponding Pydantic coercions, extra-field handling and 422 validation behavior.
+  All six routes authenticate with B052. Every GET requires DB, but semantic/web-search use
+  detail.error while tool-search uses a detail string for the missing-DB 500. Read config and
+  project values/schema through B1656. For web-search, a stored enabled key is authoritative
+  even when false or null; only an absent key falls back to whether B189 currently has B119's
+  WebSearchInterceptionLogger registered. Non-mapping settings sections act empty on this
+  fallback path. Report active_on_this_pod separately from values.enabled so delayed reloads
+  cannot overwrite the cluster's saved choice with a pod's temporary state.
+  Each PATCH requires exact proxy_admin, with its endpoint-specific 403 message, and then
+  uses B1656 to replace the settings block and publish/save/audit it. Semantic and web-search
+  attempt immediate B124 reinitialization after a successful save when DB exists; failures
+  warn and still return success. Tool-search does not perform an immediate reinitializer call.
+  Retain the exact success messages promising propagation within ten seconds; scheduling is
+  owned by B124. Native tests cover saved/live activation disagreement and reinitializer failure.
+  HTTP cases compare all schemas/defaults, accepted boundary values, rejected bodies, role
+  checks and replacement of omitted settings. Fuzz search_settings and replay
+  replays_the_search_settings_corpus, plus config_yaml seeds for every block. The 222 owned
+  model/helper/handler lines budget 280 implementation/config, 210 tests and 220 HTTP/fuzz
+  additions within 775 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/search_settings_routes.rs
+    - crates/betterlite-server/src/search_settings_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/search_settings.rs
+    - crates/betterlite-server/fuzz/corpus/search_settings/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/search_settings.rs
+    - crates/betterlite-config/src/search_settings/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/search-settings-*
+    - tools/oracle/cases/management/search-settings/**
+    - tools/oracle/fuzz/corpus/http_case/search-settings-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L473-L582
+    why: Request defaults, response wrappers and stored-enabled versus local-callback fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1466-L1664
+    why: Six route decorators, DB error shapes and post-save reinitialization behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L125-L149
+    why: Dependency-owned native tool-search settings differ from the semantic-filter model.
+dod:
+  - text: Search settings load all three blocks and expose their distinct defaults, schemas and validation limits.
+    proof: [search-settings-tests, search-settings-config, oracle, search-settings-corpora]
+  - text: Web-search responses retain stored enablement separately from local activation, including an absent-enabled fallback.
+    proof: [search-settings-tests, oracle]
+  - text: Administrator updates preserve replacement semantics and only the two source endpoints attempt best-effort immediate reinitialization.
+    proof: [search-settings-tests, oracle, search-settings-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: search-settings-tests
+      why: Search configuration routes confuse local callback state with saved activation or hide reinitialization failures incorrectly.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^search_settings_routes::/) - test(replays_the_search_settings_corpus)'
+    - id: search-settings-config
+      why: Search settings are accepted over HTTP but their YAML blocks are not consumed.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^search_settings::tests::loads_search_settings/)'
+    - id: search-settings-corpora
+      why: Search bodies and configuration blocks have no new malformed-input replay examples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/search_settings)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/search-settings-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_search_settings_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/search-settings/three-get-defaults-and-schemas.yaml
+  - tools/oracle/cases/management/search-settings/stored-disabled-versus-missing-enabled.yaml
+  - tools/oracle/cases/management/search-settings/callback-only-websearch-activation.yaml
+  - tools/oracle/cases/management/search-settings/top-k-threshold-and-loop-validation.yaml
+  - tools/oracle/cases/management/search-settings/admin-patch-replaces-omitted-fields.yaml
+  - tools/oracle/cases/management/search-settings/non-admin-and-missing-db-error-shapes.yaml
+deviations: []
+out_of_scope:
+  - "Sibling functions in proxy_setting_endpoints.py belong to B1656 for L88-L127, L723-L783, L800-L849 and L1001-L1072; B1657 for L858-L998 and L1080-L1127; B1658 for L591-L720; B1659 for L379-L399, L453-L470, L786-L797 and L1671-L1742; B1660 for L1750-L1961; B1661 for L1136-L1322; B1662 for L141-L167, L1330-L1463 and L1969-L2024."
+  - register_extra_ui_setting L439-L450 has no caller at the pin and is excluded; B124 owns periodic reinitialization and B119 owns actual web-search interception execution.
+pitfalls:
+  - A stored enabled=false must stay false even when this pod still has the web-search callback registered.
+  - Native tool-search has top_k=5 and no enabled field; semantic filtering has top_k=10 and its own enabled switch.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

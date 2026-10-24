@@ -1,0 +1,72 @@
+id: B1642
+title: Publish SCIM resource discovery, schemas and provider capabilities
+description: >-
+  Implement scim_discovery, owning _get_resource_types, _get_schemas and the six
+  decorated discovery handlers. Register GET /scim/v2 and /scim/v2/ as separate accepted
+  paths, /scim/v2/ResourceTypes, /ResourceTypes/{resource_type_id}, /Schemas,
+  /Schemas/{schema_id:path}, and /ServiceProviderConfig. All retain B052 authentication
+  and B1633's application/scim+json header; no database lookup is required by their bodies.
+  ResourceTypes are exactly User then Group with /Users and /Groups endpoints. Their
+  meta.location uses request.base_url with trailing slash removed plus /scim/v2; schema
+  locations instead remain the literal relative paths embedded in the definitions.
+  List responses contain schemas, totalResults and Resources without adding pagination
+  fields that those dictionaries never supplied. Unknown resource types and schema URIs
+  are 404. Keep the URI path capture greedy so a slash-containing unknown schema reaches
+  the handler instead of being rejected by routing. ServiceProviderConfig reports patch
+  supported and bulk/filter/changePassword/sort/etag unsupported, despite the partial
+  filtering that directory reads actually implement; meta.location is the requested URL.
+  Port all declared schema attributes and nested flags through B1632's records, including
+  readOnly User.groups, server-unique userName, directory entitlements/roles and Group
+  member type. Do not invent an enterprise-user discovery schema or schemaExtensions:
+  the pinned resource builders list only the two core schemas. Preserve the actual
+  custom model_dump behavior for nested attributes. HTTP fixtures inspect complete schema
+  output and URL-dependent metadata with only ephemeral host/port normalization; eligible
+  and unauthenticated requests still pass through the booted servers. The 329 source lines
+  are chiefly static schema declarations; reserve 290 implementation/data, 150 route tests
+  and 110 fixtures/corpus lines within 625. Path parsing is the existing B003 extractor,
+  with additional URI path examples in the HTTP case decoder corpus rather than a new parser.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_discovery.rs
+    - crates/betterlite-server/src/scim_discovery/**
+    - tools/oracle/cases/management/scim-discovery/**
+    - tools/oracle/fuzz/corpus/http_case/scim-discovery-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1171-L1404
+    why: Resource type and schema builders, including exact attribute flags and locations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1407-L1553
+    why: Both base aliases, all discovery decorators and unknown-resource errors.
+dod:
+  - text: Every discovery path returns the pinned schemas, capability flags, locations and SCIM content type.
+    proof: [scim-discovery-tests, oracle]
+  - text: Base aliases, greedy schema URIs, missing resources and authentication failures are exercised over HTTP.
+    proof: [scim-discovery-tests, oracle, discovery-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: scim-discovery-tests
+      why: A discovery route, schema attribute or advertised capability has changed or is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_discovery::/)'
+    - id: discovery-case-corpus
+      why: Discovery aliases and URI-shaped path parameters lack HTTP decoder regression seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-discovery-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/scim-discovery/base-with-and-without-slash.yaml
+  - tools/oracle/cases/management/scim-discovery/resource-type-locations.yaml
+  - tools/oracle/cases/management/scim-discovery/full-core-schema-list.yaml
+  - tools/oracle/cases/management/scim-discovery/single-schema-and-greedy-unknown-uri.yaml
+  - tools/oracle/cases/management/scim-discovery/partial-filtering-still-advertised-false.yaml
+  - tools/oracle/cases/management/scim-discovery/missing-type-and-authentication.yaml
+deviations: []
+out_of_scope:
+  - "scim_v2.py data access and membership support: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "SCIM resource operations are B1638 L164-L232/L1661-L1879, B1639 L1965-L2197/L2325-L2397, B1640 L2511-L2708, B1641 L1556-L1658/L2405-L2508, B1643 L1882-L1962 and B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - filter.supported remains false even though /Users and /Groups understand selected equality filters.
+  - ResourceType locations are request-origin URLs while Schema locations are fixed relative strings.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

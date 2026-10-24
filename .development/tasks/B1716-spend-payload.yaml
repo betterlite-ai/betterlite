@@ -1,0 +1,115 @@
+id: B1716
+title: Assemble persisted spend payloads without losing billing provenance
+description: >-
+  Implement get_logging_payload and _sl_attribution_fallback in
+  betterlite-server::spend::payload, with SpendLogsPayload in betterlite-logging alongside
+  B1715's metadata. Extract utils.get_end_user_id_for_cost_tracking into logging::end_user:
+  prefer the truthy top-level end-user ID to merged metadata, suppress it when
+  litellm_settings.disable_end_user_cost_tracking is truthy, and for prometheus require
+  enable_end_user_cost_tracking_prometheus_only exactly true. Both settings default null;
+  loads_end_user_spend_settings tests them through config and its existing YAML decoder.
+  Preserve the separate disable_end_user_cost_tracking_prometheus_only setting's lack of
+  use in this function rather than treating it as an inverse enable flag.
+  Record whether the original response is ProxyModelNotFoundError before converting a
+  nonmapping/nonmodel response to a result string. OCR uses B1715 usage_info projection;
+  ordinary usage is suppressed for B188's unbilled non-inference calls. Only when usage
+  remains empty does a typed combined_usage_object supply recovered mid-stream usage.
+  Source response usage fields override standard logging counters by key presence, not
+  truthiness. Preserve null cost/counter values until the database boundary rejects or
+  handles them; an absent response_cost defaults to zero.
+  Resolve IDs/keys with B1715. Standard payload metadata supplies fallback key hash and
+  end user only when earlier values are falsey. Metadata tags must be a list, but any
+  non-null standard request_tags overrides them. Deployment ID/model group/api base use
+  truthy request metadata then standard payload. Provider comes from explicit kwargs,
+  standard payload, then B1715's single-provider group inference. Reconstruct model names
+  with B206, preferring a nonempty standard model. Use unknown-model for typed unknown
+  model errors, nonstring requested models, or failed prompt-shaped names without a
+  deployment ID/configured group. Clear model_group only when it equals that unsafe raw
+  model, and scrub raw model spellings from errors and stored body through B1713/B1714.
+  Pass trusted standard payload enrichment into B1715 metadata, including savings evidence,
+  batch counts, guardrail fallback, cost breakdown, cold-storage key and overhead. Stamp
+  client OAuth use with B206 and B567; stamp Azure spillover with B1664. Keep every usage
+  field except the three token totals as additional_usage_values. Fill missing top-level
+  cache counts only from positive integer detail fields, using clean usage_object details
+  only when response prompt_tokens_details is not a mapping; write count prefers truthy
+  cache_write_tokens then cache_creation_tokens. Existing keys, even null, block insertion.
+  No configured cache yields Cache OFF; otherwise a non-null preset key wins, including
+  empty string, else call B125's key builder. Exact cache_hit=true appends _cache_hit plus
+  the current epoch text to the resolved ID before session derivation. A missing ID renders
+  as Python's None string, and cache_hit renders True/False/None with Python capitalization.
+  Payload team/org/user/end-user/provider fields keep the source's empty-string fallbacks,
+  times normalize via B1714, and completion_start_time defaults to end only when absent.
+  Wire messages/response/body/session/duration/status through the prior leaves, preserve
+  MCP and agent/billing-agent attribution, and use B1708's error logger only around final
+  payload construction before rethrowing. Earlier projection failures remain earlier failures.
+  spend_payload oracle cases exercise the deterministic record projection with isolated
+  immutable config/catalog/cache fixtures; mask only generated UUIDs and epoch suffixes.
+  No adapter invokes a route, database writer or callback fan-out. Native tests cover the
+  caller-visible input mutations and configuration reload. Owned source is 321 payload,
+  seven fallback, 38 payload-record and 23 end-user helper lines, within an 800-line budget
+  split roughly 380 production and 420 tests/adapters/config wiring.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/payload.rs
+    - crates/betterlite-server/src/spend/payload/**
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/spend_metadata.rs
+    - crates/betterlite-logging/src/end_user.rs
+    - crates/betterlite-logging/src/end_user/**
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/end-user-spend-*
+    - tools/oracle/src/helpers/{mod.rs,spend_payload.rs}
+    - tools/oracle/helpers/{dispatch.py,spend_payload.py}
+    - tools/oracle/cases/helpers/spend-payload/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-payload-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L387-L393
+    why: Standard payload fallback for deployment attribution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L498-L851
+    why: Complete spend payload composition, unknown-model protection and source exception boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4219-L4256
+    why: Stored payload field inventory and nullable/presence distinctions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10070-L10096
+    why: End-user attribution and independent Prometheus enable policy.
+dod:
+  - text: Payload composition retains usage/cost presence, trusted provenance, cache IDs and safe model placeholders across all supplied response projections.
+    proof: [payload-tests, oracle, payload-python, payload-corpus]
+  - text: End-user settings load through config and affect spend versus Prometheus attribution with the pinned truthiness rules.
+    proof: [payload-tests, payload-config-corpus, oracle, payload-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: payload-tests
+      why: Spend payload assembly loses a field or exposes an unsafe model/key value.
+      run: cargo nextest run --locked -p betterlite-server -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/^spend::payload::/) + test(/^end_user::/) + test(loads_end_user_spend_settings)'
+    - id: payload-python
+      why: The payload/end-user helper adapters are missing or fail strict checks.
+      run: test -f tools/oracle/helpers/spend_payload.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: payload-corpus
+      why: Persisted-payload helper inputs have no tagged replay seed.
+      run: grep -rlq 'spend_payload:' tools/oracle/fuzz/corpus/helper_case/spend-payload-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: payload-config-corpus
+      why: End-user settings have no newly added configuration-parser seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/end-user-spend-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-payload/ocr-noninference-and-partial-stream-usage.yaml
+  - tools/oracle/cases/helpers/spend-payload/standard-fallback-null-counters-and-tags.yaml
+  - tools/oracle/cases/helpers/spend-payload/unsafe-model-and-configured-group-exemption.yaml
+  - tools/oracle/cases/helpers/spend-payload/cache-count-presence-and-usage-object-fallback.yaml
+  - tools/oracle/cases/helpers/spend-payload/cached-batch-id-and-session-order.yaml
+  - tools/oracle/cases/helpers/spend-payload/end-user-and-prometheus-settings.yaml
+  - tools/oracle/cases/helpers/spend-payload/oauth-spillover-agent-and-router-provenance.yaml
+deviations: []
+out_of_scope:
+  - B1600 owns raw master comparison; B1713 handles sanitizers, B1714 body/session policy, B1715 metadata/identity projections and B1726/B1727 the remaining team/customer queries in spend_tracking_utils.py.
+  - B124 and existing API contract owners retain other _types.py records; the remaining utils.py functions retain their earlier owners.
+pitfalls:
+  - Cached batch IDs receive their timestamp suffix before batch session extraction, so suffix removal must not be reordered.
+  - Existing null cache-count keys prevent detail-field backfill just as existing numeric values do.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

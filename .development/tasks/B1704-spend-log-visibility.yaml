@@ -1,0 +1,83 @@
+id: B1704
+title: Resolve spend-log visibility before reading hot or cold payloads
+description: >-
+  Implement betterlite-server::spend::visibility for the complete permission/payload-row
+  section from _is_admin_view_safe through _get_permitted_team_ids_for_spend_logs_or_empty,
+  plus owner-row and team lookup helpers at lines 363-394/401-409. Reuse B736's cached user
+  lookup with user_id_upsert=false and B800's team-admin/member permission checks for the
+  literal /spend/logs permission. Only proxy_admin and proxy_admin_viewer qualify for the
+  safe admin predicate; missing role or predicate failure returns false. Own-user list
+  eligibility requires internal_user/internal_user_viewer and a non-null user_id, whereas
+  an individual row's direct owner equality is checked independently of that list-role gate.
+  Find permitted teams from the stored user's teams, preserving returned order; callers
+  using the or_empty wrapper fall back to own-user scope on any lookup/validation error.
+  An ID lookup matches request_id OR the client-controlled litellm_call_id. Read every
+  distinct owner pair without a sampling cap and permit the precheck if any row is visible.
+  Missing rows fail the same 403 as wholly foreign rows. Scope the actual data query as
+  well, prefer an exact request_id over a call-id match, and recheck every distinct owner
+  pair in fetched rows to close insertion races between precheck and read. One foreign
+  fetched pair rejects the whole result. Do not let a foreign colliding call ID deny a
+  caller access to a separately scoped owned row.
+  Export SpendLogViewer and the bound payload SQL projection. None viewer means admin;
+  nonadmin scope always binds its user_id, including null, and ORs permitted team IDs
+  when present. Resolve the stored provider request_id before consulting cold storage;
+  a string stored ID wins even if empty, otherwise retain the lookup ID. Payload owner
+  metadata uses user_api_key_user_id/user_api_key_team_id and accepts strings only.
+  Payloads without a recognizable owner fail closed for nonadmins. Preserve the source
+  HTTPException 403 detail object at the boundary using B003, not an invented 404.
+  Add spend_visibility pure fixtures for the safe role predicate, owner extraction and
+  SQL/bind projections. Postgres tests cover arbitrary call-ID collisions, absent rows,
+  changed ownership between queries, team permission removal and failed membership reads.
+  HTTP disclosure tests belong to the detail/list route tasks that consume this service.
+  Approximately 280 nonblank source lines are owned; reserve 290 implementation, 260
+  database/race tests and 150 helper adapters/seeds, within 800 lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/visibility.rs
+    - crates/betterlite-server/src/spend/visibility/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/spend_visibility.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/spend_visibility.py
+    - tools/oracle/cases/helpers/spend-visibility/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-visibility-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L363-L409
+    why: Uncapped distinct-owner reads and team lookup helpers; _count_spend_logs remains with list routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4835-L5131
+    why: Role predicates, team visibility, scoped ID resolution and fetched/cold owner rechecks.
+dod:
+  - text: ID and payload resolution cannot expose another tenant's row through call-ID collisions, races or missing owner metadata.
+    proof: [visibility-tests, oracle, visibility-python, visibility-corpus]
+  - text: Permitted-team resolution uses stored membership and explicit spend permission, with own-user fallback only at the source's catch boundary.
+    proof: [visibility-tests]
+checks:
+  optional: []
+  commands:
+    - id: visibility-tests
+      why: A role, team or fetched-row transition bypasses spend-log ownership checks.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::visibility::/)'
+    - id: visibility-python
+      why: Visibility helper projections lack checked source calls.
+      run: test -f tools/oracle/helpers/spend_visibility.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: visibility-corpus
+      why: No visibility operation is replayed by the helper parser.
+      run: grep -rlq 'spend_visibility:' tools/oracle/fuzz/corpus/helper_case/spend-visibility-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-visibility/admin-and-internal-role-boundaries.yaml
+  - tools/oracle/cases/helpers/spend-visibility/null-user-and-team-array-binds.yaml
+  - tools/oracle/cases/helpers/spend-visibility/stored-id-and-cold-owner-types.yaml
+deviations: []
+out_of_scope:
+  - B069 and its route leaves retain all earlier endpoint/reporting functions, _build_status_filter_condition and _span_type_sql_condition; this leaf registers no HTTP path.
+  - B700 supplies typed database row decoding and B800 retains team permission semantics.
+pitfalls:
+  - Client-supplied litellm_call_id is neither unique nor trustworthy as a cold-storage object key.
+  - Successful preauthorization does not remove the need to verify owners on the rows actually fetched.
+  - Empty string IDs count as strings; null IDs must not become an unrestricted viewer.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,106 @@
+id: B1739
+title: Maintain spend partitions within a shrinking statement budget
+description: >-
+  Implement betterlite-db::spend_partitions and cleanup_metrics. Partition maintenance
+  acts on LiteLLM_SpendLogs in current_schema only; it never converts an ordinary table
+  into a partitioned one. Load SPEND_LOG_PARTITION_INTERVAL from the environment, default
+  day, accepting day/week/month and warning then using day for other spellings. Load
+  SPEND_LOG_PARTITION_PRECREATE_AHEAD as an integer, default 7; preserve current-plus-ahead
+  iteration, including no generated partitions for negative ahead. Weeks start Monday,
+  months start on day one, and names are LiteLLM_SpendLogs_pYYYYMMDD. UTC determines today.
+  Own every function of spend_logs_partition_manager.py. A caller supplies remaining
+  milliseconds afresh before each statement; None stops work. Transactions allow the
+  statement timeout plus five seconds for commit. Probe/list queries set LOCAL statement
+  timeout; CREATE/DROP also set LOCAL lock_timeout. Probe failure warns and returns false,
+  individual CREATE/DROP failures warn and continue, but partition-list failure propagates.
+  Return names successfully ensured even when CREATE IF NOT EXISTS changed nothing.
+  Parse PostgreSQL bounds with parse_partition_upper_bound: any case-insensitive DEFAULT
+  substring means keep; otherwise recognize the pinned TO ('...') form and ISO timestamp.
+  Drop only parseable upper bounds less than or equal to UTC-naive cutoff. A parsed bound
+  carrying an offset cannot be compared with that naive cutoff: preserve the source's
+  propagated comparison failure, before the individual DROP catch, instead of dropping it.
+  Quote catalog
+  identifiers by doubling embedded quotes before DDL; generated names need no user input.
+  Fuzz decode_partition_bound(bytes) with a finite 64 KiB ceiling, returning unknown for
+  malformed or oversized bounds so no partition is selected from untrusted text.
+  CleanupMetrics owns the five pinned litellm_spend_log_cleanup instruments, table/outcome
+  labels and duration buckets 0.005,0.025,0.1,0.25,0.5,1,2.5,5,10,30,60. Registration occurs
+  once on first use through B111's registry; a registration failure warns without retrying
+  or preventing cleanup. Preserve any instruments already registered before that failure.
+  rows_remaining is a live-max gauge across replicas, not a sum. Expose all six RunOutcome
+  labels. Pure partition_calendar cases exercise naming, boundaries and drop selection;
+  PostgreSQL tests cover schema isolation, lock waits and per-statement deadline checks.
+  The two files contain 335 nonblank, noncomment source lines; allow 800 changed lines
+  for implementation, metrics tests, config loading, adapters and bound-parser replay.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_partitions.rs
+    - crates/betterlite-db/src/spend_partitions/**
+    - crates/betterlite-db/src/cleanup_metrics.rs
+    - crates/betterlite-db/src/cleanup_metrics/**
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-partitions-*
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/partition_bound.rs
+    - crates/betterlite-db/fuzz/corpus/partition_bound/**
+    - tools/oracle/src/helpers/{mod.rs,partition_calendar.rs}
+    - tools/oracle/helpers/{dispatch.py,partition_calendar.py}
+    - tools/oracle/cases/helpers/partition-calendar/**
+    - tools/oracle/fuzz/corpus/helper_case/partition-calendar-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_logs_partition_manager.py#L38-L272
+    why: Calendar calculation, catalog lookup and bounded partition DDL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup_metrics.py#L23-L122
+    why: Lazy instruments, label names and partial registration behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1800-L1801
+    why: Partition interval and precreation environment defaults.
+dod:
+  - text: Calendar and catalog logic retain unknown/default partitions and enforce a fresh timeout for every statement.
+    proof: [partition-tests, partition-bound-corpus, oracle, partition-python, partition-helper-corpus]
+  - text: Partition settings load with warning fallback and the retention instruments register lazily with the correct labels.
+    proof: [partition-settings, partition-config-corpus, cleanup-metric-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: partition-tests
+      why: Calendar selection, real PostgreSQL DDL or lock timeout behavior is absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_partitions::/) - test(replays_the_partition_bound_corpus)'
+    - id: cleanup-metric-tests
+      why: Cleanup instruments have no registration and sample tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^cleanup_metrics::/)'
+    - id: partition-settings
+      why: Environment defaults and invalid interval fallback are not tested through the loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_partition_settings)'
+    - id: partition-config-corpus
+      why: Partition configuration has no added parser input.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-partitions-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: partition-bound-corpus
+      why: The catalog-bound decoder lacks malformed/default/oversized replay cases.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/partition_bound)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_partition_bound_corpus)'
+    - id: partition-python
+      why: Pure calendar adapters are missing or fail Python checks.
+      run: test -f tools/oracle/helpers/partition_calendar.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: partition-helper-corpus
+      why: Partition helper variants have no replay seed.
+      run: grep -rlq 'partition_calendar:' tools/oracle/fuzz/corpus/helper_case/partition-calendar-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/partition-calendar/monday-december-and-negative-ahead.yaml
+  - tools/oracle/cases/helpers/partition-calendar/default-unparseable-and-exact-cutoff.yaml
+  - tools/oracle/cases/helpers/partition-calendar/aware-upper-bound-comparison-error.yaml
+deviations:
+  - what: Catalog names containing quotes remain one quoted identifier, and a partition bound over 64 KiB is retained as unknown.
+    why: DDL identifier escaping and a bounded text decoder prevent a catalog value from changing the statement or allocation size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_logs_partition_manager.py#L231-L272
+out_of_scope:
+  - B1740/B1741 own cleanup bounds, retention decisions and job coordination in spend_log_cleanup.py.
+  - B111 supplies the metrics registry and exporter; this task owns only retention-specific instruments.
+pitfalls:
+  - DEFAULT must be retained even when other text in its catalog expression resembles a timestamp bound.
+  - is_partitioned returns false on a catalog failure, while _list_partitions lets its failure terminate that cleanup attempt.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

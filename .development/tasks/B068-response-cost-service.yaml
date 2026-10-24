@@ -1,0 +1,143 @@
+id: B068
+title: Compose response charges and expose the shared cost service
+description: >-
+  Finish betterlite-core::cost with completion_cost and response_cost_calculator, composing
+  B1688 preparation, B1689 early-call charges and B1686 call pricing. Own the completion
+  signature/outer candidate control and L1811-L1959 token/tool tail; the stages own the
+  intervening branches. Expose one CostCalculator with explicit catalog, provider-policy,
+  clock, adjustments and request-local breakdown context. Bind B1678 PriceLookup.effective
+  to B205's public model-info resolver and raw to B193's immutable price map; do not implement
+  public lookup as direct raw-map indexing. Install supported native price policies and
+  the B1687 tool/grounding adapter, allowing each later provider to register its own B1686
+  policy without importing a provider umbrella or substituting generic formulas for an
+  unsupported specialized policy.
+  Preserve every candidate attempt, including nulls and duplicates, returning the first
+  successful charge and otherwise the final attempt's error. Catch failures from the entire
+  attempt, including token-type breakdown computation, and retain prior request-local state
+  changes as the source does. Recurse over B1681 websocket tier partitions and sum their
+  charges using the same logging context; the final partition replaces its breakdown rather
+  than producing an invented combined breakdown. B1689's completed early charge returns
+  immediately and must not enter this token/tool tail.
+  Call cost_per_token with the prepared fields, suppressing region only for explicit pricing
+  and passing B1682's OCR-specific override. Deliberately do not forward logging.model as
+  request_model to this call: the pin uses that name separately for Foundry additional fees.
+  When provider is azure_ai and the priced model is not a router-shaped name, select the
+  additional-cost model from logging.model, overridden by a router-shaped hidden model or
+  a hidden model when the logging name is absent, then fall back to the priced model. Invoke
+  B1677's guarded additional-cost accessor. Other cases have no additional-cost map.
+  Add prompt and completion charges, B1685 built-in tool fees and every additional fee.
+  Save this original total, apply B1649 discount before margin only when each corresponding
+  config map is truthy, and otherwise record zero adjustment fields. If a logging target
+  exists and usage/model are present, obtain B1673 token-type costs/rates; that lookup can
+  fail the attempt. Then B1682 stores the breakdown best-effort, with tier/residency/location,
+  adjustment values, optional positive cache/reasoning costs and billed rates. Its logging
+  failure cannot replace a successfully calculated charge.
+  response_cost_calculator returns zero only for cache_hit exactly true. Otherwise a typed
+  response's additional_headers llm_provider-x-litellm-response-cost, when nonnull, wins
+  before completion calculation even under custom pricing; dictionaries do not gain hidden
+  attributes. Forward all remaining response-wrapper arguments unchanged and propagate its
+  errors. Keep unknown pricing distinct from a valid zero and expose typed failures to the
+  caller; B069's logging/spend integration chooses the source's nonfatal failure behavior.
+  Assemble the server cost-service resource, B1694 savings context and B1692 PTU job adapter
+  without starting another spend queue or registering an inference route. B069/B070 use
+  these exported resources directly; this task does not add cost headers independently of
+  their request-processing owner. B1695 reservation counts and B1699 durable baseline work
+  are independent exported leaves, not reexports that force callers through this service.
+  Add response_charge helper cases executing the actual pinned completion/response functions
+  with typed fixtures, local catalog, explicit settings and an isolated breakdown receiver.
+  Include chat/cache/tier/custom prices, image/video early exits, transcription, OCR/batch,
+  search, realtime, A2A/MCP, provider-header override, candidate retry and Foundry/tool fees.
+  Native core tests verify the entire composition and error boundaries; server tests verify
+  policy/context/job registration. No helper calls a proxy handler or sends provider traffic.
+  The final owned signature/control/tail/wrapper contains 291 nonblank source lines; allocate
+  290 composition/wiring, 280 tests and 230 oracle adapters/corpus within 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/lib.rs
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/completion.rs
+    - crates/betterlite-core/src/cost/completion/**
+    - crates/betterlite-core/src/cost/response.rs
+    - crates/betterlite-core/src/cost/response/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/cost_service.rs
+    - crates/betterlite-server/src/cost_service/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/response_charge.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/response_charge.py
+    - tools/oracle/cases/helpers/response-charge/**
+    - tools/oracle/fuzz/corpus/helper_case/response-charge-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1332-L1484
+    why: Public completion arguments, websocket recursion and ordered candidate attempts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1811-L1959
+    why: Token/tool/additional fees, discount-before-margin, breakdown and last-error retry behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1979-L2072
+    why: Cache-hit zero and typed provider-header override before completion pricing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost.json#L1-L5
+    why: Unreferenced sample totals are not a second pricing registry.
+dod:
+  - text: Completion attempts combine every charge component in source order, preserve early exits and return the last candidate's error when all attempts fail.
+    proof: [completion-charge-tests, oracle, response-charge-python, response-charge-corpus]
+  - text: Response wrapper precedence, service tier partitions, custom pricing and recorded breakdown fields agree with the pinned functions across call families.
+    proof: [response-charge-tests, completion-charge-tests, oracle, response-charge-python]
+  - text: Runtime assembly binds effective/raw lookup separately and installs native provider, savings and PTU resources without a dependency on future spend writers.
+    proof: [cost-service-tests]
+checks:
+  optional: []
+  commands:
+    - id: completion-charge-tests
+      why: The composed completion calculator misorders costs, bypasses an error boundary or changes candidate retries.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::completion::/)'
+    - id: response-charge-tests
+      why: Cache and provider-header precedence changes the final response charge.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::response::/)'
+    - id: cost-service-tests
+      why: The server cost resource lacks its effective lookup, policies or independently installable ancillary services.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cost_service::/)'
+    - id: response-charge-python
+      why: Final-charge fixtures lack checked source entry-point adapters and isolated breakdown state.
+      run: test -f tools/oracle/helpers/response_charge.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: response-charge-corpus
+      why: The complete response_charge operation has no shared parser seeds.
+      run: grep -rlq 'response_charge:' tools/oracle/fuzz/corpus/helper_case/response-charge-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/response-charge/chat-cache-tier-and-recorded-rates.yaml
+  - tools/oracle/cases/helpers/response-charge/custom-prices-suppress-region-and-usage-cost.yaml
+  - tools/oracle/cases/helpers/response-charge/tool-fees-before-discount-before-margin.yaml
+  - tools/oracle/cases/helpers/response-charge/foundry-hidden-router-additional-fee.yaml
+  - tools/oracle/cases/helpers/response-charge/image-and-video-bypass-adjustments.yaml
+  - tools/oracle/cases/helpers/response-charge/transcription-token-evidence-before-duration.yaml
+  - tools/oracle/cases/helpers/response-charge/ocr-credits-and-batch-cache-rates.yaml
+  - tools/oracle/cases/helpers/response-charge/search-empty-query-list-and-adjustments.yaml
+  - tools/oracle/cases/helpers/response-charge/realtime-asr-and-websocket-tier-partitions.yaml
+  - tools/oracle/cases/helpers/response-charge/agent-and-mcp-early-charges.yaml
+  - tools/oracle/cases/helpers/response-charge/cache-hit-before-provider-header.yaml
+  - tools/oracle/cases/helpers/response-charge/provider-header-before-custom-price.yaml
+  - tools/oracle/cases/helpers/response-charge/null-candidate-retry-and-final-error.yaml
+  - tools/oracle/cases/helpers/response-charge/breakdown-lookup-error-versus-setter-error.yaml
+deviations:
+  - what: Final charges use Decimal sums and checked finite amounts, returning a typed pricing error for overflow/nonfinite provider costs instead of NaN or Infinity.
+    why: The shared cost result is the monetary input to budgets and spend persistence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1862-L1902
+out_of_scope:
+  - B1673 owns _cost_per_token_custom_pricing_helper; B1677 owns _get_additional_costs; B1683 owns usage/service-tier/call-type/header helpers and _without_provider_stated_cost; B1676 owns wall-clock helpers and transcription/default-video calculators.
+  - B1686 owns cost_per_token, vector_store_search_cost and rerank_cost; B1689 owns get_replicate_completion_pricing and completion_cost L1562-L1810; B1688 owns completion input preparation at L1401-L1560, with candidate-loop execution here.
+  - B1682 owns hidden/model identity selection, alias stripping, response-time/deployment/OCR context, pricing_entry_for_cost_calc and breakdown forwarding; B1649 owns _apply_cost_discount/_apply_cost_margin.
+  - B1678 owns OCRPricing, layered/raw/effective OCR lookup helpers, ocr_cost/ocr_batch_cost and their warning/price helpers; B1674 owns default_image_cost_calculator; B1679 owns _batch_rate/batch_cost_calculator/_batch_prompt_cost.
+  - B1680 owns usage-combination helpers and BaseTokenUsageProcessor; B1681 owns websocket tier splitting, RealtimeAPITokenUsageProcessor, ResponsesWebSocketTokenUsageProcessor and every realtime/ASR helper from L2818 through L3153.
+  - litellm/cost.json has no caller at the pin and is not loaded or given cases. All llm_cost_calc/utils.py and tool_call_cost_tracking.py functions belong to B1669-B1687, with the explicit unused function exclusions in those tasks.
+  - B069 owns request logging/spend integration and cost-header delivery; provider-specific price formulas outside the extracted leaves remain their provider tasks. Baseline persistence, reservation counts and PTU arithmetic are consumed directly from their lower owners.
+pitfalls:
+  - A token-type breakdown lookup can make a candidate fail, while a breakdown setter failure is swallowed after a charge is known.
+  - The response wrapper honors the provider cost header even when custom pricing would otherwise override usage-reported cost.
+  - Websocket tier recursion shares one breakdown receiver, so only the final partition's breakdown remains.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

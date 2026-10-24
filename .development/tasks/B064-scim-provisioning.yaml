@@ -1,0 +1,101 @@
+id: B064
+title: Reconcile SCIM group patches and assemble the provisioning API
+description: >-
+  Finish the SCIM surface in betterlite-server's scim module. Own scim_router composition,
+  _process_group_patch_operations, _apply_group_patch_updates and PATCH
+  /scim/v2/Groups/{group_id}. Mount the route sets exported by B1638-B1643 once under their
+  existing /scim/v2 paths; include both discovery base aliases and do not register their
+  methods again. Omit the router's paid-tier dependency per README while retaining the
+  B052 credential and permission checks on every operation. No enterprise package is needed.
+  Group patch evaluation starts from members_with_roles and a copied metadata map with
+  scim_managed=true. displayName updates team_alias, externalId updates metadata.externalId,
+  and other paths become lowercase metadata keys; pathless objects are not expanded as
+  user PATCH expands them. A members-prefixed operation parses B1639 member values or a
+  quoted path filter. Removal uses B1634's roster-limited identity resolution without
+  provisioning; add/replace uses B1636 with created_via=scim_group_patch. Apply operations
+  sequentially, retaining the final member set as an absolute target if any member replace
+  occurred. Metadata/alias is written before roster changes through B1637.
+  Capture intended additions/removals against the initial snapshot, reread the current
+  roster after the metadata write, and rebase only delta patches onto that fresh roster.
+  A replace instead reconciles the absolute final target, including later operations in
+  the same patch. Recompute roles for the union on alias changes or symmetric difference
+  otherwise. Reread the team after membership writes and use it when present; if missing,
+  retain the earlier update result, returning 404 only when neither exists. Return the
+  projected SCIM resource with its content type and source error mapping. Use database
+  barriers to prove concurrent additions survive delta patches but not absolute replacements,
+  and faults to prove alias/metadata survives a subsequent roster error.
+  HTTP cases use B1644's explicit eligible oracle mode for handler parity; native tests
+  separately prove no-license access and unchanged authentication. Cover all mounted methods
+  with booted-server dispatch tests so missing parts and duplicate registration fail this
+  task. B1632/B1639 own request and filtered-path decoding; add group-patch resource seeds.
+  The remaining 137 function lines plus router assembly budget 230 implementation,
+  250 concurrency/composition tests and 150 HTTP/corpus lines, capped at 725.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim.rs
+    - crates/betterlite-server/src/scim/**
+    - crates/betterlite-server/fuzz/corpus/scim_resource/group-patch-*
+    - tools/oracle/cases/management/scim-group-patch/**
+    - tools/oracle/fuzz/corpus/http_case/scim-composition-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L262-L269
+    why: Router prefix and the omitted paid-tier guard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2711-L2816
+    why: Sequential group patch evaluation and the metadata-only write helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L2867-L2945
+    why: PATCH decorator, delta rebase, absolute replacements and final team projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/README_SCIM.md#L1-L118
+    why: Directory integration and base-path examples, supplemented by the newer handlers at the pin.
+dod:
+  - text: Group patches preserve ordered operations and reconcile deltas versus absolute replacements under concurrent roster changes.
+    proof: [scim-composition-tests, oracle]
+  - text: Metadata writes, failed roster updates and final response refresh follow the pinned PATCH sequence.
+    proof: [scim-composition-tests, oracle]
+  - text: The complete SCIM API mounts once, requires normal authorization and is usable without a paid license.
+    proof: [scim-composition-tests]
+  - text: Group-patch body variants and all assembled paths pass the shared decoder replays.
+    proof: [scim-composition-corpora]
+checks:
+  optional: []
+  commands:
+    - id: scim-composition-tests
+      why: SCIM group reconciliation or full route assembly fails under real database and HTTP execution.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim::/)'
+    - id: scim-composition-corpora
+      why: Group PATCH and assembled SCIM routes have no newly committed decoder seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/scim_resource/group-patch-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-composition-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_scim_resource_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/scim-group-patch/replace-then-add-defines-final-target.yaml
+  - tools/oracle/cases/management/scim-group-patch/remove-by-escaped-subject-filter.yaml
+  - tools/oracle/cases/management/scim-group-patch/ambiguous-removal-fails-before-roster-write.yaml
+  - tools/oracle/cases/management/scim-group-patch/typed-group-is-not-a-placeholder-user.yaml
+  - tools/oracle/cases/management/scim-group-patch/pathless-object-is-metadata.yaml
+  - tools/oracle/cases/management/scim-group-patch/rename-recomputes-retained-admin.yaml
+  - tools/oracle/cases/management/scim-group-patch/final-roster-is-refreshed.yaml
+  - tools/oracle/cases/management/scim-group-patch/auth-missing-group-and-invalid-op.yaml
+deviations:
+  - what: Authenticated SCIM requests can reach provisioning and discovery without a license; stock open-source LiteLLM rejects them with HTTP 403 at its premium guard.
+    why: The README enables available MIT features for every deployment and removes paid tiers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L262-L266
+out_of_scope:
+  - "B1633 owns every function at scim_v2.py L81-L157, L272-L302, L952-L963 and L1145-L1168, including table access, existence checks, roster display and content type."
+  - "B1634 owns the classification/partition/admission functions at L514-L753 and the removal resolver at L790-L851; their records begin at L487."
+  - "B1635 owns user extraction, metadata, setting readers and role recomputation at L305-L484."
+  - "B1636 owns ensure/provision/resolve/extract functions at L764-L787, L854-L949 and L1097-L1142."
+  - "B1637 owns user membership changes and key/reference/active helpers at L966-L1094, roster failure/add/remove/batch functions at L2200-L2322 and group reconciliation at L2819-L2864."
+  - "B1638 owns email upsert at L164-L232 and POST/PUT/DELETE Users at L1661-L1879."
+  - "B1639 owns member/path parsing and all user patch helpers at L1965-L2197 plus PATCH Users at L2325-L2397."
+  - "B1640 owns team defaults and POST/PUT/DELETE Groups at L2511-L2708."
+  - "B1641 owns user equality parsing and user reads at L1556-L1658 plus group reads at L2405-L2508."
+  - "B1642 owns schema/resource builders and every discovery route at L1171-L1553."
+  - "B1643 owns placeholder listing, rejection and merge at L1882-L1962; B1644 supplies eligible oracle startup only."
+pitfalls:
+  - An absolute members replace must not be rebased onto a concurrently changed roster, or a member explicitly removed by the IdP can survive.
+  - Group PATCH rereads after roster changes and can therefore return different member data from otherwise similar group PUT operations.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

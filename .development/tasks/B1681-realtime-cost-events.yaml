@@ -1,0 +1,109 @@
+id: B1681
+title: Collect billable websocket events and price realtime sessions
+description: >-
+  Add betterlite-core::cost::realtime for cost_calculator.py L2818-L3153 and
+  _split_responses_ws_logging_object_by_service_tier L1299-L1314. Reuse B906's Responses-to-chat
+  usage projection and B1680 aggregation; expose a RealtimeBilling record with original
+  event records, aggregate usage and optional service tier. It is a parsed billing view,
+  not another websocket frame decoder. Preserve Realtime response.done collection's required
+  type/response access: missing keys are typed shape failures rather than ignored events.
+  Each matching event contributes response.usage or an empty object to B906. Creating a
+  logging record is a struct construction, not a new trivial wrapper.
+  Responses websocket events use a different validated probe: type defaults to empty, response
+  is optional, usage is an optional mapping and service_tier an optional string. Validate
+  every event before filtering, including unrelated types. Only response.completed and
+  response.incomplete with nonnull response and usage are billable; empty usage still counts.
+  Partition by exact tier value in first-occurrence order, keeping None distinct from empty
+  string and preserving event order within each group. A zero/one-tier partition returns
+  None from the split operation; multiple groups produce independently aggregated records
+  containing only their billable events. Do not merge their tiers or nonbillable events back.
+  For ordinary realtime token prices, try custom_pricing_model, base_pricing_model, every
+  session.created model in stream order, then litellm_model_name. None candidates are skipped
+  but duplicates and empty strings retain their source treatment. A candidate's generic
+  pricing failure means continue. Accept a successful pair when its sum is positive or
+  its resolved/raw catalog entry declares a nonnull token, tier, query or seconds rate,
+  including zero; otherwise continue and eventually return a zero pair. Use B1682's declared
+  price predicate and B1678's raw/effective lookup distinction so synthesized token zeros
+  do not hide a deliberately free deployment override. Forward residency to B1672.
+  Add completed transcription events separately. Resolve the first truthy ASR model from
+  transcription_session.created/updated or session.created/updated, preferring nested
+  audio.input.transcription, then input_audio_transcription, then session.model. A truthy
+  nested transcription object without model blocks the legacy object fallback. Use the
+  request model only if no event supplies one. Read base and optional custom metadata
+  softly. For each usage, duration charges seconds-or-zero at input_cost_per_second. Token
+  usage charges only input_token_details audio/text and output_tokens; aggregate input_tokens
+  alone is not billed. Audio tries input_cost_per_audio_token then input_cost_per_token.
+  Each rate family checks the entire custom entry before base, and only fields declared
+  in that effective entry's raw catalog record qualify; explicit zero wins. Unknown usage
+  types or two missing entries cost zero. Transcription does not apply residency uplifts.
+  Sum token and transcription amounts; send B1682's best-effort breakdown sink input/output
+  token costs, zero built-in-tool cost, total and a transcription_cost additional line only
+  when positive. The usage collectors are pure realtime_cost_events oracle operations;
+  native tests inject PriceLookup, clocks and the breakdown sink for candidate priority,
+  free overrides, malformed events and ASR rates. B068 provides session HTTP/websocket cost
+  integration. The 305 nonblank lines budget 340 logic, 250 tests and 210 adapters/cases,
+  capped at 800. Seed helper_case records; frame bytes stay with websocket API owners.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/realtime.rs
+    - crates/betterlite-core/src/cost/realtime/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/realtime_cost_events.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/realtime_cost_events.py
+    - tools/oracle/cases/helpers/realtime-cost-events/**
+    - tools/oracle/fuzz/corpus/helper_case/realtime-cost-events-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1299-L1314
+    why: Split logging records only when billable events span multiple exact service tiers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2818-L2914
+    why: Realtime required-key access differs from validated Responses websocket filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2920-L3042
+    why: Candidate pricing accepts explicit free entries and adds transcription to the stored breakdown.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L3045-L3153
+    why: ASR event model precedence and raw-declared per-family rate overrides.
+dod:
+  - text: Realtime and Responses websocket collectors retain their different validation, terminal-event and service-tier partition rules.
+    proof: [realtime-cost-tests, oracle, realtime-cost-events-python, realtime-cost-events-corpus]
+  - text: Candidate order honors deliberately free deployment rates and continues past unpriced or failing candidates without treating synthetic zeros as declarations.
+    proof: [realtime-cost-tests]
+  - text: Transcription rates use the event-selected ASR model and per-family custom declarations, and the total/breakdown includes their separate charge.
+    proof: [realtime-cost-tests]
+checks:
+  optional: []
+  commands:
+    - id: realtime-cost-tests
+      why: A session loses billable events, chooses the wrong model or omits transcription charges.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::realtime::/)'
+    - id: realtime-cost-events-python
+      why: Terminal-event usage comparisons lack a checked adapter calling the original collectors.
+      run: test -f tools/oracle/helpers/realtime_cost_events.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: realtime-cost-events-corpus
+      why: The realtime_cost_events variant is missing from committed helper parser inputs.
+      run: grep -rlq 'realtime_cost_events:' tools/oracle/fuzz/corpus/helper_case/realtime-cost-events-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/realtime-cost-events/done-versus-completed-and-incomplete.yaml
+  - tools/oracle/cases/helpers/realtime-cost-events/missing-realtime-type-is-an-error.yaml
+  - tools/oracle/cases/helpers/realtime-cost-events/unrelated-malformed-ws-event-still-validates.yaml
+  - tools/oracle/cases/helpers/realtime-cost-events/empty-usage-counts-null-usage-does-not.yaml
+  - tools/oracle/cases/helpers/realtime-cost-events/first-seen-tiers-and-stable-event-order.yaml
+  - tools/oracle/cases/helpers/realtime-cost-events/one-tier-does-not-build-a-split.yaml
+  - tools/oracle/cases/helpers/realtime-cost-events/asr-nested-model-versus-legacy-fallback.yaml
+deviations:
+  - what: Realtime usage and money have checked finite bounds; overflow is a typed pricing failure and retains the source's candidate-fallback boundaries.
+    why: Session accumulation must not create rounded or infinite spend while testing alternate model prices.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2920-L2981
+out_of_scope:
+  - B1680 owns BaseTokenUsageProcessor and detail merging before L2818; B906 owns every Responses usage conversion invoked by the collectors.
+  - B1682 provides the model-context predicates and breakdown sink; _cost_map_entry_declares_pricing at L2937-L2951 stays in this realtime cohort. cost_calculator.py's usage/tier helpers are B1683, token/vector/rerank dispatch B1686, preparation B1688 and replicate/early completion charges B1689, with B068 composing the final response/completion total. Arithmetic leaves B1649, B1673, B1674 and B1676-B1679 retain adjustments, custom tokens, images, timed/video/transcription, additional fees, OCR and batch functions respectively.
+pitfalls:
+  - An unrelated Responses websocket event with malformed nested response data fails validation before the event-type filter can discard it.
+  - A free custom realtime entry is selected only when its raw catalog declaration exists, rather than because model-info synthesized zero token prices.
+  - Transcription token usage with only input_tokens contributes zero because the biller reads the audio/text detail counts instead.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,92 @@
+id: B1628
+title: Choose the login provider and bind authorization state
+description: >-
+  Register public GET /sso/key/generate in betterlite-server::sso_login_entry. Own google_login,
+  SSOAuthenticationHandler.get_sso_login_redirect, get_generic_sso_redirect_response and
+  should_use_sso_handler. Despite its Python name this entry supports Google, Microsoft,
+  generic OIDC, SAML and the local password form. DISABLE_ADMIN_UI defaults absent and
+  uses the existing boolean conversion; disabled UI returns B124's page before other work.
+  Reuse its missing-environment page, B1618 callback URL helper and B1613 CLI flow validation.
+  CLI state includes user_code only when allow_cli_sso_verification_uri_complete is enabled;
+  existing_key remains ignored. A configured general_settings.custom_ui_sso_sign_in_handler
+  keeps the open-source unavailable-hook error rather than building its enterprise handler.
+  With all OAuth client IDs absent, configured SAML delegates to B1625 with return_to as
+  RelayState. Otherwise presence-based Google/Microsoft/generic precedence selects B1629,
+  B1622 or B1610/B1629 settings/client behavior. Microsoft authorization permits an absent
+  tenant and uses common, unlike its callback's missing-tenant failure. An unconfigured
+  provider falls back to B799's password form with the shared return cookie.
+  Generic authorization uses B1619 state/PKCE parameters. Store {code_verifier} under
+  pkce_verifier:<state> for 600s in Redis usage cache when present, otherwise the user cache;
+  only after storage succeeds append/replace code_challenge and code_challenge_method in
+  the generated authorization URL. Preserve repeated query values while dropping blanks
+  according to parse_qs. Set litellm_oauth_state only for PKCE, with HttpOnly, SameSite=Lax,
+  max-age 600 and Secure from B743 (true when no request context exists). Keep the library's
+  separate sso_state cookie. B1618 persists safe return_to for OAuth and password branches.
+  All settings are dependency-owned; loads_login_entry_settings must nevertheless exercise
+  their combined loader wiring and this route's DISABLE_ADMIN_UI/custom-hook bindings.
+  Add decode_sso_login_query for source/key/existing_key/return_to/user_code bytes and the
+  sso_login_query fuzz target. HTTP transcripts check provider URLs, cookies, CLI errors
+  and local-form fallback. The 316 source lines budget 330 product, 230 tests and 130
+  config/parser/route lines within 800; no enterprise package code is ported.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_login_entry.rs
+    - crates/betterlite-server/src/sso_login_entry/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/sso_login_query.rs
+    - crates/betterlite-server/fuzz/corpus/sso_login_query/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_login_entry.rs
+    - crates/betterlite-config/src/sso_login_entry/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-login-entry-*
+    - tools/oracle/cases/sso/login-entry/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L998-L1127
+    why: Login entry decorator, CLI validation, enterprise-hook fallback and provider/password branching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2926-L3176
+    why: OAuth client construction, authorization URL rewrite and PKCE cache/cookie order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3231-L3239
+    why: OAuth provider presence predicate, separate from SAML configuration.
+dod:
+  - text: The real login route chooses the correct provider or local form and emits compatible authorization URLs and cookies.
+    proof: [login-entry-tests, oracle]
+  - text: PKCE authorization persists its verifier before returning the redirect and does not overwrite the PKCE cookie for plain OAuth.
+    proof: [login-entry-tests, oracle]
+  - text: Login settings and query bytes load through production boundaries, with the user-count gate removed.
+    proof: [login-entry-tests, login-entry-config, login-entry-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: login-entry-tests
+      why: Login selection, cache/cookie ordering or the no-license behavior is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_login_entry::/) - test(replays_the_sso_login_query_corpus)'
+    - id: login-entry-config
+      why: The composed login route cannot consume its supported provider, UI and hook settings.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_login_entry::tests::loads_login_entry_settings/)'
+    - id: login-entry-corpora
+      why: Login query parsing and combined configuration have no newly added replay inputs.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/sso_login_query.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/sso_login_query)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-login-entry-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_sso_login_query_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/login-entry/disabled-ui-before-configuration.yaml
+  - tools/oracle/cases/sso/login-entry/local-password-form-return-cookie.yaml
+  - tools/oracle/cases/sso/login-entry/generic-authorization-with-pkce.yaml
+  - tools/oracle/cases/sso/login-entry/plain-oauth-preserves-pkce-cookie.yaml
+  - tools/oracle/cases/sso/login-entry/microsoft-common-tenant-authorization.yaml
+  - tools/oracle/cases/sso/login-entry/invalid-cli-session.yaml
+  - tools/oracle/cases/sso/login-entry/saml-only-provider.yaml
+deviations:
+  - what: OAuth and SAML login entry remains available above five billable users without an Enterprise license.
+    why: betterlite has no paid tier or user-count ceiling; native tests cover both sides of the former five-user boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1032-L1039
+out_of_scope:
+  - EnterpriseCustomSSOHandler.handle_custom_ui_sso_sign_in exists only in the excluded enterprise package and is not implemented.
+  - B1615 owns OAuth callback dispatch, B1626 the SAML callback and B063 indexes the remaining ui_sso.py functions.
+pitfalls:
+  - Microsoft login redirection can use the common tenant while its callback still rejects an absent MICROSOFT_TENANT.
+  - The source validates a litellm-cli flow before choosing the SAML-only branch, even though that branch passes return_to as RelayState instead of CLI state.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

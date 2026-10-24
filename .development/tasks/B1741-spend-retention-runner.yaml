@@ -1,0 +1,84 @@
+id: B1741
+title: Share retention time across logs, session rollups, health checks and tags
+description: >-
+  Complete betterlite-db::spend_retention with the run coordinator and six concrete table
+  descriptors. Own _RunProgress/_record_run_batch, all six _delete_old_* callers, four
+  _clean_* groups, _run_outcome, _log_run_summary and cleanup_old_spend_logs. Pass one
+  explicit progress object through awaited work instead of a ContextVar. Reload B1740
+  bounds and four retention settings at run entry. If every retention is disabled, emit
+  skipped_disabled before acquiring any lock. Acquire B1690's spend_log_cleanup pod lock
+  only when a Redis-backed manager exists; failure to acquire emits skipped_locked. Begin
+  the shared wall-clock budget after acquiring the lock and release only an acquired lock
+  in finalization. Cancellation records aborted with completed rows/batches and propagates;
+  ordinary run errors record aborted, log their type and return. Release failures retain
+  the source's propagation rather than being disguised as a successful run.
+  Process enabled groups in order: spend logs/tool index, auto-router sessions, health
+  checks, daily tags. Divide remaining time equally among still-pending groups; within
+  logs and sessions, split time between their two row tables. Spend cutoff is UTC now
+  minus configured retention. Load general_settings.use_spend_logs_partitioning with
+  default false; only a true flag and B1739's successful partition probe allow ensure/drop.
+  Always follow partition work with row deletion for DEFAULT and straddling partitions.
+  SpendLogs uses (request_id,startTime)/startTime; SpendLogToolIndex uses
+  (request_id,tool_name)/start_time. Session cleanup first calls B1699 retire_before with
+  remaining timeout and batch size, warning on failure, then prunes AutoRouterSession
+  (api_key,session_id,router_name) and AutoRouterUserSession
+  (user_id,api_key,session_id,router_name), both by last_turn_at. HealthCheckTable uses
+  health_check_id/checked_at. DailyTagSpend uses id/date and deletes ISO days strictly
+  before the horizon's UTC calendar day, keeping that day and lifetime tag counters.
+  Prefix all table names with LiteLLM_. Do not wrap different tables in one transaction.
+  Outcome priority is aborted, budget_exhausted, batch_cap_reached, completed; disabled
+  groups contribute no result. Completed summaries log at info, other summaries warn.
+  Expose a reusable owned job handle to B124's existing startup/reload scheduler, which
+  owns cron/interval and schedule-attempt tracking; no second retention job is registered
+  here. About 320 source lines form this runner. The 750-line budget includes controlled
+  clock and cancellation tests plus PostgreSQL fixtures proving partition stragglers,
+  independent retention horizons and baseline retirement before session rows disappear.
+scope:
+  paths:
+    - crates/betterlite-db/src/spend_retention.rs
+    - crates/betterlite-db/src/spend_retention/{runner.rs,runner/**}
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/retention-partition-switch-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L58-L75
+    why: Progress retained for cancellation reporting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py#L493-L820
+    why: Table identities, group sequencing, deadline shares and run finalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7761-L7832
+    why: B124's rescheduling caller consumes this runner without owning its deletion logic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10862-L10911
+    why: Existing startup scheduler decides whether a cleanup job is needed.
+dod:
+  - text: Enabled retention groups share the remaining deadline and delete only their own expired records.
+    proof: [retention-group-tests, partition-switch-settings, partition-switch-corpus]
+  - text: Lock ownership, cancellation progress and outcome priority are preserved across partial runs.
+    proof: [retention-lifecycle-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: retention-group-tests
+      why: Table keys, retention horizons or partition straggler deletion is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_retention::runner::groups::/)'
+    - id: retention-lifecycle-tests
+      why: Lock, progress, cancellation and outcome behavior is unimplemented.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_retention::runner::lifecycle::/)'
+    - id: partition-switch-settings
+      why: The partitioning switch is not loaded with its false default.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_retention_partition_switch)'
+    - id: partition-switch-corpus
+      why: The runner's config switch has no new parser seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/retention-partition-switch-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1740 owns constructor and settings/batch helpers in spend_log_cleanup.py; B1739 supplies partition and metric operations.
+  - B124 owns proxy_server.py cleanup trigger construction, startup registration, schedule comparison and dynamic rescheduling.
+pitfalls:
+  - A configured health-check or daily-tag retention alone must keep the cleanup job useful even when spend-log retention is unset.
+  - Dropping a partition does not increment the runner's row-deletion progress counters.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

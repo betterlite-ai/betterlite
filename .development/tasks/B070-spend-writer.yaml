@@ -1,0 +1,106 @@
+id: B070
+title: Assemble request spend writing and isolate each queued accounting update
+description: >-
+  Complete DBSpendUpdateWriter as betterlite-db::spend_writer and assemble its owned
+  handles in server::spend::runtime. This final part owns the constructor, update_database,
+  _batch_database_updates, _update_key_db and _update_user_db. Construct B1690 pod leases,
+  B1733 entity/daily queues, B1734 discovery/window queues, B1737 Redis buffering, and
+  B1747/B1748 flush handles once per server runtime. Register no HTTP route here. Give
+  the runtime explicit database, catalog, settings, alert/event sinks and shutdown owner;
+  it must not import proxy globals or spawn untracked work. B1749 owns request-log storage
+  and B1744 owns ancillary usage queues. Expose the jobs to B124's scheduler rather than
+  installing a second monitor or periodic callback in each request.
+  update_database returns true immediately when B1714's disable_spend_updates is true.
+  Otherwise hash only sk-prefixed tokens through B1715, construct B1716 logging payload,
+  overwrite spend with response_cost or zero, and serialize datetime start/end as ISO.
+  Override payload organization/team only for nonempty supplied ids. Call B1749's log
+  claim first; false means no further charge, usage enqueue or tool discovery. With
+  disable_spend_logs exactly false, enqueue tool usage then auto-router turns through
+  B1744. With any other value, skip those log-dependent operations but retain entity and
+  daily accounting and tool discovery. Load general_settings.disable_spend_logs with
+  default false, preserving null as not-exactly-false, and litellm_settings.max_budget
+  as Decimal default zero in loads_spend_writer_settings. The proxy-wide budget identity
+  is the injected LITELLM_PROXY_BUDGET_NAME value, default litellm-proxy-budget.
+  Transfer accounting into one bounded owned work item and copy the payload inside that
+  worker, then await its helpers sequentially: user, key, team, org, project, tag, access
+  group, agent, daily user, daily end-user, daily agent, daily team, daily org, daily tag,
+  model usage. Individual failures preserve the source's sibling continuation and debug
+  diagnostics. The access-group helper catches its own errors. Pass explicit org_id to
+  the daily-org builder and payload agent_id to agent charging. Key enqueue accepts any
+  non-None key when a DB exists and rethrows its own failure after reporting. User enqueue
+  adds non-None user, the proxy budget identity only when max_budget>0, and non-None end
+  user; do not deduplicate identical user/proxy identities. Its catch logs and returns.
+  After admitting the accounting work, discover tools from the original evidence via
+  B1744. Any update_database error logs through B1708 and returns true, even if insertion
+  or admission only partly completed; false is reserved for an already claimed batch.
+  Use bounded admission with backpressure and a drain/join handle so an admitted spend
+  update is accounted for at shutdown. Tests must distinguish this acknowledgement from
+  successful persistence. The five owned methods contain about 370 source lines. Budget
+  800 changed lines for composition, config, request-order/fault tests and runtime shutdown
+  integration with PostgreSQL and Redis; wire behavior remains tested by B069's callbacks.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/spend_writer.rs
+    - crates/betterlite-db/src/spend_writer/**
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/runtime.rs
+    - crates/betterlite-server/src/spend/runtime/**
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-writer-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L454-L607
+    why: Writer state and request-level sequencing/acknowledgement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L973-L1230
+    why: Ordered sibling updates plus key/user/global/end-user enqueue rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2642-L2651
+    why: Proxy budget identity and spend-log default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6847-L6850
+    why: General-settings spend-log switch keeps its prior default when absent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L408-L408
+    why: Global max_budget starts at zero.
+dod:
+  - text: Request writing returns false only for a rejected batch claim and preserves log/usage/accounting/discovery order.
+    proof: [writer-request-tests]
+  - text: Every accounting sibling has the correct identity and failure isolation, including proxy-wide user charging.
+    proof: [writer-accounting-tests, writer-settings, writer-config-corpus]
+  - text: Runtime construction owns and drains accounting, monitors and flush handles without duplicate registration.
+    proof: [writer-runtime-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: writer-request-tests
+      why: Claim ordering or the writer's charge acknowledgement is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_writer::request::/)'
+    - id: writer-accounting-tests
+      why: Ordered entity/daily dispatch and per-helper failure behavior are absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_writer::accounting::/)'
+    - id: writer-runtime-tests
+      why: Server-owned spend lifecycle has no integration coverage.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::runtime::/)'
+    - id: writer-settings
+      why: Logging disable and global max-budget settings are not loaded by config.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_writer_settings)'
+    - id: writer-config-corpus
+      why: Writer setting distinctions lack new config-parser seeds.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-writer-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations:
+  - what: A full accounting work queue waits for capacity, and shutdown drains or explicitly reports remaining owned work.
+    why: The source starts an unbounded detached task per request; bounded owned work avoids silent loss when the runtime stops.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_spend_update_writer.py#L569-L585
+out_of_scope:
+  - B1742 owns member/tag/group enqueue and turn attribution; B1743 owns timing/daily builders and baseline targets; B1744 owns router injection and ancillary usage enqueue.
+  - B1745 owns entity SQL, member locks, end-user writes and cache invalidation. B1746 owns commit/retry primitives, daily writes, interrupted state and the window forwarding reuse.
+  - B1747 owns memory/day-tag/discovery flush and shutdown; B1748 owns mode dispatch, Redis leader/tag flush and restoration; B1749 owns batch-row detection/claim/takeover and ordinary log insertion.
+  - B1690/B1733/B1734/B1737/B1738 own all queue implementations. B1739/B1740/B1741 provide independent retention services for B124's scheduler; B1735/B1736 provide window persistence and reseeding for their direct callers.
+pitfalls:
+  - update_database returns true after a caught persistence error, so that return value cannot be treated as a database success receipt.
+  - A user id equal to litellm-proxy-budget is enqueued twice when global max_budget is positive.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

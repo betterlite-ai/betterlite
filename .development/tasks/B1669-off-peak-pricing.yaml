@@ -1,0 +1,94 @@
+id: B1669
+title: Resolve off-peak windows on UTC and vendor weekday calendars
+description: >-
+  Add betterlite-models::off_peak for utils.py L401-L613, with TokenRates and the
+  off-peak block, window, weekday and replacement operations. Accept an explicit billing
+  instant from the caller; the calculator supplies B198's request instant rather than
+  consulting the clock twice. Flat hours_utc applies every day and wins independently of
+  windows. Each windows entry combines its UTC hours with weekdays evaluated in the
+  enclosing weekday_timezone. Missing weekdays accepts every day; strings and nonsequences
+  reject the rule, an empty list matches nothing, integers 1..7 and the source's English
+  aliases match, and Booleans do not count as weekday integers. Strip timezone names and
+  fall back to UTC for invalid or absent names. Use jiff's IANA database conversion, with
+  bundled zone data available on supported installations, instead of depending upward on
+  betterlite-core's duration module. Compare chrono-tz if a workspace timezone dependency
+  already exists; keep one maintained timezone implementation.
+  Parse windows as exactly two trimmed %H:%M components, including the single-digit forms
+  Python accepts. Ignore malformed entries, retain inclusive starts and exclusive ends,
+  and treat equal endpoints as all day. A crossing-midnight window tests either side of
+  midnight, while its weekday still belongs to the instant being billed, not the day the
+  window began. A naive supplied datetime means UTC. Mixed sequences keep only strings
+  when read through _as_window_strings. Preserve the low-level window helper's own error
+  distinction for invalid noniterable input in its pure adapter.
+  An open off_peak_pricing object replaces each supplied numeric or numeric-string rate;
+  Boolean and malformed rates fall back independently. Missing reasoning keeps the prior
+  optional reasoning rate, whose billed fallback follows the replacement output rate.
+  The five-base-rate adapter leaves a present one-hour cache-write rate unchanged, including
+  zero; only an absent one follows the replacement ordinary cache-write rate. Rates are
+  B204 Decimal values and never pass through binary floating point. Export the shared
+  operations needed by generic pricing, Dashscope and Perplexity without cloning the
+  calendar logic. The pure off_peak helper passes an explicit instant to the actual Python
+  functions and tests flat windows, qualified rules and both rate projections. Only parsed
+  records enter this leaf; its corpus exercises the existing helper_case decoder.
+  The owned 186 nonblank lines need about 260 implementation, 240 boundary tests and
+  180 oracle adapter/fixture lines, with a 750-line allowance for dependency wiring.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-models/Cargo.toml
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/off_peak.rs
+    - crates/betterlite-models/src/off_peak/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/off_peak.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/off_peak.py
+    - tools/oracle/cases/helpers/off-peak/**
+    - tools/oracle/fuzz/corpus/helper_case/off-peak-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L401-L613
+    why: UTC intervals, vendor-local weekdays, missing rates and the one-hour cache exception.
+  - url: https://docs.rs/jiff/latest/jiff/tz/struct.TimeZone.html
+    why: Named-zone conversion without ambient system-timezone lookup.
+  - url: https://docs.rs/chrono-tz/latest/chrono_tz/
+    why: Alternative maintained IANA implementation to compare against workspace dependencies.
+dod:
+  - text: Midnight, DST and calendar-day boundaries select the same windows as the pinned functions with a supplied instant.
+    proof: [off-peak-tests, oracle, off-peak-python]
+  - text: Partial off-peak rate maps preserve missing reasoning and explicit one-hour cache prices while replacing ordinary rates.
+    proof: [off-peak-tests, oracle, off-peak-python, off-peak-corpus]
+checks:
+  optional: []
+  commands:
+    - id: off-peak-tests
+      why: Calendar qualification or rate inheritance changes the price at an interval boundary.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^off_peak::/)'
+    - id: off-peak-python
+      why: Explicit-clock pricing lacks its typed Python comparison adapter.
+      run: test -f tools/oracle/helpers/off_peak.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: off-peak-corpus
+      why: No off_peak helper input survives the shared parser replay.
+      run: grep -rlq 'off_peak:' tools/oracle/fuzz/corpus/helper_case/off-peak-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/off-peak/equal-endpoints-and-midnight-crossing.yaml
+  - tools/oracle/cases/helpers/off-peak/shanghai-weekday-after-utc-date-change.yaml
+  - tools/oracle/cases/helpers/off-peak/dst-calendar-and-invalid-zone-fallback.yaml
+  - tools/oracle/cases/helpers/off-peak/flat-hours-bypass-empty-weekdays.yaml
+  - tools/oracle/cases/helpers/off-peak/boolean-weekday-and-rate-rejected.yaml
+  - tools/oracle/cases/helpers/off-peak/missing-reasoning-and-explicit-one-hour-zero.yaml
+deviations:
+  - what: Nonfinite or unrepresentable off-peak money returns a typed pricing error, and finite prices retain exact decimal digits.
+    why: Spend cannot carry float infinity or silently lose rate precision; invalid textual rates still use the source fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L537-L552
+out_of_scope:
+  - Outside the off-peak block, utils.py assigns threshold/base/reasoning rates to B1670, modality details to B1671, generic token/uplift costs to B1672, billed-rate breakdowns to B1673, image arithmetic to B1674, web-search counters to B1675, character metrics to B1676 and image dispatch to B1687.
+  - The request billing clock belongs to B198; no environment or configuration key is introduced for time travel.
+pitfalls:
+  - A Sunday UTC window can be Monday in weekday_timezone, and a window crossing midnight does not carry yesterday's weekday.
+  - A one-hour cache rate of zero must survive an off-peak replacement of ordinary cache creation.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

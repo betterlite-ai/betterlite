@@ -1,0 +1,73 @@
+id: B1604
+title: Scope stored and dynamic tag reports to their caller
+description: >-
+  Implement tag_reads for POST /tag/info, GET /tag/list and GET /tag/daily/activity.
+  Own info_tag, list_tags, get_tag_daily_activity, _get_internal_user_api_keys,
+  _get_tag_list_scope, get_tag_daily_activity_api_key_filter and _validate_tag_list_date_range.
+  B1603 supplies tag body types. A non-admin internal user's scope combines the current hashed
+  key with all keys owned by user_id, sorted and deduplicated; other role classes follow the
+  source's unscoped branch. Restrict dynamic tag group_by and stored-tag lookup together.
+  /tag/list requires both date strings or neither, accepts YYYY-MM-DD with start <= end, and
+  aggregates dynamic first/last timestamps. Stored tags appear first; dynamic-only tags have
+  models null and the pinned descriptive text. /tag/info returns a name-keyed map with linked
+  budget records and converts missing-name errors to 500 inside its catch.
+  Call B074 get_daily_activity using litellm_dailytagspend, entity field tag, default page=1,
+  page_size=10, comma splitting without trimming and no metadata_metrics_func. A requested
+  key outside an internal user's set returns the empty paginated response before querying.
+  Decode query strings in decode_tag_query(&[u8]) with a tag_query fuzz target; request bodies
+  reuse the tag_request decoder. Prove row filtering using independently seeded B860 databases
+  for admin, internal-user, view-only and unrelated keys. Compare the HTTP envelope, including
+  error type/param/code and content-type; ignore message wording only on error responses.
+  The owned functions occupy 257 nonblank, noncomment lines. Allow 280 product, 190 tests,
+  100 decoder/fuzz and 50 composition lines, within 650 changed lines.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/tag_reads.rs
+    - crates/betterlite-server/src/tag_reads/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/tag_query.rs
+    - crates/betterlite-server/fuzz/corpus/tag_query/**
+    - tools/oracle/cases/management/tag-reads/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L154-L208
+    why: Internal-user key collection and the distinct unrestricted versus empty scope results.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L486-L683
+    why: Decorated info/list routes, date validation and dynamic-tag grouping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L722-L788
+    why: Daily activity route parameters and explicit omission of cross-tag deduplication.
+dod:
+  - text: Info, list and daily requests expose only the rows selected by their precise role and key scope.
+    proof: [tag-read-tests, oracle]
+  - text: Dates, pagination and commas reach the real query decoder and its corpus without widening an empty scope.
+    proof: [tag-query-corpus, tag-read-tests]
+checks:
+  optional: []
+  commands:
+    - id: tag-read-tests
+      why: Stored/dynamic tag joins or caller scope differ from the pinned route behavior.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^tag_reads::/) - test(replays_the_tag_query_corpus)'
+    - id: tag-query-corpus
+      why: The tag query parser lacks a committed seed or fails replay.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/tag_query.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/tag_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_tag_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/tag-reads/info-budget-and-missing.yaml
+  - tools/oracle/cases/management/tag-reads/stored-before-dynamic.yaml
+  - tools/oracle/cases/management/tag-reads/date-pair-and-reversal.yaml
+  - tools/oracle/cases/management/tag-reads/internal-user-owned-keys.yaml
+  - tools/oracle/cases/management/tag-reads/unrelated-requested-key.yaml
+  - tools/oracle/cases/management/tag-reads/multi-tag-attribution.yaml
+  - tools/oracle/cases/management/tag-reads/auth-and-role-matrix.yaml
+deviations: []
+out_of_scope:
+  - B1603 owns all tag-management table protocols, mutation functions, deployment attachment helpers and tag_management.py types.
+  - B074 owns common_daily_activity.py, including aggregation and pagination beyond this route's key scope.
+pitfalls:
+  - An empty owned-key set is a deny-all query condition, whereas None means no key filter.
+  - Multi-tag daily spend is attribution and can count one request several times.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

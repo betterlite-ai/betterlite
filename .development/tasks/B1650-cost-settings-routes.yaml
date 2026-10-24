@@ -1,0 +1,95 @@
+id: B1650
+title: Persist cost discounts, margins and the unpriced-model switch
+description: >-
+  Add cost_settings_routes for GET/PATCH /config/cost_discount_config,
+  /config/cost_margin_config and /config/block_requests_for_models_without_pricing,
+  including BlockUnpricedModelsRequest/Response. Use B052's existing authorization policy;
+  these handlers add no separate role predicate. Decode bodies through
+  decode_cost_management_body(bytes, Discount|Margin|BlockUnpriced), preserving Pydantic
+  numeric-string/Boolean coercion and validation failures before handler execution.
+  All PATCH handlers require a database and effective store_model_in_db=true before
+  semantic validation or persistence; the guard defaults false and uses B124's existing
+  general_settings.store_model_in_db/STORE_MODEL_IN_DB resolution. Missing DB or disabled
+  storage is 500. Discount keys must be B209 provider identities, with values in [0,1].
+  Margin keys additionally allow global; scalar/percentage values lie in [0,10], fixed_amount
+  is nonnegative, and an empty per-provider object is invalid. Preserve other numeric
+  object keys: a nonempty object containing only an unknown key is accepted. Empty top-level
+  maps clear all adjustments. Reject nonfinite/unrepresentable money with 400 and a detail
+  string before saving, using no error type/param/code fields for that new validation case.
+  Load the current config, create litellm_settings only when absent, replace the entire
+  selected map or switch, save through B124, and only then publish the runtime value.
+  A save failure returns 500 and leaves this handler's runtime assignment unperformed.
+  Reuse B1649's loaded adjustment records; block_requests_for_models_without_pricing defaults
+  false through B754. Discount/margin GET require DB, return values from persisted config,
+  and log then return values={} on config-load failures. Switch GET reads runtime state
+  without a DB check, so do not consolidate the three reads into one generic fetch.
+  loads_cost_management_switches in betterlite-config must load both storage guard spellings
+  and the unpriced-model flag; existing adjustment-loader tests remain B1649's. Native
+  database tests cover failed saves and runtime ordering. HTTP oracle cases compare
+  accepted/rejected providers, bounds, replacement and read-failure behavior, plus auth,
+  content type and complete error envelopes. Fuzz the three body forms in cost_management
+  and replay with replays_the_cost_management_corpus. The 256 function lines and two small
+  models budget 290 routes/validation, 210 tests, 160 fixtures/fuzz and 80 config wiring,
+  with an 800-line maximum.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/cost_settings_routes.rs
+    - crates/betterlite-server/src/cost_settings_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/cost_management.rs
+    - crates/betterlite-server/fuzz/corpus/cost_management/**
+    - crates/betterlite-config/src/cost_adjustments/tests.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/cost-management-*
+    - tools/oracle/cases/management/cost-settings/**
+    - tools/oracle/fuzz/corpus/http_case/cost-settings-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L192-L560
+    why: All six route decorators, numeric validation, persistence-before-runtime updates and read asymmetry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10703-L10719
+    why: Dependency-owned effective storage guard can be enabled by environment or persisted general settings.
+dod:
+  - text: Cost-setting APIs preserve provider/range rules, permissive unknown numeric margin keys and complete-map replacement.
+    proof: [cost-settings-tests, oracle, cost-management-corpus]
+  - text: Persistence guards load through config, writes precede runtime assignment and GET failure behavior remains endpoint-specific.
+    proof: [cost-settings-tests, cost-management-config, oracle, cost-management-corpus]
+  - text: Request coercions, authorization and errors match the HTTP handlers apart from the declared finite-money boundary.
+    proof: [cost-settings-tests, oracle, cost-management-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cost-settings-tests
+      why: Cost management accepts the wrong amounts or publishes runtime state before persistence.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cost_settings_routes::/) - test(replays_the_cost_management_corpus)'
+    - id: cost-management-config
+      why: The storage and unpriced-model switches are not consumed by the real configuration loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^cost_adjustments::tests::loads_cost_management_switches/)'
+    - id: cost-management-corpus
+      why: Cost-management request and config parsers lack their newly added adversarial examples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/cost_management)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/cost-management-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_cost_management_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/cost-settings/discount-bounds-and-invalid-global.yaml
+  - tools/oracle/cases/management/cost-settings/margin-global-fixed-and-thousand-percent.yaml
+  - tools/oracle/cases/management/cost-settings/unknown-numeric-margin-key-is-retained.yaml
+  - tools/oracle/cases/management/cost-settings/empty-provider-object-versus-empty-map.yaml
+  - tools/oracle/cases/management/cost-settings/patch-replaces-existing-provider-map.yaml
+  - tools/oracle/cases/management/cost-settings/storage-disabled-before-semantic-validation.yaml
+  - tools/oracle/cases/management/cost-settings/switch-get-does-not-require-database.yaml
+  - tools/oracle/cases/management/cost-settings/numeric-coercion-auth-and-body-errors.yaml
+deviations:
+  - what: Nonfinite or Decimal-unrepresentable adjustment amounts return HTTP 400 with a detail string before persistence, rather than accepting a float that can later fail serialization or store invalid money.
+    why: Costs and margins must remain finite checked Decimal values under the repository money rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L419-L460
+out_of_scope:
+  - B1651 owns cost_tracking_settings.py pricing-resolution helpers L48-L189 and estimate_cost with its decorator L563-L699.
+  - B1649 owns adjustment math and loaded discount/margin records; B754 owns unpriced-request enforcement, which this API only configures.
+  - B075 owns the included prompt-cache prediction router; B066 composes its routes without re-registering them here.
+pitfalls:
+  - A nonempty margin object with no percentage or fixed_amount passes the source's validation and must retain its unknown numeric fields.
+  - GET of the unpriced-model switch works without a database while GET of either adjustment map does not.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

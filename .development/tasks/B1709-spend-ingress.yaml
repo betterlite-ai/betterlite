@@ -1,0 +1,94 @@
+id: B1709
+title: Receive collector lines and replay trusted callback payloads
+description: >-
+  Implement the two external spend ingestion surfaces in betterlite-server::collector and
+  ::callback_replay. The collector runs the ordinary B051/B124 startup/shutdown lifecycle
+  without an HTTP listener, with an injected owned event handler installed by B069. Expose
+  a collector binary subcommand accepting only an optional --address value; retain
+  LITELLM_JOB_ROLE's configured value or default it to collector in the settings snapshot.
+  Apply recognized LITELLM_LOG levels, resolve database URLs through B710/B712 and use
+  B711's native/external pool configuration. The earlier native-pool decision replaces
+  LiteLLM's embedded pod-PgBouncer rewrite; do not spawn a pooler or mutate process env.
+  Listen on B1708's Unix/loopback address, create parent directories and replace a stale
+  socket path. Consume newline-delimited records up to 64 MiB per line, serially per
+  connection, with independent connections concurrent. A truncated final line is discarded
+  without incrementing received; complete lines increment received and then handled or
+  failed. A handler exception logs and permits the next line. On SIGINT/SIGTERM stop
+  accepting, half-close writable producer sockets, read until producers close or the drain
+  timeout, report remaining connections, then run proxy shutdown. All connection tasks
+  and sockets are owned and joined/closed when their listener exits. Fuzz the incremental
+  decode_collector_line framing function in server, including exact limit and split newline.
+  Separately register POST /v1/rust_control_plane/logs, the only callback-ingest path at
+  this pin. B052 authenticates; only PROXY_ADMIN may replay, while admin viewer gets 403.
+  decode_callback_logs accepts records length 0..1000, success/failure status, an arbitrary
+  structured standard_logging_payload and nullable error; retain Pydantic's ignored extra
+  fields. Reconstruct B247 Logging state with stream=false, model or empty, call_type or
+  acompletion, call ID from litellm_call_id then id then UUID, and messages or empty.
+  Numeric epoch times become UTC, already typed datetimes remain unchanged and other
+  values use the injected current clock. Preserve separate clock reads where the source
+  repeats conversion. Map user_api_key_hash into both user_api_key and user_api_key_hash
+  in litellm_params.metadata along with alias/user/team/org/end-user/spend_logs_metadata.
+  Seed the original standard payload, cost or zero and cache_hit or false before invoking
+  B250 success or B251 failure. The minimal success response carries id and usage counts
+  with missing-field zero defaults; failure text prefers record.error then payload.error_str
+  then replayed failure, with empty traceback. Process records sequentially, catch each
+  replay failure and return processed/failed plus indexed failures without aborting the batch.
+  Native tests cover consumer framing/drain and callback ordering; HTTP oracle cases cover
+  authentication, empty/oversized batches, validation, a failing middle record and terminal
+  realtime replay. Fuzz decode_callback_logs in server using its production body decoder.
+  Consumer source is 186 lines, replay 171 and records 32; cap implementation at 390 and
+  tests/fuzz/CLI/HTTP fixtures at 410, within 800 total.
+scope:
+  paths:
+    - crates/betterlite/src/main.rs
+    - crates/betterlite/src/collector.rs
+    - crates/betterlite/src/collector/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/{collector,callback_replay}.rs
+    - crates/betterlite-server/src/{collector,callback_replay}/**
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/fuzz/{Cargo.toml,fuzz_targets/spend_ingress.rs,corpus/spend_ingress/**}
+    - tools/oracle/cases/http/callback-replay/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/collector.py#L51-L220
+    why: Framing, half-close drain, CLI/environment startup and pooler selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/logging_endpoints/callback_logs_endpoints.py#L42-L182
+    why: Terminal logging reconstruction and ordered batch replay.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/logging_endpoints/callback_logs_endpoints.py#L185-L203
+    why: Actual route decorator and strict proxy-admin role check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/callback_logs_endpoints.py#L15-L44
+    why: Batch/status/payload records; the module docstring's older path is not registered.
+dod:
+  - text: Collector connections process complete lines in order and stop through half-close/drain with all tasks and sockets owned by the runtime.
+    proof: [ingress-tests, ingress-corpus]
+  - text: Trusted callback ingestion enforces proxy-admin access and replays terminal records with exact attribution, defaults and per-index failures.
+    proof: [ingress-tests, ingress-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: ingress-tests
+      why: Collector lifecycle, CLI selection or callback replay behavior is absent or incorrect.
+      run: cargo nextest run --locked -p betterlite -p betterlite-server --no-tests=fail -E 'test(/^collector::/) + test(/^callback_replay::/) - test(replays_the_spend_ingress_corpus)'
+    - id: ingress-corpus
+      why: Either external ingress decoder lacks its tagged production replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_ingress)" && test -f crates/betterlite-server/fuzz/fuzz_targets/spend_ingress.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_ingress_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/callback-replay/admin-viewer-and-missing-auth.yaml
+  - tools/oracle/cases/http/callback-replay/empty-over-cap-and-invalid-status.yaml
+  - tools/oracle/cases/http/callback-replay/terminal-realtime-success-and-failure.yaml
+  - tools/oracle/cases/http/callback-replay/failed-middle-record-keeps-batch-order.yaml
+deviations:
+  - what: The collector uses the configured native database pools or external pooler and does not rewrite DATABASE_URL to an embedded pod PgBouncer; it starts as betterlite collector.
+    why: Reuse the earlier database task's native-pool/process decision and the Rust binary rather than adding a Python module launcher or subprocess pooler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/collector.py#L168-L220
+out_of_scope:
+  - B1707 decodes event content after line framing, B1708 owns producer settings/delivery, and B069 installs the actual spend callback into the collector runtime port.
+  - B250/B251 retain callback fan-out and B051 retains database startup; no enterprise callback implementation is imported.
+pitfalls:
+  - Replayed realtime payloads must set stream=false or the success callback waits for a completion that never arrives.
+  - The registered callback path is /v1/rust_control_plane/logs, despite the stale types-module docstring.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,164 @@
+id: B069
+title: Connect spend callbacks, capture-rate reporting and the spend API routers
+description: >-
+  Finish server::spend::callbacks and ::capture_route. Own _ProxyDBLogger construction,
+  success/offload/run_spend_event, _PROXY_track_cost_callback, its run_spend_event facade
+  and the two typed interaction predicates. Register the callback and async-success entry
+  only when a database exists, sharing B1708's producer and B118's shadow logger; drain
+  the producer on shutdown with its configured timeout. B1707 handles eligible event
+  building/decoding. A build failure warns and executes in process; a decode failure logs
+  and discards. Store-body selection comes from B1714. B1720 owns failure callbacks and
+  identity enrichment; B1719 owns reservation settlement and counter updates.
+  Resolve parent span through B206, end-user through B1716 and chosen metadata through
+  B206. Enrich only a truthy key with missing user id; aretrieve_batch and its enum string
+  keep captured identity rather than looking up a replacement key owner. Extract
+  batch_cost_is_final from B1040 into core::cost::batch_status: completed/complete require
+  an output file or counts proving total>0 and completed=0; failed/cancelled/expired are
+  final; other statuses are not. A nonfinal typed batch retrieve releases its reservation
+  and returns. This is a pure status check, not an enterprise batch poller.
+  A present standard logging object owns response_cost even when null; otherwise use
+  kwargs cost. Project id must be a string. Tags/eligibility come from B1720; debit groups
+  intersect the served deployment through B1742. Eligible nonnull cost settles via B1719;
+  false charged stops all subsequent cache/alert work. Otherwise submit B124 cached-object
+  updates to an owned worker and await B116 customer_spend_alert. Ineligible cost releases
+  an existing reservation. Missing-cost interactions with absent usage use B098's shared
+  predicates: retain a reservation only for a pollable id-bearing queued/in_progress
+  response when BACKGROUND_INTERACTION_COST_POLLING_ENABLED is true. Load that env setting
+  with default true, lowercase comparison to true without trimming. Other expected-no-usage
+  interactions release and return; completed/requires_action without usage are failures.
+  All other missing-cost paths release first, skip missing-model or websocket wrappers
+  lacking a standard object, and report a tracking failure only for nonstreaming or a
+  stream with complete_streaming_response present. The outer catch reports metadata keys,
+  submits an owned failed-tracking alert and logs through B1708 without failing inference.
+  Register GET /spend/capture_rate, with no aliases, using B1712. Require YYYY-MM-DD
+  start_date/end_date, provider=openai, threshold=0.9 with 0<threshold<=1, and repeated
+  project_ids. Framework decoding failures return 422; then B1704 admin/viewer permission
+  precedes missing-DB 500, reversed-range 400 and difference>=180 days 400. Missing billing
+  credential maps to 503; billing request failure maps to 502; success returns the report.
+  decode_capture_query(raw_query) is fuzzed and replayed. Initialize B1712's scheduled check
+  at 01:15 UTC with a first run two minutes after startup, re-reading settings each run.
+  An absent setting clears B111 gauges; alerts use B116 High/failed_tracking_spend. Reuse
+  B070's lease owner and B1712 settings validation, not a second scheduling policy.
+  Compose the already registered routers from B1721-B1727, B1729-B1732 and B1709 once;
+  those files enumerate their exact paths and HTTP cases. Do not register their handlers
+  again. Test capture success and billing failure through a booted HTTP oracle using a
+  fixed capture_billing_fixture enum (success, zero_bill, provider_failure): the Rust test server injects B173's recording
+  transport, and a test-owned LiteLLM startup hook replaces only organization_costs.py's
+  httpx module binding with a client using MockTransport. Validate the fixed billing URL,
+  bearer placeholder and query, leaving the real route/auth/service code intact. Keep
+  this fixture out of production settings, add case-decoder seeds and check its Python.
+  The callback/route/startup/status cohort is about 400 source lines. Fit production,
+  fixture, native failure-order tests and HTTP/helper adapters in 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/batch_status.rs
+    - crates/betterlite-core/src/cost/batch_status/**
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/{callbacks.rs,callbacks/**,capture_route.rs,capture_route/**}
+    - crates/betterlite-server/src/spend/{startup.rs,startup/**}
+    - crates/betterlite-server/src/{lib.rs,routes.rs,state.rs}
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/spend-callback-*
+    - crates/betterlite-server/fuzz/{Cargo.toml,fuzz_targets/capture_query.rs,corpus/capture_query/**}
+    - tools/oracle/src/{case.rs,process.rs,runner.rs}
+    - tools/oracle/src/http/capture_billing/**
+    - tools/oracle/src/bin/capture_billing_fixture.rs
+    - tools/oracle/fixtures/capture-billing/**
+    - tools/oracle/fuzz/corpus/http_case/capture-billing-*
+    - tools/oracle/src/helpers/{mod.rs,batch_cost_status.rs}
+    - tools/oracle/helpers/{dispatch.py,batch_cost_status.py}
+    - tools/oracle/fuzz/corpus/helper_case/batch-cost-status-*
+    - tools/oracle/cases/helpers/batch-cost-status/**
+    - tools/oracle/cases/spend/capture-rate/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L103-L148
+    why: Writer injection, success offload and serialized event consumption.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L292-L500
+    why: Successful cost tracking, missing-cost deferral and alert boundaries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/proxy_track_cost_callback.py#L613-L632
+    why: Consumer facade and typed interaction checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1199-L1274
+    why: Capture route decorators, query defaults and permission/error ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2751-L2766
+    why: Database-conditional callback registration and producer shutdown.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11170-L11228
+    why: Capture-rate job schedule, live settings and metric/alert callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L36-L68
+    why: Pure batch finality extracted below B1040's dependency on spend callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/background_cost_polling.py#L203-L232
+    why: B098's common pollability and expected-missing-usage predicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10912-L10942
+    why: Open-source startup skips the absent enterprise managed-batch polling hook.
+dod:
+  - text: Success, offload, final batch and missing-usage callbacks preserve settlement/cache/alert ordering without failing inference.
+    proof: [spend-callback-tests, batch-status-tests, oracle, callback-python, callback-helper-corpus]
+  - text: Capture reporting authenticates real HTTP requests and preserves query, permission, date and billing error behavior.
+    proof: [capture-route-tests, capture-query-corpus, capture-fixture-tests, capture-fixture-python, capture-fixture-corpus, oracle]
+  - text: Startup and shutdown own callback delivery, compose spend routers once and apply the capture schedule and polling setting.
+    proof: [spend-startup-tests, callback-settings, callback-config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: spend-callback-tests
+      why: Success callback settlement, deferral or failure isolation is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::callbacks::/)'
+    - id: batch-status-tests
+      why: Lower batch finality has no behavior tests.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::batch_status::/)'
+    - id: capture-route-tests
+      why: Capture endpoint query and error ordering are untested.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::capture_route::/) - test(replays_the_capture_query_corpus)'
+    - id: spend-startup-tests
+      why: Callback registration, route composition or scheduled gauge clearing is absent.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::startup::/)'
+    - id: callback-settings
+      why: Background interaction polling is not loaded with its exact env semantics.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_callback_settings)'
+    - id: callback-config-corpus
+      why: Callback settings have no newly added parser inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/spend-callback-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: capture-query-corpus
+      why: Capture query bytes lack production decoder replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/capture_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_capture_query_corpus)'
+    - id: capture-fixture-tests
+      why: Booted capture billing interception is missing or can replace authentication.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::capture_billing::/)'
+    - id: capture-fixture-python
+      why: The fixed LiteLLM billing startup fixture has not passed strict Python checks.
+      run: test -f tools/oracle/fixtures/capture-billing/startup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/fixtures/capture-billing && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/fixtures/capture-billing/pyrightconfig.json
+    - id: capture-fixture-corpus
+      why: The new HTTP fixture selector is not covered by case decoding.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/capture-billing-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+    - id: callback-python
+      why: Pure batch-status adapters are absent or fail checking.
+      run: test -f tools/oracle/helpers/batch_cost_status.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: callback-helper-corpus
+      why: Final batch states have no helper operation seed.
+      run: grep -rlq 'batch_cost_status:' tools/oracle/fuzz/corpus/helper_case/batch-cost-status-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/batch-cost-status/pending-completed-no-output-and-all-failed.yaml
+  - tools/oracle/cases/spend/capture-rate/required-query-and-threshold-422.yaml
+  - tools/oracle/cases/spend/capture-rate/auth-admin-viewer-and-foreign-user.yaml
+  - tools/oracle/cases/spend/capture-rate/no-database-reversed-and-180-day-boundary.yaml
+  - tools/oracle/cases/spend/capture-rate/missing-admin-key-503.yaml
+  - tools/oracle/cases/spend/capture-rate/billing-failure-502-and-project-query.yaml
+  - tools/oracle/cases/spend/capture-rate/report-success-and-zero-provider-bill.yaml
+deviations:
+  - what: No managed-batch polling hook or synthetic managed-file charge is installed; startup skips that absent hook and public provider batch-retrieve events retain their normal accounting path.
+    why: The pinned open-source checkout has no enterprise implementation; managed files and batches remain an open product decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10912-L10942
+out_of_scope:
+  - B1720 owns failure/enrichment/tag/eligibility/metadata helpers in proxy_track_cost_callback.py; B1719 owns its reservation and database-counter settlement helpers.
+  - Every other spend_management_endpoints.py handler belongs to B1721-B1727 or B1729-B1732; B1704 owns visibility and B1728 owns list-query construction.
+  - B1039/B1040 retain batch output/finalization utilities beyond batch_cost_is_final; B098 retains interaction polling, settlement and response types.
+  - B124 owns proxy_server.py outside the explicitly cited callback and capture job sections, including counter/cache implementations and the enterprise hook's debug-only skip.
+pitfalls:
+  - A standard logging object with response_cost=null suppresses a nonnull kwargs response_cost fallback.
+  - queued interactions with an id can retain a reservation, but requires_action without usage must raise a tracking alert.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

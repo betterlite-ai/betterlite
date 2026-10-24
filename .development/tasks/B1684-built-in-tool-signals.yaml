@@ -1,0 +1,113 @@
+id: B1684
+title: Identify built-in search calls and extract their billing inputs
+description: >-
+  Add betterlite-models::tool_signals for tool_call_cost_tracking.py's three top-level
+  probes, _count_web_search_calls, _extract_file_search_params, _extract_token_counts,
+  _safe_convert_to_int, _usage_with_anthropic_web_search, the four response-includes
+  methods and the five kwargs/tool-selection helpers at L742-L787. Define ToolBillingResponse
+  as tagged parsed chat/Responses/raw/other views, retaining typed annotations, output item
+  types, optional tool_usage and B1668 usage. Do not infer a typed Responses response merely
+  from an output key in a dictionary.
+  The raw Anthropic probe from B1675 signals web search whenever it returns a count,
+  including zero. Chat responses signal URL citations, then typed prompt web_search_requests,
+  server_tool_use counts, or a positive integer server_side_tool_usage_details.web_search_calls.
+  Responses objects instead require a web_search_call output item and do not fall through
+  to supplied usage signals. Other response kinds may use the same supplied usage checks.
+  The xAI-style counter accepts Boolean true as an integer but rejects numeric strings.
+  File search signals only chat file_citation annotations or Responses file_search_call
+  items. Scan all choices, skipping missing messages; output type is accepted only as a
+  string from dictionary or attribute access.
+  Count non-Responses web search as one. For Responses, validate tool_usage through the
+  pinned ResponsesToolUsage shape; a reported web_search.num_requests wins, including zero,
+  while invalid/missing data falls back to counting web_search_call output items with a
+  minimum of one. Repair Anthropic search usage only when its existing server-tool count
+  is absent: use the validated raw response count to create usage or clone the existing
+  record with a replacement server_tool_use, preserving an already reported zero.
+  File-search storage_gb/days extraction accepts dictionaries only, converts each nonnull
+  value independently with Python float-compatible numeric/Boolean/string rules and maps
+  conversion failures to None. Token/session integer conversion accepts integers, floats
+  and strings, truncating finite floats toward zero; invalid strings become None and
+  unsupported record types produce no counts. Overflow remains an error where the source
+  does not catch it. Inputs are parsed records, so use the existing helper decoder.
+  kwargs web_search_options key presence wins even for an empty object; explicit null is
+  an invalid constructor input, not a request to inspect tools. Otherwise examine tools
+  in original order. _get_tools_from_kwargs does not filter by its tool_type argument.
+  The first dictionary with type=web_search_preview, type=web_search, or merely a
+  search_context_size key becomes WebSearchOptions. File-search extraction independently
+  chooses the first type=file_search dictionary. WebSearchOptions and FileSearchTool are
+  TypedDict constructors at this pin: they copy mapping fields without validating values
+  or dropping extras. Preserve unknown fields and malformed field values in this projection;
+  only a nonmapping explicit options value or invalid keyword expansion fails construction.
+  Pure tool_signals cases call these actual probes with typed fixtures and verify counts,
+  cloning and errors. Native tests round-trip ToolBillingResponse and CostUsage views.
+  The owned functions contain 226 nonblank lines; budget 240 projections/logic, 220 tests
+  and 190 oracle/corpus lines, capped at 725. chat_completion_response_includes_annotations
+  has no caller at the pin and is excluded instead of becoming another annotation API.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/tool_signals.rs
+    - crates/betterlite-models/src/tool_signals/**
+    - crates/betterlite-models/src/cost_usage.rs
+    - crates/betterlite-models/src/cost_usage/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/tool_signals.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/tool_signals.py
+    - tools/oracle/cases/helpers/tool-signals/**
+    - tools/oracle/fuzz/corpus/helper_case/tool-signals-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L33-L54
+    why: Output types, reported tool requests and positive server-side counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L193-L211
+    why: Reported request counts beat output counting, with a one-call fallback floor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L265-L288
+    why: Independent storage and days conversion from dictionary input.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L355-L522
+    why: Integer extraction, Anthropic usage repair and response-kind-specific search recognition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L742-L787
+    why: Explicit option presence and first matching tool selection without type prefiltering.
+dod:
+  - text: Search detection preserves typed response distinctions, reported zero counts and provider-specific usage signals.
+    proof: [tool-signal-tests, oracle, tool-signals-python, tool-signals-corpus]
+  - text: Count selection and Anthropic repair preserve reported values without replacing existing usage or overcounting output items.
+    proof: [tool-signal-tests, oracle, tool-signals-python]
+  - text: Storage/token conversions and kwargs tool selection retain independent fallback, mapping-construction errors and unvalidated extra fields.
+    proof: [tool-signal-tests, oracle, tool-signals-python]
+checks:
+  optional: []
+  commands:
+    - id: tool-signal-tests
+      why: A built-in call is missed, counted twice or inferred from the wrong response kind.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^tool_signals::/) | test(/^cost_usage::tool_projection::/)'
+    - id: tool-signals-python
+      why: Search signal fixtures have no checked source-method adapter.
+      run: test -f tools/oracle/helpers/tool_signals.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: tool-signals-corpus
+      why: tool_signals input variants are absent from shared helper replay.
+      run: grep -rlq 'tool_signals:' tools/oracle/fuzz/corpus/helper_case/tool-signals-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tool-signals/responses-output-required-despite-usage-count.yaml
+  - tools/oracle/cases/helpers/tool-signals/anthropic-reported-zero-preserves-usage.yaml
+  - tools/oracle/cases/helpers/tool-signals/reported-tool-count-before-output-floor.yaml
+  - tools/oracle/cases/helpers/tool-signals/chat-citations-and-positive-server-counter.yaml
+  - tools/oracle/cases/helpers/tool-signals/storage-fields-convert-independently.yaml
+  - tools/oracle/cases/helpers/tool-signals/explicit-null-options-block-tools-fallback.yaml
+  - tools/oracle/cases/helpers/tool-signals/search-context-key-and-first-tool-order.yaml
+  - tools/oracle/cases/helpers/tool-signals/typed-dict-options-retain-invalid-values-and-extras.yaml
+deviations:
+  - what: Converted billing quantities use finite checked integers/decimals; nonfinite quantities and unrepresentable numeric values return typed conversion errors.
+    why: Permissive Python float conversion cannot introduce infinite storage or usage into spend, while ordinary malformed strings retain the source's None fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L265-L288
+out_of_scope:
+  - B1685 owns get_cost_for_built_in_tools, _resolve_model_info, all _handle_* methods, _get_vector_store_cost/_get_computer_use_cost/_get_code_interpreter_cost, _safe_get_model_info, and every scalar get_cost_for_* or container-map pricing method in this file.
+  - chat_completion_response_includes_annotations L727-L739 has no caller at the pin; response_includes_annotation_type is the live annotation operation.
+pitfalls:
+  - A Responses object with only a usage search count does not signal web search without a web_search_call output item.
+  - _get_tools_from_kwargs returns the original list regardless of the requested tool type, so the later first-match scan controls precedence.
+  - A reported zero web-search request count beats the fallback minimum of one.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

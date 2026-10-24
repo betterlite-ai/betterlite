@@ -1,0 +1,102 @@
+id: B1624
+title: Issue dashboard sessions after SSO identity reconciliation
+description: >-
+  Implement sso_browser_session in betterlite-server, owning _CustomSsoCall,
+  get_disabled_non_admin_personal_key_creation and SSOAuthenticationHandler's
+  verify_user_in_restricted_sso_group, _get_user_email_and_id_from_result and
+  get_redirect_response_from_openid. This service consumes typed provider results and
+  creates the shared UI session; B063 and B1626 supply HTTP routes. ALLOWED_EMAIL_DOMAINS
+  defaults absent and splits on commas without trimming. Normalize email before checking
+  its domain; absent email bypasses this check. Identity extraction uses object attributes,
+  not mapping keys, and falls back to concatenated first/last names then email. Reuse
+  B1609's GENERIC_USER_ROLE_ATTRIBUTE binding for the generic role fallback.
+  Invoke configured user_custom_sso through B165 only when it is asynchronous; otherwise
+  construct default user values from B1616's internal-user settings. Before DB reconciliation,
+  enforce general_settings.ui_access_mode=None or its restricted_sso_group object using
+  identity team_ids. Call B1616's user upsert, JWT role-map sync (access-token claims before
+  received claims), then value merge. Issue the dashboard key through B893 with team_id
+  litellm-dashboard, duration LITELLM_UI_SESSION_DURATION=24h and litellm.max_ui_session_budget=1.0.
+  Preserve the subsequent order: PROXY_ADMIN_ID promotion, admin_only role check, Microsoft
+  enrollment, assertion retention/diagnostics, UI token construction and redirect. An admin_only
+  rejection is 401 after the key was written; no rollback is claimed. EXPERIMENTAL_UI_LOGIN
+  defaults absent/disabled and replaces the returned key with B1223's session token only
+  after ordinary key creation. Encode the outer JWT with B788, then use B1618's return-target
+  handler or a 303 dashboard redirect and token cookie. Returned metadata keeps login_method=sso,
+  password_reset_required=false, general_settings.litellm_key_header_name=Authorization and
+  B124's root path. litellm.key_generation_settings defaults None; the UI personal-key hint is
+  true whenever personal_key_generation.allowed_user_roles contains proxy_admin.
+  Test loads_browser_session_policy through config and compare pure identity/access projection
+  in sso_session_policy. PostgreSQL tests prove key-before-denial and experimental-login writes.
+  The 254 owned source lines budget 290 service, 220 tests, 80 adapters and 100 config lines,
+  capped at 775; all inputs use dependency-owned decoders.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/sso_browser_session.rs
+    - crates/betterlite-server/src/sso_browser_session/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/sso_browser_session.rs
+    - crates/betterlite-config/src/sso_browser_session/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/sso-browser-session-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/sso_session_policy.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/sso_session_policy.py
+    - tools/oracle/cases/helpers/sso-session-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/sso-session-policy-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L237-L238
+    why: Async custom-SSO result contract.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1744-L1750
+    why: Personal-key creation hint derived from allowed roles.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3319-L3353
+    why: Restricted SSO group rejection before user writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3468-L3735
+    why: Identity/domain policy, key issuance, later admin-only denial and dashboard token response.
+dod:
+  - text: Identity, domain and restricted-group decisions match the pure policy helpers and configured defaults.
+    proof: [browser-session-tests, browser-session-config, oracle, session-policy-python]
+  - text: Dashboard-key writes precede admin-only checks and experimental token substitution exactly as in the source.
+    proof: [browser-session-tests]
+  - text: The retained dashboard receives an unrestricted-feature token flag and secret-bearing identity values stay redacted.
+    proof: [browser-session-tests, browser-session-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: browser-session-tests
+      why: SSO session authority, database effects or redirect/token construction differs from its defined policy.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sso_browser_session::/)'
+    - id: browser-session-config
+      why: A browser-session setting is not accepted and consumed by the real config loader.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sso_browser_session::tests::loads_browser_session_policy/)'
+    - id: session-policy-python
+      why: Pure SSO session policy is missing its independent Python comparison.
+      run: test -f tools/oracle/helpers/sso_session_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: browser-session-corpora
+      why: Browser-session settings and policy-call shapes are absent from the shared decoder corpora.
+      run: grep -rlq 'sso_session_policy:' tools/oracle/fuzz/corpus/helper_case/sso-session-policy-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-browser-session-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sso-session-policy/domain-list-does-not-trim.yaml
+  - tools/oracle/cases/helpers/sso-session-policy/name-fallback-before-email.yaml
+  - tools/oracle/cases/helpers/sso-session-policy/plain-mapping-has-no-identity-attributes.yaml
+  - tools/oracle/cases/helpers/sso-session-policy/restricted-group-object-versus-string.yaml
+  - tools/oracle/cases/helpers/sso-session-policy/proxy-admin-anywhere-in-personal-role-list.yaml
+deviations:
+  - what: The dashboard JWT's premium_user field is true for every successful SSO login, without a license check.
+    why: The README removes paid tiers and enables the retained dashboard's available features.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3701-L3711
+  - what: Logs of SSO identity and custom-user values redact credential fields instead of printing complete values.
+    why: Custom claims can contain secrets and must obey the repository's SecretString/logging rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3627-L3631
+out_of_scope:
+  - The function ownership inventory in B063 assigns provider exchanges, login dispatch, CLI flows and diagnostic routes outside this session service.
+pitfalls:
+  - admin_only is checked after generate_key_helper_fn, so moving that check earlier changes observable database state on a denied login.
+  - EXPERIMENTAL_UI_LOGIN replaces the exposed credential but does not prevent creation of the ordinary dashboard key.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

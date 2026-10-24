@@ -1,0 +1,89 @@
+id: B1623
+title: Orchestrate generic OIDC callbacks and assertion capture
+description: >-
+  Implement generic_sso_callback in betterlite-server, owning _handle_generic_sso_error,
+  get_generic_sso_response and its nested response_convertor. Return a typed SsoExchangeResult
+  containing identity, redacted received claims, decoded access-token claims and optional
+  B137 identity assertion. Load endpoints/headers and DB role/team mappings through B1610
+  before entering the exchange error wrapper, preserving that failure ordering.
+  GENERIC_INCLUDE_TOKEN_CLAIMS defaults false and recognizes case-insensitive true. When
+  enabled, B1609 merges userinfo, ID-token and access-token claims; otherwise convert only
+  userinfo. The received_response projection always drops access_token/id_token/refresh_token.
+  Resolve nonempty response tokens before falling back to the per-login client's tokens.
+  A truthy verifier from B1619 selects B1620's direct PKCE exchange: compare query state to
+  litellm_oauth_state in constant time, reject missing/mismatched state with 400 auth_error
+  param state, then reject absent code with param code. Empty client ID or token endpoint
+  at this point is 401 with the corresponding GENERIC variable as param. With no verifier,
+  use B1629's non-PKCE adapter even when permissive PKCE cache handling produced that absence.
+  Capture only the exchange's usable ID token and refresh token using assertion_from_sso_login;
+  augment missing roles/teams from the access token, then delete the verifier after all
+  conversion succeeds. A provider/decoder/converter failure leaves it for retry.
+  If PKCE is disabled and an error contains literal PKCE or case-insensitive code verifier,
+  return the source's 401 auth_error with param GENERIC_CLIENT_USE_PKCE; otherwise preserve
+  the original error. Never print passed-in header values or credential-bearing errors.
+  Existing dependencies decode all bytes here. Test conversion failure retention, opaque
+  access tokens, cookie guards and assertion extraction with local provider replies; the
+  generic_sso_error helper compares pure error classification. loads_include_token_claims
+  proves the new binding. Approximately 203 source lines allow 250 orchestration, 180 tests,
+  70 adapter and 70 config/wiring lines within 650.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/generic_sso_callback.rs
+    - crates/betterlite-server/src/generic_sso_callback/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/generic_sso_callback.rs
+    - crates/betterlite-config/src/generic_sso_callback/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/generic-sso-callback-*
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/generic_sso_error.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/generic_sso_error.py
+    - tools/oracle/cases/helpers/generic-sso-error/**
+    - tools/oracle/fuzz/corpus/helper_case/generic-sso-error-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1417-L1667
+    why: Generic callback branches, browser-cookie binding, assertion capture and deferred verifier deletion.
+dod:
+  - text: Generic callback guards, claim conversion and assertion capture preserve ordering and retain the verifier on downstream failure.
+    proof: [generic-callback-tests]
+  - text: Error classification agrees with the pinned helper while native diagnostics redact secret header values.
+    proof: [generic-callback-tests, oracle, generic-error-python]
+  - text: Token-claim inclusion is supported by config loading and new config/helper seeds replay.
+    proof: [generic-callback-config, generic-callback-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: generic-callback-tests
+      why: The callback consumes a verifier before conversion, bypasses its state guard or captures the wrong assertion.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^generic_sso_callback::/)'
+    - id: generic-callback-config
+      why: GENERIC_INCLUDE_TOKEN_CLAIMS is not loaded into the converter's policy.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^generic_sso_callback::tests::loads_include_token_claims/)'
+    - id: generic-error-python
+      why: Generic callback error classification has no checked source adapter.
+      run: test -f tools/oracle/helpers/generic_sso_error.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: generic-callback-corpora
+      why: The new callback setting or helper operation is missing from existing parser corpora.
+      run: grep -rlq 'generic_sso_error:' tools/oracle/fuzz/corpus/helper_case/generic-sso-error-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/generic-sso-callback-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/generic-sso-error/pkce-hint-when-disabled.yaml
+  - tools/oracle/cases/helpers/generic-sso-error/enabled-pkce-retains-original-error.yaml
+  - tools/oracle/cases/helpers/generic-sso-error/code-verifier-case-insensitive.yaml
+  - tools/oracle/cases/helpers/generic-sso-error/unrelated-proxy-error-unchanged.yaml
+deviations:
+  - what: SSO error logs omit additional-header values and secret-bearing provider error text.
+    why: The pinned error wrapper prints its entire headers dictionary; repository secret handling forbids that disclosure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1458-L1469
+out_of_scope:
+  - B1615 registers GET /sso/callback and supplies its HTTP oracle cases; B063 composes it and this generic branch adds no competing route.
+  - Other ui_sso.py functions retain the ownership assignments recorded by B063.
+pitfalls:
+  - Setting GENERIC_CLIENT_USE_PKCE=true does not itself select the direct exchange when no verifier survives permissive cache lookup.
+  - The verifier is deleted after process_sso_jwt_access_token, so a role/team augmentation exception must leave the cache entry intact.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

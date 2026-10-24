@@ -1,0 +1,120 @@
+id: B1725
+title: Calculate request estimates and expose provider budget state
+description: >-
+  Add POST /spend/calculate and GET /provider/budgets in server::spend::estimates. Decode
+  SpendCalculateRequest from bounded JSON with model, messages and completion_response
+  optional fields; keep model-first precedence even when a response is also supplied.
+  A non-null model requires messages, including an empty list as a supplied value.
+  Search B844's deployment list in order, resolving a configured model_group_alias first,
+  and retain the last matching deployment. With a match, bill its underlying model and
+  only the input/output token overrides from litellm_params. Either non-null override
+  constructs CostPerToken; preserve the other absent member's validation behavior. Do not
+  infer custom pricing from model_info or choose a load-balanced deployment. Without a
+  match, pass the requested model to B068's completion cost. A response-only request uses
+  the existing chat ModelResponse decoder before pricing. Missing both inputs is 400.
+  Return cost as Decimal JSON. HTTP exceptions become ProxyException with the source's
+  type/param defaults of the string None; ModelNotMappedError becomes 400
+  invalid_request_error/param model; other cost failures retain available status/type/param
+  or default to 500/None/None. This route estimates locally and never sends an inference.
+  Extract the provider budget read view into betterlite-router::provider_budget_view,
+  below B020/B383: select the cached router limiter, otherwise the first exact router-budget
+  callback kind in B189's optional callbacks, never a key-budget subclass. Own the two
+  budget_limiter provider read methods and their three-line _get_budget_config_for_provider
+  lookup here; inline the lookup into the view rather than adding a forwarding wrapper.
+  Look up provider_spend:{provider}:{budget_duration}
+  in Redis when attached, otherwise DualCache; a missing value becomes zero, a missing
+  provider config becomes null, and Redis errors do not fall back to local spend. TTL null
+  produces null; any numeric TTL, including negative values, is added to injected UTC now.
+  Load router_settings.provider_budget_config in a lower config::provider_budget_view
+  projection (default null), mapping budget_limit/time_period into nullable max_budget and
+  budget_duration without interpreting duration syntax. Own this BudgetConfig alias
+  projection below the router, preserving the source's nullable fields; the unrelated
+  tpm/rpm fields stay with their policy owners. B383 consumes this projection when
+  it later initializes windows; this task does not depend on its higher budget policy.
+  loads_provider_budget_view proves both fields through config and config_yaml replay.
+  Missing router yields its 500 HTTP error through
+  B865's proxy exception converter; missing config or limiter follows the same converter's
+  ValueError behavior. Iterate configured providers, substitute zero for falsey spend, and
+  return budget_limit, time_period, spend and budget_reset_at under providers. Do not refresh
+  or debit a budget while serving this read endpoint.
+  Also provide the lower report query _get_spend_report_for_time_range used by Slack's
+  weekly/monthly reports: parse UTC dates, run team totals followed by expanded-tag totals
+  through the inclusive end day, and return the pair. Missing DB logs and returns None;
+  query errors log and return None, while date conversion errors occur before the catch.
+  Keep this database-facing service independent of the Slack integration to avoid a cycle.
+  decode_spend_estimate is fuzzed in the server crate. HTTP oracle cases exercise both
+  endpoints with deployment aliases and provider budgets; native PostgreSQL tests prove
+  the alert query's ordering and timezone independence. About 345 source lines including
+  extracted provider reads and three request/response records receive an 800-line allowance.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/estimates.rs
+    - crates/betterlite-server/src/spend/estimates/**
+    - crates/betterlite-router/src/lib.rs
+    - crates/betterlite-router/src/provider_budget_view.rs
+    - crates/betterlite-router/src/provider_budget_view/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/provider_budget_view.rs
+    - crates/betterlite-config/src/provider_budget_view/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/provider-budget-view-*
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/spend_estimate.rs
+    - crates/betterlite-server/fuzz/corpus/spend_estimate/**
+    - tools/oracle/cases/http/spend-estimates/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L753-L793
+    why: Lower provider spend and TTL reads extracted from B020's broader filter ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L705-L708
+    why: Nullable provider-config lookup needed by both extracted read methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L3992-L4010
+    why: BudgetConfig maps budget_limit/time_period to max_budget/budget_duration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10222-L10239
+    why: Exact callback-kind lookup extracted from B383 to avoid a spend-report cycle.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L2208-L2430
+    why: Alert-report query and estimate route, including its complete exception mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4311-L4394
+    why: Provider budget state route and limiter access sequence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4404-L4407
+    why: Estimate body has only these three optional fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5110-L5131
+    why: Nullable budget amounts, period and reset timestamp response contract.
+dod:
+  - text: Cost estimates honor model-first precedence, last matching deployment and the limited token override contract.
+    proof: [estimate-tests, estimate-corpus, oracle]
+  - text: Provider budget reads and weekly/monthly query service preserve their source errors and perform no debit.
+    proof: [estimate-tests, provider-view-tests, provider-view-corpus, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: provider-view-tests
+      why: The lower provider reader or its configuration projection is missing.
+      run: cargo nextest run --locked -p betterlite-router -p betterlite-config --no-tests=fail -E 'test(/^provider_budget_view::/) + test(loads_provider_budget_view)'
+    - id: provider-view-corpus
+      why: Provider-budget configuration has no new loader input.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/provider-budget-view-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: estimate-tests
+      why: Estimate selection, provider budget projection or alert query execution is absent.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::estimates::/) - test(replays_the_spend_estimate_corpus)'
+    - id: estimate-corpus
+      why: Estimate-body parsing has no newly committed malformed and precedence samples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_estimate)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_estimate_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/spend-estimates/model-response-precedence-and-missing-messages.yaml
+  - tools/oracle/cases/http/spend-estimates/alias-last-deployment-token-overrides.yaml
+  - tools/oracle/cases/http/spend-estimates/unmapped-model-and-provider-budget-errors.yaml
+  - tools/oracle/cases/http/spend-estimates/provider-spend-and-reset-projection.yaml
+deviations: []
+out_of_scope:
+  - In types/utils.py this leaf extracts BudgetConfig's provider-limit aliases; B014 retains its unrelated shared type helpers and B020/B383 retain non-provider budget policy.
+  - B068 performs pricing; B020/B383 retain filtering/window initialization and consume the extracted read view; B116 owns alert delivery using this query service.
+  - B020/B326/B383 retain other budget_limiter methods; earlier routing tasks retain unrelated router.py methods.
+  - B1721-B1724, B1726/B1727, B1704, B069 and the log-detail/session leaves own the other spend endpoint functions; earlier _types.py owners retain unrelated records.
+pitfalls:
+  - Estimate selection uses the last deployment in a group and never calls the router's selection strategy.
+  - A missing messages field fails a model request even when completion_response would have been sufficient on its own.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

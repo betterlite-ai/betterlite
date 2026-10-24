@@ -1,0 +1,86 @@
+id: B1647
+title: Manage Hashicorp Vault overrides and test the active Vault client
+description: >-
+  Add vault_config_routes with POST/GET/DELETE /config_overrides/hashicorp_vault and
+  POST /config_overrides/hashicorp_vault/test_connection. Mutations and connection testing
+  require proxy_admin; GET accepts B124's administrator-view predicate. CRUD requires a
+  database, but test_connection checks only the active B129 manager and returns 400 when
+  it is not Vault. Use B1646 request decoding, schema/masking, runtime overlay and audit
+  support; litellm-changed-by is the optional header used by the mutation audit records.
+  POST merges all omitted or null fields from a non-null stored config, otherwise from
+  the current environment view, copying only truthy prior values. Empty strings explicitly
+  clear fields and are removed before validation. Require a truthy vault_addr and at least
+  one complete auth choice: vault_token, approle_role_id plus approle_secret_id, or client_cert
+  plus client_key. Validation failures are 400 before any runtime write. Snapshot current
+  Vault values, apply merged values, initialize the manager, and on initialization failure
+  restore only those values and return 500. After successful initialization encrypt every
+  stored field, upsert the hashicorp_vault row, update the change-detection marker, then
+  submit the redacted audit. A later database failure does not restore the active manager
+  or environment view. Audit action is updated whenever a row existed, even with null
+  config_value, and its before snapshot falls back to environment values in that case.
+  GET requires DB even for environment fallback and returns sparse stored fields versus
+  the full nullable environment projection, masking only the designated secrets. DELETE
+  tolerates failed prior decryption and a missing row, clears runtime state either way,
+  and audits only an actual deletion; other database failures propagate before clearing.
+  test_connection obtains the active client's auth headers, adds its login namespace
+  headers and GETs configured vault_addr plus /v1/auth/token/lookup-self using B173/B009.
+  Authentication and token validation failures are distinct 502 paths; successful CRUD and
+  probes return status=success with 200. No request supplies a probe URL.
+  PostgreSQL fault tests distinguish initialization rollback from persistence failure;
+  HTTP transcripts exercise saved configuration, masked reads and a mock Vault's received
+  path/headers. Opt into B1644's eligible oracle mode because the MIT Vault client rejects
+  initialization behind a premium flag; betterlite follows the README's removal of that
+  flag through B129. The 228 handler lines budget 250 code, 220 tests and 170 fixtures/seeds,
+  capped at 725; new resource samples extend B1646's existing decoder corpus.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/vault_config_routes.rs
+    - crates/betterlite-server/src/vault_config_routes/**
+    - crates/betterlite-server/fuzz/corpus/config_override/vault-routes-*
+    - tools/oracle/cases/management/vault-config/**
+    - tools/oracle/fuzz/corpus/http_case/vault-config-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L328-L645
+    why: Four Vault route decorators, merge/rollback semantics, masked reads and active-client probe.
+dod:
+  - text: Vault CRUD enforces roles and preserves merge, clear, encrypted persistence and audit action behavior.
+    proof: [vault-route-tests, oracle]
+  - text: Initialization and persistence failures leave the exact source runtime/DB effects, including nonrollback after a successful init.
+    proof: [vault-route-tests]
+  - text: The connection probe uses the active manager's URL/namespace headers and matches 400/502/success response envelopes.
+    proof: [vault-route-tests, oracle, vault-route-corpora]
+checks:
+  optional: []
+  commands:
+    - id: vault-route-tests
+      why: Vault management changes credential state incorrectly or sends a probe with the wrong authority.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^vault_config_routes::/)'
+    - id: vault-route-corpora
+      why: Vault mutation bodies and HTTP transcript envelopes lack committed parsing examples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/config_override/vault-routes-*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/vault-config-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_override_corpus) | test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/vault-config/omission-keeps-token-empty-clears.yaml
+  - tools/oracle/cases/management/vault-config/null-row-falls-back-to-environment.yaml
+  - tools/oracle/cases/management/vault-config/viewer-can-read-masked-values-only.yaml
+  - tools/oracle/cases/management/vault-config/incomplete-auth-and-missing-address.yaml
+  - tools/oracle/cases/management/vault-config/delete-twice-clears-runtime.yaml
+  - tools/oracle/cases/management/vault-config/lookup-self-uses-login-namespace.yaml
+  - tools/oracle/cases/management/vault-config/wrong-manager-and-upstream-denial.yaml
+deviations:
+  - what: Vault initialization/probe failures retain HTTP 500 or 502 but omit secret values from diagnostic messages and logs.
+    why: Manager exceptions may include tokens or TLS material and must pass the repository's credential redaction boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L418-L428
+out_of_scope:
+  - B1646 owns config_override_endpoints.py protocols, constants and every helper at L50-L322, including runtime clearing and redacted audit submission.
+  - B1648 owns the four CyberArk routes at L650-L932; their persistence rollback is intentionally different.
+  - B129 implements Vault authentication and B124 owns periodic database reload; these routes use those services and do not create another reload loop.
+pitfalls:
+  - A non-null DB config prevents environment fallback even when its parsed mapping is empty.
+  - Vault persistence failure follows successful runtime initialization and has no rollback branch in the pinned handler.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: security

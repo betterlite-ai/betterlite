@@ -1,0 +1,130 @@
+id: B1685
+title: Price built-in tool usage and compose exclusive tool billing paths
+description: >-
+  Implement betterlite-models::tool_fees for the 345 live pricing/dispatch lines left in
+  tool_call_cost_tracking.py after B1684's probes. Define ToolPricePolicy as a typed injected
+  seam for provider web-search and Google Maps calculations; the provider layer supplies
+  its native policy, while this module never imports provider HTTP crates. Return optional
+  prices so unsupported provider pricing is distinct from an explicit zero. B1684 supplies
+  response signals, call counts, safe quantity conversion and Anthropic usage repair;
+  B1678 supplies separate effective/raw price lookup.
+  Resolve model-info with the requested provider first. Success retains a truthy requested
+  provider or takes the entry's litellm_provider. On failure, retry without a provider only
+  for slash-containing model names, adopting the resolved entry's provider. Lookup errors
+  become absent info. Calculate Google Maps first when typed prompt details contain a
+  nonnull integer google_maps_grounding_requests, including zero; invoke the resolved
+  provider policy and treat no result as zero. Then choose exactly one branch: detected web
+  search, else detected file search, else Azure assistant features. Add Maps cost to that
+  branch; do not sum file and web fees when both signals exist. Provider web-search pricing
+  gets repaired Anthropic usage and wins for any nonnull result, even zero. Otherwise use
+  context-specific generic search price times B1684's call count. Low/medium/high options
+  select their exact keys, all other/absent options use medium. Absent model-info gives
+  zero, but a present null selected rate remains an invalid arithmetic result at composition
+  instead of silently becoming the default rate.
+  File-search wrapper maps falsey usage to None, so an empty object costs zero there; the
+  direct scalar function accepts an empty but nonnull file_search object. Azure storage
+  override applies only with truthy storage_gb and days. A present Azure storage-rate key
+  suppresses the alternative per-call branch even when quantities are absent. Otherwise
+  a model-specific file_search_cost_per_1k_calls is returned directly, without division by
+  1000. Default non-Azure file search costs 0.0025 per call. Azure defaults to storage*days*0.1
+  or zero if either quantity is falsey. Vector storage uses any declared model storage rate,
+  otherwise Azure's 0.1 per GB/day, otherwise zero. Signed nonzero quantities remain billable.
+  Azure computer use charges only when either token count is truthy. Any truthy model
+  input/output rate selects both custom sides, missing sides zero; two zero custom rates
+  fall back to defaults. The actual default rates are 3 and 12 per 1000 tokens, despite the
+  source comments saying 0.003 and 0.012. Code-interpreter sessions None/zero are free;
+  model-specific key presence wins, else a truthy provider resolves provider/container and
+  reads its raw code_interpreter_cost_per_session. Swallow lookup failures, retain a raw
+  zero price and return zero when no rate exists. There is no hard-coded 0.03 fallback.
+  Only the top-level assistant branch is Azure-only; the scalar container calculator is
+  reusable for other providers, including OpenAI's container caller.
+  Bind five env settings in betterlite-config::tool_prices through the real B002 loader:
+  OPENAI_FILE_SEARCH_COST_PER_1K_CALLS=0.0025, AZURE_FILE_SEARCH_COST_PER_GB_PER_DAY=0.1,
+  AZURE_VECTOR_STORE_COST_PER_GB_PER_DAY=0.1, AZURE_COMPUTER_USE_INPUT_COST_PER_1K_TOKENS=3,
+  AZURE_COMPUTER_USE_OUTPUT_COST_PER_1K_TOKENS=12. Parse finite Decimal numbers, including
+  signed values accepted by the pin, using decode_tool_price(name, text) at the environment
+  scalar boundary, and pass a resolved ToolPrices record into billing.
+  Name its loader test loads_builtin_tool_prices. No YAML aliases are invented.
+  Pure tool_fees fixtures compare scalar supplied-price functions and immutable default
+  constants. Native tests capture policy/lookup order, provider adoption, explicit-zero
+  short circuits and container failures; they also exercise every configuration default
+  and override. Add tool_prices fuzz/replay for the env-scalar decoder in betterlite-config,
+  plus helper_case seeds. Budget 340 pricing/records, 220 tests, 160 adapters and 80 config/
+  fuzz lines, capped at 800. This is accounting for existing tool calls, not a file service.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/tool_fees.rs
+    - crates/betterlite-models/src/tool_fees/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/tool_prices.rs
+    - crates/betterlite-config/src/tool_prices/**
+    - crates/betterlite-config/fuzz/Cargo.toml
+    - crates/betterlite-config/fuzz/fuzz_targets/tool_prices.rs
+    - crates/betterlite-config/fuzz/corpus/tool_prices/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/tool_fees.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/tool_fees.py
+    - tools/oracle/cases/helpers/tool-fees/**
+    - tools/oracle/fuzz/corpus/helper_case/tool-fees-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L65-L190
+    why: Maps-first composition, exclusive search branches and prefix-based provider adoption.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L214-L352
+    why: File-search and Azure-assistant wrappers; B1684 owns the interleaved quantity extractors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py#L525-L724
+    why: Search-context rates, storage/computer defaults and raw container lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L470-L485
+    why: Five environment defaults, including the computer-use constants that contradict their comments.
+dod:
+  - text: Maps cost combines with exactly one exclusive tool branch, and resolved-provider policy zero prevents generic search fallback.
+    proof: [tool-fee-tests]
+  - text: Scalar file, storage, computer and container fees preserve key presence, quantity truthiness and their distinct default units.
+    proof: [tool-fee-tests, oracle, tool-fees-python, tool-fees-helper-corpus]
+  - text: All five tool-price environment settings load their pinned defaults and signed overrides as finite decimals through B002.
+    proof: [tool-price-config-tests, tool-prices-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: tool-fee-tests
+      why: Built-in tool prices lose a provider result, combine exclusive branches or change a default unit.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^tool_fees::/)'
+    - id: tool-price-config-tests
+      why: Tool-price environment settings are declared but do not load through the actual configuration boundary.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_builtin_tool_prices)'
+    - id: tool-fees-python
+      why: Scalar tool-fee comparisons lack a checked adapter against the original functions.
+      run: test -f tools/oracle/helpers/tool_fees.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: tool-fees-helper-corpus
+      why: No tool_fees input is committed for the shared helper parser.
+      run: grep -rlq 'tool_fees:' tools/oracle/fuzz/corpus/helper_case/tool-fees-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: tool-prices-corpus
+      why: The external environment-price decoder has no added replay seed or target.
+      run: test -f crates/betterlite-config/fuzz/fuzz_targets/tool_prices.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/tool_prices)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_tool_prices_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tool-fees/file-search-empty-object-versus-none.yaml
+  - tools/oracle/cases/helpers/tool-fees/custom-per-thousand-field-is-returned-directly.yaml
+  - tools/oracle/cases/helpers/tool-fees/azure-storage-key-blocks-per-call-alternative.yaml
+  - tools/oracle/cases/helpers/tool-fees/computer-defaults-three-and-twelve.yaml
+  - tools/oracle/cases/helpers/tool-fees/two-zero-computer-rates-use-defaults.yaml
+  - tools/oracle/cases/helpers/tool-fees/one-custom-side-keeps-other-side-free.yaml
+  - tools/oracle/cases/helpers/tool-fees/free-container-rate-and-negative-sessions.yaml
+  - tools/oracle/cases/helpers/tool-fees/search-context-null-versus-missing-rate.yaml
+deviations:
+  - what: Tool rates and quantities remain finite exact decimals; invalid nonfinite environment prices fail configuration loading and overflowing fee arithmetic returns a typed pricing error.
+    why: Built-in tool fees share the money contract with model costs while preserving the pin's actual default rates and branch behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L470-L485
+out_of_scope:
+  - B1684 owns all response/search probes, count/quantity extractors and kwargs tool-selection helpers; chat_completion_response_includes_annotations has no caller at the pin.
+  - Provider-specific web-search/Maps formulas and their registry dispatch remain with their provider owners; B068 injects those policies into ToolPricePolicy instead of making the low model crate depend on provider execution.
+pitfalls:
+  - The actual Azure computer-use defaults are 3 and 12, a thousand times the nearby comment's stated amounts.
+  - A model's file_search_cost_per_1k_calls value is returned directly by the source and must not be divided by 1000 a second time.
+  - A provider-specific web-search cost of zero is a complete answer, whereas None requests generic per-call fallback.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

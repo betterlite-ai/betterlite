@@ -1,0 +1,81 @@
+id: B1605
+title: Tool records, owner enrichment and policy override views
+description: >-
+  Add tool_records to betterlite-db, defining the records in types/tool_management.py with Decimal
+  spend fields and closed input/output policy enums. Own _ModelDumpMethod's record contract,
+  _tool_table_actions, _object_permission_table_actions, _row_to_model, _key_owners,
+  _key_owners_or_none, _with_owners, list_tools, get_tool and list_overrides_for_tool in
+  tool_registry_writer.py. Native repository handles replace Python's structural adapters.
+  List tools newest first and attach the user who owns the discovering key using batched,
+  deduplicated lookups through B722/B723. Missing owners are null. A Prisma-class owner lookup
+  failure logs and preserves the tool list; other exceptions reach the outer list/get catch,
+  yielding [] or None. Policy defaults are untrusted when absent or falsy, and absent call_count
+  becomes zero. Override rows come from blocked_tools relations, with the permission ID reused
+  as override_id and team_alias represented by key_alias. They are not stored in a new table.
+  decode_tool_record(&[u8]) handles external row JSON and has a tool_record fuzz corpus.
+  B171's tool_row helper calls only _row_to_model; Postgres tests cover joins, ordering and
+  fallback behavior. ToolPolicyUpdateRequest remains a typed record here; B062 later owns its
+  HTTP byte boundary. Measured ownership is 179 helper lines and 100 type lines. Allocate
+  300 records/query code, 170 tests, 90 oracle adapters and 90 fuzz/exports, total 650.
+scope:
+  paths:
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/src/tool_records.rs
+    - crates/betterlite-db/src/tool_records/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/tool_record.rs
+    - crates/betterlite-db/fuzz/corpus/tool_record/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/tool_row.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/tool_row.py
+    - tools/oracle/cases/helpers/tool-row/**
+    - tools/oracle/fuzz/corpus/helper_case/tool-row-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/tool_management.py#L1-L135
+    why: Tool discovery, policy, detail, usage and spend wire records.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L36-L104
+    why: Row conversion with explicit falsy defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L162-L242
+    why: Owner joins and read failure semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L314-L364
+    why: Permission relations projected as key/team overrides.
+dod:
+  - text: Tool records preserve default policies and null owner fields under helper comparison.
+    proof: [oracle, tool-record-tests, tool-row-python]
+  - text: Batched owner joins and override projections retain rows and error fallbacks in Postgres tests.
+    proof: [tool-record-tests]
+  - text: Both tool-record bytes and the new helper operation are represented in replayed corpora.
+    proof: [tool-record-corpus, tool-row-corpus]
+checks:
+  optional: []
+  commands:
+    - id: tool-record-tests
+      why: Tool conversion, owner enrichment or override views are absent or inconsistent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^tool_records::/) - test(replays_the_tool_record_corpus)'
+    - id: tool-row-python
+      why: The row oracle must import the original converter and pass strict checking.
+      run: test -f tools/oracle/helpers/tool_row.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: tool-record-corpus
+      why: Tool row decoding has no branch-added fuzz inputs.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/tool_record.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/tool_record)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_tool_record_corpus)'
+    - id: tool-row-corpus
+      why: The tool_row variant cannot be exercised by HelperCase replay.
+      run: grep -rlq 'tool_row:' tools/oracle/fuzz/corpus/helper_case/tool-row-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/tool-row/falsy-policy-defaults.yaml
+  - tools/oracle/cases/helpers/tool-row/discovery-identifiers.yaml
+  - tools/oracle/cases/helpers/tool-row/missing-and-null-count.yaml
+deviations: []
+out_of_scope:
+  - B1606 owns batch_upsert_tools, update_tool_policy, ToolPolicyRegistry and its accessor, add_tool_to_object_permission_blocked and remove_tool_from_object_permission_blocked in tool_registry_writer.py.
+  - get_tools_by_names has no caller at the pin; its unused database lookup is not implemented.
+pitfalls:
+  - One permission can produce several override display rows sharing the same override_id.
+  - A failed owner lookup must not erase tools already read successfully.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

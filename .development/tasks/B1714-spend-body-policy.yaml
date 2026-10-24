@@ -1,0 +1,124 @@
+id: B1714
+title: Apply spend body-storage policy and preserve request session identity
+description: >-
+  Add betterlite-logging::spend_bodies and config::spend_storage for the source body/session
+  functions listed below. Resolve general_settings.store_prompts_in_spend_logs as true only
+  for Boolean true or a string whose lowercase value is exactly true, then OR with
+  STORE_PROMPTS_IN_SPEND_LOGS resolved by B129. False config never overrides true env.
+  At startup parse MAX_STRING_LENGTH_PROMPT_IN_DB as an integer, default 2048; malformed
+  initial input fails loading. Retain that initial value as fallback when a later runtime
+  snapshot lacks the env value or supplies an invalid integer. Zero/negative values retain
+  source slicing semantics through B1713. loads_spend_storage_policy must test both initial
+  loading and snapshot replacement. Consume general_settings.missing_session_id, default
+  absent, without adding another setting name or mutating os.environ.
+  Own ProxyUpdateSpend.disable_spend_updates from proxy/utils.py as a config-layer
+  exact-Boolean predicate. general_settings.disable_spend_updates defaults false;
+  only true disables writes, never the string "true" or numeric one. The named
+  loads_spend_update_flag test loads those values and exposes the shared predicate
+  to database writers and callbacks without a dependency on failure handling.
+  Return "{}" for disabled body storage. The separate messages column stores only
+  non-null _arealtime messages, with serialization failure falling back to "{}".
+  Request-body storage takes proxy_server_request.body or an empty mapping, overlays
+  classifier audit fields, overlays truthy realtime_tools, then applies B188's dynamic
+  message-redaction policy. Remove classifier audit fields before message redaction,
+  convert foreign objects with B1713, sanitize and serialize the body alone, never its
+  HTTP headers. A null proxy_server_request returns "{}". Emit the truncation diagnostic
+  when the marker text occurs in serialized output, including preexisting marker text.
+  Response storage overlays realtime tool calls only on mapping responses, applies dynamic
+  redaction, sanitizes via a response wrapper and serializes. A string response stays a
+  string with NULs removed; it is not JSON-quoted. Vector-store content text is replaced
+  in place with REDACTED_BY_LITELM when body storage is disabled; retain other content fields.
+  Placeholder an unsafe stored request's model only when the field exists, replace an
+  existing metadata.model_group without inserting a missing field, and scrub only existing
+  error-information mappings through B1713.
+  Extract classifier_input_snapshot, classifier_audit_fields and without_classifier_audit
+  from classifier_logging.py into this low logging layer for B021 to reuse. Snapshot JSON
+  strings/bytes or mappings as a JSON object, return None on validation failure, and for
+  openai_sdk merge mapping extra_body after dropping extra_headers/extra_query/extra_body.
+  Fuzz decode_classifier_snapshot in logging alongside decode_spend_storage_policy in
+  config; already parsed request/response transformations have helper seeds only.
+  Session omission is pinned by a truthy litellm_session_id_omitted stamp or current
+  missing_session_id=omit. Under omission only truthy metadata.session_id counts. Otherwise
+  a batch create/retrieve ID, with one trailing _batch_cost removed, wins; then a non-null
+  standard trace_id, a non-null kwargs.litellm_trace_id, then an injected UUID. Preserve
+  empty non-null trace IDs and Python str conversion. Duration truncates milliseconds
+  toward zero, retaining negative values; failed subtraction returns None. UTC conversion
+  follows the runtime's configured local timezone for naive datetimes, not a forced UTC
+  reinterpretation. Pure spend_bodies cases cover these projections with explicit policy,
+  clock/UUID values; native tests cover runtime config changes and foreign-object handling.
+  Owned ranges contain about 290 nonblank lines including extracted classifier functions;
+  allow 310 implementation and 490 tests/adapters/config/fuzz, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/spend_bodies.rs
+    - crates/betterlite-logging/src/spend_bodies/**
+    - crates/betterlite-logging/fuzz/{Cargo.toml,fuzz_targets/classifier_snapshot.rs,corpus/classifier_snapshot/**}
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/spend_storage.rs
+    - crates/betterlite-config/src/spend_storage/**
+    - crates/betterlite-config/fuzz/{Cargo.toml,fuzz_targets/spend_storage_policy.rs,corpus/spend_storage_policy/**}
+    - tools/oracle/src/helpers/{mod.rs,spend_bodies.rs}
+    - tools/oracle/helpers/{dispatch.py,spend_bodies.py}
+    - tools/oracle/cases/helpers/spend-bodies/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-bodies-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7403-L7413
+    why: Low shared disable-spend predicate used below request callback assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L75-L86
+    why: Runtime length setting and initial-value fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L854-L925
+    why: Session omission, batch linkage, duration and datetime conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1079-L1093
+    why: Realtime-only messages-column storage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1513-L1717
+    why: Safe placeholders, conditional bodies, vector redaction and config/env precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/classifier_logging.py#L16-L64
+    why: Own snapshot/audit-field extraction and removal; classifier recognition and originating-request masking remain B021.
+dod:
+  - text: The shared write-disable flag loads with exact-Boolean semantics below both writers and callbacks.
+    proof: [spend-update-flag-tests, body-byte-corpora]
+  - text: Stored bodies obey independent storage and dynamic message-redaction policies without losing realtime/classifier rules or retaining raw HTTP headers.
+    proof: [body-tests, oracle, body-python, body-helper-corpus]
+  - text: Sessions, placeholders and timestamps preserve omission stamps, batch identity and null-versus-empty precedence.
+    proof: [body-tests, oracle, body-python]
+  - text: Runtime settings and classifier snapshots use the named production loaders/decoders with replayed malformed-input corpora.
+    proof: [body-tests, body-byte-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: spend-update-flag-tests
+      why: The low write-disable setting or its exact-Boolean loader behavior is missing.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_update_flag)'
+    - id: body-tests
+      why: Spend body/session policy or its live settings loading differs from the pinned order.
+      run: cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/^spend_bodies::/) + test(/^spend_storage::/) - test(/replays_the_/)'
+    - id: body-python
+      why: Body/session projection helpers lack checked source adapters.
+      run: test -f tools/oracle/helpers/spend_bodies.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: body-helper-corpus
+      why: Body policy inputs have no shared-decoder operation seed.
+      run: grep -rlq 'spend_bodies:' tools/oracle/fuzz/corpus/helper_case/spend-bodies-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: body-byte-corpora
+      why: Settings or classifier snapshot decoding is missing new replay input.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/spend_storage_policy)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/classifier_snapshot)" && cargo nextest run --locked -p betterlite-config -p betterlite-logging --no-tests=fail -E 'test(replays_the_spend_storage_policy_corpus) + test(replays_the_classifier_snapshot_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-bodies/config-false-env-true-and-runtime-fallback.yaml
+  - tools/oracle/cases/helpers/spend-bodies/realtime-tools-and-string-response-nuls.yaml
+  - tools/oracle/cases/helpers/spend-bodies/classifier-extra-body-and-redaction.yaml
+  - tools/oracle/cases/helpers/spend-bodies/vector-text-and-existing-placeholder-fields.yaml
+  - tools/oracle/cases/helpers/spend-bodies/omission-stamp-batch-and-empty-trace.yaml
+deviations: []
+out_of_scope:
+  - ProxyUpdateSpend end-user SQL belongs to B1745 and log storage to B1749; B124 and other narrow utility tasks retain the rest of proxy/utils.py.
+  - B1713 owns sanitization and generic foreign-object projection; B1715 owns identity/metadata/status helpers and B1716 get_logging_payload.
+  - B1726 owns _query_raw_rows and get_spend_by_team; B1727 owns get_spend_by_team_and_customer in the report-query tail at L928-L1076.
+  - B021 retains is_classifier_call and masked_originating_request, consuming the extracted snapshot helper rather than implementing it again.
+pitfalls:
+  - A false store_prompts_in_spend_logs setting does not defeat STORE_PROMPTS_IN_SPEND_LOGS=true.
+  - With omission enabled, a trace ID must not be promoted into a fabricated session.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

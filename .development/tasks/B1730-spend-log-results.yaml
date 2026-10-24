@@ -1,0 +1,85 @@
+id: B1730
+title: Preserve legacy log exports and enrich UI rows by session and key
+description: >-
+  Implement GET /spend/logs and _find_spend_logs in server::spend::log_results, plus the
+  shared _build_ui_spend_logs_response projection and its session-stat records. Legacy
+  listing replaces user_id with the authenticated value only for the two internal-user
+  roles. Hash sk--prefixed api_key filters, preserve exact user IDs, and expand request_id
+  to request_id OR litellm_call_id for row reads. Read newest-first with take=10000; exactly
+  10000 returned rows sets x-litellm-spend-logs-truncated:true and warns, even if no further
+  row exists. Other roles keep the route gate's admitted scope without a new UI policy.
+  With both date strings supplied, parse UTC dates and use inclusive midnight bounds;
+  end_date does not mean the end of that day. summarize defaults true. False returns rows;
+  true invokes B1729's summary query, where request_id matches only the primary ID. Append
+  zero rows only after the last observed day through end_date, never before the first day,
+  between gaps or for an entirely empty result. If either date is absent, ignore the other
+  and return rows regardless of summarize. Preserve internal_error wrapping, default 500,
+  and the HTTPException/ProxyException distinction. decode_legacy_spend_query parses raw
+  query bytes and Boolean summarize; fuzz omitted dates, raw keys and invalid scalars.
+  UI enrichment gathers truthy session IDs and non-null API keys from already-authorized
+  page rows, then queries aggregates grouped by the pair. It does not reuse the listing's
+  date/filter window. Sum spend, tokens, durations and cache hits; MCP totals include
+  call_mcp_tool/list_mcp_tools, agents only asend_message, and session_llm_count includes
+  batch calls because this count excludes only MCP and agent calls. Duration falls back to
+  the exact PostgreSQL end-minus-start millisecond cast when the stored field is null.
+  Fetch distinct model names after LEFT(model,256), alphabetically, with eleven entries;
+  return ten and session_models_truncated when the eleventh exists. Catch only database
+  driver failures and fall back to no aggregates; malformed row/model-array values propagate.
+  A row without stats receives session_total_count=1 and no invented zero-valued fields.
+  With stats, add all session fields, but add MCP count/spend only for a nonzero MCP count.
+  Public v2 skips the enrichment query entirely and keeps raw typed row serialization.
+  Every envelope includes data,total,page,page_size,total_pages,total_is_capped. Never
+  merge sessions across keys or leak bodies into the lean listing merely to enrich a row.
+  The 184 legacy-handler, 16 capped-reader, 166 projection and 29 record lines total 395.
+  Use 800 changed lines for these services, native PostgreSQL race/error tests and HTTP
+  oracle legacy cases; B1732's HTTP cases exercise the shared UI projection through its
+  actual route, while this task's native tests independently prove key-separated aggregates.
+scope:
+  paths:
+    - crates/betterlite-server/src/spend.rs
+    - crates/betterlite-server/src/spend/log_results.rs
+    - crates/betterlite-server/src/spend/log_results/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/legacy_spend_query.rs
+    - crates/betterlite-server/fuzz/corpus/legacy_spend_query/**
+    - tools/oracle/cases/http/legacy-spend-logs/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L199-L235
+    why: Session statistics, model limits and pair-keyed aggregate record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L345-L360
+    why: Exactly-at-cap truncation header and warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3478-L3685
+    why: Legacy route decorator, date/mode branches and trailing padding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4628-L4807
+    why: Full-session aggregation, conditional row fields and v2 serialization.
+dod:
+  - text: Legacy exports preserve scope, midnight bounds, summary padding and the exact truncation header threshold.
+    proof: [log-result-tests, legacy-query-corpus, oracle]
+  - text: UI enrichment separates identical session IDs by key, preserves conditional fields and skips queries for public v2.
+    proof: [log-result-tests]
+checks:
+  optional: []
+  commands:
+    - id: log-result-tests
+      why: Legacy retrieval or key-separated session enrichment is missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^spend::log_results::/) - test(replays_the_legacy_spend_query_corpus)'
+    - id: legacy-query-corpus
+      why: Legacy query parsing has no new replay corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/legacy_spend_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_legacy_spend_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/legacy-spend-logs/raw-key-user-and-call-id.yaml
+  - tools/oracle/cases/http/legacy-spend-logs/midnight-end-and-summary-exact-id.yaml
+  - tools/oracle/cases/http/legacy-spend-logs/trailing-padding-gaps-and-empty-range.yaml
+  - tools/oracle/cases/http/legacy-spend-logs/single-date-ignored-and-truncation-header.yaml
+deviations: []
+out_of_scope:
+  - B1729 owns daily-summary projections and metadata hydration; B1731 owns session paging, B1732 UI/v2 listing and B1728 their shared filter constants.
+  - B1704, B1721-B1727 and B069 retain the other spend endpoint functions.
+pitfalls:
+  - Legacy summaries match only request_id while legacy row exports also match litellm_call_id.
+  - session_llm_count includes batch calls although the listing's span_type=llm filter excludes them.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

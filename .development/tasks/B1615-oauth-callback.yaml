@@ -1,0 +1,90 @@
+id: B1615
+title: Dispatch OAuth callbacks and complete CLI sign-in
+description: >-
+  Register public GET /sso/callback in betterlite-server::oauth_callback. Own auth_callback,
+  _build_cli_sso_user_defined_values, _complete_cli_sso_callback_session and cli_sso_callback
+  in ui_sso.py. A truthy OAuth error query produces 401 before database/master-key checks.
+  Otherwise require DB, build the optional SSO-specific JWT projection from
+  general_settings.ui_access_mode.sso_group_jwt_field=None with zero leeway, then require
+  master_key. Select Google, Microsoft or generic by present client ID in that order,
+  including empty strings, and delegate to B1629/B1622/B1623. No provider result means 401.
+  Route a state beginning litellm-session-token: to CLI completion by splitting at most
+  twice; preserve an optional code suffix verbatim for the verification page. Other callbacks
+  use B1624 and the litellm_cp_return_to cookie. This OAuth callback has no DISABLE_ADMIN_UI
+  check; preserve its difference from the SAML callback.
+  CLI completion first reads the flow, then checks DB and result. Use B1624's identity/domain
+  policy and async custom-SSO contract, enforce restricted groups, and reconcile the user
+  through B1616. Require a nonempty user ID, retain the assertion with B137, warn through
+  B1617, then resolve B1614's team grants; unknown grants fail 500 before marking completion.
+  Enroll any trusted Microsoft subject, merge B1611 attribution, store resolved teams/models
+  and a fresh 32-byte browser completion token hash in the flow, set sso_complete=true and
+  refresh TTL through B1613. Serve B1612's code-verification form without marking the code
+  verified. Preserve ProxyException/HTTPException and map other CLI failures to 500.
+  Add decode_oauth_callback_query for URL-encoded query bytes with last-value semantics,
+  fuzzed as oauth_callback_query. loads_callback_group_claim proves the nested config field.
+  Use B1630 browser transcripts to start, authenticate, capture the hidden browser token,
+  confirm the displayed code and poll with each proxy's own secret. Compare status, error
+  provenance, form controls and headers; inspect minted claims and DB effects in Rust tests.
+  The 274 source lines fit 310 service, 220 tests/transcript support and 120 decoder/config
+  lines within 750; existing providers and session services are not reimplemented.
+scope:
+  paths:
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/oauth_callback.rs
+    - crates/betterlite-server/src/oauth_callback/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs
+    - crates/betterlite-server/fuzz/corpus/oauth_callback_query/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/oauth_callback.rs
+    - crates/betterlite-config/src/oauth_callback/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*
+    - tools/oracle/cases/sso/oauth-callback/**
+    - tools/oracle/fixtures/multipart-oracle/oauth-callback/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2020-L2146
+    why: Public callback decorator, prerequisite order, provider selection and CLI/browser dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2224-L2245
+    why: CLI custom values and internal-user defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2299-L2463
+    why: CLI user/grant resolution, assertion/enrollment effects and browser-verification form.
+dod:
+  - text: Real OAuth callback requests select the expected provider and preserve OAuth-error, database and master-key failure order.
+    proof: [callback-tests, oracle]
+  - text: A complete browser/CLI transcript cannot yield a token until both provider login and browser code verification succeed.
+    proof: [callback-tests, oracle]
+  - text: Restricted-group claim configuration and callback query bytes use their real loaders and replay corpora.
+    proof: [callback-config, callback-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: callback-tests
+      why: Callback dispatch or CLI completion changes authority before all identity and team checks finish.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^oauth_callback::/) - test(replays_the_oauth_callback_query_corpus)'
+    - id: callback-config
+      why: The SSO-specific group claim field is not loaded into the callback's JWT projection.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^oauth_callback::tests::loads_callback_group_claim/)'
+    - id: callback-corpora
+      why: Callback query parsing or its nested config setting has no added replay inputs.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/oauth_callback_query.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/oauth_callback_query)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/oauth-callback-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_oauth_callback_query_corpus) | test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/sso/oauth-callback/oauth-error-before-db.yaml
+  - tools/oracle/cases/sso/oauth-callback/database-before-master-key.yaml
+  - tools/oracle/cases/sso/oauth-callback/empty-google-id-wins.yaml
+  - tools/oracle/cases/sso/oauth-callback/generic-login-to-dashboard.yaml
+  - tools/oracle/cases/sso/oauth-callback/pkce-cookie-mismatch.yaml
+  - tools/oracle/cases/sso/oauth-callback/cli-code-and-browser-token-required.yaml
+  - tools/oracle/cases/sso/oauth-callback/multiple-team-selection.yaml
+  - tools/oracle/cases/sso/oauth-callback/restricted-group-denial.yaml
+deviations: []
+out_of_scope:
+  - B063 owns the login entry route and assembles this callback router exactly once; B1626 owns the separate SAML POST callback.
+  - ui_sso.py definitions not named here remain with the owners in B063's inventory.
+pitfalls:
+  - CLI completion stores only currently resolvable team rows, rather than copying stale membership IDs into the future credential.
+  - A completed IdP callback still leaves user_code_verified false until the separate browser form succeeds.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

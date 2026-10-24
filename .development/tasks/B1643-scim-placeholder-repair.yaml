@@ -1,0 +1,73 @@
+id: B1643
+title: Inspect and merge SCIM placeholder accounts without losing team access
+description: >-
+  Add scim_placeholder_repair for GET /scim/v2/placeholders, POST
+  /scim/v2/placeholders/{user_id}/merge and _placeholder_rejection. The list route opens
+  the database transaction used by B723's find_shadowing_placeholders repository method
+  and returns its tuple as a JSON array. It does not reuse the SCIM ListResponse envelope
+  or set application/scim+json. Merge first loads the placeholder or returns 404, resolves
+  every other account named by its id using B1634's subject/email lookup, and reads all
+  owned verification tokens, including blocked ones. Reject with 409 in this order: any
+  non-null sso_user_id (even an empty string), any owned key, no matched account, or more
+  than one matched account. These refusals occur before memberships are changed.
+  On the single-target path, snapshot placeholder.teams, add the real account to each team
+  through B1637's idempotent add helper, invoke B1638's complete user-deletion service for
+  the placeholder, then recompute the target's global role through B1635. Return
+  placeholder_user_id, merged_into_user_id and the original ordered team_ids, with default
+  200 JSON semantics. The merge has no encompassing transaction: an add or delete failure
+  keeps preceding team writes, and role recomputation can fail after deletion. Preserve
+  B124's exception conversion and B052's normal API-key authorization for both endpoints.
+  Use actual PostgreSQL relationships to test list exclusions, rejection precedence,
+  successful migration of every roster, missing teams and failures at each write boundary.
+  Eligible HTTP cases verify the management JSON content type, response fields, auth and
+  all rejection statuses without calling the FastAPI handlers in a helper adapter.
+  The 64 function lines warrant 110 route/service lines and 220 persistence tests plus
+  100 HTTP fixtures/wiring lines, capped at 500. This entry consumes existing path/record
+  decoders and contributes placeholder-route samples to the HTTP corpus.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/scim_placeholder_repair.rs
+    - crates/betterlite-server/src/scim_placeholder_repair/**
+    - tools/oracle/cases/management/scim-placeholder-repair/**
+    - tools/oracle/fuzz/corpus/http_case/scim-placeholder-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/scim/scim_v2.py#L1882-L1962
+    why: Placeholder list transaction, ordered safety checks and nontransactional merge route.
+dod:
+  - text: Placeholder inspection and merge refusals protect signed-in or key-owning accounts before any roster write.
+    proof: [placeholder-repair-tests, oracle]
+  - text: A successful merge adds the target everywhere before deletion and retains earlier changes on later failure.
+    proof: [placeholder-repair-tests, oracle]
+  - text: Placeholder endpoints keep their ordinary JSON envelopes and request/auth error behavior.
+    proof: [placeholder-repair-tests, oracle, placeholder-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: placeholder-repair-tests
+      why: Placeholder remediation can delete a live account or lose the directory's team memberships.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^scim_placeholder_repair::/)'
+    - id: placeholder-case-corpus
+      why: Placeholder inspection and merge paths have no HTTP decoder regression examples.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/http_case/scim-placeholder-*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/scim-placeholder-repair/list-excludes-sso-and-key-owners.yaml
+  - tools/oracle/cases/management/scim-placeholder-repair/empty-sso-subject-still-refuses.yaml
+  - tools/oracle/cases/management/scim-placeholder-repair/blocked-key-prevents-merge.yaml
+  - tools/oracle/cases/management/scim-placeholder-repair/zero-and-multiple-targets.yaml
+  - tools/oracle/cases/management/scim-placeholder-repair/move-teams-and-delete-placeholder.yaml
+  - tools/oracle/cases/management/scim-placeholder-repair/missing-user-and-auth.yaml
+deviations: []
+out_of_scope:
+  - "The shadowing-placeholder SQL and SCIMPlaceholder row model are B723, not a second query implementation here."
+  - "Shared scim_v2.py code: B1633 L81-L157/L272-L302/L952-L963/L1145-L1168; B1634 L487-L753/L790-L851; B1635 L305-L484; B1636 L764-L787/L854-L949/L1097-L1142; B1637 L966-L1094/L2200-L2322/L2819-L2864."
+  - "Other scim_v2.py handlers/helpers: B1638 L164-L232/L1661-L1879; B1639 L1965-L2197/L2325-L2397; B1640 L2511-L2708; B1641 L1556-L1658/L2405-L2508; B1642 L1171-L1553; B064 L2711-L2816/L2867-L2945."
+pitfalls:
+  - An empty sso_user_id is still non-null and therefore prevents merging that account.
+  - Only listing uses an explicit transaction; wrapping the entire merge in one would hide the source's partial successes.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

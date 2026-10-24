@@ -1,0 +1,92 @@
+id: B1680
+title: Aggregate usage while preserving cache aliases and cached modality detail
+description: >-
+  Put usage aggregation in betterlite-models::usage_sum, below both provider adapters and
+  core logging. Own cost_calculator.py _attribute_value, _summable_prompt_token_fields,
+  _combine_cached_tokens_details, _combine_prompt_tokens_details and
+  BaseTokenUsageProcessor.combine_usage_objects, L2713-L2815. Use B1668 CostUsage as the
+  billing view and expose the same merge for public usage adapters; do not import core to
+  obtain a response type. Inline attribute access and optional addition where Rust's typed
+  fields replace Python reflection, keeping one actual merge implementation.
+  Start an empty Usage equivalent and sum public numeric fields only when both old and new
+  values are numeric. Preserve supported numeric extension counters as typed integer or
+  Decimal values; omit private counters and nonnumeric extras, and do not recalculate total
+  from prompt/completion. Boolean numeric values follow Python addition. For nested prompt
+  details, iterate the source model's declared fields that actually exist, using falsey
+  values as zero. When new cache_write_tokens is nonnull, omit cache_creation_tokens from
+  summation so reconstructing the mirrored aliases does not count writes twice. Retain
+  absent-versus-null behavior of the source's SafeAttributeModel fields in the projection.
+  Special-case typed cached_tokens_details: add text/audio/image independently, preserving
+  None only when both operands are None, and keep the existing record if the new value is
+  not a typed CachedTokensDetails. For other nonnumeric nested values, preserve only the
+  old base record's value; a new cache_creation_token_details TTL object is not summed or
+  copied. Because aggregation starts with empty details, new TTL write splits disappear
+  while aggregate write counts remain. This source limitation must be represented in
+  tests rather than silently repaired. Completion detail fields sum numeric values with
+  null/falsey values as zero and retain the source's declared-field inventory, including
+  prediction-token counters; unknown nested extras are not part of that iteration.
+  Register pure usage_sum calls against BaseTokenUsageProcessor and both detail combiners.
+  Cover repeated records, absent fields, cache aliases, fractional duration counters,
+  numeric extras and nested TTL loss. Test the low-layer adapter round trip natively so
+  Anthropic batch aggregation, router totals and future websocket collectors can consume
+  one result without losing detail. No bytes are decoded here: seed B171 helper_case only.
+  The 84 nonblank lines justify 170 typed merge/projection work, 180 tests and 130 oracle
+  material, with a 550-line cap.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/cost_usage.rs
+    - crates/betterlite-models/src/cost_usage/**
+    - crates/betterlite-models/src/usage_sum.rs
+    - crates/betterlite-models/src/usage_sum/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/usage_sum.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/usage_sum.py
+    - tools/oracle/cases/helpers/usage-sum/**
+    - tools/oracle/fuzz/corpus/helper_case/usage-sum-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2713-L2815
+    why: Numeric-field aggregation and the separate cached-modality merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1750-L1843
+    why: Prompt detail fields delete absent values and mirror write-token aliases.
+dod:
+  - text: Numeric totals and declared detail fields aggregate without recomputing totals or doubling mirrored cache-write counters.
+    proof: [usage-sum-tests, oracle, usage-sum-python]
+  - text: Cached modality None states and the source's loss of incoming nonsummable TTL detail remain observable in merged usage.
+    proof: [usage-sum-tests, oracle, usage-sum-python, usage-sum-corpus]
+  - text: The billing projection carries numeric extras and duration counters without creating a dependency from provider leaves to core.
+    proof: [usage-sum-tests, oracle, usage-sum-python]
+checks:
+  optional: []
+  commands:
+    - id: usage-sum-tests
+      why: Usage accumulation changes token totals, mirrored aliases or nested-field presence.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^usage_sum::/) | test(/^cost_usage::aggregation_projection::/)'
+    - id: usage-sum-python
+      why: Usage aggregation has no checked adapter exercising the pinned merge functions.
+      run: test -f tools/oracle/helpers/usage_sum.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: usage-sum-corpus
+      why: No usage_sum variant reaches shared helper parsing in corpus replay.
+      run: grep -rlq 'usage_sum:' tools/oracle/fuzz/corpus/helper_case/usage-sum-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/usage-sum/cache-write-alias-is-counted-once.yaml
+  - tools/oracle/cases/helpers/usage-sum/cached-modality-none-and-explicit-zero.yaml
+  - tools/oracle/cases/helpers/usage-sum/incoming-ttl-detail-is-not-copied.yaml
+  - tools/oracle/cases/helpers/usage-sum/numeric-extras-private-fields-and-total-mismatch.yaml
+  - tools/oracle/cases/helpers/usage-sum/duration-and-prediction-token-details.yaml
+deviations:
+  - what: Accumulated counters and fractional usage use checked integer/Decimal arithmetic instead of unbounded integers and binary floats.
+    why: A long stream must fail with a typed overflow rather than wrap or silently lose usage precision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2764-L2815
+out_of_scope:
+  - B1681 selects realtime and Responses websocket events from L2818 onward and consumes this usage merge; it also owns the tier partition helper at L1299-L1314.
+  - Other cost_calculator.py arithmetic is B1649 adjustments, B1673 custom token rates, B1674 images, B1676 timed/transcription/video prices, B1677 additional fees, B1678 OCR and B1679 batches. B1682 owns context/breakdown forwarding, B1683 usage/tier diagnostics, B1686 token/vector/rerank dispatch, B1688 preparation and B1689 replicate/early-call branches; B068 owns the completion/response coordination.
+pitfalls:
+  - cache_write_tokens and cache_creation_tokens mirror one another, so summing both doubles the canonical write count.
+  - New TTL cache-creation detail is neither numeric nor the cached-modality special case and therefore is not copied into an empty aggregate.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,93 @@
+id: B1679
+title: Calculate batch token prices and their legacy half-rate fallback
+description: >-
+  Add betterlite-core::cost::batch for cost_calculator.py _batch_rate, batch_cost_calculator
+  and _batch_prompt_cost. Call B174 provider resolution before any lookup or early return,
+  even when complete deployment prices were supplied; use the resolved provider but retain
+  the original model argument for lookup. Resolve effective prices through B1678 PriceLookup.
+  With no supplied model-info, lookup failure becomes no pricing. With supplied info whose
+  input/output ordinary/batch token fields are all null or absent, try public lookup; replace
+  the whole supplied record only with a truthy result, retaining it when lookup fails.
+  Modality-only or cache-only prices therefore do not prevent the public fallback. Empty
+  final info returns a zero pair.
+  Use B1670's independent batch-rate families and xAI threshold comparison. A present input
+  batch rate, including zero, calls the explicit-batch prompt path: parse B1671 details,
+  subtract cache reads/writes from text only when their respective batch rate is present,
+  subtract uncached audio/image/video, and clamp text remainder at zero. Charge modalities
+  at their nonnull dedicated batch rates or the selected input batch rate. A missing cache
+  batch rate leaves those tokens at ordinary batch input cost; explicit zero removes and
+  charges them free. Ignore TTL write splits on this path.
+  Without an input batch rate, a truthy ordinary input rate uses the legacy half-rate path.
+  Subtract both aggregate cached reads and writes without clamping the resulting ordinary
+  input count, charge it at input/2, add B1670's positive-usage cache-read component/2, and
+  add writes at (truthy cache_creation_input_token_cost or input)/2. In particular a missing
+  ordinary cache-read price costs zero here, unlike generic token pricing's input fallback,
+  and a zero ordinary write price falls back to input. This path does not separately price
+  audio, image or video usage. Output uses a present batch rate or half a truthy ordinary
+  output rate. Multiply both sides only by B1672's residency uplift, with no service-tier,
+  off-peak, Vertex or provider-geo adjustment added by this function.
+  Pure batch_token_cost cases call the actual calculator with explicit provider and a
+  supplied table containing a primary token rate, or _batch_prompt_cost directly. Native
+  tests use provider resolution and PriceLookup fixtures to prove lookup order, supplied
+  metadata fallback, lookup failure and negative legacy residuals. This task performs only
+  pricing; batch management, output-file reading and spend publication stay with their
+  existing callers. The 112 nonblank source lines budget 170 production, 220 tests and
+  170 differential fixtures/wiring, capped at 625. Register helper_case seeds for both
+  supplied-rate operations; no external byte parser is introduced.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/lib.rs
+    - crates/betterlite-core/src/cost.rs
+    - crates/betterlite-core/src/cost/batch.rs
+    - crates/betterlite-core/src/cost/batch/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/batch_token_cost.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/batch_token_cost.py
+    - tools/oracle/cases/helpers/batch-token-cost/**
+    - tools/oracle/fuzz/corpus/helper_case/batch-token-cost-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2578-L2710
+    why: Provider resolution, metadata-only fallback and the two deliberately different input-cost paths.
+dod:
+  - text: Explicit batch rates preserve modality and independently priced cache categories, including free rates and clamped text remainder.
+    proof: [batch-cost-tests, oracle, batch-token-cost-python, batch-token-cost-corpus]
+  - text: The half-rate fallback retains its unclamped residual, free missing reads and truthy write fallback instead of borrowing generic billing rules.
+    proof: [batch-cost-tests, oracle, batch-token-cost-python]
+  - text: Provider resolution precedes supplied-price handling and metadata-only overrides do not suppress public model lookup.
+    proof: [batch-cost-tests]
+checks:
+  optional: []
+  commands:
+    - id: batch-cost-tests
+      why: Batch pricing applies the wrong cache fallback or bypasses required provider/model resolution.
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^cost::batch::/)'
+    - id: batch-token-cost-python
+      why: Batch rate comparisons lack the checked adapter that calls the original calculator.
+      run: test -f tools/oracle/helpers/batch_token_cost.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: batch-token-cost-corpus
+      why: No batch_token_cost call is present in helper decoder replay inputs.
+      run: grep -rlq 'batch_token_cost:' tools/oracle/fuzz/corpus/helper_case/batch-token-cost-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/batch-token-cost/explicit-cache-rates-remove-and-price-tokens.yaml
+  - tools/oracle/cases/helpers/batch-token-cost/missing-cache-rates-remain-at-batch-input.yaml
+  - tools/oracle/cases/helpers/batch-token-cost/modality-zero-rate-and-clamped-text.yaml
+  - tools/oracle/cases/helpers/batch-token-cost/legacy-missing-read-and-zero-write-prices.yaml
+  - tools/oracle/cases/helpers/batch-token-cost/negative-legacy-residual-is-not-clamped.yaml
+  - tools/oracle/cases/helpers/batch-token-cost/residency-uplift-without-off-peak.yaml
+deviations:
+  - what: Batch token totals retain exact Decimal arithmetic and fail explicitly on nonfinite prices or checked overflow.
+    why: The legacy fallback's signed results are preserved, but stored batch spend cannot depend on floating-point rounding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L2643-L2682
+out_of_scope:
+  - B1670 owns thresholded batch-rate selection in utils.py; this task consumes its four rates rather than rediscovering thresholds.
+  - Beyond the batch functions, cost_calculator.py assigns adjustments to B1649, custom prices to B1673, image defaults to B1674, timed/transcription/video costs to B1676, additional fees to B1677 and OCR to B1678. Usage aggregation is B1680, realtime B1681, identity/breakdown storage B1682, usage/tier diagnostics B1683, token/vector/rerank dispatch B1686, input preparation B1688, replicate/early-call charging B1689 and outer response/completion composition B068.
+pitfalls:
+  - Supplying only modality or cache prices still permits the public table to replace the entire supplied model-info record.
+  - Explicit batch cache-rate absence and explicit zero differ, while the legacy write fallback treats zero like missing.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

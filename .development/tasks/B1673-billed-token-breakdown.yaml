@@ -1,0 +1,100 @@
+id: B1673
+title: Report billed token rates and cache savings from the same price decisions
+description: >-
+  Add betterlite-models::billed_tokens for every record/function in utils.py L1498-L1770
+  and cost_calculator.py's _cost_per_token_custom_pricing_helper L204-L252. Publish
+  BilledTokenRates, TokenTypeCostBreakdown and flat custom-cost calculation using B204
+  Decimal money and B1668 CostUsage. Seven billed rates include separate cached-audio and
+  one-hour write prices. Scale all seven together, preserving a multiplier of one exactly.
+  Custom token pricing wins over custom seconds, requires input/output rates and defaults
+  absent read/write rates to input. Charge max(prompt-read-write,0) at the input rate,
+  each cache count at its own flat rate and completion at output. A supplied per-second
+  price alone charges response_time_ms-or-zero/1000 entirely to output, including negative
+  durations if supplied. With neither custom source return None, not a free priced result.
+  Flat custom billed rates ignore token tiers, all regional/off-peak rules and TTL write
+  details; reasoning uses output and cached audio uses ordinary read price. Catalog billing
+  resolves effective metadata once through B1678 PriceLookup, applies B1672's Fireworks
+  cache default, B1670's base/reasoning rates
+  at the supplied billing instant, and the audio-read override. Multiply the resulting
+  rate record by residency, Vertex and provider inference_geo uplifts. A failed catalog
+  lookup/default-policy resolution returns no rates; subsequent malformed-rate failures
+  propagate, despite the breakdown docstring claiming it never raises.
+  For breakdown counts, prefer nonzero parsed detail reasoning/read/write values, otherwise
+  use positive integer top-level reasoning_tokens, _cache_read_input_tokens and
+  _cache_creation_input_tokens. Cached audio and TTL detail records come only from prompt
+  details. No resolved rates yields three zeros and rates=None. Otherwise return reasoning
+  count*reasoning rate, split audio/non-audio read cost and write cost; custom pricing uses
+  aggregate writes while catalog pricing uses B1671's TTL calculation. Return the exact
+  rates alongside the amounts so downstream logging cannot resolve a different price.
+  Caching savings uses supplied model-info and billed_at, without a new lookup or clock
+  read. Apply provider cache defaults and the same base-rate selector. Clamp cache read,
+  creation and TTL counts at zero. A zero/missing write price means input price for savings,
+  and zero/missing one-hour means ordinary write; an explicit zero read remains free.
+  Read discount is count*max(input-read,0). Subtract TTL-aware write premium, allowing a
+  negative premium or overall negative savings. Scale only by residency and Vertex
+  multipliers here, not provider inference_geo or Anthropic speed.
+  The pure billed_tokens adapter covers the custom path, count projections, explicit-map
+  billed rates and caching savings. Exercise catalog miss/failure boundaries natively;
+  no helper patches litellm.model_cost. Seed helper_case for each operation. These 293
+  nonblank lines budget 330 production, 260 tests and 210 oracle material, totaling 800.
+scope:
+  paths:
+    - crates/betterlite-models/src/lib.rs
+    - crates/betterlite-models/src/billed_tokens.rs
+    - crates/betterlite-models/src/billed_tokens/**
+    - crates/betterlite-models/src/cost_usage.rs
+    - crates/betterlite-models/src/cost_usage/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/billed_tokens.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/billed_tokens.py
+    - tools/oracle/cases/helpers/billed-tokens/**
+    - tools/oracle/fuzz/corpus/helper_case/billed-tokens-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1498-L1770
+    why: Billed rate records, fallback counters, custom versus catalog writes and asymmetric savings rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L204-L252
+    why: Flat custom token/second precedence and inclusive cached prompt counts.
+dod:
+  - text: Flat pricing totals and breakdown rates agree while retaining aggregate-cache and token-over-seconds precedence.
+    proof: [billed-token-tests, oracle, billed-tokens-python]
+  - text: Catalog rate records carry all regional adjustments and distinguish failed lookup from later pricing errors.
+    proof: [billed-token-tests, oracle, billed-tokens-python]
+  - text: Savings treats free reads and unpublished writes differently and can report a premium rather than forcing a positive saving.
+    proof: [billed-token-tests, oracle, billed-tokens-python, billed-tokens-corpus]
+checks:
+  optional: []
+  commands:
+    - id: billed-token-tests
+      why: The rate record, billed token categories or savings arithmetic diverges from the actual charge.
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^billed_tokens::/) | test(/^cost_usage::billing_counters::/)'
+    - id: billed-tokens-python
+      why: Rate and savings comparisons have no statically checked pure adapter.
+      run: test -f tools/oracle/helpers/billed_tokens.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: billed-tokens-corpus
+      why: The billed_tokens operation has no decoder regression seed.
+      run: grep -rlq 'billed_tokens:' tools/oracle/fuzz/corpus/helper_case/billed-tokens-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/billed-tokens/custom-tokens-win-over-seconds.yaml
+  - tools/oracle/cases/helpers/billed-tokens/custom-aggregate-writes-ignore-ttl-detail.yaml
+  - tools/oracle/cases/helpers/billed-tokens/zero-detail-counters-use-private-fallback.yaml
+  - tools/oracle/cases/helpers/billed-tokens/cached-audio-rate-and-three-uplifts.yaml
+  - tools/oracle/cases/helpers/billed-tokens/free-reads-zero-writes-and-negative-savings.yaml
+  - tools/oracle/cases/helpers/billed-tokens/savings-excludes-provider-geo-multiplier.yaml
+  - tools/oracle/cases/helpers/billed-tokens/pinned-instant-retains-off-peak-rate.yaml
+deviations:
+  - what: Reported token-rate amounts and savings retain exact decimals, with explicit overflow or nonfinite-price errors.
+    why: Reconciliation requires the reported rate to reproduce its stored charge without float rounding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L1695-L1719
+out_of_scope:
+  - utils.py's earlier rate/detail/generic blocks remain B1669-B1672; image rate/usage arithmetic belongs to B1674, web-search counters to B1675, character selection/pricing to B1676, and requested-image fields plus CostCalculatorUtils to B1687.
+  - cost_calculator.py separates additional fees (B1677), usage/tier diagnostics (B1683), OCR (B1678), seconds/transcription/video (B1676), token/vector/rerank dispatch (B1686), replicate/early completion branches (B1689), model context/breakdown storage (B1682), adjustments (B1649), image defaults (B1674), batch math (B1679), usage aggregation (B1680), realtime (B1681) and completion preparation (B1688); B068 owns the public response/completion composition around those pieces.
+pitfalls:
+  - The breakdown catches lookup failures but does not catch errors from subsequent threshold or multiplier resolution.
+  - Caching savings substitutes the input price for a zero write price while actual custom billing preserves that zero as free.
+  - A zero detail cache counter permits fallback to the private top-level counter; the check is truthiness rather than presence.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security
