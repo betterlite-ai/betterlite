@@ -4,6 +4,7 @@ use std::num::{ParseFloatError, ParseIntError};
 use secrecy::SecretString;
 use thiserror::Error;
 
+use crate::providers::bedrock::request_policy::metadata_fields;
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
 };
@@ -213,6 +214,7 @@ where
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
+        bedrock_metadata_fields: metadata_fields(raw.bedrock_metadata_fields),
     })
 }
 

@@ -179,6 +179,7 @@ name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "rstest",
  "secrecy",
  "serde",
  "serde-saphyr",

@@ -100,3 +100,5 @@ fn rejects_boolean_in_numeric_field_as_invalid_scalar() {
         matches!(map_loader(BTreeMap::new()).load("model_list:\n  - model_name: x\n    litellm_params:\n      timeout: true\n"), Err(ConfigError::InvalidScalar { path, value: true }) if path == "model_list.0.litellm_params.timeout")
     );
 }
+
+mod bedrock_request_policy_config;
