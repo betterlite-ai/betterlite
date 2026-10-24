@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/complexity-placement-gates/**
-  - tools/oracle/src/router_probes/complexity-placement-gates/**
+  - tools/oracle/src/router_probes/complexity_placement_gates/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/complexity_placement_gates.py
   - tools/oracle/litellm/probes/registry.py
@@ -32,7 +32,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the complexity_placement_gates prefix so the
+    required filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
