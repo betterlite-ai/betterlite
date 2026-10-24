@@ -13,7 +13,7 @@ description: >-
   request/result variants afterwards, and must update every exhaustive match. Keep the pipeline in betterlite-core
   above B198 leaf context/AWS types. Write the behavior rstest functions b014_call_dispatch_tests_behavior in adjacent
   tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
-  names.
+  names. Budget 300 dispatch, 280 tests and 100 server wiring (680 total).
 scope:
   paths:
   - Cargo.toml
