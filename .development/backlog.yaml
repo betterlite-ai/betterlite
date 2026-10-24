@@ -2072,12 +2072,14 @@ tasks:
     status: todo
     depends_on:
     - B016
-    - B304
+    - B389
     - B013
+    - B301
+    - B002
+    - B361
     file: tasks/B315-latency-routing.yaml
     covers:
     - litellm/router_strategy/lowest_latency.py
-
   - id: B316
     milestone: M2 routing
     title: Cost-based routing with model price overrides
@@ -2810,6 +2812,19 @@ tasks:
     file: tasks/B382-routing-read-batch.yaml
     covers:
     - litellm/router_utils/routing_read_batch.py
+  - id: B389
+    milestone: M2 routing
+    title: Latency and first-token observations
+    status: todo
+    depends_on:
+    - B304
+    - B012
+    - B301
+    - B002
+    - B361
+    file: tasks/B389-latency-observations.yaml
+    covers:
+    - litellm/router_strategy/lowest_latency.py
   - id: B391
     milestone: M2 routing
     title: Scripted routing mock replies and trace capture
