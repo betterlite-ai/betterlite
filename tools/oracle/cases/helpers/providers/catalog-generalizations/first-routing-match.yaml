@@ -1,0 +1,16 @@
+kind: helper
+name: first-routing-match
+call:
+  catalog_generalizations:
+    rules:
+      - {pattern: "^gpt-", model_info: {litellm_provider: openai}}
+      - {pattern: gpt, model_info: {litellm_provider: later}}
+      - {pattern: "^blank$", model_info: {litellm_provider: ""}}
+      - {pattern: "claude-[a-z]+-(?:4[-._](?:[6-9]|[1-9]\\d)(?!\\d)|[5-9](?!\\d))", model_info: {litellm_provider: anthropic}}
+      - {pattern: "", model_info: {litellm_provider: anything}}
+    routing: [GPT-4o, my-gpt-4, BLANK, claude-opus-4-7, claude-opus-4-10, claude-opus-41, other, ""]
+    capabilities: []
+    fill_missing: []
+env: {}
+compare:
+  ignore: []

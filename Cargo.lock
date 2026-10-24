@@ -202,6 +202,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-http",
+ "betterlite-models",
  "clap",
  "reqwest",
  "rstest",
