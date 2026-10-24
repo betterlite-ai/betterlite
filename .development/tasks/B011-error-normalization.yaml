@@ -1,0 +1,93 @@
+id: B011
+title: Normalized errors and call-id integration
+description: >-
+  Complete the error layer with normalized logging codes and optional call-id attachment. Add pure normalization
+  over B184's typed error facts using the pinned precedence, then integrate the server envelope with general_settings.include_call_id_in_error_body.
+  The call id comes from trusted request context and must agree with the response header; it is never accepted from
+  an arbitrary error body. Reuse B185-B186 mapping and B187 redaction, keep normalized_error as logging metadata
+  rather than adding a new client field, and preserve existing betterlite-owned messages. Add error_normalization
+  and error_call_id helper cases plus real HTTP cases for the call-id setting, including an upstream retry header
+  allowlist. Extend the config corpus for the new setting. Budget 260 normalizer/config lines, 120 integration and
+  300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-error/Cargo.toml
+  - crates/betterlite-error/src/lib.rs
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/normalize.rs
+  - crates/betterlite-error/src/normalize/**
+  - crates/betterlite-error/src/envelope.rs
+  - crates/betterlite-error/src/envelope/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/error-normalization/**
+  - tools/oracle/cases/errors/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/error_normalization.py#L32-L205
+  why: Stable codes and exact precedence across proxy type, messages, classes and status.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/error_body_call_id.py#L6-L21
+  why: Opt-in call id field placement.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L442-L531
+  why: Explicit error headers versus raw vendor response headers.
+dod:
+- text: Every normalization precedence branch matches direct helper cases, including absent exceptions and budget
+    versus vendor rate limits.
+  proof:
+  - oracle
+- text: Call-id opt-in/opt-out and error header behavior match HTTP cases; the enabled body id equals the actual
+    response-header id.
+  proof:
+  - oracle
+  - error-normalization-tests
+- text: No raw provider body, credential or private infrastructure detail reaches errors or diagnostic formatting.
+  proof:
+  - error-normalization-tests
+- text: The config corpus replays the added call-id setting.
+  proof:
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: error-normalization-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-error -p betterlite-server --no-tests=fail -E 'test(/error_normalization|error_call_id/)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/error-normalization/proxy-type-first.yaml
+- tools/oracle/cases/helpers/error-normalization/message-before-class.yaml
+- tools/oracle/cases/helpers/error-normalization/budget-rate-limit.yaml
+- tools/oracle/cases/helpers/error-normalization/class-before-router-wrapper.yaml
+- tools/oracle/cases/helpers/error-normalization/status-fallback.yaml
+- tools/oracle/cases/helpers/error-normalization/unclassified.yaml
+- tools/oracle/cases/helpers/error-normalization/no-exception.yaml
+- tools/oracle/cases/errors/call-id-enabled.yaml
+- tools/oracle/cases/errors/call-id-disabled.yaml
+- tools/oracle/cases/errors/safe-retry-headers.yaml
+deviations: []
+out_of_scope:
+- The normalized logging code is not a replacement for the LiteLLM-compatible HTTP error type/code.
+- Budget, rate-limit and auth enforcement remain in their own tasks.
+pitfalls:
+- Compare a random call id for presence in the oracle and assert header/body equality inside the real-server test.
+- The call id belongs beside the error's fields at the helper-defined location, not an invented top-level envelope
+  field.
+- A 429 message mentioning a budget can normalize differently from a generic 429.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

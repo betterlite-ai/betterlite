@@ -108,7 +108,7 @@ tasks:
     title: Exception types and provider error mapping
     status: todo
     depends_on: [B004, B184, B185, B186]
-    file: null
+    file: tasks/B011-error-normalization.yaml
     covers:
       - "litellm/litellm_core_utils/error_normalization.py"
       - "litellm/proxy/common_utils/error_body_call_id.py"
