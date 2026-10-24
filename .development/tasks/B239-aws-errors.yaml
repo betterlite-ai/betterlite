@@ -1,0 +1,117 @@
+id: B239
+title: Bedrock, Mantle and SageMaker errors
+description: >-
+  Implement every classifier/helper function in exception_mapping_utils.py 857-1140, preserving ordered predicates
+  over B236 typed facts and B184 taxonomy. Each branch-N case invokes one family with input reaching the condition
+  at pinned source line N; add distinct fallback cases per family and named rstest rows for every status/string
+  predicate, including combinations and unmatched inputs. Never combine two families in one call. Do not instantiate
+  cloud SDK clients. Budget 280 classifiers, 110 adapters, 320 tests and 50 wiring (760 total). Write the behavior
+  rstest functions b239_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  and failure in the DoD; corpus replay tests have separate names. Register helper operations aws_errors in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  Every error case ignores /error/message with reason betterlite writes its own message; never copy AnthropicError
+  or other LiteLLM branding prefixes.
+scope:
+  paths:
+  - crates/betterlite-error/src/lib.rs
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/aws_errors.rs
+  - crates/betterlite-error/src/aws_errors/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/aws-errors/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L857-L1140
+  why: All function bodies and predicates in this bounded family slice.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::b239_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'aws_errors' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/aws-errors/branch-863.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-866.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-882.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-884.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-891.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-905.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-912.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-919.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-926.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-936.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-943.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-950.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-957.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-964.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-965.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-972.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-979.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-986.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-993.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1001.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1009.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1017.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1025.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1046.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1053.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1060.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1070.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1071.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1081.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1088.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1095.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1102.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1109.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1117.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1125.yaml
+- tools/oracle/cases/helpers/aws-errors/branch-1133.yaml
+- tools/oracle/cases/helpers/aws-errors/generic-fallback.yaml
+- tools/oracle/cases/helpers/aws-errors/competing-message-status.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B186 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

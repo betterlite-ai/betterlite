@@ -1,0 +1,123 @@
+id: B192
+title: Private JSON serialization and atomic files
+description: >-
+  Add private serialization and atomic local-file helpers under betterlite-logging/private_json, reusable by later
+  integration settings/cache writers. Accept typed Serialize records or a named bounded passthrough field, redact
+  credentials with B187 before diagnostic serialization, and implement typed JSON load/dump semantics on supported
+  JSON-native values. Stage files in the target directory, set owner-only permissions before writing, flush/sync
+  and atomically rename; provide explicit discard and existing-file overwrite operations with typed source errors.
+  Paths are trusted caller configuration, never HTTP fields; follow symlinked parents as LiteLLM does; only explicit
+  overwrite opens the final target with O_NOFOLLOW and preserve the old file on failed staged writes. Use async
+  filesystem primitives or an owned bounded blocking adapter so disk work never blocks the runtime. Add private_json
+  helper cases for JSON-native normalization and Unix file mode/atomicity probes in private temporary directories,
+  plus parser fuzzing and injected-I/O-failure tests.  Seed B171's shared helper_case corpus with every added operation
+  and replay it through the common typed parser. ensure_private_dir creates/tightens its directory to 0700, including
+  an existing group/world-readable directory. The Rust loader returns Result with serde_json::Error as source; the
+  oracle adapter translates Python safe_json_loads swallow-and-default into the corresponding error outcome rather
+  than making production Rust swallow parse errors. Write the behavior rstest functions b192_private_json_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations private_json in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed. Budget 220 filesystem/JSON APIs, 120
+  adapters, 300 tests and 100 fuzz/replay wiring (740 total).
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/private_json.rs
+  - crates/betterlite-logging/src/private_json/**
+  - crates/betterlite-logging/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/private-json/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/private_json.py#L9-L90
+  why: Private directory/file modes, staging, commit, discard and explicit overwrite.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L12-L93
+  why: Safe JSON-native values and NUL removal.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L9-L16
+  why: Safe load fallback behavior.
+dod:
+- text: JSON-native serialization/load and private file lifecycle helper cases match observable pinned results.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Failed staging preserves originals and removes temporaries; symlinked parents work, and explicit overwrite rejects
+    a symlink final target using O_NOFOLLOW.
+  proof:
+  - private-json-tests
+- text: >-
+    Unix permissions are owner-only before any secret bytes are written, and concurrent writes never reveal a partial
+    staged result.
+  proof:
+  - private-json-tests
+- text: The bounded JSON parser has corpus replay coverage.
+  proof:
+  - private-json-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: private-json-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b192_private_json_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: private-json-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/private_json)"
+      && test -f crates/betterlite-logging/fuzz/fuzz_targets/private_json.rs && test -n "$(ls -A crates/betterlite-logging/fuzz/corpus/private_json)"
+      && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_private_json_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'private_json' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/private-json/nul-normalization.yaml
+- tools/oracle/cases/helpers/private-json/valid-json.yaml
+- tools/oracle/cases/helpers/private-json/invalid-json-fallback.yaml
+- tools/oracle/cases/helpers/private-json/stage-commit.yaml
+- tools/oracle/cases/helpers/private-json/stage-discard.yaml
+- tools/oracle/cases/helpers/private-json/overwrite-existing.yaml
+- tools/oracle/cases/helpers/private-json/owner-permissions.yaml
+- tools/oracle/cases/helpers/private-json/symlinked-parent.yaml
+- tools/oracle/cases/helpers/private-json/ensure-private-dir.yaml
+deviations:
+- what: Explicit overwrite refuses a symlink final target using O_NOFOLLOW; symlinked parents remain supported.
+  why: Prevent overwriting a redirected secret-bearing target; LiteLLM uses O_WRONLY|O_TRUNC and follows that target.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/private_json.py#L64-L76
+out_of_scope:
+- No files are written by default merely because a request is logged.
+- Python-specific set/datetime/custom-object coercion is owned by B164/B166 adapters.
+- >-
+  Windows ACL parity must be added with B170's platform packaging; this task's permission tests run on pinned Debian.
+pitfalls:
+- Explicit overwrite is non-atomic and must never be an automatic fallback after failed staging.
+- A restrictive final file mode does not undo a secret leaked through a permissive temporary file.
+- Use tempfile or an equivalent existing atomic-file facility rather than building random filenames by hand.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

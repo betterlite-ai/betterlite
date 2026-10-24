@@ -1,0 +1,130 @@
+id: B013
+title: Provider capability registry and model-layer integration
+description: >-
+  Finish the model layer with the pinned provider endpoint-support registry and a public read-only facade for catalog
+  and tokenizer consumers. Parse root and packaged provider capability files as distinct typed assets, with provider
+  names, endpoint labels and supported routes separated from executable adapter availability. Expose model information,
+  token/context limits and capability lookups over B193-B194's active immutable catalog and B195-B197's token counter;
+  preserve unknown and omitted answers explicitly. Store and verify both raw assets under fixtures, select the packaged
+  backup for offline runtime behavior, and compare registry projection/model queries through helper cases without
+  advertising unimplemented routes in /models. Add provider_capabilities parser fuzz target and a real composition
+  test constructing the whole layer without network or ambient environment.  Seed B171's shared helper_case corpus
+  with every added operation and replay it through the common typed parser. catalog-not-executable is a Rust composition
+  test, since it is a betterlite implementation distinction rather than a LiteLLM helper. Write the behavior rstest
+  functions b013_model_capability_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  and failure in the DoD; corpus replay tests have separate names. Register helper operations model_capabilities
+  in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
+  adapter file and corpus seed. Budget 290 capability projections, 110 adapters, 250 tests and 60 wiring (710 total).
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/endpoints.rs
+  - crates/betterlite-models/src/endpoints/**
+  - crates/betterlite-models/src/lookup.rs
+  - crates/betterlite-models/src/lookup/**
+  - crates/betterlite-models/fixtures/**
+  - crates/betterlite-models/fuzz/**
+  - crates/betterlite-tokenizer/src/lib.rs
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/model-capabilities/**
+  - crates/betterlite-tokenizer/Cargo.toml
+  - crates/betterlite-tokenizer/src/model_capabilities.rs
+  - crates/betterlite-tokenizer/src/model_capabilities/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/provider_endpoints_support.json#L1-L130
+  why: Root provider/endpoint registry.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/provider_endpoints_support_backup.json#L1-L130
+  why: Packaged registry, which differs from the root asset at this pin.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5439-L5510
+  why: Maximum token lookup.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5685-L6415
+  why: Model information lookup and provider/model identity.
+dod:
+- text: Both provider capability assets match their pinned checksums and all provider/endpoint entries parse.
+  proof:
+  - capability-pins
+  - model-capability-tests
+- text: >-
+    Model information and root/backup registry projections match helper cases, retaining missing versus false answers.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    The full model/tokenizer composition works offline and never reports catalog support as an installed executable
+    adapter.
+  proof:
+  - model-capability-tests
+- text: Provider capability input has fuzz corpus replay.
+  proof:
+  - provider-capabilities-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: model-capability-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-models -p betterlite-tokenizer --no-tests=fail -E 'test(/::b013_model_capability_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: provider-capabilities-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/provider_capabilities)"
+      && test -f crates/betterlite-models/fuzz/fuzz_targets/provider_capabilities.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/provider_capabilities)"
+      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_provider_capabilities_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: capability-pins
+    why: the root or packaged endpoint registry differs from the pinned source
+    run: 'cd crates/betterlite-models/fixtures && sha256sum --check --quiet <<''SUMS''
+
+      505d5e90b2c210ddbf91c3a38dc3229a6e26c9b9e3a08d0275fec8b7523d6a70  provider_endpoints_support.json
+
+      f5751876c574c98f0aa16ba48e54c1457c110acfe57aad3f250f41ee89125d98  provider_endpoints_support_backup.json
+
+      SUMS'
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'model_capabilities' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/model-capabilities/root-registry.yaml
+- tools/oracle/cases/helpers/model-capabilities/packaged-registry.yaml
+- tools/oracle/cases/helpers/model-capabilities/known-model.yaml
+- tools/oracle/cases/helpers/model-capabilities/unknown-model.yaml
+- tools/oracle/cases/helpers/model-capabilities/context-output-limits.yaml
+- tools/oracle/cases/helpers/model-capabilities/missing-false.yaml
+- tools/oracle/cases/helpers/model-capabilities/provider-endpoint.yaml
+deviations: []
+out_of_scope:
+- Price calculation, spend logs and budget enforcement are B068-B069.
+- Model management API routes are B060; provider capability metadata does not install those routes.
+pitfalls:
+- >-
+  The two endpoint-support files have different hashes at the pinned commit; copying one over the other destroys
+  evidence.
+- Avoid a models-to-tokenizer dependency cycle; expose composition in the consumer or tokenizer crate.
+- A missing provider capability must not become an unconditional false or true by default.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

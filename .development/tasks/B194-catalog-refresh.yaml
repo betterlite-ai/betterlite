@@ -1,0 +1,145 @@
+id: B194
+title: Model catalog loading and atomic refresh
+description: >-
+  Add an injected catalog source and atomic reload service to betterlite-models, using B009's configured HTTP transport
+  and B193's parser. Track source kind, raw-byte git-blob revision, ETag, load timestamp and failure provenance;
+  keep loaded base catalog separate from runtime registrations and reapply validated overrides after a replacement.
+  Resolve LITELLM_LOCAL_MODEL_COST_MAP and LITELLM_MODEL_COST_MAP_URL through config. Unless local mode is true,
+  startup fetches the configured URL (default https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json)
+  through B009 policy with a 5 second attempt timeout; failure warns and falls back to the bundled map. The URL
+  is operator configuration, never request input. Use B257's injected fetch/retry/integrity policy and own the reload
+  task. Failed reload keeps the current snapshot; startup source failures fall back to the packaged asset with visible
+  diagnostics. Add catalog_refresh helper cases with local synthetic HTTP replies and deterministic RNG; extend
+  model_catalog and config corpora for all new input.  Seed B171's shared helper_case corpus with every added operation
+  and replay it through the common typed parser. B171 forces local mode for normal helper imports; startup-fetch
+  cases override only inside an injected get_model_cost_map client call, never by allowing import-time network.
+  Runtime unknown fields warn with paths and are ignored under B205 policy. Write the behavior rstest functions
+  b194_catalog_refresh_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Register helper operations catalog_refresh in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+  Own refetch_model_cost_map 364-412, provenance 415-478, alias expansion/finalization/adoption 481-567 and startup/retry-task
+  orchestration 570-697; local file reading/snapshot access delegates to B193 and fetch policy to B257. Budget 300
+  state/startup, 110 adapters, 290 tests and 70 config/wiring (770 total).
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-models/Cargo.toml
+  - crates/betterlite-models/src/lib.rs
+  - crates/betterlite-models/src/error.rs
+  - crates/betterlite-models/src/source.rs
+  - crates/betterlite-models/src/source/**
+  - crates/betterlite-models/src/reload.rs
+  - crates/betterlite-models/src/reload/**
+  - crates/betterlite-models/src/catalog.rs
+  - crates/betterlite-models/src/catalog/**
+  - crates/betterlite-models/fuzz/**
+  - crates/betterlite-config/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/catalog-refresh/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L415-L478
+  why: Catalog provenance fields.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L556-L697
+  why: Override adoption and startup fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L426-L429
+  why: Default source URL.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L364-L412
+  why: Atomic reload entry point.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L481-L567
+  why: Alias expansion and final adoption.
+dod:
+- text: >-
+    Startup source selection, provenance and successful/failed atomic adoption match helper cases; B257 proves retry
+    and integrity primitives.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Concurrent readers see an entire old or new catalog, failed refresh retains the old one, and validated overrides
+    survive successful replacement.
+  proof:
+  - catalog-refresh-tests
+- text: Local mode performs no network calls and refresh tasks honor byte/time/retry limits and shutdown cancellation.
+  proof:
+  - catalog-refresh-tests
+- text: Model/config parser corpora cover remote content and injected environment settings.
+  proof:
+  - model-catalog-corpus
+  - config-yaml-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: catalog-refresh-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-models -p betterlite-config --no-tests=fail -E 'test(/::b194_catalog_refresh_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: model-catalog-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/model_catalog)"
+      && test -f crates/betterlite-models/fuzz/fuzz_targets/model_catalog.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/model_catalog)"
+      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_model_catalog_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'LITELLM_LOCAL_MODEL_COST_MAP' crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq
+      'LITELLM_MODEL_COST_MAP_URL' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
+      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'catalog_refresh' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/catalog-refresh/local-source.yaml
+- tools/oracle/cases/helpers/catalog-refresh/failed-reload-keeps-current.yaml
+- tools/oracle/cases/helpers/catalog-refresh/startup-default-url.yaml
+- tools/oracle/cases/helpers/catalog-refresh/startup-local-no-fetch.yaml
+- tools/oracle/cases/helpers/catalog-refresh/startup-timeout-fallback.yaml
+- tools/oracle/cases/helpers/catalog-refresh/unknown-field-warning.yaml
+deviations:
+- what: betterlite startup fetches the configured model map unless local mode is true, including its proxy CLI.
+  why: >-
+    Architect decision: use remote startup discovery. The pinned Python SDK does this, but LiteLLM CLI entrypoints
+    take the local-only _is_cli_process shortcut.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L618-L650
+out_of_scope:
+- The public model-price reload endpoint and its authorization are later management tasks.
+- >-
+  Periodic polling is not enabled; startup transient retries are owned and drained as part of the configured source
+  lifecycle.
+- >-
+  Fetch response classification, retry calculation, raw revisions and integrity checks are B257; local asset/snapshot
+  access is B193; CLI process-name inspection is not used because startup policy is explicit.
+pitfalls:
+- Revision hashes cover the original bytes, not a reformatted serialized map.
+- A reload failure must not replace a good runtime catalog with the packaged fallback.
+- The model resolver depends only on the catalog data, never on the HTTP reload service's mutable state.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

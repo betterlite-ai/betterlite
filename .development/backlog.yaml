@@ -88,87 +88,92 @@ tasks:
     milestone: M1 openai data plane
     title: Outbound HTTP clients, proxies, TLS and connection reuse for every provider
     status: todo
-    depends_on: [B004]
-    file: null
+    depends_on: [B004, B171, B172, B173]
+    file: tasks/B009-http-boundaries.yaml
     covers:
-      - "litellm/llms/custom_httpx/**"
-      - "litellm/llms/aiohttp_openai/**"
-      - "litellm/types/llms/custom_http.py"
       - "litellm/litellm_core_utils/url_utils.py"
   - id: B010
     milestone: M1 openai data plane
     title: Provider framework, provider resolution and parameter mapping
     status: todo
-    depends_on: [B005, B009]
-    file: null
+    depends_on:
+    - B005
+    - B006
+    - B174
+    - B175
+    - B176
+    - B179
+    file: tasks/B010-provider-framework.yaml
     covers:
-      - "litellm/llms/{__init__,base,README}.*"
-      - "litellm/llms/base_llm/{__init__,base_model_iterator,base_utils}.py"
-      - "litellm/llms/base_llm/{chat,bridges}/**"
-      - "litellm/litellm_core_utils/{get_llm_provider_logic,get_supported_openai_params,get_provider_specific_headers,model_param_helper,get_litellm_params,llm_request_utils,provider_affinity,reasoning_effort_utils,service_tier_utils,dot_notation_indexing}.py"
-      - "litellm/litellm_core_utils/prompt_templates/**"
-      - "litellm/types/llms/base.py"
+    - litellm/llms/{__init__,base,README}.*
+    - litellm/llms/base_llm/{__init__,base_model_iterator,base_utils}.py
+    - litellm/llms/base_llm/{chat,bridges}/**
+    - litellm/types/llms/base.py
+    - litellm/llms/aiohttp_openai/**
   - id: B011
     milestone: M1 openai data plane
     title: Exception types and provider error mapping
     status: todo
-    depends_on: [B004]
-    file: null
+    depends_on:
+    - B004
+    - B184
+    - B185
+    - B187
+    file: tasks/B011-error-normalization.yaml
     covers:
-      - "litellm/exceptions.py"
-      - "litellm/litellm_core_utils/{exception_mapping_utils,error_normalization}.py"
-      - "litellm/proxy/common_utils/error_body_call_id.py"
+    - litellm/litellm_core_utils/error_normalization.py
+    - litellm/proxy/common_utils/error_body_call_id.py
   - id: B012
     milestone: M1 openai data plane
     title: Logging pipeline, callback registry and redaction
     status: todo
-    depends_on: [B004]
-    file: null
+    depends_on: [B004, B187, B188, B189, B190, B191, B192, B006]
+    file: tasks/B012-logging-pipeline.yaml
     covers:
       - "litellm/_logging.py"
       - "litellm/_service_logger.py"
       - "litellm/types/services.py"
-      - "litellm/litellm_core_utils/{litellm_logging,logging_utils,logging_worker,logging_callback_manager,custom_logger_registry,initialize_dynamic_callback_params,redact_messages,secret_redaction,sensitive_data_masker,sentry_scrubbing,safe_json_dumps,safe_json_loads,private_json,classifier_logging,internal_call_metadata,served_output_texts}.py"
-      - "litellm/litellm_core_utils/README.md"
-      - "litellm/integrations/{__init__,custom_logger,custom_batch_logger,additional_logging_utils,batch_utils,mock_client_factory,test_httpx}.py"
-      - "litellm/integrations/*_mock_client.py"
-      - "litellm/integrations/{Readme.md,callback_configs.json}"
-      - "litellm/integrations/_types/**"
-      - "litellm/types/integrations/{custom_logger,base_health_check}.py"
-      - "litellm/proxy/common_utils/{callback_utils,callback_config_validation}.py"
   - id: B013
     milestone: M1 openai data plane
     title: Model cost map, provider capability data and token counting
     status: todo
-    depends_on: [B004]
-    file: null
+    depends_on: [B004, B193, B194, B195, B196, B197, B204, B205]
+    file: tasks/B013-model-capabilities.yaml
     covers:
-      - "model_prices_and_context_window.json"
-      - "model_prices_and_context_window.schema.json"
       - "provider_endpoints_support.json"
-      - "litellm/{model_prices_and_context_window_backup,provider_endpoints_support_backup}.json"
-      - "litellm/litellm_core_utils/{get_model_cost_map,token_counter,tokenizer,default_encoding}.py"
-      - "litellm/litellm_core_utils/tokenizers/**"
+      - "litellm/provider_endpoints_support_backup.json"
   - id: B014
     milestone: M1 openai data plane
     title: Call dispatch across providers and call types, shared settings and helpers
     status: todo
-    depends_on: [B010, B011, B012]
-    file: null
+    depends_on:
+    - B010
+    - B011
+    - B012
+    - B198
+    - B200
+    - B201
+    - B006
+    - B206
+    - B207
+    file: tasks/B014-call-dispatch.yaml
     covers:
-      - "litellm/{__init__,main,utils,constants,_uuid,_version,_internal_context}.py"
-      - "litellm/batch_completion/**"
-      - "litellm/types/{utils,completion,adapter}.py"
-      - "litellm/litellm_core_utils/{api_route_to_call_types,asyncify,cached_imports,coroutine_checker,core_helpers,duration_parser,env_utils,mock_functions,rules,json_validation_rule,thread_pool_executor,aws_partition}.py"
+    - litellm/{__init__,main,utils}.py
+    - litellm/types/{utils,completion,adapter}.py
   - id: B015
     milestone: M1 openai data plane
     title: Text completions and moderations
     status: todo
-    depends_on: [B010]
-    file: null
-    covers:
-      - "litellm/llms/openai/completion/**"
-      - "litellm/llms/base_llm/completion/**"
+    depends_on:
+    - B010
+    - B202
+    - B203
+    - B014
+    - B011
+    - B009
+    - B204
+    file: tasks/B015-moderations.yaml
+    covers: []
   - id: B016
     milestone: M2 routing
     title: Router core, deployment clients and router callbacks
@@ -225,24 +230,26 @@ tasks:
     milestone: M2 routing
     title: Auto, complexity, adaptive and quality routers
     status: todo
-    depends_on: [B019]
+    depends_on:
+    - B019
     file: null
     covers:
-      - "router_plugins.json"
-      - "litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**"
-      - "litellm/router_strategy/{lar1_routing,savings_baseline}.py"
-      - "litellm/types/lar1.py"
-      - "litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py"
-      - "litellm/proxy/hooks/autorouter_baseline_cache.py"
-      - "litellm/proxy/auth/auto_router_checks.py"
-      - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
-      - "litellm/types/management_endpoints/auto_router_endpoints.py"
-      - "litellm/proxy/management_helpers/auto_router_*.py"
-      - "litellm/proxy/db/autorouter_session_rollup.py"
-      - "litellm/models/autorouter_session.py"
-      - "litellm/repositories/autorouter_session_repository.py"
-      - "litellm/proxy/public_endpoints/autorouter_presets.json"
-      - "docker/install_auto_router.sh"
+    - router_plugins.json
+    - litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**
+    - litellm/router_strategy/{lar1_routing,savings_baseline}.py
+    - litellm/types/lar1.py
+    - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
+    - litellm/proxy/hooks/autorouter_baseline_cache.py
+    - litellm/proxy/auth/auto_router_checks.py
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_*.py
+    - litellm/proxy/db/autorouter_session_rollup.py
+    - litellm/models/autorouter_session.py
+    - litellm/repositories/autorouter_session_repository.py
+    - litellm/proxy/public_endpoints/autorouter_presets.json
+    - docker/install_auto_router.sh
+    - litellm/litellm_core_utils/classifier_logging.py
   - id: B022
     milestone: M2 routing
     title: Request scheduler, priorities and admission control
@@ -276,13 +283,15 @@ tasks:
     milestone: M3 providers
     title: Azure OpenAI
     status: todo
-    depends_on: [B024]
+    depends_on:
+    - B024
+    - B182
     file: null
     covers:
-      - "litellm/llms/azure/**"
-      - "litellm/types/llms/azure.py"
-      - "litellm/secret_managers/get_azure_ad_token_provider.py"
-      - "litellm/types/secret_managers/get_azure_ad_token_provider.py"
+    - litellm/llms/azure/**
+    - litellm/types/llms/azure.py
+    - litellm/secret_managers/get_azure_ad_token_provider.py
+    - litellm/types/secret_managers/get_azure_ad_token_provider.py
   - id: B026
     milestone: M3 providers
     title: Azure AI Foundry
@@ -296,24 +305,32 @@ tasks:
     milestone: M3 providers
     title: Anthropic provider
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B180
+    - B186
     file: null
     covers:
-      - "litellm/llms/anthropic/*.py"
-      - "litellm/llms/anthropic/{batches,chat,completion,count_tokens,files}/**"
-      - "litellm/types/llms/{anthropic,anthropic_tool_search}.py"
+    - litellm/llms/anthropic/*.py
+    - litellm/llms/anthropic/{batches,chat,completion,count_tokens,files}/**
+    - litellm/types/llms/{anthropic,anthropic_tool_search}.py
   - id: B028
     milestone: M3 providers
     title: Bedrock chat through Converse and Invoke, and Bedrock Messages
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B181
+    - B186
     file: null
     covers:
-      - "whitelisted_bedrock_models.txt"
-      - "litellm/llms/bedrock/*.py"
-      - "litellm/llms/bedrock/{chat,messages}/**"
-      - "litellm/llms/{bedrock_mantle,amazon_nova}/**"
-      - "litellm/types/llms/bedrock.py"
+    - whitelisted_bedrock_models.txt
+    - litellm/llms/bedrock/*.py
+    - litellm/llms/bedrock/{chat,messages}/**
+    - litellm/llms/{bedrock_mantle,amazon_nova}/**
+    - litellm/types/llms/bedrock.py
   - id: B029
     milestone: M3 providers
     title: Bedrock embeddings, images, rerank, token counting and transcription
@@ -335,12 +352,16 @@ tasks:
     milestone: M3 providers
     title: Vertex AI Gemini, context caching and token counting
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B182
+    - B186
     file: null
     covers:
-      - "litellm/llms/vertex_ai/*.py"
-      - "litellm/llms/vertex_ai/{gemini,context_caching,count_tokens}/**"
-      - "litellm/types/llms/vertex_ai.py"
+    - litellm/llms/vertex_ai/*.py
+    - litellm/llms/vertex_ai/{gemini,context_caching,count_tokens}/**
+    - litellm/types/llms/vertex_ai.py
   - id: B032
     milestone: M3 providers
     title: Vertex AI partner models, Gemma and Model Garden
@@ -371,29 +392,38 @@ tasks:
     milestone: M3 providers
     title: Gemini through Google AI Studio
     status: todo
-    depends_on: [B031]
+    depends_on:
+    - B031
+    - B186
     file: null
     covers:
-      - "litellm/llms/gemini/**"
-      - "litellm/types/llms/{gemini,gemini_audio_transcription}.py"
+    - litellm/llms/gemini/**
+    - litellm/types/llms/{gemini,gemini_audio_transcription}.py
   - id: B036
     milestone: M3 providers
     title: xAI, Mistral and Codestral
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B177
     file: null
     covers:
-      - "litellm/llms/{xai,mistral,codestral}/**"
-      - "litellm/types/llms/{xai,mistral}.py"
+    - litellm/llms/{xai,mistral,codestral}/**
+    - litellm/types/llms/{xai,mistral}.py
   - id: B037
     milestone: M3 providers
     title: Cohere, Voyage, Jina and Infinity
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B182
+    - B186
     file: null
     covers:
-      - "litellm/llms/{cohere,voyage,jina_ai,infinity}/**"
-      - "litellm/types/llms/{cohere,rerank}.py"
+    - litellm/llms/{cohere,voyage,jina_ai,infinity}/**
+    - litellm/types/llms/{cohere,rerank}.py
   - id: B038
     milestone: M3 providers
     title: JSON-configured OpenAI-compatible providers, A to L
@@ -418,37 +448,49 @@ tasks:
     milestone: M3 providers
     title: Self-hosted inference servers
     status: todo
-    depends_on: [B024]
+    depends_on:
+    - B024
+    - B186
     file: null
     covers:
-      - "litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**"
-      - "litellm/types/llms/{ollama,triton}.py"
+    - >-
+      litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**
+    - litellm/types/llms/{ollama,triton}.py
   - id: B041
     milestone: M3 providers
     title: Aggregators and hosted inference platforms
     status: todo
-    depends_on: [B024]
+    depends_on:
+    - B024
+    - B186
     file: null
     covers:
-      - "litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**"
-      - "litellm/types/llms/openrouter.py"
+    - >-
+      litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**
+    - litellm/types/llms/openrouter.py
   - id: B042
     milestone: M3 providers
     title: Cloud ML platforms
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B186
     file: null
     covers:
-      - "litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**"
-      - "litellm/types/llms/{databricks,watsonx,oci}.py"
+    - litellm/llms/{sagemaker,databricks,watsonx,oci,snowflake,sap,predibase,replicate,huggingface}/**
+    - litellm/types/llms/{databricks,watsonx,oci}.py
   - id: B043
     milestone: M3 providers
     title: Regional hosts and other native APIs
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B186
     file: null
     covers:
-      - "litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**"
+    - litellm/llms/{dashscope,volcengine,minimax,tencent,modelscope,gigachat,ai21,nlp_cloud}/**
   - id: B044
     milestone: M3 providers
     title: litellm_proxy provider, custom providers and deprecated providers
@@ -1828,3 +1870,997 @@ tasks:
     depends_on: [B157]
     file: null
     covers: []
+  - id: B171
+    milestone: M1 openai data plane
+    title: Direct helper oracle and URL path encoding
+    status: todo
+    depends_on: [B004]
+    file: tasks/B171-helper-oracle.yaml
+    covers:
+      - "litellm/llms/custom_httpx/{asgi_handler,mock_transport}.py"
+  - id: B172
+    milestone: M1 openai data plane
+    title: Outbound TLS configuration and HTTP defaults
+    status: todo
+    depends_on:
+    - B171
+    - B208
+    file: tasks/B172-http-policy.yaml
+    covers:
+    - litellm/types/llms/custom_http.py
+  - id: B173
+    milestone: M1 openai data plane
+    title: Pooled outbound requests and response limits
+    status: todo
+    depends_on:
+    - B172
+    - B005
+    file: tasks/B173-http-pool.yaml
+    covers:
+    - >-
+      litellm/llms/custom_httpx/{http_handler,httpx_handler,aiohttp_handler,aiohttp_transport,async_client_cleanup,llm_http_handler,container_handler}.py
+  - id: B174
+    milestone: M1 openai data plane
+    title: Provider identity and model resolution
+    status: todo
+    depends_on:
+    - B004
+    - B005
+    - B193
+    - B209
+    - B210
+    - B211
+    file: tasks/B174-provider-resolution.yaml
+    covers:
+    - litellm/litellm_core_utils/get_llm_provider_logic.py
+  - id: B175
+    milestone: M1 openai data plane
+    title: Provider parameter capabilities and mapping
+    status: todo
+    depends_on:
+    - B174
+    - B006
+    - B212
+    file: tasks/B175-provider-params.yaml
+    covers:
+    - litellm/litellm_core_utils/get_supported_openai_params.py
+  - id: B176
+    milestone: M1 openai data plane
+    title: Trusted controls, provider headers and affinity
+    status: todo
+    depends_on:
+    - B174
+    - B213
+    file: tasks/B176-provider-controls.yaml
+    covers:
+    - >-
+      litellm/litellm_core_utils/{get_litellm_params,llm_request_utils,provider_affinity,get_provider_specific_headers}.py
+  - id: B177
+    milestone: M1 openai data plane
+    title: Text prompt templates and local Jinja rendering
+    status: todo
+    depends_on:
+    - B214
+    - B215
+    file: tasks/B177-prompt-templates.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B178
+    milestone: M1 openai data plane
+    title: Tool argument parsing and schema transforms
+    status: todo
+    depends_on:
+    - B214
+    - B216
+    - B217
+    file: tasks/B178-tool-schemas.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B179
+    milestone: M1 openai data plane
+    title: Shared message normalization and system placement
+    status: todo
+    depends_on:
+    - B177
+    - B218
+    - B219
+    - B220
+    - B221
+    file: tasks/B179-message-normalization.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/{common_utils,mid_conversation_system}.py
+  - id: B180
+    milestone: M1 openai data plane
+    title: Anthropic prompt and tool conversion helpers
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B222
+    - B223
+    - B224
+    - B225
+    - B226
+    file: tasks/B180-anthropic-prompts.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B181
+    milestone: M1 openai data plane
+    title: Bedrock message and tool conversion helpers
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B227
+    - B228
+    - B229
+    - B230
+    - B231
+    file: tasks/B181-bedrock-prompts.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B182
+    milestone: M1 openai data plane
+    title: Gemini, Cohere and Azure message helpers
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B232
+    - B233
+    file: tasks/B182-other-prompts.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B183
+    milestone: M1 openai data plane
+    title: Bounded inline media conversion
+    status: todo
+    depends_on:
+    - B179
+    - B009
+    - B234
+    - B235
+    file: tasks/B183-inline-media.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/image_handling.py
+  - id: B184
+    milestone: M1 openai data plane
+    title: Shared provider error taxonomy
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B184-error-types.yaml
+    covers:
+      - "litellm/exceptions.py"
+  - id: B185
+    milestone: M1 openai data plane
+    title: OpenAI-family error mapping
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B005
+    - B236
+    - B237
+    - B245
+    file: tasks/B185-openai-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B186
+    milestone: M1 openai data plane
+    title: Native provider error classifiers
+    status: todo
+    depends_on:
+    - B185
+    - B238
+    - B239
+    - B240
+    - B241
+    - B242
+    file: tasks/B186-native-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B187
+    milestone: M1 openai data plane
+    title: Secret and internal-detail redaction
+    status: todo
+    depends_on:
+    - B004
+    - B171
+    - B244
+    - B243
+    file: tasks/B187-secret-redaction.yaml
+    covers:
+    - litellm/litellm_core_utils/secret_redaction.py
+  - id: B188
+    milestone: M1 openai data plane
+    title: Message privacy and safe callback metadata
+    status: todo
+    depends_on:
+    - B187
+    - B005
+    - B006
+    file: tasks/B188-logging-privacy.yaml
+    covers:
+    - litellm/litellm_core_utils/{redact_messages,initialize_dynamic_callback_params,internal_call_metadata}.py
+  - id: B189
+    milestone: M1 openai data plane
+    title: Callback registry and configuration validation
+    status: todo
+    depends_on:
+    - B188
+    - B246
+    file: tasks/B189-callback-registry.yaml
+    covers:
+    - litellm/litellm_core_utils/{logging_callback_manager,custom_logger_registry}.py
+    - litellm/proxy/common_utils/callback_utils.py
+    - litellm/integrations/{__init__.py,custom_logger.py,Readme.md,callback_configs.json}
+    - litellm/integrations/_types/**
+    - litellm/types/integrations/{custom_logger,base_health_check}.py
+  - id: B190
+    milestone: M1 openai data plane
+    title: Typed request logging payloads
+    status: todo
+    depends_on:
+    - B188
+    - B011
+    - B005
+    - B006
+    - B212
+    - B247
+    - B248
+    - B249
+    - B250
+    - B251
+    - B252
+    - B253
+    - B254
+    file: tasks/B190-logging-payloads.yaml
+    covers:
+    - litellm/litellm_core_utils/{litellm_logging,logging_utils,served_output_texts}.py
+    - litellm/litellm_core_utils/README.md
+  - id: B191
+    milestone: M1 openai data plane
+    title: Bounded callback worker and batch delivery
+    status: todo
+    depends_on:
+    - B189
+    - B256
+    file: tasks/B191-logging-worker.yaml
+    covers:
+    - litellm/litellm_core_utils/logging_worker.py
+    - litellm/integrations/*_mock_client.py
+    - litellm/integrations/{additional_logging_utils,mock_client_factory,test_httpx}.py
+  - id: B192
+    milestone: M1 openai data plane
+    title: Private JSON serialization and atomic files
+    status: todo
+    depends_on: [B187, B188]
+    file: tasks/B192-private-json.yaml
+    covers:
+      - "litellm/litellm_core_utils/{safe_json_dumps,safe_json_loads,private_json}.py"
+  - id: B193
+    milestone: M1 openai data plane
+    title: Pinned model catalog and exact prices
+    status: todo
+    depends_on: [B004, B171, B204, B205]
+    file: tasks/B193-model-catalog.yaml
+    covers:
+      - "model_prices_and_context_window.json"
+      - "litellm/model_prices_and_context_window_backup.json"
+  - id: B194
+    milestone: M1 openai data plane
+    title: Model catalog loading and atomic refresh
+    status: todo
+    depends_on:
+    - B193
+    - B009
+    - B257
+    file: tasks/B194-catalog-refresh.yaml
+    covers:
+    - litellm/litellm_core_utils/get_model_cost_map.py
+  - id: B195
+    milestone: M1 openai data plane
+    title: Offline tokenizer engines and assets
+    status: todo
+    depends_on:
+    - B171
+    file: tasks/B195-tokenizer-engines.yaml
+    covers:
+    - litellm/litellm_core_utils/{tokenizer,default_encoding}.py
+    - litellm/litellm_core_utils/tokenizers/**
+  - id: B196
+    milestone: M1 openai data plane
+    title: Text, message and tool token counting
+    status: todo
+    depends_on:
+    - B195
+    - B193
+    - B259
+    file: tasks/B196-text-tokens.yaml
+    covers:
+    - litellm/litellm_core_utils/token_counter.py
+  - id: B197
+    milestone: M1 openai data plane
+    title: Image and document token accounting
+    status: todo
+    depends_on:
+    - B196
+    - B183
+    - B258
+    - B193
+    file: tasks/B197-media-tokens.yaml
+    covers:
+    - litellm/litellm_core_utils/token_counter.py
+  - id: B198
+    milestone: M1 openai data plane
+    title: Injected call context and shared settings
+    status: todo
+    depends_on:
+    - B002
+    - B171
+    file: tasks/B198-call-context.yaml
+    covers:
+    - litellm/{_internal_context,_uuid,_version,constants}.py
+    - >-
+      litellm/litellm_core_utils/{asyncify,cached_imports,coroutine_checker,env_utils,thread_pool_executor,aws_partition}.py
+  - id: B199
+    milestone: M1 openai data plane
+    title: Duration parsing and calendar resets
+    status: todo
+    depends_on: [B198]
+    file: tasks/B199-duration-parser.yaml
+    covers:
+      - "litellm/litellm_core_utils/duration_parser.py"
+  - id: B200
+    milestone: M1 openai data plane
+    title: Mock calls, rules and JSON response validation
+    status: todo
+    depends_on:
+    - B198
+    - B178
+    - B184
+    - B005
+    - B006
+    - B255
+    file: tasks/B200-call-rules.yaml
+    covers:
+    - litellm/litellm_core_utils/{rules,json_validation_rule}.py
+  - id: B201
+    milestone: M1 openai data plane
+    title: Bounded batch calls and race completion
+    status: todo
+    depends_on:
+    - B198
+    - B004
+    file: tasks/B201-batch-calls.yaml
+    covers:
+    - litellm/batch_completion/**
+  - id: B202
+    milestone: M1 openai data plane
+    title: OpenAI text completions
+    status: todo
+    depends_on:
+    - B010
+    - B011
+    - B014
+    - B193
+    file: tasks/B202-text-completions.yaml
+    covers:
+    - litellm/llms/openai/completion/**
+  - id: B203
+    milestone: M1 openai data plane
+    title: Streaming text completions and completion bridge
+    status: todo
+    depends_on:
+    - B202
+    - B005
+    - B014
+    - B252
+    file: tasks/B203-text-streaming.yaml
+    covers:
+    - litellm/llms/base_llm/completion/**
+  - id: B204
+    milestone: M1 openai data plane
+    title: Typed model price fields and exact decimal parsing
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B204-model-price-types.yaml
+    covers:
+      - "model_prices_and_context_window.schema.json"
+  - id: B205
+    milestone: M1 openai data plane
+    title: Typed model metadata and capability fields
+    status: todo
+    depends_on: [B204]
+    file: tasks/B205-model-metadata-types.yaml
+    covers:
+      - "model_prices_and_context_window.schema.json"
+  - id: B206
+    milestone: M1 openai data plane
+    title: Common call metadata and response helpers
+    status: todo
+    depends_on:
+    - B198
+    - B175
+    - B184
+    file: tasks/B206-call-helpers.yaml
+    covers:
+    - litellm/litellm_core_utils/core_helpers.py
+  - id: B207
+    milestone: M1 openai data plane
+    title: Route and call-type metadata matching
+    status: todo
+    depends_on: [B198]
+    file: tasks/B207-call-route-metadata.yaml
+    covers:
+      - "litellm/litellm_core_utils/api_route_to_call_types.py"
+  - id: B208
+    milestone: M1 openai data plane
+    title: Environment proxy selection and authentication
+    status: todo
+    depends_on:
+    - B171
+    file: tasks/B208-http-proxies.yaml
+    covers:
+    - litellm/llms/custom_httpx/http_handler.py
+  - id: B209
+    milestone: M1 openai data plane
+    title: Provider identity, prefix and endpoint primitives
+    status: todo
+    depends_on:
+    - B004
+    - B193
+    - B171
+    file: tasks/B209-provider-identity.yaml
+    covers:
+    - litellm/litellm_core_utils/get_llm_provider_logic.py
+  - id: B210
+    milestone: M1 openai data plane
+    title: OpenAI-compatible defaults A
+    status: todo
+    depends_on:
+    - B209
+    - B171
+    file: tasks/B210-provider-defaults-a.yaml
+    covers:
+    - litellm/litellm_core_utils/get_llm_provider_logic.py
+  - id: B211
+    milestone: M1 openai data plane
+    title: OpenAI-compatible defaults B
+    status: todo
+    depends_on:
+    - B209
+    - B171
+    file: tasks/B211-provider-defaults-b.yaml
+    covers:
+    - litellm/litellm_core_utils/get_llm_provider_logic.py
+  - id: B212
+    milestone: M1 openai data plane
+    title: Parameter projections and service-tier helpers
+    status: todo
+    depends_on:
+    - B174
+    - B171
+    file: tasks/B212-parameter-projections.yaml
+    covers:
+    - litellm/litellm_core_utils/{model_param_helper,reasoning_effort_utils,service_tier_utils}.py
+  - id: B213
+    milestone: M1 openai data plane
+    title: Bounded dot-path lookup and deletion
+    status: todo
+    depends_on:
+    - B171
+    file: tasks/B213-dot-paths.yaml
+    covers:
+    - litellm/litellm_core_utils/dot_notation_indexing.py
+  - id: B214
+    milestone: M1 openai data plane
+    title: Built-in text prompt families
+    status: todo
+    depends_on:
+    - B004
+    - B171
+    file: tasks/B214-builtin-prompts.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B215
+    milestone: M1 openai data plane
+    title: Bounded local Jinja prompt rendering
+    status: todo
+    depends_on:
+    - B214
+    - B171
+    file: tasks/B215-jinja-prompts.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+    - litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py
+  - id: B216
+    milestone: M1 openai data plane
+    title: Limited tool JSON repair and argument parsing
+    status: todo
+    depends_on:
+    - B214
+    - B171
+    file: tasks/B216-tool-arguments.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B217
+    milestone: M1 openai data plane
+    title: Bounded JSON Schema definition expansion
+    status: todo
+    depends_on:
+    - B214
+    - B171
+    file: tasks/B217-schema-definitions.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B218
+    milestone: M1 openai data plane
+    title: Content and role projections
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B218-message-content.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B219
+    milestone: M1 openai data plane
+    title: Internal message fields, system insertion and media placement
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B219-message-fields.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B220
+    milestone: M1 openai data plane
+    title: Reasoning text and encrypted signatures
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B220-reasoning-fields.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B221
+    milestone: M1 openai data plane
+    title: Mid-conversation system placement
+    status: todo
+    depends_on:
+    - B177
+    - B171
+    file: tasks/B221-system-placement.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/mid_conversation_system.py
+  - id: B222
+    milestone: M1 openai data plane
+    title: Anthropic tool results and image blocks
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    file: tasks/B222-anthropic-results.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B223
+    milestone: M1 openai data plane
+    title: Anthropic tool invokes, caching and documents
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B222
+    file: tasks/B223-anthropic-invokes.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B224
+    milestone: M1 openai data plane
+    title: Anthropic tool-history repair
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    file: tasks/B224-anthropic-history.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B225
+    milestone: M1 openai data plane
+    title: Anthropic user blocks and system projection
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B222
+    - B223
+    - B224
+    file: tasks/B225-anthropic-user-blocks.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B226
+    milestone: M1 openai data plane
+    title: Normalized response tool-call extraction
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    file: tasks/B226-response-tool-calls.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B227
+    milestone: M1 openai data plane
+    title: Bedrock image and MIME blocks
+    status: todo
+    depends_on:
+    - B183
+    file: tasks/B227-bedrock-images.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B228
+    milestone: M1 openai data plane
+    title: Bedrock tool uses and result media
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B227
+    file: tasks/B228-bedrock-tool-results.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B229
+    milestone: M1 openai data plane
+    title: Bedrock content order and continuation
+    status: todo
+    depends_on:
+    - B179
+    - B183
+    file: tasks/B229-bedrock-content.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B230
+    milestone: M1 openai data plane
+    title: Bedrock Converse block processor
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B227
+    - B228
+    - B229
+    file: tasks/B230-bedrock-processor.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B231
+    milestone: M1 openai data plane
+    title: Bedrock tool names and cache blocks
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    file: tasks/B231-bedrock-tools.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B232
+    milestone: M1 openai data plane
+    title: Gemini tool invocations and thought signatures
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    file: tasks/B232-gemini-tool-invokes.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B233
+    milestone: M1 openai data plane
+    title: Gemini tool-result conversion
+    status: todo
+    depends_on:
+    - B178
+    - B179
+    - B183
+    - B232
+    file: tasks/B233-gemini-tool-results.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B234
+    milestone: M1 openai data plane
+    title: Supplied model-file and vector-ID mappings
+    status: todo
+    depends_on:
+    - B179
+    - B171
+    file: tasks/B234-model-file-ids.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B235
+    milestone: M1 openai data plane
+    title: Media metadata and MIME inference
+    status: todo
+    depends_on:
+    - B179
+    - B171
+    file: tasks/B235-media-metadata.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B236
+    milestone: M1 openai data plane
+    title: Shared error facts, parsing and status fallbacks
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    file: tasks/B236-error-facts.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B237
+    milestone: M1 openai data plane
+    title: Azure and OpenRouter error classifiers
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B237-azure-openrouter-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B245
+    milestone: M1 openai data plane
+    title: OpenAI-like provider error classification
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B245-openai-like-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B238
+    milestone: M1 openai data plane
+    title: Anthropic and Replicate error classifiers
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B238-anthropic-replicate-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B239
+    milestone: M1 openai data plane
+    title: Bedrock, Mantle and SageMaker errors
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B239-aws-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B240
+    milestone: M1 openai data plane
+    title: Vertex and Gemini error classifiers
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B240-vertex-errors.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B241
+    milestone: M1 openai data plane
+    title: Cloudflare, Cohere, Hugging Face and AI21 errors
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B241-native-errors-a.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B242
+    milestone: M1 openai data plane
+    title: NLP Cloud, Together, Aleph Alpha, Ollama and vLLM errors
+    status: todo
+    depends_on:
+    - B184
+    - B187
+    - B236
+    file: tasks/B242-native-errors-b.yaml
+    covers:
+    - litellm/litellm_core_utils/exception_mapping_utils.py
+  - id: B244
+    milestone: M1 openai data plane
+    title: Structured credential masking
+    status: todo
+    depends_on:
+    - B004
+    - B171
+    file: tasks/B244-structured-redaction.yaml
+    covers:
+    - litellm/litellm_core_utils/sensitive_data_masker.py
+  - id: B243
+    milestone: M1 openai data plane
+    title: Sentry JSON and representation scrubbing
+    status: todo
+    depends_on:
+    - B244
+    - B171
+    file: tasks/B243-sentry-scrubbing.yaml
+    covers:
+    - litellm/litellm_core_utils/sentry_scrubbing.py
+  - id: B246
+    milestone: M1 openai data plane
+    title: Callback config validators
+    status: todo
+    depends_on:
+    - B188
+    file: tasks/B246-callback-validation.yaml
+    covers:
+    - litellm/proxy/common_utils/callback_config_validation.py
+  - id: B254
+    milestone: M1 openai data plane
+    title: Typed standard logging fields and normalization
+    status: todo
+    depends_on:
+    - B188
+    - B011
+    - B005
+    - B006
+    - B212
+    file: tasks/B254-logging-fields.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+    - litellm/types/utils.py
+  - id: B247
+    milestone: M1 openai data plane
+    title: Per-call logging state and callback eligibility
+    status: todo
+    depends_on:
+    - B188
+    - B189
+    - B254
+    - B198
+    file: tasks/B247-logging-state.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B248
+    milestone: M1 openai data plane
+    title: Per-request callback selection
+    status: todo
+    depends_on:
+    - B247
+    - B189
+    - B188
+    file: tasks/B248-dynamic-callbacks.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B249
+    milestone: M1 openai data plane
+    title: Pre-call and post-call logging dispatch
+    status: todo
+    depends_on:
+    - B247
+    - B248
+    - B191
+    - B187
+    file: tasks/B249-logging-pre-post.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B250
+    milestone: M1 openai data plane
+    title: Success callback dispatch and deduplication
+    status: todo
+    depends_on:
+    - B247
+    - B248
+    - B191
+    - B254
+    - B252
+    file: tasks/B250-logging-success.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B251
+    milestone: M1 openai data plane
+    title: Failure callback dispatch and partial usage
+    status: todo
+    depends_on:
+    - B247
+    - B248
+    - B191
+    - B254
+    - B011
+    file: tasks/B251-logging-failure.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B252
+    milestone: M1 openai data plane
+    title: Bounded stream logging and served text
+    status: todo
+    depends_on:
+    - B188
+    - B005
+    - B006
+    file: tasks/B252-logging-streams.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B253
+    milestone: M1 openai data plane
+    title: Standard logging metadata and payload privacy inputs
+    status: todo
+    depends_on:
+    - B188
+    - B011
+    - B254
+    - B212
+    file: tasks/B253-logging-metadata.yaml
+    covers:
+    - litellm/litellm_core_utils/litellm_logging.py
+  - id: B255
+    milestone: M1 openai data plane
+    title: Typed mock chat, stream and embedding calls
+    status: todo
+    depends_on:
+    - B198
+    - B004
+    - B005
+    - B006
+    - B184
+    file: tasks/B255-mock-calls.yaml
+    covers:
+    - litellm/litellm_core_utils/mock_functions.py
+    - litellm/main.py
+    - litellm/utils.py
+  - id: B256
+    milestone: M1 openai data plane
+    title: Bounded callback batch delivery
+    status: todo
+    depends_on:
+    - B189
+    file: tasks/B256-batch-delivery.yaml
+    covers:
+    - litellm/integrations/custom_batch_logger.py
+    - litellm/integrations/batch_utils.py
+  - id: B257
+    milestone: M1 openai data plane
+    title: Catalog integrity and fetch retry policy
+    status: todo
+    depends_on:
+    - B193
+    - B009
+    - B171
+    file: tasks/B257-catalog-fetch-policy.yaml
+    covers:
+    - litellm/litellm_core_utils/get_model_cost_map.py
+  - id: B258
+    milestone: M1 openai data plane
+    title: Image token headers and geometry
+    status: todo
+    depends_on:
+    - B183
+    - B195
+    - B171
+    file: tasks/B258-image-token-geometry.yaml
+    covers:
+    - litellm/litellm_core_utils/token_counter.py
+  - id: B259
+    milestone: M1 openai data plane
+    title: Token schema formatting and model normalization
+    status: todo
+    depends_on:
+    - B193
+    - B195
+    - B171
+    file: tasks/B259-token-formatting.yaml
+    covers:
+    - litellm/litellm_core_utils/token_counter.py

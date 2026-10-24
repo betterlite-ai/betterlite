@@ -1,0 +1,128 @@
+id: B253
+title: Standard logging metadata and payload privacy inputs
+description: >-
+  Implement StandardLoggingPayloadSetup merge_litellm_metadata/get_standard_logging_metadata, get_additional_headers/get_hidden_params/strip_trailing_slash,
+  get_error_information/get_error_information_for_logging_payload, get_response_time/trace_id/session_id and request-tag
+  helpers. Own public get_standard_logging_metadata/scrub_sensitive_keys_in_metadata and logging_utils bounded base64
+  truncation. Inject synthetic auth/deployment metadata rather than looking up storage. Pricing and cold-storage
+  key construction remain B068/B115. B190 owns standard payload redaction after assembly. Budget 280 logic/types,
+  120 Rust/Python adapters, 300 tests and 60 wiring (760 total). Write the behavior rstest functions b253_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations logging_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed. Also own provider request-ID extraction
+  297-317, router model-ID projection 871-886/903-908, response header/hidden-metadata projection 2361-2393, trace-ID
+  extraction 3965-3981 and hash-shape check 5599-5601.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/logging_metadata.rs
+  - crates/betterlite-logging/src/logging_metadata/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/logging-metadata/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5708-L5860
+  why: Primary source seam; additional named methods below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6782-L6845
+  why: get_standard_logging_metadata
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6848-L6863
+  why: scrub_sensitive_keys_in_metadata
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5708-L5737
+  why: merge_litellm_metadata
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5740-L5860
+  why: get_standard_logging_metadata
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5982-L6006
+  why: get_additional_headers
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6009-L6034
+  why: get_hidden_params
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6037-L6043
+  why: strip_trailing_slash
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6105-L6168
+  why: get_error_information
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6171-L6199
+  why: get_error_information_for_logging_payload
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6202-L6223
+  why: get_response_time
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L6226-L6344
+  why: Trace/session and request tags.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b253_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'logging_metadata' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/logging-metadata/metadata-merge.yaml
+- tools/oracle/cases/helpers/logging-metadata/error-information.yaml
+- tools/oracle/cases/helpers/logging-metadata/request-tags.yaml
+- tools/oracle/cases/helpers/logging-metadata/trace-session.yaml
+- tools/oracle/cases/helpers/logging-metadata/base64-truncation.yaml
+- tools/oracle/cases/helpers/logging-metadata/service-tier.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B190 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+- >-
+  Exporter-specific setup/delivery B110-B118; prompt management methods 1012-1312 B117; MCP hooks 1633-1709 B140;
+  cost and baseline helpers 1719-2115/2395-2451 B068/B069/B125; background interactions B098; native response logging
+  4147-4320 B080/B081/B098; A2A response conversion 4322-4343 B142.
+- >-
+  Enterprise callback controls are excluded by repository licensing rules; no enterprise implementation is read
+  or ported.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

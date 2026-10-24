@@ -1,0 +1,108 @@
+id: B238
+title: Anthropic and Replicate error classifiers
+description: >-
+  Implement every classifier/helper function in exception_mapping_utils.py 527-729, preserving ordered predicates
+  over B236 typed facts and B184 taxonomy. Each branch-N case invokes one family with input reaching the condition
+  at pinned source line N; add distinct fallback cases per family and named rstest rows for every status/string
+  predicate, including combinations and unmatched inputs. Never combine two families in one call. Do not instantiate
+  cloud SDK clients. Budget 280 classifiers, 110 adapters, 320 tests and 50 wiring (760 total). Write the behavior
+  rstest functions b238_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  and failure in the DoD; corpus replay tests have separate names. Register helper operations anthropic_replicate_errors
+  in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
+  adapter file and corpus seed. Every error case ignores /error/message with reason betterlite writes its own message;
+  never copy AnthropicError or other LiteLLM branding prefixes.
+scope:
+  paths:
+  - crates/betterlite-error/src/lib.rs
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/anthropic_replicate_errors.rs
+  - crates/betterlite-error/src/anthropic_replicate_errors/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/anthropic-replicate-errors/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L527-L729
+  why: All function bodies and predicates in this bounded family slice.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::b238_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'anthropic_replicate_errors' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-537.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-547.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-553.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-559.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-565.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-571.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-573.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-579.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-586.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-592.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-598.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-604.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-610.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-617.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-624.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-631.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-650.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-657.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-664.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-671.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-678.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-679.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-686.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-693.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-700.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-706.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/branch-713.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/generic-fallback.yaml
+- tools/oracle/cases/helpers/anthropic-replicate-errors/competing-message-status.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B186 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,0 +1,115 @@
+id: B242
+title: NLP Cloud, Together, Aleph Alpha, Ollama and vLLM errors
+description: >-
+  Implement every classifier/helper function in exception_mapping_utils.py 1625-1923, preserving ordered predicates
+  over B236 typed facts and B184 taxonomy. Each branch-N case invokes one family with input reaching the condition
+  at pinned source line N; add distinct fallback cases per family and named rstest rows for every status/string
+  predicate, including combinations and unmatched inputs. Never combine two families in one call. Do not instantiate
+  cloud SDK clients. Budget 280 classifiers, 110 adapters, 320 tests and 50 wiring (760 total). Write the behavior
+  rstest functions b242_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior
+  and failure in the DoD; corpus replay tests have separate names. Register helper operations native_errors_b in
+  tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
+  adapter file and corpus seed. Every error case ignores /error/message with reason betterlite writes its own message;
+  never copy AnthropicError or other LiteLLM branding prefixes.
+scope:
+  paths:
+  - crates/betterlite-error/src/lib.rs
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/native_errors_b.rs
+  - crates/betterlite-error/src/native_errors_b/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/native-errors-b/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1625-L1923
+  why: All function bodies and predicates in this bounded family slice.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::b242_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'native_errors_b' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/native-errors-b/branch-1635.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1636.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1643.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1658.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1659.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1671.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1678.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1684.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1691.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1699.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1730.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1737.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1744.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1751.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1757.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1769.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1770.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1776.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1783.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1790.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1816.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1823.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1830.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1832.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1838.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1845.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1852.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1873.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1877.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1884.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1891.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1898.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1916.yaml
+- tools/oracle/cases/helpers/native-errors-b/branch-1917.yaml
+- tools/oracle/cases/helpers/native-errors-b/generic-fallback.yaml
+- tools/oracle/cases/helpers/native-errors-b/competing-message-status.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B186 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

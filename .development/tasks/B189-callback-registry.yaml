@@ -1,0 +1,130 @@
+id: B189
+title: Callback registry and configuration validation
+description: >-
+  Add a bounded callback registry and typed registration/config-validation layer in betterlite-logging. Represent
+  compiled callback implementations as an exhaustive enum, initially an injected tracing sink and a real bounded
+  in-memory channel sink; registration tracks callback identity and subscribed input/success/failure/stream/service
+  phases. Parse LiteLLM callback-list/config shapes but enable only actually installed adapters, keeping unknown
+  or unavailable names a B002 startup error; do not invent a public callback name for test sinks. Identical registration
+  returns Ok(AlreadyRegistered), keeps the first and logs; capacity overflow warns and skips with a typed SkippedCapacity
+  outcome. Use B246 validators for credential families and integration options. Read the pinned registry/config
+  metadata as fixtures rather than dynamically importing providers. Compare effective registration/removal/phase
+  selection and standalone validators through helper cases using synthetic Python CustomLogger objects.  Seed B171's
+  shared helper_case corpus with every added operation and replay it through the common typed parser. Resolve litellm_settings.callbacks,
+  success_callback, failure_callback, top-level callback_settings and LITELLM_MAX_CALLBACKS (100 per list) through
+  config. The class attribute MAX_CALLBACKS=30 is dead; use the imported constant. Budget 270 registry, 90 config,
+  140 synthetic Python CustomLogger/Rust adapters and 280 tests (780 total). Write the behavior rstest functions
+  b189_callback_registry_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Register helper operations callback_registry in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/registry.rs
+  - crates/betterlite-logging/src/registry/**
+  - crates/betterlite-logging/fuzz/**
+  - crates/betterlite-logging/tests/fixtures/**
+  - crates/betterlite-config/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/callback-registry/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L20-L180
+  why: Callback identity, phase lists and capacity.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/custom_logger_registry.py#L60-L195
+  why: Callback class registry responsibilities.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_config_validation.py#L23-L268
+  why: Family credential and integration option validation.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1-L220
+  why: Extension phase surface; native enums implement the core contract.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/callback_configs.json#L1-L100
+  why: Callback metadata is not proof an exporter is installed.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6283-L6298
+  why: Top-level callback_settings.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6419-L6499
+  why: Global callback lists.
+dod:
+- text: >-
+    Registration order, effective deduplication, removal, phase selection and integration with B246 config validators
+    match the listed helper cases.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Identical callbacks return Ok(AlreadyRegistered); overflow at configured per-list capacity warns and skips,
+    while unknown/uninstalled names fail startup.
+  proof:
+  - callback-registry-tests
+- text: >-
+    The extended YAML loader replays new callback-list and capacity-setting seeds; standalone callback-config parsing
+    is proven by B246.
+  proof:
+  - config-yaml-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: callback-registry-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/::b189_callback_registry_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'callbacks' crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'success_callback'
+      crates/betterlite-config/fuzz/corpus/config_yaml && grep -rlq 'failure_callback' crates/betterlite-config/fuzz/corpus/config_yaml
+      && grep -rlq 'callback_settings' crates/betterlite-config/fuzz/corpus/config_yaml && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+      && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)" && cargo nextest run --locked -p betterlite-config
+      --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'callback_registry' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/callback-registry/register-remove.yaml
+- tools/oracle/cases/helpers/callback-registry/phase-order.yaml
+- tools/oracle/cases/helpers/callback-registry/duplicate-identity.yaml
+- tools/oracle/cases/helpers/callback-registry/capacity-boundary.yaml
+deviations: []
+out_of_scope:
+- Real exporters arrive in M5; Python callable discovery and CustomLogger instances arrive in B164-B165.
+- Team/key callback persistence and authorization are M4.
+- >-
+  All standalone callback_config_validation functions are B246; exporter initialization branches are B110-B118;
+  Python callable import/CustomLogger execution is B164-B165.
+pitfalls:
+- Known callback metadata must not make an unavailable exporter silently accepted.
+- Treat two aliases for the same credential family as one security boundary.
+- Runtime-only Python callables are not a reason to replace the closed native callback enum with Box<dyn Trait>.
+- The class MAX_CALLBACKS=30 is unused; constants.MAX_CALLBACKS reads LITELLM_MAX_CALLBACKS with default 100.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

@@ -1,0 +1,129 @@
+id: B191
+title: Bounded callback worker and batch delivery
+description: >-
+  Implement the bounded owned LoggingWorker in betterlite-logging/worker using B189 callback registration and B256
+  batch delivery. Use TaskTracker or JoinSet, a bounded queue and an explicit flush/stop handle. Preserve request
+  context per event, never hold locks over await, and isolate callback failures from model responses. Admission
+  uses try_send and never awaits: a full queue drops only the rejected event, increments a counter and reports a
+  sanitized outcome. Constructor defaults are queue 50000, concurrency 100, timeout 20 seconds and shutdown drain
+  30 seconds; B012 resolves LOGGING_WORKER_MAX_QUEUE_SIZE, LOGGING_WORKER_CONCURRENCY and LOGGING_WORKER_MAX_TIME_PER_COROUTINE.
+  Own pending, dequeued and running events through cancellation, flush and stop; join or account for each by the
+  deadline. Implement source 27-265 and 448-531 with typed tracing replacing _safe_log; delayed retries/aggressive
+  clears 267-446 are intentionally replaced by bounded admission, and _flush_on_exit is replaced by explicit shutdown.
+  Register worker_trace in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py with separate Rust/Python
+  adapters and a new seed. Compare event counts, final status and delivered set, not elapsed timing. Write b191_logging_worker_tests_behavior
+  rstest cases in adjacent tests.rs, separate from replay. Budget 320 worker, 100 adapters, 290 tests and 60 wiring
+  (770 total).
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/worker.rs
+  - crates/betterlite-logging/src/worker/**
+  - crates/betterlite-logging/tests/fixtures/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/logging-worker/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L41-L75
+  why: Worker inputs and bounded queue design.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L168-L265
+  why: Task context, concurrency, execution and admission.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L455-L531
+  why: Stop, flush and queue clearing.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L633-L635
+  why: Worker defaults and environment names.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L533-L653
+  why: Typed logging and explicit shutdown replace Python global teardown.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/additional_logging_utils.py#L1-L33
+  why: Exporter health/payload interface delegated to exporter tasks.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mock_client_factory.py#L1-L282
+  why: Python mock factories are replaced by injected exporter test transports.
+dod:
+- text: >-
+    Successful worker traces, callback failures and flush accounting match helper probes; batch behavior is proven
+    by B256.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    With a full queue, admission never awaits, only the rejected event is dropped/countable, and the successful
+    model response returns unchanged without delay.
+  proof:
+  - logging-worker-tests
+- text: >-
+    Cancellation and timed-out callbacks release permits; flush/stop account for every accepted event and join all
+    tasks by the deadline.
+  proof:
+  - logging-worker-tests
+- text: A failed observability callback never replaces a successful model result.
+  proof:
+  - logging-worker-tests
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: logging-worker-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::b191_logging_worker_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'worker_trace' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/logging-worker/success-trace.yaml
+- tools/oracle/cases/helpers/logging-worker/failure-trace.yaml
+- tools/oracle/cases/helpers/logging-worker/flush-order.yaml
+- tools/oracle/cases/helpers/logging-worker/default-limits.yaml
+deviations:
+- what: >-
+    Queue overflow returns a typed rejected-admission result with counters; no unbounded delayed-enqueue or aggressive-clear
+    tasks are spawned.
+  why: The async-hygiene and no-silent-drops rules require bounded ownership and explicit loss accounting.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L249-L418
+out_of_scope:
+- Durable spend/audit writes must use B069's persistence path, not this best-effort observability queue.
+- Concrete HTTP exporters are M5 and reuse this batch primitive.
+- >-
+  CustomBatchLogger and every batch_utils function belong to B256; Python atexit hooks and thread/loop discovery
+  have no caller in the native explicit-shutdown design.
+- >-
+  AdditionalLoggingUtils health-check/payload inspection is an exporter interface implemented by B110-B118 and the
+  Python CustomLogger extension B164. mock_client_factory and *_mock_client provide Python monkeypatch-only exporter
+  tests: their Rust equivalents are injected transport fixtures owned by each exporter task, not production mocks
+  here. test_httpx.py is empty at the pin.
+pitfalls:
+- >-
+  A dequeued event waiting for a semaphore still belongs to the worker and must be included in shutdown accounting.
+- Callback context must be captured before enqueue, not read from whichever task later runs it.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

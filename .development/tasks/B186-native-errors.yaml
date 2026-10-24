@@ -1,0 +1,110 @@
+id: B186
+title: Native provider error classifiers
+description: >-
+  Complete exception_type native dispatch and final fallback at exception_mapping_utils.py 2486-2737 in crates/betterlite-error/src/dispatch.rs,
+  extending B185 preamble. Consume B238 Anthropic/Replicate, B239 AWS, B240 Vertex/Gemini, B241 Cloudflare/Cohere/HuggingFace/AI21
+  and B242 remaining native family classifiers. Preserve already-mapped errors, ordered dispatch and typed final
+  fallback without SDK/network/ambient credentials. Every case is one invocation of one family; each specialized
+  branch lives in its classifier task, with cross-family dispatch/idempotence tested here. Budget 210 dispatch,
+  90 adapters, 280 tests and 50 wiring (630 total). Write the behavior rstest functions b186_native_error_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations native_error in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - crates/betterlite-error/src/lib.rs
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/native.rs
+  - crates/betterlite-error/src/native/**
+  - crates/betterlite-error/src/parse.rs
+  - crates/betterlite-error/src/parse/**
+  - crates/betterlite-error/src/status.rs
+  - crates/betterlite-error/src/status/**
+  - crates/betterlite-error/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/native-errors/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-error/src/dispatch.rs
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L527-L729
+  why: Anthropic and Replicate.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L857-L1363
+  why: AWS and Vertex family mappings.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1366-L1923
+  why: Remaining native provider families.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358-L2737
+  why: Cross-family dispatch, already-mapped errors and final fallbacks.
+dod:
+- text: >-
+    Native dispatch and final fallback match the oracle; every specialized predicate is owned and proven by B238-B242.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Existing mapped errors are idempotent, unknown error shapes keep a typed source, and mapping never accesses
+    network or credentials.
+  proof:
+  - native-error-tests
+- text: Native error-body seeds replay through the same bounded parser as the OpenAI-family errors.
+  proof:
+  - provider-error-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: native-error-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/::b186_native_error_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: provider-error-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-error/fuzz/corpus/provider_error)"
+      && test -f crates/betterlite-error/fuzz/fuzz_targets/provider_error.rs && test -n "$(ls -A crates/betterlite-error/fuzz/corpus/provider_error)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(replays_the_provider_error_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'native_error' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/native-errors/already-mapped.yaml
+- tools/oracle/cases/helpers/native-errors/competing-signals.yaml
+- tools/oracle/cases/helpers/native-errors/unknown-family.yaml
+- tools/oracle/cases/helpers/native-errors/native-dispatch-fallback.yaml
+deviations: []
+out_of_scope:
+- Provider HTTP adapters, signing and SDK replacement are B024-B050.
+- Error alerts and logging sinks are B012 and later integrations.
+- >-
+  Preamble and OpenAI/proxy branches 2358-2485 are B185; classifiers 527-729 and 857-1923 are B238-B242; exception_logging/_add_key_name_and_team_to_alert
+  B012.
+pitfalls:
+- Do not instantiate cloud SDK clients in the oracle when a typed synthetic exception is sufficient.
+- The provider-specific predicate ordering is part of compatibility.
+- Unknown exceptions need a defined generic result, not a swallowed mapping failure.
+- >-
+  Never copy LiteLLM provider prefixes in messages; each error case ignores /error/message with the required reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

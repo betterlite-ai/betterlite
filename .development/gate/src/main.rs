@@ -68,7 +68,14 @@ enum Command {
     #[command(
         about = "Run a task through the worker ladder and the reviewer until it is ready to merge or needs the architect"
     )]
-    Dispatch { task: String },
+    Dispatch {
+        task: String,
+        #[arg(
+            long = "note",
+            help = "Feedback for the first attempt, for example a finding the last run left open; repeat for more"
+        )]
+        notes: Vec<String>,
+    },
     #[command(
         about = "Write .development/litellm-inventory.txt from a LiteLLM clone that has the pinned commit"
     )]
@@ -155,7 +162,9 @@ fn run_command(
             Ok((verdict.lines, verdict.passed))
         }
         Command::Schema => Ok((schema::write(&development.root)?, true)),
-        Command::Dispatch { task } => Ok((dispatch::dispatch(development, &task)?, true)),
+        Command::Dispatch { task, notes } => {
+            Ok((dispatch::dispatch(development, &task, notes)?, true))
+        }
         Command::Inventory { checkout } => {
             Ok((inventory::write(&development.root, &checkout)?, true))
         }

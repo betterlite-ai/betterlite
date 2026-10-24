@@ -1,0 +1,115 @@
+id: B180
+title: Anthropic prompt and tool conversion helpers
+description: >-
+  Complete anthropic_messages_pt in betterlite-prompts/anthropic: own assistant thinking/tool/compaction block interleaving
+  and final message assembly (factory.py 2510-2792), composing B222 results/images, B223 invokes/documents, B224
+  history repair and B225 user blocks. Preserve signed thinking placement, cache controls and terminal whitespace
+  behavior, with explicit modify_params policy and observable repairs. Reuse B178 schemas, B179 messages and B183
+  inline media. Add prompt_anthropic fuzzing for typed provider blocks, not XML. Budget 280 assistant/assembly,
+  100 adapters, 320 tests/fuzz and 50 wiring (750 total). Write the behavior rstest functions b180_anthropic_prompt_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations anthropic_prompt in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/anthropic.rs
+  - crates/betterlite-prompts/src/anthropic/**
+  - crates/betterlite-prompts/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/anthropic-prompt/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L715-L1056
+  why: Legacy XML tools and image conversion.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1530-L1983
+  why: Tool IDs, result/invocation blocks, caching and documents.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1989-L2792
+  why: History repair, signatures and structured Anthropic messages.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2795-L2866
+  why: XML parameter parsing and system extraction.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5372-L5673
+  why: Structured tool calls extracted from response shapes.
+dod:
+- text: Typed Anthropic prompt/tool outputs and parse results match every listed helper case.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Repair decisions name each removed or inserted item, separate turns remain distinct, and the source request
+    remains unchanged.
+  proof:
+  - anthropic-prompt-tests
+- text: >-
+    Deep or malformed provider blocks and excessive output are rejected within bounds and replay through prompt_anthropic.
+  proof:
+  - prompt-anthropic-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: anthropic-prompt-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b180_anthropic_prompt_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: prompt-anthropic-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/prompt_anthropic)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/prompt_anthropic.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/prompt_anthropic)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_prompt_anthropic_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'anthropic_prompt' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/anthropic-prompt/system-tools.yaml
+- tools/oracle/cases/helpers/anthropic-prompt/cache-control.yaml
+- tools/oracle/cases/helpers/anthropic-prompt/thinking-signature.yaml
+- tools/oracle/cases/helpers/anthropic-prompt/image-document.yaml
+- tools/oracle/cases/helpers/anthropic-prompt/server-tool-thinking-interleave.yaml
+- tools/oracle/cases/helpers/anthropic-prompt/assistant-trailing-whitespace.yaml
+deviations: []
+out_of_scope:
+- Anthropic API credentials, HTTP calls and native streaming are B027.
+- Responses/Messages public endpoints remain in their endpoint tasks.
+- >-
+  Dead legacy XML path: construct_format_parameters_prompt/construct_format_tool_for_claude_prompt, construct_tool_use_system_prompt,
+  convert_to_anthropic_tool_result_xml/invoke_xml, anthropic_messages_pt_xml, extract_between_tags, contains_tag
+  and parse_xml_params have no live anthropic_xml caller at this pin.
+- >-
+  Results/images B222; invokes/documents B223; history B224; user/system projection B225; response tool-call extraction
+  B226; Bedrock ID sanitization B228.
+pitfalls:
+- >-
+  Tool-history repair retains the last duplicate within a contiguous result block, whereas Bedrock deduplication
+  uses a different rule.
+- Never discard a signed thinking block solely because its readable text is empty.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

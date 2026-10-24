@@ -1,0 +1,109 @@
+id: B200
+title: Mock calls, rules and JSON response validation
+description: >-
+  Finish pre/post RuleDecision evaluation and bounded JSON response validation in betterlite-core/rules and /schema,
+  composing B255 mock calls as explicit outcomes for the later B014 pipeline. Python callable loading is B164/B165;
+  native code consumes an exhaustive enum and statically injected evaluator. Normalize schema types and validate
+  output with an existing JSON Schema library, disabling HTTP/file reference fetching and bounding bytes/depth/work.
+  Preserve concrete errors and B184 taxonomy. response_schema fuzzing calls the production normalizer/validator.
+  Budget 250 rule/schema code, 110 adapters, 300 tests/fuzz and 70 wiring (730 total). Write the behavior rstest
+  functions b200_call_rules_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Register helper operations rule_decision, schema_validation
+  in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
+  adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/rules.rs
+  - crates/betterlite-core/src/rules/**
+  - crates/betterlite-core/src/schema.rs
+  - crates/betterlite-core/src/schema/**
+  - crates/betterlite-core/fuzz/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/call-rules/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/rules.py#L4-L59
+  why: Pre/post decision handling and validation failures.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_validation_rule.py#L7-L119
+  why: Schema type normalization and response validation.
+- url: https://docs.rs/jsonschema/latest/jsonschema/
+  why: Maintained validator with explicit offline retrieval policy.
+dod:
+- text: Pre/post rule decisions, mock response shape and JSON schema validation match listed helper cases.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Rule decisions and validation outcomes retain typed errors; no evaluator or schema reference can start arbitrary
+    code, HTTP or filesystem reads.
+  proof:
+  - call-rules-tests
+- text: >-
+    External schema references, excessive expansion/depth and invalid output fail with typed errors before file
+    or network access.
+  proof:
+  - call-rules-tests
+  - response-schema-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: call-rules-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::b200_call_rules_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: response-schema-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/response_schema)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/response_schema.rs && test -n "$(ls -A crates/betterlite-core/fuzz/corpus/response_schema)"
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_response_schema_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'rule_decision' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'schema_validation' tools/oracle/fuzz/corpus/helper_case
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/call-rules/pre-allow-deny.yaml
+- tools/oracle/cases/helpers/call-rules/post-decision-dict.yaml
+- tools/oracle/cases/helpers/call-rules/post-none.yaml
+- tools/oracle/cases/helpers/call-rules/uppercase-types.yaml
+- tools/oracle/cases/helpers/call-rules/valid-output.yaml
+- tools/oracle/cases/helpers/call-rules/invalid-json.yaml
+- tools/oracle/cases/helpers/call-rules/schema-mismatch.yaml
+deviations: []
+out_of_scope:
+- Python function loading and config-selected arbitrary hooks are B165.
+- Provider-generated structured-output retries and fallbacks are B017-B018.
+- Mock chat/stream/embedding and client permission gate are B255; image mocks B082.
+pitfalls:
+- The pre-call and post-call rule functions do not interpret every decision shape identically.
+- >-
+  A JSON Schema validator may fetch remote references by default; disable both HTTP and file retrieval explicitly.
+- Never let a mock response silently override a configured real provider without an explicit core invocation.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 2

@@ -1,0 +1,114 @@
+id: B207
+title: Route and call-type metadata matching
+description: >-
+  Add typed route/call metadata under betterlite-core/routes independently of the executable dispatcher. Cover the
+  full pinned CallTypes and API_ROUTE_TO_CALL_TYPES vocabulary as data, including sync/async names, exact keys,
+  dynamic placeholders, suffixed multi-segment tails and inverse lookup. Copy the extracted table into a fixture
+  with source pin and compare the complete table against Python in the helper oracle; enums and matching logic remain
+  counted Rust code. A recognized route never installs a handler or enables an unsupported operation. Parse the
+  table and incoming route strings with bounds; add route_pattern fuzz target with corpus replay and direct route_metadata
+  helper cases for exact-versus-pattern precedence, suffix boundaries, trailing slashes and empty values.  Seed
+  B171's shared helper_case corpus with every added operation and replay it through the common typed parser. get_call_types_for_route
+  gates key/team tool allowlists and batch guardrails; a missing match returns None and can bypass those checks.
+  Add adversarial exact/pattern route cases proving every listed tool-capable route maps to the intended call type,
+  while retaining source behavior for unknown routes. Write the behavior rstest functions b207_route_metadata_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations route_metadata in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed. Budget 250 route tables/matching, 100
+  adapters, 290 tests and 100 fuzz/replay wiring (740 total).
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/routes.rs
+  - crates/betterlite-core/src/routes/**
+  - crates/betterlite-core/fixtures/**
+  - crates/betterlite-core/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/route-metadata/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L449-L636
+  why: All pinned call-type names.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L715-L1077
+  why: Full API route-to-call table.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/api_route_to_call_types.py#L17-L97
+  why: Exact-first matching, suffixed tails and inverse lookup.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L845-L885
+  why: Route matcher is a permission boundary for tool allowlists.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/batch_guardrails.py#L288-L308
+  why: Batch guardrails consume the same route mapping.
+dod:
+- text: The full extracted table and all route matching/inverse cases compare equal with the pinned Python oracle.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Route parsing is bounded, matching never activates absent handlers and malformed/oversized input has a typed
+    result.
+  proof:
+  - route-metadata-tests
+  - route-pattern-corpus
+- text: >-
+    Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: route-metadata-tests
+    why: the required tests fail or the filter selects no tests
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::b207_route_metadata_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: route-pattern-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/route_pattern)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/route_pattern.rs && test -n "$(ls -A crates/betterlite-core/fuzz/corpus/route_pattern)"
+      && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_route_pattern_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'route_metadata' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/route-metadata/full-table.yaml
+- tools/oracle/cases/helpers/route-metadata/exact-first.yaml
+- tools/oracle/cases/helpers/route-metadata/single-placeholder.yaml
+- tools/oracle/cases/helpers/route-metadata/suffixed-model.yaml
+- tools/oracle/cases/helpers/route-metadata/empty-suffix-value.yaml
+- tools/oracle/cases/helpers/route-metadata/multi-segment-tail.yaml
+- tools/oracle/cases/helpers/route-metadata/trailing-slashes.yaml
+- tools/oracle/cases/helpers/route-metadata/inverse.yaml
+- tools/oracle/cases/helpers/route-metadata/unknown.yaml
+deviations: []
+out_of_scope:
+- HTTP route installation is done by endpoint tasks; shared execution is B014.
+- Metadata call types do not imply native implementations for every endpoint.
+pitfalls:
+- Only a suffixed tail placeholder may absorb several path segments in the pinned matcher.
+- Exact entries are checked before pattern iteration.
+- A fixture may contain generated metadata but not executable Rust hidden from the line budget.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
