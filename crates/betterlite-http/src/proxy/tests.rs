@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs::{self, File};
+use std::path::Path;
 use std::process;
 use std::sync::Arc;
 use std::thread;
@@ -81,4 +82,19 @@ async fn http_proxies_proxy_policy_tests_behavior(
     assert!(!format!("{client:?}").contains("secret"));
     let warned = written.contains("proxy setting ignored");
     assert_eq!(warned, proxy_url.starts_with("https"));
+}
+
+#[test]
+fn replays_the_proxy_policy_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/proxy_policy");
+    for entry in fs::read_dir(corpus).unwrap() {
+        let text = fs::read_to_string(entry.unwrap().path()).unwrap();
+        let (proxy, no_proxy) = text.split_once('\n').unwrap_or((&text, ""));
+        let mut environment = BTreeMap::new();
+        environment.insert("HTTPS_PROXY".to_owned(), proxy.to_owned());
+        environment.insert("NO_PROXY".to_owned(), no_proxy.to_owned());
+        let policy = Arc::new(ProxyPolicy::resolve(&LiteLlmSettings::default(), &environment));
+        let _route = policy.route(&Url::parse("https://api.example.com/v1").unwrap());
+        ProxiedClient::build(ClientBuilder::new(), &policy).unwrap();
+    }
 }

@@ -1,0 +1,22 @@
+[package]
+name = "betterlite-http-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-config = { path = "../../betterlite-config" }
+libfuzzer-sys = "0.4.9"
+url = "2.5.8"
+
+[[bin]]
+name = "proxy_policy"
+path = "fuzz_targets/proxy_policy.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
