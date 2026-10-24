@@ -8,11 +8,13 @@ publish.workspace = true
 [dependencies]
 axum.workspace = true
 betterlite-config = { path = "../betterlite-config" }
+futures-util.workspace = true
 serde.workspace = true
 secrecy.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
+tower = { workspace = true, features = ["timeout"] }
 tracing.workspace = true
 
 [dev-dependencies]

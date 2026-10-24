@@ -1,3 +1,4 @@
+use betterlite_config::loader::{ConfigLoader, ProcessEnvironment};
 use betterlite_server::server::run;
 use clap::Parser;
 use std::io;
@@ -19,10 +20,22 @@ struct Cli {
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
         .json()
+        .flatten_event(true)
         .with_target(false)
         .with_writer(io::stderr)
         .init();
     let cli = Cli::parse();
+    let config = match (ConfigLoader {
+        lookup: ProcessEnvironment,
+    })
+    .load_from_path(&cli.config)
+    {
+        Ok(config) => config,
+        Err(error) => {
+            tracing::error!(error = ?error, "failed to load configuration");
+            return ExitCode::FAILURE;
+        }
+    };
     let runtime = match Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
         Err(error) => {
@@ -30,7 +43,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
     };
-    match runtime.block_on(run(&cli.config, &cli.host, cli.port)) {
+    match runtime.block_on(run(config, &cli.host, cli.port)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
             tracing::error!(error = ?error, "server stopped with an error");

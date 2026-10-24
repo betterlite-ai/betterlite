@@ -1,0 +1,17 @@
+name: auth-header-authorization-lowercase-bearer
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /not-served
+  headers:
+    Authorization: bearer oracle-master
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

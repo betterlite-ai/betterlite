@@ -17,13 +17,22 @@ struct ErrorObject {
     code: String,
 }
 
-pub(crate) fn authentication_error(missing_key: bool) -> Response {
-    if missing_key {
+pub(crate) enum AuthenticationFailure {
+    Missing,
+    Malformed,
+    Invalid,
+}
+
+pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response {
+    if matches!(
+        failure,
+        AuthenticationFailure::Missing | AuthenticationFailure::Malformed
+    ) {
         return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
     }
     error_response(
         StatusCode::BAD_REQUEST,
-        "No connected db.".to_owned(),
+        "the API key is not valid".to_owned(),
         "no_db_connection",
         "400",
     )
