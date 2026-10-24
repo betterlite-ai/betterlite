@@ -1,0 +1,95 @@
+id: B177
+title: Text prompt templates and local Jinja rendering
+description: >-
+  Create betterlite-prompts for reusable pure prompt transforms, initially the text-only templates and custom/Hugging
+  Face Jinja rendering in the referenced portions of factory.py. Reuse betterlite-openai message types and select
+  templates through a closed enum. Implement the built-in Alpaca, Llama2, Mistral, Falcon, MPT, WizardCoder, Phind,
+  DeepSeek, Claude text, Granite, Titan and custom role/BOS/EOS formats, leaving structured provider message conversion
+  to B180-B182. Prefer a maintained Jinja implementation such as minijinja after comparing it with existing dependencies;
+  disable loaders and filesystem/network access, inject the clock used by strftime_now and cap template bytes, render
+  fuel and output bytes. The template/config loader accepts only operator-supplied local bytes and extracts string
+  or content-object special tokens. Add prompt_template helper cases against Python with local template fixtures,
+  plus a prompt_template fuzz target and replay. Budget 260 rendering/format code, 140 asset/loader wiring and 330
+  tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-prompts/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/prompt-template/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L99-L449
+  why: Text templates and Jinja system-role fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L614-L712
+  why: DeepSeek, Claude and Granite text formats.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L3156-L3179
+  why: Titan text format.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5164-L5369
+  why: Function/schema prompts, custom templates and factory selection.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L28-L161
+  why: Clock helper, localizable fetched template shapes and special-token extraction.
+- url: https://docs.rs/minijinja/latest/minijinja/
+  why: Existing Jinja-compatible engine rather than a new template language.
+dod:
+- text: Each built-in family, custom template and Jinja role fallback has a direct helper case comparing exact rendered
+    text.
+  proof:
+  - oracle
+- text: Template expansion has finite fuel/output, uses the injected clock and cannot access files, network or process
+    globals.
+  proof:
+  - prompt-template-tests
+- text: Malformed template/config inputs are typed errors and replay through the fuzz corpus.
+  proof:
+  - prompt-template-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: prompt-template-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/prompt_template/)'
+  - id: prompt-template-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-prompts/fuzz/fuzz_targets/prompt_template.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/prompt_template)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_prompt_template_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/prompt-template/alpaca.yaml
+- tools/oracle/cases/helpers/prompt-template/llama2.yaml
+- tools/oracle/cases/helpers/prompt-template/mistral.yaml
+- tools/oracle/cases/helpers/prompt-template/falcon-mpt.yaml
+- tools/oracle/cases/helpers/prompt-template/wizard-phind.yaml
+- tools/oracle/cases/helpers/prompt-template/deepseek.yaml
+- tools/oracle/cases/helpers/prompt-template/claude-granite-titan.yaml
+- tools/oracle/cases/helpers/prompt-template/custom-roles.yaml
+- tools/oracle/cases/helpers/prompt-template/jinja-system.yaml
+- tools/oracle/cases/helpers/prompt-template/jinja-alternation.yaml
+- tools/oracle/cases/helpers/prompt-template/special-token-object.yaml
+deviations:
+- what: Hugging Face chat templates must be supplied as local operator assets; model names do not trigger a remote
+    download.
+  why: The bounded-inputs rule forbids destinations derived from requests and startup must remain reproducible.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py#L41-L144
+out_of_scope:
+- Structured Anthropic, Bedrock, Gemini, Cohere and Azure message conversion is B180-B182.
+- Image/media conversion is B183; SDK template registration is B157-B166.
+pitfalls:
+- Whitespace and role delimiters are provider inputs, so do not normalize rendered text in comparisons.
+- LiteLLM retries Jinja rendering after changing roles; its docstring alone does not specify the fallback.
+- Commit raw template assets as fixtures with their pin; executable Rust code is still counted in the line budget.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

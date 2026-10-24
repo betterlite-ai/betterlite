@@ -1861,7 +1861,7 @@ tasks:
     title: Text prompt templates and local Jinja rendering
     status: todo
     depends_on: [B174]
-    file: null
+    file: tasks/B177-prompt-templates.yaml
     covers:
       - "litellm/litellm_core_utils/prompt_templates/{factory,huggingface_template_handler}.py"
   - id: B178
