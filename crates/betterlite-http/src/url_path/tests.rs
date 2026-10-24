@@ -4,7 +4,7 @@ use crate::error::UrlPathError;
 use crate::url_path::{encode_segment, encode_segments};
 
 #[test]
-fn b171_helper_runner_tests_behavior() {
+fn url_path_tests_behavior() {
     assert_eq!(
         encode_segment("a/b?c#d", "path parameter"),
         Ok("a%2Fb%3Fc%23d".to_owned())
