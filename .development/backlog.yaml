@@ -274,6 +274,7 @@ tasks:
     - B337
     - B338
     - B339
+    - B340
     file: null
     covers:
     - router_plugins.json
@@ -2368,3 +2369,16 @@ tasks:
     - litellm/router_strategy/adaptive_router/{__init__,config,classifier,bandit}.py
     - litellm/router_strategy/adaptive_router/adaptive_router.py
     - litellm/router_strategy/adaptive_router/README.md
+
+  - id: B340
+    milestone: M2 routing
+    title: Adaptive feedback signals and caller attribution
+    status: todo
+    depends_on:
+    - B339
+    - B012
+    - B052
+    file: tasks/B340-adaptive-feedback.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/{signals,hooks}.py
+    - litellm/router_strategy/adaptive_router/adaptive_router.py
