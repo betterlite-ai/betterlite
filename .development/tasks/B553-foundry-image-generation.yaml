@@ -1,0 +1,158 @@
+id: B553
+title: Foundry image model selection and Flux parameters
+description: >-
+  Add FoundryImageConfig selection and FluxImageOptions over shared image wire types. Support DALL-E/GPT inherited
+  aliases and explicit Flux2 route/model-path normalization, size mapping and native parameter names. MAI is selected
+  here through its separate typed implementation.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/image_generation/__init__.py:
+  get_azure_ai_image_generation_config L21-L37. litellm/llms/azure_ai/image_generation/flux_transformation.py: AzureFoundryFluxImageGenerationConfig.get_flux2_image_generation_url
+  L22-L55; AzureFoundryFluxImageGenerationConfig.is_flux2_model L58-L69; AzureFoundryFluxImageGenerationConfig.get_flux2_provider_model_path
+  L72-L74; AzureFoundryFluxImageGenerationConfig.get_supported_openai_params L76-L92; AzureFoundryFluxImageGenerationConfig._map_parameter
+  L95-L118; AzureFoundryFluxImageGenerationConfig.map_openai_params L120-L154.
+
+
+  Implement crates/betterlite-foundry/src/image_generation.rs with adjacent tests under image_generation/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_image_generation in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function image_generation_cases in betterlite-foundry with these exact named cases (one per oracle
+  file): dalle_gpt_model_selection, flux2_model_route, flux_model_path, flux_size_parameter_map, flux_native_fields.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_image_generation* using HelperCase: kind:
+  helper and the externally tagged foundry_image_generation variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_image_generation that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 131 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 160 production lines, 90 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 350 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/image_generation.rs
+  - crates/betterlite-foundry/src/image_generation/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_image_generation.rs
+  - tools/oracle/src/helpers/foundry_image_generation/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_image_generation.py
+  - tools/oracle/cases/helpers/providers/foundry-image-generation/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_image_generation*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/__init__.py#L21-L37
+  why: Own get_azure_ai_image_generation_config. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/flux_transformation.py#L22-L154
+  why: >-
+    Own AzureFoundryFluxImageGenerationConfig.get_flux2_image_generation_url, AzureFoundryFluxImageGenerationConfig.is_flux2_model,
+    AzureFoundryFluxImageGenerationConfig.get_flux2_provider_model_path, AzureFoundryFluxImageGenerationConfig.get_supported_openai_params,
+    AzureFoundryFluxImageGenerationConfig._map_parameter, AzureFoundryFluxImageGenerationConfig.map_openai_params.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    dalle gpt model selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-generation/dalle-gpt-model-selection.yaml.
+  proof:
+  - case-dalle-gpt-model-selection
+  - oracle
+  - helper-python
+- text: 'flux2 model route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-generation/flux2-model-route.yaml.'
+  proof:
+  - case-flux2-model-route
+  - oracle
+  - helper-python
+- text: 'flux model path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-generation/flux-model-path.yaml.'
+  proof:
+  - case-flux-model-path
+  - oracle
+  - helper-python
+- text: >-
+    flux size parameter map: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-generation/flux-size-parameter-map.yaml.
+  proof:
+  - case-flux-size-parameter-map
+  - oracle
+  - helper-python
+- text: 'flux native fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-image-generation/flux-native-fields.yaml.'
+  proof:
+  - case-flux-native-fields
+  - oracle
+  - helper-python
+- text: New foundry_image_generation seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-dalle-gpt-model-selection
+    why: The dalle-gpt-model-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_generation_cases::case_[0-9]+_dalle_gpt_model_selection$/)'
+  - id: case-flux2-model-route
+    why: The flux2-model-route behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_generation_cases::case_[0-9]+_flux2_model_route$/)'
+  - id: case-flux-model-path
+    why: The flux-model-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_generation_cases::case_[0-9]+_flux_model_path$/)'
+  - id: case-flux-size-parameter-map
+    why: The flux-size-parameter-map behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_generation_cases::case_[0-9]+_flux_size_parameter_map$/)'
+  - id: case-flux-native-fields
+    why: The flux-native-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::image_generation_cases::case_[0-9]+_flux_native_fields$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_image_generation.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_image_generation*")"
+      && grep -lq 'foundry_image_generation' tools/oracle/fuzz/corpus/helper_case/foundry_image_generation* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_image_generation$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-image-generation/dalle-gpt-model-selection.yaml
+- tools/oracle/cases/helpers/providers/foundry-image-generation/flux2-model-route.yaml
+- tools/oracle/cases/helpers/providers/foundry-image-generation/flux-model-path.yaml
+- tools/oracle/cases/helpers/providers/foundry-image-generation/flux-size-parameter-map.yaml
+- tools/oracle/cases/helpers/providers/foundry-image-generation/flux-native-fields.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Flux 2 flex/pro and Flux 1 have different endpoint and parameter handling despite their shared provider.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

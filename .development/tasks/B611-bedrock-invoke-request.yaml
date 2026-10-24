@@ -1,0 +1,287 @@
+id: B611
+title: Bedrock Invoke base request preparation
+description: >-
+  Port Invoke request selection and classic body shapes using an injected ClassicDefaults record from B613. Delegate
+  Claude to B618, Nova to B614, Pegasus to B617 and OpenAI to B619 through typed preparer inputs; the selector does
+  not rebuild those model transforms. Use /invoke-with-response-stream when stream=true except for AI21; there is
+  no stream Accept-header branch.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  _bedrock_invoke_guardrail_headers L55-L74; AmazonInvokeConfig.__init__ L78-L80; AmazonInvokeConfig.get_supported_openai_params
+  L82-L90; AmazonInvokeConfig.map_openai_params L92-L107; AmazonInvokeConfig.get_complete_url L109-L144; AmazonInvokeConfig.sign_request
+  L146-L167; AmazonInvokeConfig._apply_config_to_params L169-L173; AmazonInvokeConfig.transform_request L175-L279;
+  AmazonInvokeConfig.validate_environment L421-L438; AmazonInvokeConfig.get_error_class L440-L441; AmazonInvokeConfig.get_bedrock_invoke_provider
+  L537-L570; AmazonInvokeConfig._get_provider_from_model_path L573-L590; AmazonInvokeConfig.convert_messages_to_prompt
+  L592-L630. litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
+  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
+  L146-L166.
+
+
+  The llama3/llama4 instruct branch calls the Hugging Face chat-template path in factory.py:5305-5309. Supply a
+  local template via custom_prompt_dict[model].roles/initial_prompt_value/final_prompt_value (B177) to bypass acquisition;
+  without it retain B177 default_pt fallback and its warning under the open decision, rather than inventing a download
+  failure.
+
+
+  Define the injected defaults/preparer record at this lower boundary; B028 composes B613, B618, B614, B617 and
+  B619 into it after those parts finish, so this selector does not depend back on its subclasses.
+
+
+  llama-instruct-local-template compares the supplied custom_prompt_dict output; llama-instruct-missing-template
+  expects the current B177 default_pt output with no download, not a newly invented exception. The adapter supplies
+  the same unavailable-template result at the pinned template loader seam.
+
+
+  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse bedrock_request_metadata_headers from B596 (litellm/llms/bedrock/request_metadata.py); its implementation
+  remains with that prerequisite.
+
+
+  Reuse merge_bedrock_invoke_headers from B596 (litellm/llms/bedrock/request_metadata.py); its implementation remains
+  with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/invoke_request.rs with adjacent tests under invoke_request/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_invoke_request in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function invoke_request_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): invoke_model_url, guardrail_id_version_headers, stream_invoke_url_ai21_exclusion, provider_family_selection,
+  prompt_template_selection, model_spec_defaults, unknown_provider, llama_instruct_local_template, llama_instruct_missing_template.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request* using HelperCase: kind:
+  helper and the externally tagged bedrock_invoke_request variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_invoke_request that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 371 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 385 production lines, 126 behavior/config-test lines,
+  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 627 planned, 650 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/invoke_request.rs
+  - crates/betterlite-bedrock/src/invoke_request/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_invoke_request.rs
+  - tools/oracle/src/helpers/bedrock_invoke_request/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_invoke_request.py
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-request/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request*
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L55-L279
+  why: >-
+    Own _bedrock_invoke_guardrail_headers, AmazonInvokeConfig.__init__, AmazonInvokeConfig.get_supported_openai_params,
+    AmazonInvokeConfig.map_openai_params, AmazonInvokeConfig.get_complete_url, AmazonInvokeConfig.sign_request,
+    AmazonInvokeConfig._apply_config_to_params, AmazonInvokeConfig.transform_request. Other functions in this file
+    remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L421-L441
+  why: Own AmazonInvokeConfig.validate_environment, AmazonInvokeConfig.get_error_class. Other functions in this
+    file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L537-L630
+  why: >-
+    Own AmazonInvokeConfig.get_bedrock_invoke_provider, AmazonInvokeConfig._get_provider_from_model_path, AmazonInvokeConfig.convert_messages_to_prompt.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L90-L166
+  why: >-
+    Own AmazonCohereChatConfig.__init__, AmazonCohereChatConfig.get_config, AmazonCohereChatConfig.get_supported_openai_params,
+    AmazonCohereChatConfig.map_openai_params. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'invoke model url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/invoke-model-url.yaml.'
+  proof:
+  - case-invoke-model-url
+  - oracle
+  - helper-python
+- text: >-
+    guardrail id version headers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/guardrail-id-version-headers.yaml.
+  proof:
+  - case-guardrail-id-version-headers
+  - oracle
+  - helper-python
+- text: >-
+    stream invoke url ai21 exclusion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/stream-invoke-url-ai21-exclusion.yaml.
+  proof:
+  - case-stream-invoke-url-ai21-exclusion
+  - oracle
+  - helper-python
+- text: >-
+    provider family selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/provider-family-selection.yaml.
+  proof:
+  - case-provider-family-selection
+  - oracle
+  - helper-python
+- text: >-
+    prompt template selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/prompt-template-selection.yaml.
+  proof:
+  - case-prompt-template-selection
+  - oracle
+  - helper-python
+- text: 'model spec defaults: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/model-spec-defaults.yaml.'
+  proof:
+  - case-model-spec-defaults
+  - oracle
+  - helper-python
+- text: 'unknown provider: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/unknown-provider.yaml.'
+  proof:
+  - case-unknown-provider
+  - oracle
+  - helper-python
+- text: >-
+    llama instruct local template: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-local-template.yaml.
+  proof:
+  - case-llama-instruct-local-template
+  - oracle
+  - helper-python
+- text: >-
+    llama instruct missing template: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-missing-template.yaml.
+  proof:
+  - case-llama-instruct-missing-template
+  - oracle
+  - helper-python
+- text: New bedrock_invoke_request seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-invoke-model-url
+    why: The invoke-model-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_invoke_model_url$/)'
+  - id: case-guardrail-id-version-headers
+    why: The guardrail-id-version-headers behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_guardrail_id_version_headers$/)'
+  - id: case-stream-invoke-url-ai21-exclusion
+    why: The stream-invoke-url-ai21-exclusion behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_stream_invoke_url_ai21_exclusion$/)'
+  - id: case-provider-family-selection
+    why: The provider-family-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_provider_family_selection$/)'
+  - id: case-prompt-template-selection
+    why: The prompt-template-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_prompt_template_selection$/)'
+  - id: case-model-spec-defaults
+    why: The model-spec-defaults behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_model_spec_defaults$/)'
+  - id: case-unknown-provider
+    why: The unknown-provider behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_unknown_provider$/)'
+  - id: case-llama-instruct-local-template
+    why: The llama-instruct-local-template behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_llama_instruct_local_template$/)'
+  - id: case-llama-instruct-missing-template
+    why: The llama-instruct-missing-template behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_request_cases::case_[0-9]+_llama_instruct_missing_template$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_request.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request*")"
+      && grep -lq 'bedrock_invoke_request' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_request* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_request$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/invoke-model-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/guardrail-id-version-headers.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/stream-invoke-url-ai21-exclusion.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/provider-family-selection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/prompt-template-selection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/model-spec-defaults.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/unknown-provider.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-local-template.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-request/llama-instruct-missing-template.yaml
+deviations:
+- what: >-
+    Open, waiting for Max: require local Hugging Face template/tokenizer files (current behavior), or permit remote
+    template/tokenizer downloads. This task takes custom_prompt_dict local templates and uses B177 default_pt when
+    no local template is configured.
+  why: The download product decision is open. Build no hub downloader, runtime cache population or feature depending
+    on remote assets.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L55-L279
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py: concrete classic defaults belong
+  to B613, Claude preparation to B618, Nova to B614, Pegasus to B617 and OpenAI to B619; this task owns only their
+  selector and accepts their injected outputs.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360 belong to B691; reuse
+  that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418; AWSEventStreamDecoder.check_empty_tool_call_args
+  L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str L442-L447; AWSEventStreamDecoder.translate_thinking_blocks
+  L449-L472; AWSEventStreamDecoder._initialize_converse_response_id L474-L483; AWSEventStreamDecoder._handle_converse_start_event
+  L485-L528; AWSEventStreamDecoder._handle_converse_delta_event L530-L585; AWSEventStreamDecoder._handle_converse_stop_event
+  L587-L609; AWSEventStreamDecoder.converse_chunk_parser L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743
+  belong to B608; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser
+  L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856;
+  AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874;
+  MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__ L884-L885; MockResponseIterator._handle_json_mode_chunk
+  L887-L913; MockResponseIterator._chunk_parser L915-L953; MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__
+  L962-L963; MockResponseIterator.__anext__ L965-L969 belong to B609; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; _response_header L363-L364; _EventStreamTally.__init__
+  L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event L379-L381; _EventStreamTally.undecoded_stream_error
+  L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AWSEventStreamDecoder._parse_message_from_event
+  L788-L813 belong to B599; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py: AmazonInvokeConfig.transform_response
+  L281-L419; AmazonInvokeConfig.get_async_custom_stream_wrapper L444-L480; AmazonInvokeConfig.get_sync_custom_stream_wrapper
+  L483-L523; AmazonInvokeConfig.has_custom_stream_wrapper L526-L527; AmazonInvokeConfig.supports_stream_param_in_request_body
+  L530-L534 belong to B612; reuse that implementation or its injected typed boundary.
+pitfalls:
+- AI21 keeps the non-stream Invoke URL even when stream is requested; no special Accept header is emitted.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: standard

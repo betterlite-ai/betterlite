@@ -1,0 +1,207 @@
+id: B540
+title: Azure text completions
+description: >-
+  Implement Azure text-completion execution using the existing typed text models and stream decoder. Every call
+  runs prompt_factory with azure_text, including calls already presented as text completions. Preserve explicit
+  completion parameters, Cloudflare model=None, max_retries default 2 and the pinned 422 errors for a noninteger
+  retry count or missing model/messages.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/completion/handler.py:
+  AzureTextCompletion.__init__ L18-L19; AzureTextCompletion.validate_environment L21-L29; AzureTextCompletion.completion
+  L31-L186; AzureTextCompletion.acompletion L188-L247; AzureTextCompletion.streaming L249-L300; AzureTextCompletion.async_streaming
+  L302-L358. litellm/llms/azure/completion/transformation.py: AzureOpenAITextConfig.__init__ L31-L51.
+
+
+  Run prompt_factory(custom_llm_provider="azure_text") on every call, including already text-like input. Cloudflare
+  gateway embeds the deployment in the URL and sends model=None. max_retries defaults to 2; a non-integer max_retries
+  or missing model/messages returns AzureOpenAIError 422.
+
+
+  Implement crates/betterlite-azure/src/completion.rs with adjacent tests under completion/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation azure_completion in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function completion_cases in betterlite-azure with these exact named cases (one per oracle file):
+  text_prompt_request, chat_to_text_prompt, token_prompt, stream_text_choices, completion_errors, azure_text_prompt_every_call,
+  cloudflare_model_null, max_retries_default_two, invalid_retries_422, missing_model_messages_422. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
+  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_completion* using HelperCase: kind: helper
+  and the externally tagged azure_completion variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_azure_completion that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 335 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 350 production lines, 135 behavior/config-test lines,
+  95 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 605 planned, 625 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/completion.rs
+  - crates/betterlite-azure/src/completion/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_completion.rs
+  - tools/oracle/src/helpers/azure_completion/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_completion.py
+  - tools/oracle/cases/helpers/providers/azure-completion/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_completion*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L18-L358
+  why: >-
+    Own AzureTextCompletion.__init__, AzureTextCompletion.validate_environment, AzureTextCompletion.completion,
+    AzureTextCompletion.acompletion, AzureTextCompletion.streaming, AzureTextCompletion.async_streaming. Other functions
+    in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/transformation.py#L31-L51
+  why: Own AzureOpenAITextConfig.__init__. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'text prompt request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/text-prompt-request.yaml.'
+  proof:
+  - case-text-prompt-request
+  - oracle
+  - helper-python
+- text: 'chat to text prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/chat-to-text-prompt.yaml.'
+  proof:
+  - case-chat-to-text-prompt
+  - oracle
+  - helper-python
+- text: 'token prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/token-prompt.yaml.'
+  proof:
+  - case-token-prompt
+  - oracle
+  - helper-python
+- text: 'stream text choices: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/stream-text-choices.yaml.'
+  proof:
+  - case-stream-text-choices
+  - oracle
+  - helper-python
+- text: 'completion errors: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/completion-errors.yaml.'
+  proof:
+  - case-completion-errors
+  - oracle
+  - helper-python
+- text: >-
+    azure text prompt every call: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/azure-text-prompt-every-call.yaml.
+  proof:
+  - case-azure-text-prompt-every-call
+  - oracle
+  - helper-python
+- text: 'cloudflare model null: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/cloudflare-model-null.yaml.'
+  proof:
+  - case-cloudflare-model-null
+  - oracle
+  - helper-python
+- text: 'max retries default two: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/max-retries-default-two.yaml.'
+  proof:
+  - case-max-retries-default-two
+  - oracle
+  - helper-python
+- text: 'invalid retries 422: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/invalid-retries-422.yaml.'
+  proof:
+  - case-invalid-retries-422
+  - oracle
+  - helper-python
+- text: >-
+    missing model messages 422: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/missing-model-messages-422.yaml.
+  proof:
+  - case-missing-model-messages-422
+  - oracle
+  - helper-python
+- text: New azure_completion seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-text-prompt-request
+    why: The text-prompt-request behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_text_prompt_request$/)'
+  - id: case-chat-to-text-prompt
+    why: The chat-to-text-prompt behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_chat_to_text_prompt$/)'
+  - id: case-token-prompt
+    why: The token-prompt behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_token_prompt$/)'
+  - id: case-stream-text-choices
+    why: The stream-text-choices behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_stream_text_choices$/)'
+  - id: case-completion-errors
+    why: The completion-errors behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_completion_errors$/)'
+  - id: case-azure-text-prompt-every-call
+    why: The azure-text-prompt-every-call behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_azure_text_prompt_every_call$/)'
+  - id: case-cloudflare-model-null
+    why: The cloudflare-model-null behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_cloudflare_model_null$/)'
+  - id: case-max-retries-default-two
+    why: The max-retries-default-two behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_max_retries_default_two$/)'
+  - id: case-invalid-retries-422
+    why: The invalid-retries-422 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_invalid_retries_422$/)'
+  - id: case-missing-model-messages-422
+    why: The missing-model-messages-422 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_missing_model_messages_422$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_completion.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_completion*")"
+      && grep -lq 'azure_completion' tools/oracle/fuzz/corpus/helper_case/azure_completion* && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_completion$/)' && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-completion/text-prompt-request.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/chat-to-text-prompt.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/token-prompt.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/stream-text-choices.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/completion-errors.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/azure-text-prompt-every-call.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/cloudflare-model-null.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/max-retries-default-two.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/invalid-retries-422.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/missing-model-messages-422.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Reuse azure_text_pt only for the chat-to-text path; preserve explicit completion parameters and Azure deployment
+  URL rules.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: standard

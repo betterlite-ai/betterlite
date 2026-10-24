@@ -1,0 +1,219 @@
+id: B633
+title: Bedrock image model request and reply maps
+description: >-
+  Add BedrockImageConfig variants for Titan, Stable Diffusion 1/3 and Nova Canvas, with typed family request bodies
+  and OpenAI image result mapping. Preserve width/height/n, cfgScale/seed/quality/style/task fields and model selection;
+  image prices stay B068.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/image_generation/amazon_titan_transformation.py:
+  AmazonTitanImageGenerationConfig.__init__ L30-L41; AmazonTitanImageGenerationConfig.get_config L44-L59; AmazonTitanImageGenerationConfig._is_titan_model
+  L62-L71; AmazonTitanImageGenerationConfig.get_supported_openai_params L74-L75; AmazonTitanImageGenerationConfig.map_openai_params
+  L78-L101; AmazonTitanImageGenerationConfig.transform_request_body L104-L126; AmazonTitanImageGenerationConfig.transform_response_dict_to_openai_response
+  L129-L139. litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py: AmazonStabilityConfig.__init__
+  L47-L58; AmazonStabilityConfig.get_config L61-L76; AmazonStabilityConfig.get_supported_openai_params L79-L80;
+  AmazonStabilityConfig.map_openai_params L83-L94; AmazonStabilityConfig.transform_request_body L97-L117; AmazonStabilityConfig.transform_response_dict_to_openai_response
+  L120-L130. litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py: AmazonStability3Config.get_config
+  L22-L37; AmazonStability3Config.get_supported_openai_params L40-L44; AmazonStability3Config._is_stability_3_model
+  L47-L66; AmazonStability3Config.transform_request_body L69-L74; AmazonStability3Config.map_openai_params L77-L83;
+  AmazonStability3Config.transform_response_dict_to_openai_response L86-L105. litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py:
+  AmazonNovaCanvasConfig.get_config L28-L43; AmazonNovaCanvasConfig.get_supported_openai_params L46-L48; AmazonNovaCanvasConfig._is_nova_model
+  L51-L60; AmazonNovaCanvasConfig.transform_request_body L63-L148; AmazonNovaCanvasConfig.map_openai_params L151-L169;
+  AmazonNovaCanvasConfig.transform_response_dict_to_openai_response L172-L185.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/image_models.rs with adjacent tests under image_models/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_image_models in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function image_models_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  titan_image_body, stability1_text_prompts, stability3_prompt, nova_canvas_task_body, size_n_quality_map, artifacts_to_b64_results,
+  image_provider_error. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models* using HelperCase:
+  kind: helper and the externally tagged bedrock_other_image_models variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_image_models that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 360 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 375 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 591 planned, 600 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/image_models.rs
+  - crates/betterlite-bedrock/src/image_models/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_image_models.rs
+  - tools/oracle/src/helpers/bedrock_other_image_models/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_image_models.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-image-models/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_titan_transformation.py#L30-L139
+  why: >-
+    Own AmazonTitanImageGenerationConfig.__init__, AmazonTitanImageGenerationConfig.get_config, AmazonTitanImageGenerationConfig._is_titan_model,
+    AmazonTitanImageGenerationConfig.get_supported_openai_params, AmazonTitanImageGenerationConfig.map_openai_params,
+    AmazonTitanImageGenerationConfig.transform_request_body, AmazonTitanImageGenerationConfig.transform_response_dict_to_openai_response.
+    Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py#L47-L130
+  why: >-
+    Own AmazonStabilityConfig.__init__, AmazonStabilityConfig.get_config, AmazonStabilityConfig.get_supported_openai_params,
+    AmazonStabilityConfig.map_openai_params, AmazonStabilityConfig.transform_request_body, AmazonStabilityConfig.transform_response_dict_to_openai_response.
+    Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py#L22-L105
+  why: >-
+    Own AmazonStability3Config.get_config, AmazonStability3Config.get_supported_openai_params, AmazonStability3Config._is_stability_3_model,
+    AmazonStability3Config.transform_request_body, AmazonStability3Config.map_openai_params, AmazonStability3Config.transform_response_dict_to_openai_response.
+    Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py#L28-L185
+  why: >-
+    Own AmazonNovaCanvasConfig.get_config, AmazonNovaCanvasConfig.get_supported_openai_params, AmazonNovaCanvasConfig._is_nova_model,
+    AmazonNovaCanvasConfig.transform_request_body, AmazonNovaCanvasConfig.map_openai_params, AmazonNovaCanvasConfig.transform_response_dict_to_openai_response.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: 'titan image body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/titan-image-body.yaml.'
+  proof:
+  - case-titan-image-body
+  - oracle
+  - helper-python
+- text: >-
+    stability1 text prompts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability1-text-prompts.yaml.
+  proof:
+  - case-stability1-text-prompts
+  - oracle
+  - helper-python
+- text: 'stability3 prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml.'
+  proof:
+  - case-stability3-prompt
+  - oracle
+  - helper-python
+- text: >-
+    nova canvas task body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/nova-canvas-task-body.yaml.
+  proof:
+  - case-nova-canvas-task-body
+  - oracle
+  - helper-python
+- text: 'size n quality map: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/size-n-quality-map.yaml.'
+  proof:
+  - case-size-n-quality-map
+  - oracle
+  - helper-python
+- text: >-
+    artifacts to b64 results: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/artifacts-to-b64-results.yaml.
+  proof:
+  - case-artifacts-to-b64-results
+  - oracle
+  - helper-python
+- text: >-
+    image provider error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-provider-error.yaml.
+  proof:
+  - case-image-provider-error
+  - oracle
+  - helper-python
+- text: New bedrock_other_image_models seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-titan-image-body
+    why: The titan-image-body behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_titan_image_body$/)'
+  - id: case-stability1-text-prompts
+    why: The stability1-text-prompts behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_stability1_text_prompts$/)'
+  - id: case-stability3-prompt
+    why: The stability3-prompt behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_stability3_prompt$/)'
+  - id: case-nova-canvas-task-body
+    why: The nova-canvas-task-body behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_nova_canvas_task_body$/)'
+  - id: case-size-n-quality-map
+    why: The size-n-quality-map behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_size_n_quality_map$/)'
+  - id: case-artifacts-to-b64-results
+    why: The artifacts-to-b64-results behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_artifacts_to_b64_results$/)'
+  - id: case-image-provider-error
+    why: The image-provider-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_models_cases::case_[0-9]+_image_provider_error$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_models.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*")"
+      && grep -lq 'bedrock_other_image_models' tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_models*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_image_models$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/titan-image-body.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability1-text-prompts.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/stability3-prompt.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/nova-canvas-task-body.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/size-n-quality-map.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/artifacts-to-b64-results.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-models/image-provider-error.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/image_generation/amazon_titan_transformation.py: AmazonTitanImageGenerationConfig.cost_calculator
+  L142-L154 belong to B068; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py: AmazonStabilityConfig.cost_calculator
+  L133-L162 belong to B068; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py: AmazonStability3Config.cost_calculator
+  L108-L125 belong to B068; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py: AmazonNovaCanvasConfig.cost_calculator
+  L188-L205 belong to B068; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Preserve width/height/n, cfgScale/seed/quality/style/task fields and model selection; image prices stay B068.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard

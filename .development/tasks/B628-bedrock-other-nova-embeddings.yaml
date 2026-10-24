@@ -1,0 +1,181 @@
+id: B628
+title: Bedrock Nova multimodal embeddings
+description: >-
+  Add NovaEmbeddingRequest/Reply with SINGLE_EMBEDDING and SEGMENTED_EMBEDDING variants, default embeddingPurpose=GENERIC_INDEX
+  and embeddingDimension=3072. Preserve data-URL format extraction, S3 source descriptors, async invoke wrapper,
+  ordered result indexing and usage approximation exactly as source. An S3 descriptor is forwarded to AWS, not fetched
+  by this mapping task.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/embed/amazon_nova_transformation.py:
+  AmazonNovaEmbeddingConfig.__init__ L35-L36; AmazonNovaEmbeddingConfig.get_supported_openai_params L38-L41; AmazonNovaEmbeddingConfig.map_openai_params
+  L43-L51; AmazonNovaEmbeddingConfig._parse_data_url L53-L84; AmazonNovaEmbeddingConfig._transform_request L86-L205;
+  AmazonNovaEmbeddingConfig._wrap_async_invoke_request L207-L239; AmazonNovaEmbeddingConfig._transform_response
+  L241-L317; AmazonNovaEmbeddingConfig._transform_async_invoke_response L319-L353.
+
+
+  Implement crates/betterlite-bedrock/src/nova_embeddings.rs with adjacent tests under nova_embeddings/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_nova_embeddings in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function nova_embeddings_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): nova_default_purpose_dimensions, nova_text_image_audio_video, nova_data_url_jpg, nova_explicit_media_input,
+  nova_async_output_s3_required, nova_result_index_token_estimate, nova_invocation_arn. Each case exercises its
+  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
+  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings* using HelperCase:
+  kind: helper and the externally tagged bedrock_other_nova_embeddings variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_nova_embeddings that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 236 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 260 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 476 planned, 500 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/nova_embeddings.rs
+  - crates/betterlite-bedrock/src/nova_embeddings/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_nova_embeddings.rs
+  - tools/oracle/src/helpers/bedrock_other_nova_embeddings/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_nova_embeddings.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_nova_transformation.py#L35-L353
+  why: >-
+    Own AmazonNovaEmbeddingConfig.__init__, AmazonNovaEmbeddingConfig.get_supported_openai_params, AmazonNovaEmbeddingConfig.map_openai_params,
+    AmazonNovaEmbeddingConfig._parse_data_url, AmazonNovaEmbeddingConfig._transform_request, AmazonNovaEmbeddingConfig._wrap_async_invoke_request,
+    AmazonNovaEmbeddingConfig._transform_response, AmazonNovaEmbeddingConfig._transform_async_invoke_response. Other
+    functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    nova default purpose dimensions: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-default-purpose-dimensions.yaml.
+  proof:
+  - case-nova-default-purpose-dimensions
+  - oracle
+  - helper-python
+- text: >-
+    nova text image audio video: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-text-image-audio-video.yaml.
+  proof:
+  - case-nova-text-image-audio-video
+  - oracle
+  - helper-python
+- text: 'nova data url jpg: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-data-url-jpg.yaml.'
+  proof:
+  - case-nova-data-url-jpg
+  - oracle
+  - helper-python
+- text: >-
+    nova explicit media input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-explicit-media-input.yaml.
+  proof:
+  - case-nova-explicit-media-input
+  - oracle
+  - helper-python
+- text: >-
+    nova async output s3 required: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-async-output-s3-required.yaml.
+  proof:
+  - case-nova-async-output-s3-required
+  - oracle
+  - helper-python
+- text: >-
+    nova result index token estimate: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-result-index-token-estimate.yaml.
+  proof:
+  - case-nova-result-index-token-estimate
+  - oracle
+  - helper-python
+- text: >-
+    nova invocation arn: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-invocation-arn.yaml.
+  proof:
+  - case-nova-invocation-arn
+  - oracle
+  - helper-python
+- text: New bedrock_other_nova_embeddings seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-nova-default-purpose-dimensions
+    why: The nova-default-purpose-dimensions behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_default_purpose_dimensions$/)'
+  - id: case-nova-text-image-audio-video
+    why: The nova-text-image-audio-video behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_text_image_audio_video$/)'
+  - id: case-nova-data-url-jpg
+    why: The nova-data-url-jpg behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_data_url_jpg$/)'
+  - id: case-nova-explicit-media-input
+    why: The nova-explicit-media-input behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_explicit_media_input$/)'
+  - id: case-nova-async-output-s3-required
+    why: The nova-async-output-s3-required behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_async_output_s3_required$/)'
+  - id: case-nova-result-index-token-estimate
+    why: The nova-result-index-token-estimate behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_result_index_token_estimate$/)'
+  - id: case-nova-invocation-arn
+    why: The nova-invocation-arn behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_invocation_arn$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_nova_embeddings.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*")"
+      && grep -lq 'bedrock_other_nova_embeddings' tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_nova_embeddings$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-default-purpose-dimensions.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-text-image-audio-video.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-data-url-jpg.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-explicit-media-input.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-async-output-s3-required.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-result-index-token-estimate.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-invocation-arn.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Add NovaEmbeddingRequest/Reply with SINGLE_EMBEDDING and SEGMENTED_EMBEDDING variants, default embeddingPurpose=GENERIC_INDEX
+  and embeddingDimension=3072.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: standard

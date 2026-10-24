@@ -1,0 +1,266 @@
+id: B698
+title: Foundry resource operation composition
+description: >-
+  Install Foundry image generation/edit, rerank, Responses/Decisions, vector search, native Messages/count and passthrough
+  operations through exhaustive provider matches. Use fixtures for each family and call existing leaf adapters;
+  no resource transforms are rebuilt here.
+
+
+  This slice adds native composition or ports the SDK protocol called by the parent; it owns no additional LiteLLM
+  function body. The references and concrete operations below bound that work.
+
+
+  Add a separate Rust-only unsupported_operation case against the executable dispatcher; do not invent a Python
+  oracle operation for it.
+
+
+  Install these completed leaf operations: B553 Foundry image model selection and Flux parameters; B554 Foundry
+  MAI images and usage; B555 Foundry Flux and MAI image edits; B556 Foundry rerank requests; B557 Foundry native
+  Responses and Decisions; B558 Foundry Azure AI Search vector queries; B564 Foundry Anthropic Messages requests;
+  B565 Foundry Anthropic token counting; B566 Foundry passthrough URLs and response projections. Each dispatch fixture
+  must reach its leaf with a fake transport and assert the resulting request or reply; accept already normalized
+  settings and reuse leaf errors.
+
+
+  Implement crates/betterlite-provider/src/foundry_resource_dispatch.rs with adjacent tests under foundry_resource_dispatch/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation foundry_resource_dispatch in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function foundry_resource_dispatch_cases in betterlite-provider with these exact named cases (one
+  per oracle file): flux_image, mai_image, image_edit, rerank, responses_decisions, vector_search, native_messages_count,
+  passthrough. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports.
+  HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks
+  retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_resource_dispatch* using HelperCase:
+  kind: helper and the externally tagged foundry_resource_dispatch variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_foundry_resource_dispatch that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Write standalone foundry_resource_dispatch_unsupported_operation in betterlite-provider for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 145 production lines, 132 behavior/config-test lines, 117 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 434 planned, 450 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  native operation wiring plus fixture calls.
+scope:
+  paths:
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/Cargo.toml
+  - deny.toml
+  - crates/betterlite-provider/src/foundry_resource_dispatch.rs
+  - crates/betterlite-provider/src/foundry_resource_dispatch/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_resource_dispatch.rs
+  - tools/oracle/src/helpers/foundry_resource_dispatch/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_resource_dispatch.py
+  - tools/oracle/cases/helpers/providers/foundry-resource-dispatch/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_resource_dispatch*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/__init__.py#L21-L37
+  why: Operation contract delegated to B553; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/mai_transformation.py#L31-L50
+  why: Operation contract delegated to B554; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_edit/__init__.py#L22-L42
+  why: Operation contract delegated to B555; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L24-L61
+  why: Operation contract delegated to B556; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/responses/transformation.py#L18-L22
+  why: Operation contract delegated to B557; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L41-L42
+  why: Operation contract delegated to B558; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/messages_transformation.py#L22-L23
+  why: Operation contract delegated to B564; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/count_tokens/handler.py#L27-L127
+  why: Operation contract delegated to B565; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/passthrough/transformation.py#L40-L44
+  why: Operation contract delegated to B566; only native dispatcher wiring is added here.
+dod:
+- text: 'flux image: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/flux-image.yaml.'
+  proof:
+  - case-flux-image
+  - oracle
+  - helper-python
+- text: 'mai image: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/mai-image.yaml.'
+  proof:
+  - case-mai-image
+  - oracle
+  - helper-python
+- text: 'image edit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/image-edit.yaml.'
+  proof:
+  - case-image-edit
+  - oracle
+  - helper-python
+- text: 'rerank: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/rerank.yaml.'
+  proof:
+  - case-rerank
+  - oracle
+  - helper-python
+- text: 'responses decisions: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/responses-decisions.yaml.'
+  proof:
+  - case-responses-decisions
+  - oracle
+  - helper-python
+- text: 'vector search: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/vector-search.yaml.'
+  proof:
+  - case-vector-search
+  - oracle
+  - helper-python
+- text: >-
+    native messages count: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/native-messages-count.yaml.
+  proof:
+  - case-native-messages-count
+  - oracle
+  - helper-python
+- text: 'passthrough: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-resource-dispatch/passthrough.yaml.'
+  proof:
+  - case-passthrough
+  - oracle
+  - helper-python
+- text: New foundry_resource_dispatch seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: unsupported operation holds at this task’s owned boundary.
+  proof:
+  - unsupported-operation
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-flux-image
+    why: The flux-image behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_flux_image$/)'
+  - id: case-mai-image
+    why: The mai-image behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_mai_image$/)'
+  - id: case-image-edit
+    why: The image-edit behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_image_edit$/)'
+  - id: case-rerank
+    why: The rerank behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_rerank$/)'
+  - id: case-responses-decisions
+    why: The responses-decisions behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_responses_decisions$/)'
+  - id: case-vector-search
+    why: The vector-search behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_vector_search$/)'
+  - id: case-native-messages-count
+    why: The native-messages-count behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_native_messages_count$/)'
+  - id: case-passthrough
+    why: The passthrough behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_cases::case_[0-9]+_passthrough$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_resource_dispatch.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_resource_dispatch*")"
+      && grep -lq 'foundry_resource_dispatch' tools/oracle/fuzz/corpus/helper_case/foundry_resource_dispatch* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_resource_dispatch$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: unsupported-operation
+    why: The unsupported operation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::foundry_resource_dispatch_unsupported_operation$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/flux-image.yaml
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/mai-image.yaml
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/image-edit.yaml
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/rerank.yaml
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/responses-decisions.yaml
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/vector-search.yaml
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/native-messages-count.yaml
+- tools/oracle/cases/helpers/providers/foundry-resource-dispatch/passthrough.yaml
+deviations: []
+out_of_scope:
+- >-
+  litellm/llms/azure_ai/image_generation/__init__.py: get_azure_ai_image_generation_config L21-L37 belong to B553;
+  reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/image_generation/mai_transformation.py: AzureFoundryMAIImageGenerationConfig.get_mai_image_generation_url
+  L31-L50; AzureFoundryMAIImageGenerationConfig.get_mai_image_edit_url L53-L72; AzureFoundryMAIImageGenerationConfig.is_mai_model
+  L75-L77; AzureFoundryMAIImageGenerationConfig.normalize_mai_image_usage L80-L134; AzureFoundryMAIImageGenerationConfig.get_supported_openai_params
+  L136-L137; AzureFoundryMAIImageGenerationConfig.map_openai_params L139-L183; AzureFoundryMAIImageGenerationConfig._unsupported
+  L186-L187; AzureFoundryMAIImageGenerationConfig._image_count L189-L195; AzureFoundryMAIImageGenerationConfig._map_size_param
+  L197-L224; AzureFoundryMAIImageGenerationConfig._validate_dimensions L226-L238; AzureFoundryMAIImageGenerationConfig.transform_image_generation_response
+  L240-L277 belong to B554; reuse that implementation or its injected typed boundary.
+- 'litellm/llms/azure_ai/image_edit/__init__.py: get_azure_ai_image_edit_config L22-L42 belong to B555; reuse that
+  implementation or its injected typed boundary.'
+- >-
+  litellm/llms/azure_ai/rerank/transformation.py: AzureAIRerankConfig.get_complete_url L24-L61; AzureAIRerankConfig.validate_environment
+  L63-L85; AzureAIRerankConfig.transform_rerank_response L87-L110; AzureAIRerankConfig._get_base_model L112-L119
+  belong to B556; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/responses/transformation.py: _responses_url L18-L22; AzureAIResponsesAPIConfig.custom_llm_provider
+  L27-L28; AzureAIResponsesAPIConfig.validate_environment L30-L41; AzureAIResponsesAPIConfig.supports_native_websocket
+  L43-L44; AzureAIResponsesAPIConfig.get_complete_url L46-L53 belong to B557; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/azure_ai/vector_stores/transformation.py: AzureAIVectorStoreConfig.__init__ L41-L42; AzureAIVectorStoreConfig.get_vector_store_endpoints_by_type
+  L44-L71; AzureAIVectorStoreConfig.get_auth_credentials L73-L82; AzureAIVectorStoreConfig.validate_environment
+  L84-L87; AzureAIVectorStoreConfig.get_complete_url L89-L112; AzureAIVectorStoreConfig.transform_search_vector_store_request
+  L114-L135; AzureAIVectorStoreConfig.atransform_search_vector_store_request L137-L158; AzureAIVectorStoreConfig._search_request
+  L161-L180; AzureAIVectorStoreConfig.transform_search_vector_store_response L182-L259; AzureAIVectorStoreConfig.transform_create_vector_store_request
+  L261-L266; AzureAIVectorStoreConfig.transform_create_vector_store_response L268-L269 belong to B558; reuse that
+  implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/anthropic/messages_transformation.py: AzureAnthropicMessagesConfig.custom_llm_provider L22-L23;
+  AzureAnthropicMessagesConfig.should_strip_billing_metadata L25-L26; AzureAnthropicMessagesConfig.validate_anthropic_messages_environment
+  L28-L74; AzureAnthropicMessagesConfig.get_complete_url L76-L116; AzureAnthropicMessagesConfig._remove_scope_from_cache_control
+  L118-L147; AzureAnthropicMessagesConfig.transform_anthropic_messages_request L149-L166 belong to B564; reuse that
+  implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/anthropic/count_tokens/handler.py: AzureAIAnthropicCountTokensHandler.handle_count_tokens_request
+  L27-L127 belong to B565; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/azure_ai/passthrough/transformation.py: api_version_from L40-L44; foundry_root L47-L51; is_repeated_native_prefix
+  L54-L55; without_repeated_native_prefix L58-L72; relay_query_params L75-L85; AzureAIPassthroughConfig.__init__
+  L95-L97; AzureAIPassthroughConfig.is_streaming_request L99-L100; AzureAIPassthroughConfig.get_complete_url L102-L120;
+  AzureAIPassthroughConfig.validate_environment L122-L137; AzureAIPassthroughConfig.logging_non_streaming_response
+  L139-L166; AzureAIPassthroughConfig.logged_ocr_response L168-L189; AzureAIPassthroughConfig.handle_logging_collected_chunks
+  L191-L207 belong to B566; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Foundry image edit version defaults differ by Flux and MAI and must reach the leaf unchanged.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: standard

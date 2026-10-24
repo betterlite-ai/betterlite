@@ -1,0 +1,193 @@
+id: B522
+title: OpenAI containers and container files
+description: >-
+  Add typed ContainerCreate/ContainerReply/ContainerFile records and provider create/list/retrieve/delete, file
+  list and content methods. Use the source join helper rather than adding /v1 twice, and preserve cursor/order fields.
+  Container file uploads and public handlers are B094.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/containers/transformation.py:
+  OpenAIContainerConfig.__init__ L82-L83; OpenAIContainerConfig.get_supported_openai_params L85-L92; OpenAIContainerConfig.map_openai_params
+  L94-L100; OpenAIContainerConfig.validate_environment L102-L113; OpenAIContainerConfig.get_complete_url L115-L129;
+  OpenAIContainerConfig.transform_container_create_request L131-L150; OpenAIContainerConfig.transform_container_create_response
+  L152-L174; OpenAIContainerConfig.transform_container_list_request L176-L207; OpenAIContainerConfig.transform_container_list_response
+  L209-L217; OpenAIContainerConfig.transform_container_retrieve_request L219-L234; OpenAIContainerConfig.transform_container_retrieve_response
+  L236-L244; OpenAIContainerConfig.transform_container_delete_request L246-L265; OpenAIContainerConfig.transform_container_delete_response
+  L267-L275; OpenAIContainerConfig.transform_container_file_list_request L277-L310; OpenAIContainerConfig.transform_container_file_list_response
+  L312-L320; OpenAIContainerConfig.transform_container_file_content_request L322-L343; OpenAIContainerConfig.transform_container_file_content_response
+  L345-L354; OpenAIContainerConfig.get_error_class L356-L368. litellm/llms/openai/containers/utils.py: join_container_api_base_path
+  L8-L20.
+
+
+  Container response-cost metadata delegates to B068 StandardBuiltInToolCostTracking through a supplied cost projection;
+  do not implement billing arithmetic here.
+
+
+  Implement crates/betterlite-openai/src/containers.rs with adjacent tests under containers/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation openai_containers in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function containers_cases in betterlite-openai with these exact named cases (one per oracle file):
+  base_with_v1, base_with_containers, create_expires_after, list_limit_order, retrieve_delete_id, file_list_and_content.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_containers* using HelperCase: kind: helper
+  and the externally tagged openai_containers variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_openai_containers that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_container_reply consumes container and file-list JSON response bytes in crates/betterlite-openai/src/containers.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/openai_containers.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-openai/fuzz/corpus/openai_containers.
+  The adjacent test replays_the_openai_containers_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 237 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 260 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 518 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/containers.rs
+  - crates/betterlite-openai/src/containers/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_containers.rs
+  - tools/oracle/src/helpers/openai_containers/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_containers.py
+  - tools/oracle/cases/helpers/providers/openai-containers/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_containers*
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/openai_containers.rs
+  - crates/betterlite-openai/fuzz/corpus/openai_containers/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L82-L368
+  why: >-
+    Own OpenAIContainerConfig.__init__, OpenAIContainerConfig.get_supported_openai_params, OpenAIContainerConfig.map_openai_params,
+    OpenAIContainerConfig.validate_environment, OpenAIContainerConfig.get_complete_url, OpenAIContainerConfig.transform_container_create_request,
+    OpenAIContainerConfig.transform_container_create_response, OpenAIContainerConfig.transform_container_list_request,
+    OpenAIContainerConfig.transform_container_list_response, OpenAIContainerConfig.transform_container_retrieve_request,
+    OpenAIContainerConfig.transform_container_retrieve_response, OpenAIContainerConfig.transform_container_delete_request,
+    OpenAIContainerConfig.transform_container_delete_response, OpenAIContainerConfig.transform_container_file_list_request,
+    OpenAIContainerConfig.transform_container_file_list_response, OpenAIContainerConfig.transform_container_file_content_request,
+    OpenAIContainerConfig.transform_container_file_content_response, OpenAIContainerConfig.get_error_class. Other
+    functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/utils.py#L8-L20
+  why: Own join_container_api_base_path. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'base with v1: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/base-with-v1.yaml.'
+  proof:
+  - case-base-with-v1
+  - oracle
+  - helper-python
+- text: 'base with containers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/base-with-containers.yaml.'
+  proof:
+  - case-base-with-containers
+  - oracle
+  - helper-python
+- text: 'create expires after: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/create-expires-after.yaml.'
+  proof:
+  - case-create-expires-after
+  - oracle
+  - helper-python
+- text: 'list limit order: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/list-limit-order.yaml.'
+  proof:
+  - case-list-limit-order
+  - oracle
+  - helper-python
+- text: 'retrieve delete id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/retrieve-delete-id.yaml.'
+  proof:
+  - case-retrieve-delete-id
+  - oracle
+  - helper-python
+- text: 'file list and content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-containers/file-list-and-content.yaml.'
+  proof:
+  - case-file-list-and-content
+  - oracle
+  - helper-python
+- text: New openai_containers seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_container_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-base-with-v1
+    why: The base-with-v1 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_base_with_v1$/)'
+  - id: case-base-with-containers
+    why: The base-with-containers behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_base_with_containers$/)'
+  - id: case-create-expires-after
+    why: The create-expires-after behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_create_expires_after$/)'
+  - id: case-list-limit-order
+    why: The list-limit-order behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_list_limit_order$/)'
+  - id: case-retrieve-delete-id
+    why: The retrieve-delete-id behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_retrieve_delete_id$/)'
+  - id: case-file-list-and-content
+    why: The file-list-and-content behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::containers_cases::case_[0-9]+_file_list_and_content$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_containers.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_containers*")"
+      && grep -lq 'openai_containers' tools/oracle/fuzz/corpus/helper_case/openai_containers* && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_containers$/)' && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_containers)"
+      && grep -q 'decode_container_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_containers.rs && cargo
+      nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_containers_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-containers/base-with-v1.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/base-with-containers.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/create-expires-after.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/list-limit-order.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/retrieve-delete-id.yaml
+- tools/oracle/cases/helpers/providers/openai-containers/file-list-and-content.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Container paths already containing /v1 must not acquire a second /v1 segment.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,200 @@
+id: B538
+title: Azure native SSML synthesis
+description: >-
+  Add NativeSpeechRequest and typed SSML construction, preserving voice language, speed-to-rate conversion, style/styledegree/role,
+  output formats and region hostname detection. Compare an XML writer crate before constructing SSML; validate supplied
+  SSML as bounded bytes with the same accepted shape and no external entity/network resolution. Stream binary results
+  with configured deadlines.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/text_to_speech/transformation.py:
+  AzureAVATextToSpeechConfig._convert_speed_to_azure_rate L145-L161; AzureAVATextToSpeechConfig._build_express_as_element
+  L163-L194; AzureAVATextToSpeechConfig._get_voice_language L196-L223; AzureAVATextToSpeechConfig.map_openai_params
+  L225-L280; AzureAVATextToSpeechConfig.validate_environment L282-L311; AzureAVATextToSpeechConfig.get_complete_url
+  L313-L349; AzureAVATextToSpeechConfig._is_cognitive_services_endpoint L351-L353; AzureAVATextToSpeechConfig._is_tts_endpoint
+  L355-L357; AzureAVATextToSpeechConfig._extract_region_from_hostname L359-L369; AzureAVATextToSpeechConfig._build_tts_url
+  L371-L375; AzureAVATextToSpeechConfig.is_ssml_input L377-L383; AzureAVATextToSpeechConfig.transform_text_to_speech_request
+  L385-L478; AzureAVATextToSpeechConfig.transform_text_to_speech_response L480-L495.
+
+
+  SSML construction receives typed text/options and XML-escapes values; if passing raw ssml_body through unchanged,
+  do not add an XML parser merely to validate it.
+
+
+  Implement crates/betterlite-azure/src/native_speech.rs with adjacent tests under native_speech/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation azure_native_speech in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function native_speech_cases in betterlite-azure with these exact named cases (one per oracle file):
+  plain_text_ssml_escaping, speed_rate_boundaries, voice_language, style_role_element, existing_ssml, cognitive_to_tts_endpoint,
+  response_format_header, binary_native_speech. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_native_speech* using HelperCase: kind:
+  helper and the externally tagged azure_native_speech variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_azure_native_speech that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 252 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 275 production lines, 117 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 504 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/native_speech.rs
+  - crates/betterlite-azure/src/native_speech/**
+  - Cargo.toml
+  - deny.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_native_speech.rs
+  - tools/oracle/src/helpers/azure_native_speech/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_native_speech.py
+  - tools/oracle/cases/helpers/providers/azure-native-speech/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_native_speech*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L145-L495
+  why: >-
+    Own AzureAVATextToSpeechConfig._convert_speed_to_azure_rate, AzureAVATextToSpeechConfig._build_express_as_element,
+    AzureAVATextToSpeechConfig._get_voice_language, AzureAVATextToSpeechConfig.map_openai_params, AzureAVATextToSpeechConfig.validate_environment,
+    AzureAVATextToSpeechConfig.get_complete_url, AzureAVATextToSpeechConfig._is_cognitive_services_endpoint, AzureAVATextToSpeechConfig._is_tts_endpoint,
+    AzureAVATextToSpeechConfig._extract_region_from_hostname, AzureAVATextToSpeechConfig._build_tts_url, AzureAVATextToSpeechConfig.is_ssml_input,
+    AzureAVATextToSpeechConfig.transform_text_to_speech_request, AzureAVATextToSpeechConfig.transform_text_to_speech_response.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    plain text ssml escaping: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/plain-text-ssml-escaping.yaml.
+  proof:
+  - case-plain-text-ssml-escaping
+  - oracle
+  - helper-python
+- text: 'speed rate boundaries: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/speed-rate-boundaries.yaml.'
+  proof:
+  - case-speed-rate-boundaries
+  - oracle
+  - helper-python
+- text: 'voice language: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/voice-language.yaml.'
+  proof:
+  - case-voice-language
+  - oracle
+  - helper-python
+- text: 'style role element: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/style-role-element.yaml.'
+  proof:
+  - case-style-role-element
+  - oracle
+  - helper-python
+- text: 'existing ssml: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/existing-ssml.yaml.'
+  proof:
+  - case-existing-ssml
+  - oracle
+  - helper-python
+- text: >-
+    cognitive to tts endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/cognitive-to-tts-endpoint.yaml.
+  proof:
+  - case-cognitive-to-tts-endpoint
+  - oracle
+  - helper-python
+- text: 'response format header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/response-format-header.yaml.'
+  proof:
+  - case-response-format-header
+  - oracle
+  - helper-python
+- text: 'binary native speech: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/binary-native-speech.yaml.'
+  proof:
+  - case-binary-native-speech
+  - oracle
+  - helper-python
+- text: New azure_native_speech seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-plain-text-ssml-escaping
+    why: The plain-text-ssml-escaping behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_plain_text_ssml_escaping$/)'
+  - id: case-speed-rate-boundaries
+    why: The speed-rate-boundaries behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_speed_rate_boundaries$/)'
+  - id: case-voice-language
+    why: The voice-language behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_voice_language$/)'
+  - id: case-style-role-element
+    why: The style-role-element behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_style_role_element$/)'
+  - id: case-existing-ssml
+    why: The existing-ssml behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_existing_ssml$/)'
+  - id: case-cognitive-to-tts-endpoint
+    why: The cognitive-to-tts-endpoint behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_cognitive_to_tts_endpoint$/)'
+  - id: case-response-format-header
+    why: The response-format-header behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_response_format_header$/)'
+  - id: case-binary-native-speech
+    why: The binary-native-speech behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_binary_native_speech$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_native_speech.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_native_speech*")"
+      && grep -lq 'azure_native_speech' tools/oracle/fuzz/corpus/helper_case/azure_native_speech* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_native_speech$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-native-speech/plain-text-ssml-escaping.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/speed-rate-boundaries.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/voice-language.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/style-role-element.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/existing-ssml.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/cognitive-to-tts-endpoint.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/response-format-header.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/binary-native-speech.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig.dispatch_text_to_speech L62-L134;
+  AzureAVATextToSpeechConfig.get_supported_openai_params L136-L143 belong to B537; reuse that implementation or
+  its injected typed boundary.
+pitfalls:
+- Escape caller text in generated SSML while preserving explicit ssml_body input and X-Microsoft-OutputFormat.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

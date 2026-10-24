@@ -1,0 +1,285 @@
+id: B649
+title: Bedrock batch creation and input authorization
+description: >-
+  Add BedrockBatchCreate and input-file/model extraction, preserving model-invocation-job request path, configured
+  output bucket and role ARN, bucket-owner/KMS settings, tags and 24h completion window. Resolve AWS_BATCH_ROLE_ARN
+  and bedrock_tags at config boundary; retain original request metadata through a typed owned context. Batch ids
+  and output prefixes keep the source wire naming.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/batches/transformation.py:
+  _build_s3_input_config L55-L58; _build_s3_output_config L61-L72; _validate_bedrock_tags L75-L82; titan_embedding_usage_from_batch_output
+  L85-L96; BedrockBatchesConfig.__init__ L104-L106; BedrockBatchesConfig.custom_llm_provider L109-L110; BedrockBatchesConfig._get_bare_model_name_from_s3_key
+  L113-L120; BedrockBatchesConfig.validate_environment L147-L162; BedrockBatchesConfig.get_complete_batch_url L164-L186;
+  BedrockBatchesConfig.transform_create_batch_request L188-L299; BedrockBatchesConfig.transform_create_batch_response
+  L301-L373; BedrockBatchesConfig._get_openai_compatible_batch_metadata L376-L394.
+
+
+  Implement crates/betterlite-bedrock/src/batch_create.rs with adjacent tests under batch_create/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_batch_create in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function batch_create_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  batch_role_required, managed_input_model, output_bucket_fallback, tags_validation, input_24h_window, create_status_mapping,
+  metadata_sanitization. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_create* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_batch_create variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_batch_create that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_created_batch consumes model-invocation-job creation JSON bytes in crates/betterlite-bedrock/src/batch_create.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_create.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_create.
+  The adjacent test replays_the_bedrock_services_batch_create_corpus uses the same function and asserts expected
+  success/failure categories; never introduce a parser solely for fuzzing.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/bedrock/batch_create.rs
+  and its loader wiring: AWS_BATCH_ROLE_ARN, bedrock_tags. Module-level settings enter litellm_settings; deployment
+  settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified above
+  and in the linked branches; existing key owners remain unchanged. Write config rstest bedrock_services_batch_create_config_cases
+  with named cases loads_aws_batch_role_arn, loads_bedrock_tags, plus rejects_unrelated_key. Each loads case calls
+  the real config loader with that key and asserts the resolved value, default, precedence and secret redaction
+  where applicable. Seed B002 config_yaml with new bedrock_services_batch_create* files for every key; reuse its
+  parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_services_batch_create_credential_identity_isolation in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone bedrock_services_batch_create_secret_safe_failure in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Budget from 250 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 270 production lines, 152 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 31 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 616 planned, 625 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/batch_create.rs
+  - crates/betterlite-bedrock/src/batch_create/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_batch_create.rs
+  - tools/oracle/src/helpers/bedrock_services_batch_create/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_batch_create.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-batch-create/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_create*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_create.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_create/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/batch_create.rs
+  - crates/betterlite-config/src/providers/bedrock/batch_create/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_services_batch_create_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_batch_create*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L55-L120
+  why: >-
+    Own _build_s3_input_config, _build_s3_output_config, _validate_bedrock_tags, titan_embedding_usage_from_batch_output,
+    BedrockBatchesConfig.__init__, BedrockBatchesConfig.custom_llm_provider, BedrockBatchesConfig._get_bare_model_name_from_s3_key.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/transformation.py#L147-L394
+  why: >-
+    Own BedrockBatchesConfig.validate_environment, BedrockBatchesConfig.get_complete_batch_url, BedrockBatchesConfig.transform_create_batch_request,
+    BedrockBatchesConfig.transform_create_batch_response, BedrockBatchesConfig._get_openai_compatible_batch_metadata.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    batch role required: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-create/batch-role-required.yaml.
+  proof:
+  - case-batch-role-required
+  - oracle
+  - helper-python
+- text: >-
+    managed input model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-create/managed-input-model.yaml.
+  proof:
+  - case-managed-input-model
+  - oracle
+  - helper-python
+- text: >-
+    output bucket fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-create/output-bucket-fallback.yaml.
+  proof:
+  - case-output-bucket-fallback
+  - oracle
+  - helper-python
+- text: 'tags validation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-create/tags-validation.yaml.'
+  proof:
+  - case-tags-validation
+  - oracle
+  - helper-python
+- text: '24h window: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-create/24h-window.yaml.'
+  proof:
+  - case-24h-window
+  - oracle
+  - helper-python
+- text: >-
+    create status mapping: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-create/create-status-mapping.yaml.
+  proof:
+  - case-create-status-mapping
+  - oracle
+  - helper-python
+- text: >-
+    metadata sanitization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-create/metadata-sanitization.yaml.
+  proof:
+  - case-metadata-sanitization
+  - oracle
+  - helper-python
+- text: New bedrock_services_batch_create seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_created_batch has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+- text: AWS_BATCH_ROLE_ARN is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-aws-batch-role-arn
+  - config-corpus
+- text: bedrock_tags is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-bedrock-tags
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-batch-role-required
+    why: The batch-role-required behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_batch_role_required$/)'
+  - id: case-managed-input-model
+    why: The managed-input-model behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_managed_input_model$/)'
+  - id: case-output-bucket-fallback
+    why: The output-bucket-fallback behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_output_bucket_fallback$/)'
+  - id: case-tags-validation
+    why: The tags-validation behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_tags_validation$/)'
+  - id: case-24h-window
+    why: The 24h-window behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_input_24h_window$/)'
+  - id: case-create-status-mapping
+    why: The create-status-mapping behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_create_status_mapping$/)'
+  - id: case-metadata-sanitization
+    why: The metadata-sanitization behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_create_cases::case_[0-9]+_metadata_sanitization$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_create.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_create*")"
+      && grep -lq 'bedrock_services_batch_create' tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_create*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_batch_create$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_batch_create)"
+      && grep -q 'decode_created_batch' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_batch_create.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_batch_create_corpus$/)'
+  - id: config-aws-batch-role-arn
+    why: The AWS_BATCH_ROLE_ARN setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_batch_create_config_cases::case_[0-9]+_loads_aws_batch_role_arn$/)'
+      && grep -lq 'AWS_BATCH_ROLE_ARN' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_batch_create*
+  - id: config-bedrock-tags
+    why: The bedrock_tags setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_batch_create_config_cases::case_[0-9]+_loads_bedrock_tags$/)'
+      && grep -lq 'bedrock_tags' crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_batch_create*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_services_batch_create_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_services_batch_create*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_batch_create_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_batch_create_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-create/batch-role-required.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-create/managed-input-model.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-create/output-bucket-fallback.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-create/tags-validation.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-create/24h-window.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-create/create-status-mapping.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-create/metadata-sanitization.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/batches/transformation.py: BedrockBatchesConfig.transform_retrieve_batch_request L396-L454;
+  BedrockBatchesConfig._parse_timestamps_and_status L456-L508; BedrockBatchesConfig._extract_file_configs L510-L528;
+  BedrockBatchesConfig._extract_errors_and_metadata L530-L567; BedrockBatchesConfig.transform_retrieve_batch_response
+  L569-L653; BedrockBatchesConfig.get_error_class L655-L659 belong to B650; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/batches/transformation.py: BedrockBatchesConfig.is_unmanaged_s3_batch_input_file_id L123-L132;
+  BedrockBatchesConfig.get_bare_model_name_from_s3_file L135-L145 have no caller at the pin; do not port them.
+pitfalls:
+- The unused is_unmanaged_s3_batch_input_file_id and get_bare_model_name_from_s3_file methods are not authorization
+  hooks.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: security

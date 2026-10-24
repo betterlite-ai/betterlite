@@ -1,0 +1,198 @@
+id: B672
+title: Video provider identifiers and multipart input
+description: >-
+  Port the provider-tagged video and character id codecs and OpenAI input_reference multipart conversion, shared
+  with video extension/edit operations. An input_reference string is the file body with PNG default; it is never
+  fetched as a URL.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/videos/transformation.py:
+  OpenAIVideoConfig._decode_character_ids_in_create_video_request L148-L175; OpenAIVideoConfig._add_image_to_files
+  L574-L586; OpenAIVideoConfig._video_file_tuple L588-L595; OpenAIVideoConfig._add_video_to_files L597-L603; OpenAIVideoConfig._get_video_content_type
+  L605-L628. litellm/types/videos/utils.py: DecodedCharacterId L20-L25; _add_base64_padding L28-L35; encode_video_id_with_provider
+  L38-L56; decode_video_id_with_provider L59-L113; extract_original_video_id L116-L119; encode_character_id_with_provider
+  L122-L133; decode_character_id_with_provider L136-L190; extract_original_character_id L193-L196.
+
+
+  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
+  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
+  and no copied helper algorithm is permitted.
+
+
+  Implement crates/betterlite-openai/src/openai_video_identifiers.rs with adjacent tests under openai_video_identifiers/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation openai_video_identifiers in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function openai_video_identifiers_cases in betterlite-openai with these exact named cases (one per
+  oracle file): video_id_roundtrip, character_id_roundtrip, invalid_id_fallback, input_reference_string_png, multipart_input_file.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers* using HelperCase: kind:
+  helper and the externally tagged openai_video_identifiers variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_openai_video_identifiers that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  Outside-byte boundary: decode_provider_video_id consumes caller-supplied video_/character_ base64 identifier bytes
+  and upload MIME prefixes in crates/betterlite-openai/src/openai_video_identifiers.rs (or its scoped child module).
+  Add cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/openai_video_identifiers.rs calling that exact
+  production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-openai/fuzz/corpus/openai_video_identifiers.
+  The adjacent test replays_the_openai_video_identifiers_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 204 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 230 production lines, 90 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 490 planned, 500 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/openai_video_identifiers.rs
+  - crates/betterlite-openai/src/openai_video_identifiers/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_video_identifiers.rs
+  - tools/oracle/src/helpers/openai_video_identifiers/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_video_identifiers.py
+  - tools/oracle/cases/helpers/providers/openai-video-identifiers/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers*
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/openai_video_identifiers.rs
+  - crates/betterlite-openai/fuzz/corpus/openai_video_identifiers/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L148-L175
+  why: Own OpenAIVideoConfig._decode_character_ids_in_create_video_request. Other functions in this file remain
+    with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L574-L628
+  why: >-
+    Own OpenAIVideoConfig._add_image_to_files, OpenAIVideoConfig._video_file_tuple, OpenAIVideoConfig._add_video_to_files,
+    OpenAIVideoConfig._get_video_content_type. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L20-L196
+  why: >-
+    Own DecodedCharacterId, _add_base64_padding, encode_video_id_with_provider, decode_video_id_with_provider, extract_original_video_id,
+    encode_character_id_with_provider, decode_character_id_with_provider, extract_original_character_id. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'video id roundtrip: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/video-id-roundtrip.yaml.'
+  proof:
+  - case-video-id-roundtrip
+  - oracle
+  - helper-python
+- text: >-
+    character id roundtrip: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/character-id-roundtrip.yaml.
+  proof:
+  - case-character-id-roundtrip
+  - oracle
+  - helper-python
+- text: 'invalid id fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/invalid-id-fallback.yaml.'
+  proof:
+  - case-invalid-id-fallback
+  - oracle
+  - helper-python
+- text: >-
+    input reference string png: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/input-reference-string-png.yaml.
+  proof:
+  - case-input-reference-string-png
+  - oracle
+  - helper-python
+- text: >-
+    multipart input file: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/multipart-input-file.yaml.
+  proof:
+  - case-multipart-input-file
+  - oracle
+  - helper-python
+- text: New openai_video_identifiers seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_provider_video_id has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-video-id-roundtrip
+    why: The video-id-roundtrip behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_video_id_roundtrip$/)'
+  - id: case-character-id-roundtrip
+    why: The character-id-roundtrip behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_character_id_roundtrip$/)'
+  - id: case-invalid-id-fallback
+    why: The invalid-id-fallback behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_invalid_id_fallback$/)'
+  - id: case-input-reference-string-png
+    why: The input-reference-string-png behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_input_reference_string_png$/)'
+  - id: case-multipart-input-file
+    why: The multipart-input-file behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_multipart_input_file$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_video_identifiers.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers*")"
+      && grep -lq 'openai_video_identifiers' tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_video_identifiers$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_video_identifiers)"
+      && grep -q 'decode_provider_video_id' crates/betterlite-openai/fuzz/fuzz_targets/openai_video_identifiers.rs
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_video_identifiers_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/video-id-roundtrip.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/character-id-roundtrip.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/invalid-id-fallback.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/input-reference-string-png.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/multipart-input-file.yaml
+deviations: []
+out_of_scope:
+- >-
+  litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.transform_video_create_character_request L463-L474;
+  OpenAIVideoConfig.transform_video_create_character_response L476-L481; OpenAIVideoConfig.transform_video_get_character_request
+  L483-L493; OpenAIVideoConfig.transform_video_get_character_response L495-L500; OpenAIVideoConfig.transform_video_edit_request
+  L502-L528; OpenAIVideoConfig.transform_video_edit_response L530-L540; OpenAIVideoConfig.transform_video_extension_request
+  L542-L561; OpenAIVideoConfig.transform_video_extension_response L563-L572 belong to B526; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.__init__ L47-L48; OpenAIVideoConfig.get_supported_openai_params
+  L50-L63; OpenAIVideoConfig.map_openai_params L65-L72; OpenAIVideoConfig.validate_environment L74-L91; OpenAIVideoConfig.get_complete_url
+  L93-L105; OpenAIVideoConfig.use_multipart_form_data L107-L108; OpenAIVideoConfig.transform_video_create_request
+  L110-L146; OpenAIVideoConfig.transform_video_create_response L177-L200; OpenAIVideoConfig.transform_video_content_request
+  L202-L232; OpenAIVideoConfig.transform_video_remix_request L234-L262; OpenAIVideoConfig.transform_video_content_response
+  L264-L270; OpenAIVideoConfig.transform_video_remix_response L272-L299; OpenAIVideoConfig.transform_video_list_request
+  L301-L334; OpenAIVideoConfig.transform_video_list_response L336-L375; OpenAIVideoConfig.transform_video_delete_request
+  L377-L399; OpenAIVideoConfig.transform_video_delete_response L401-L412; OpenAIVideoConfig.transform_video_status_retrieve_request
+  L414-L434; OpenAIVideoConfig.transform_video_status_retrieve_response L436-L452; OpenAIVideoConfig.get_error_class
+  L454-L461 belong to B525; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Malformed managed video IDs fall back to the original ID instead of becoming decode errors.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: standard

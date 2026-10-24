@@ -1,0 +1,249 @@
+id: B619
+title: Bedrock OpenAI Invoke and runtime request mapping
+description: >-
+  Add Bedrock OpenAI Invoke/runtime chat request overrides: signed endpoint construction, region-from-model path,
+  max_completion_tokens and refused option/effort handling. Preserve typed OpenAI messages and forward-compatible
+  reasoning options using catalog metadata.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/amazon_openai_transformation.py:
+  AmazonBedrockOpenAIConfig.__init__ L47-L49; AmazonBedrockOpenAIConfig.custom_llm_provider L52-L53; AmazonBedrockOpenAIConfig._get_openai_model_id
+  L55-L68; AmazonBedrockOpenAIConfig.get_complete_url L70-L106; AmazonBedrockOpenAIConfig.sign_request L108-L132;
+  AmazonBedrockOpenAIConfig.transform_request L134-L161; AmazonBedrockOpenAIConfig.validate_environment L163-L181;
+  AmazonBedrockOpenAIConfig.get_error_class L183-L185. litellm/llms/bedrock/chat/chat_completions/transformation.py:
+  with_max_completion_tokens L243-L258; AmazonBedrockRuntimeChatCompletionsConfig.__init__ L262-L264; AmazonBedrockRuntimeChatCompletionsConfig.custom_llm_provider
+  L267-L268; AmazonBedrockRuntimeChatCompletionsConfig.uses_async_transform_request L271-L272; AmazonBedrockRuntimeChatCompletionsConfig.get_error_class
+  L274-L280; AmazonBedrockRuntimeChatCompletionsConfig.validate_environment L282-L300; AmazonBedrockRuntimeChatCompletionsConfig.get_complete_url
+  L302-L329; AmazonBedrockRuntimeChatCompletionsConfig._params_with_region_from_path L331-L337; AmazonBedrockRuntimeChatCompletionsConfig.sign_request
+  L339-L360; AmazonBedrockRuntimeChatCompletionsConfig.map_openai_params L362-L405; AmazonBedrockRuntimeChatCompletionsConfig._inference_params
+  L407-L414; AmazonBedrockRuntimeChatCompletionsConfig.transform_request L416-L431; AmazonBedrockRuntimeChatCompletionsConfig.async_transform_request
+  L433-L448; AmazonBedrockRuntimeChatCompletionsConfig.get_supported_openai_params L489-L502; AmazonBedrockRuntimeChatCompletionsConfig.get_model_response_iterator
+  L504-L514.
+
+
+  remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
+  status 400 before transport under the current open request-download decision; inject the same failed-download
+  seam into the pinned helper. Inline bytes continue to compare normally; provider-forwardable URL descriptors remain
+  unchanged where the source forwards them.
+
+
+  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse bedrock_bearer_token from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse split_bedrock_region_path from B591 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse bedrock_request_metadata_headers from B596 (litellm/llms/bedrock/request_metadata.py); its implementation
+  remains with that prerequisite.
+
+
+  Reuse merge_bedrock_invoke_headers from B596 (litellm/llms/bedrock/request_metadata.py); its implementation remains
+  with that prerequisite.
+
+
+  Reuse OpenAIGPTConfig.__init__ from B668 (litellm/llms/openai/chat/gpt_transformation.py); its implementation
+  remains with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/openai_invoke.rs with adjacent tests under openai_invoke/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_openai_invoke in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function openai_invoke_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  openai_invoke_model_id, runtime_chat_completions_url, region_in_path, max_completion_tokens, refused_options_drop_or_error,
+  bedrock_openai_auth, remote_url_current_rejection. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
+  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_openai_invoke* using HelperCase: kind:
+  helper and the externally tagged bedrock_openai_invoke variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_openai_invoke that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 323 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 340 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 556 planned, 575 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/openai_invoke.rs
+  - crates/betterlite-bedrock/src/openai_invoke/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_openai_invoke.rs
+  - tools/oracle/src/helpers/bedrock_openai_invoke/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_openai_invoke.py
+  - tools/oracle/cases/helpers/providers/bedrock-openai-invoke/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_openai_invoke*
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_openai_transformation.py#L47-L185
+  why: >-
+    Own AmazonBedrockOpenAIConfig.__init__, AmazonBedrockOpenAIConfig.custom_llm_provider, AmazonBedrockOpenAIConfig._get_openai_model_id,
+    AmazonBedrockOpenAIConfig.get_complete_url, AmazonBedrockOpenAIConfig.sign_request, AmazonBedrockOpenAIConfig.transform_request,
+    AmazonBedrockOpenAIConfig.validate_environment, AmazonBedrockOpenAIConfig.get_error_class. Other functions in
+    this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L243-L448
+  why: >-
+    Own with_max_completion_tokens, AmazonBedrockRuntimeChatCompletionsConfig.__init__, AmazonBedrockRuntimeChatCompletionsConfig.custom_llm_provider,
+    AmazonBedrockRuntimeChatCompletionsConfig.uses_async_transform_request, AmazonBedrockRuntimeChatCompletionsConfig.get_error_class,
+    AmazonBedrockRuntimeChatCompletionsConfig.validate_environment, AmazonBedrockRuntimeChatCompletionsConfig.get_complete_url,
+    AmazonBedrockRuntimeChatCompletionsConfig._params_with_region_from_path, AmazonBedrockRuntimeChatCompletionsConfig.sign_request,
+    AmazonBedrockRuntimeChatCompletionsConfig.map_openai_params, AmazonBedrockRuntimeChatCompletionsConfig._inference_params,
+    AmazonBedrockRuntimeChatCompletionsConfig.transform_request, AmazonBedrockRuntimeChatCompletionsConfig.async_transform_request.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L489-L514
+  why: >-
+    Own AmazonBedrockRuntimeChatCompletionsConfig.get_supported_openai_params, AmazonBedrockRuntimeChatCompletionsConfig.get_model_response_iterator.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    openai invoke model id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/openai-invoke-model-id.yaml.
+  proof:
+  - case-openai-invoke-model-id
+  - oracle
+  - helper-python
+- text: >-
+    runtime chat completions url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/runtime-chat-completions-url.yaml.
+  proof:
+  - case-runtime-chat-completions-url
+  - oracle
+  - helper-python
+- text: 'region in path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/region-in-path.yaml.'
+  proof:
+  - case-region-in-path
+  - oracle
+  - helper-python
+- text: 'max completion tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/max-completion-tokens.yaml.'
+  proof:
+  - case-max-completion-tokens
+  - oracle
+  - helper-python
+- text: >-
+    refused options drop or error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/refused-options-drop-or-error.yaml.
+  proof:
+  - case-refused-options-drop-or-error
+  - oracle
+  - helper-python
+- text: 'bedrock openai auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/bedrock-openai-auth.yaml.'
+  proof:
+  - case-bedrock-openai-auth
+  - oracle
+  - helper-python
+- text: >-
+    remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-current-rejection.yaml.
+  proof:
+  - case-remote-url-current-rejection
+  - oracle
+  - helper-python
+- text: New bedrock_openai_invoke seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-openai-invoke-model-id
+    why: The openai-invoke-model-id behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_openai_invoke_model_id$/)'
+  - id: case-runtime-chat-completions-url
+    why: The runtime-chat-completions-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_runtime_chat_completions_url$/)'
+  - id: case-region-in-path
+    why: The region-in-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_region_in_path$/)'
+  - id: case-max-completion-tokens
+    why: The max-completion-tokens behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_max_completion_tokens$/)'
+  - id: case-refused-options-drop-or-error
+    why: The refused-options-drop-or-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_refused_options_drop_or_error$/)'
+  - id: case-bedrock-openai-auth
+    why: The bedrock-openai-auth behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_bedrock_openai_auth$/)'
+  - id: case-remote-url-current-rejection
+    why: The remote-url-current-rejection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::openai_invoke_cases::case_[0-9]+_remote_url_current_rejection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_openai_invoke.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_openai_invoke*")"
+      && grep -lq 'bedrock_openai_invoke' tools/oracle/fuzz/corpus/helper_case/bedrock_openai_invoke* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_openai_invoke$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/openai-invoke-model-id.yaml
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/runtime-chat-completions-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/region-in-path.yaml
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/max-completion-tokens.yaml
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/refused-options-drop-or-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/bedrock-openai-auth.yaml
+- tools/oracle/cases/helpers/providers/bedrock-openai-invoke/remote-url-current-rejection.yaml
+deviations:
+- what: >-
+    Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled request-URL
+    downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local bytes are required;
+    only supplied bytes or already authorized local file handles may be read.
+  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
+    feature that depends on fetching.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_openai_transformation.py#L47-L185
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/chat/chat_completions/transformation.py: chat_completions_params_refused_for L68-L77; chat_completions_params_refused_while_reasoning
+  L80-L88; _without_params L91-L92; chat_completions_reasoning_efforts_refused_for L98-L111; without_refused_reasoning_effort
+  L114-L118; non_string_reasoning_effort L121-L130; _held_close_tag_prefix L133-L141; ReasoningTagSplitter.feed
+  L156-L168; ReasoningTagSplitter._feed_start L170-L175; ReasoningTagSplitter._feed_reasoning L177-L184; ReasoningTagSplitter.flush
+  L186-L190; _split_streamed_content L193-L200; split_reasoning_tag L203-L212; BedrockRuntimeChatCompletionsStreamingHandler.__init__
+  L218-L225; BedrockRuntimeChatCompletionsStreamingHandler.chunk_parser L227-L240; AmazonBedrockRuntimeChatCompletionsConfig.transform_response
+  L450-L487 belong to B620; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Preserve typed OpenAI messages and forward-compatible reasoning options using catalog metadata.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: standard

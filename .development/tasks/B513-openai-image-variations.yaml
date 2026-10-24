@@ -1,0 +1,166 @@
+id: B513
+title: OpenAI image variation requests
+description: >-
+  Add ImageVariationRequest and execute variations with the common image reply parser and multipart transport. Preserve
+  omission of SDK defaults and caller-supplied upload metadata; do not expose a new public endpoint in this provider
+  slice.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/image_variations/handler.py:
+  OpenAIImageVariationsHandler.get_sync_client L21-L32; OpenAIImageVariationsHandler.get_async_client L34-L41; OpenAIImageVariationsHandler.async_image_variations
+  L43-L110; OpenAIImageVariationsHandler.image_variations L112-L227. litellm/llms/openai/image_variations/transformation.py:
+  OpenAIImageVariationConfig.get_supported_openai_params L19-L20; OpenAIImageVariationConfig.map_openai_params L22-L30;
+  OpenAIImageVariationConfig.transform_request_image_variation L32-L44; OpenAIImageVariationConfig.async_transform_response_image_variation
+  L46-L59; OpenAIImageVariationConfig.transform_response_image_variation L61-L74; OpenAIImageVariationConfig.get_error_class
+  L76-L81.
+
+
+  Reuse the existing image reply decoder from the image-generation result owner; this slice adds no parallel JSON
+  parser.
+
+
+  Implement crates/betterlite-openai/src/image_variations.rs with adjacent tests under image_variations/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation openai_image_variations in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function image_variations_cases in betterlite-openai with these exact named cases (one per oracle
+  file): variation_image_part, n_size_format_user, omitted_default_fields, provider_error, binary_file_descriptor.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_image_variations* using HelperCase: kind:
+  helper and the externally tagged openai_image_variations variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_openai_image_variations that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 245 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 270 production lines, 90 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 460 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/image_variations.rs
+  - crates/betterlite-openai/src/image_variations/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_image_variations.rs
+  - tools/oracle/src/helpers/openai_image_variations/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_image_variations.py
+  - tools/oracle/cases/helpers/providers/openai-image-variations/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_image_variations*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L21-L227
+  why: >-
+    Own OpenAIImageVariationsHandler.get_sync_client, OpenAIImageVariationsHandler.get_async_client, OpenAIImageVariationsHandler.async_image_variations,
+    OpenAIImageVariationsHandler.image_variations. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/transformation.py#L19-L81
+  why: >-
+    Own OpenAIImageVariationConfig.get_supported_openai_params, OpenAIImageVariationConfig.map_openai_params, OpenAIImageVariationConfig.transform_request_image_variation,
+    OpenAIImageVariationConfig.async_transform_response_image_variation, OpenAIImageVariationConfig.transform_response_image_variation,
+    OpenAIImageVariationConfig.get_error_class. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'variation image part: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/variation-image-part.yaml.'
+  proof:
+  - case-variation-image-part
+  - oracle
+  - helper-python
+- text: 'n size format user: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/n-size-format-user.yaml.'
+  proof:
+  - case-n-size-format-user
+  - oracle
+  - helper-python
+- text: >-
+    omitted default fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/omitted-default-fields.yaml.
+  proof:
+  - case-omitted-default-fields
+  - oracle
+  - helper-python
+- text: 'provider error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/provider-error.yaml.'
+  proof:
+  - case-provider-error
+  - oracle
+  - helper-python
+- text: >-
+    binary file descriptor: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/binary-file-descriptor.yaml.
+  proof:
+  - case-binary-file-descriptor
+  - oracle
+  - helper-python
+- text: New openai_image_variations seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-variation-image-part
+    why: The variation-image-part behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_variation_image_part$/)'
+  - id: case-n-size-format-user
+    why: The n-size-format-user behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_n_size_format_user$/)'
+  - id: case-omitted-default-fields
+    why: The omitted-default-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_omitted_default_fields$/)'
+  - id: case-provider-error
+    why: The provider-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_provider_error$/)'
+  - id: case-binary-file-descriptor
+    why: The binary-file-descriptor behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_binary_file_descriptor$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_image_variations.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_image_variations*")"
+      && grep -lq 'openai_image_variations' tools/oracle/fuzz/corpus/helper_case/openai_image_variations* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_image_variations$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-image-variations/variation-image-part.yaml
+- tools/oracle/cases/helpers/providers/openai-image-variations/n-size-format-user.yaml
+- tools/oracle/cases/helpers/providers/openai-image-variations/omitted-default-fields.yaml
+- tools/oracle/cases/helpers/providers/openai-image-variations/provider-error.yaml
+- tools/oracle/cases/helpers/providers/openai-image-variations/binary-file-descriptor.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve omission of SDK defaults and caller-supplied upload metadata; do not expose a new public endpoint in
+  this provider slice.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,242 @@
+id: B655
+title: Bedrock AgentCore streaming adapters
+description: >-
+  Implement AgentCore stream wrappers and fake-stream fallback with the pinned line protocol, not a standard SSE
+  event decoder. Split text chunks on newline, retain only data: lines, parse each line independently as JSON and
+  skip invalid JSON; do not join multiple data lines. Each emitted chunk gets a fresh chatcmpl-uuid id and created=0.
+  Reuse B654 projections and injected ids, transport and cancellation.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/agentcore/transformation.py:
+  AmazonAgentCoreConfig._stream_agentcore_response_sync L531-L632; AmazonAgentCoreConfig.get_sync_custom_stream_wrapper
+  L634-L750; AmazonAgentCoreConfig._stream_agentcore_response L752-L853; AmazonAgentCoreConfig.get_async_custom_stream_wrapper
+  L855-L971.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/agentcore_stream.rs with adjacent tests under agentcore_stream/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_agentcore_stream in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function agentcore_stream_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): incremental_sse_stream, first_event_inspection, nonstream_json_fake_stream, stream_usage, stream_terminal_event,
+  upstream_cancel, multiline_data_not_joined, bad_json_skipped, fresh_id_created_zero, unterminated_line. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use
+  the booted proxy and assert both client response and captured upstream request. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_agentcore_stream variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_agentcore_stream that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_agentcore_line consumes incremental newline-delimited data: JSON lines, without
+  SSE multiline joining in crates/betterlite-bedrock/src/agentcore_stream.rs (or its scoped child module). Add cargo-fuzz
+  target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_agentcore_stream.rs calling that exact production
+  function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_stream.
+  The adjacent test replays_the_bedrock_services_agentcore_stream_corpus uses the same function and asserts expected
+  success/failure categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 378 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 395 production lines, 135 behavior/config-test lines,
+  95 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 705 planned, 725 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/agentcore_stream.rs
+  - crates/betterlite-bedrock/src/agentcore_stream/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_agentcore_stream.rs
+  - tools/oracle/src/helpers/bedrock_services_agentcore_stream/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_agentcore_stream.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_agentcore_stream.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_stream/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L531-L971
+  why: >-
+    Own AmazonAgentCoreConfig._stream_agentcore_response_sync, AmazonAgentCoreConfig.get_sync_custom_stream_wrapper,
+    AmazonAgentCoreConfig._stream_agentcore_response, AmazonAgentCoreConfig.get_async_custom_stream_wrapper. Other
+    functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    incremental sse stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/incremental-sse-stream.yaml.
+  proof:
+  - case-incremental-sse-stream
+  - oracle
+  - helper-python
+- text: >-
+    first event inspection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/first-event-inspection.yaml.
+  proof:
+  - case-first-event-inspection
+  - oracle
+  - helper-python
+- text: >-
+    nonstream json fake stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/nonstream-json-fake-stream.yaml.
+  proof:
+  - case-nonstream-json-fake-stream
+  - oracle
+  - helper-python
+- text: 'stream usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-usage.yaml.'
+  proof:
+  - case-stream-usage
+  - oracle
+  - helper-python
+- text: >-
+    stream terminal event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-terminal-event.yaml.
+  proof:
+  - case-stream-terminal-event
+  - oracle
+  - helper-python
+- text: 'upstream cancel: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/upstream-cancel.yaml.'
+  proof:
+  - case-upstream-cancel
+  - oracle
+  - helper-python
+- text: >-
+    multiline data not joined: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/multiline-data-not-joined.yaml.
+  proof:
+  - case-multiline-data-not-joined
+  - oracle
+  - helper-python
+- text: >-
+    bad json skipped: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/bad-json-skipped.yaml.
+  proof:
+  - case-bad-json-skipped
+  - oracle
+  - helper-python
+- text: >-
+    fresh id created zero: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/fresh-id-created-zero.yaml.
+  proof:
+  - case-fresh-id-created-zero
+  - oracle
+  - helper-python
+- text: >-
+    unterminated line: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/unterminated-line.yaml.
+  proof:
+  - case-unterminated-line
+  - oracle
+  - helper-python
+- text: New bedrock_services_agentcore_stream seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_agentcore_line has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-incremental-sse-stream
+    why: The incremental-sse-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_incremental_sse_stream$/)'
+  - id: case-first-event-inspection
+    why: The first-event-inspection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_first_event_inspection$/)'
+  - id: case-nonstream-json-fake-stream
+    why: The nonstream-json-fake-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_nonstream_json_fake_stream$/)'
+  - id: case-stream-usage
+    why: The stream-usage behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_stream_usage$/)'
+  - id: case-stream-terminal-event
+    why: The stream-terminal-event behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_stream_terminal_event$/)'
+  - id: case-upstream-cancel
+    why: The upstream-cancel behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_upstream_cancel$/)'
+  - id: case-multiline-data-not-joined
+    why: The multiline-data-not-joined behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_multiline_data_not_joined$/)'
+  - id: case-bad-json-skipped
+    why: The bad-json-skipped behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_bad_json_skipped$/)'
+  - id: case-fresh-id-created-zero
+    why: The fresh-id-created-zero behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_fresh_id_created_zero$/)'
+  - id: case-unterminated-line
+    why: The unterminated-line behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_unterminated_line$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_agentcore_stream.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream*")"
+      && grep -lq 'bedrock_services_agentcore_stream' tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_agentcore_stream$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_stream)"
+      && grep -q 'decode_agentcore_line' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_agentcore_stream.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_agentcore_stream_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/incremental-sse-stream.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/first-event-inspection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/nonstream-json-fake-stream.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-usage.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-terminal-event.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/upstream-cancel.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/multiline-data-not-joined.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/bad-json-skipped.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/fresh-id-created-zero.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/unterminated-line.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._extract_sse_json L294-L309; AmazonAgentCoreConfig._extract_usage_from_event
+  L311-L321; AmazonAgentCoreConfig._extract_content_delta L323-L334; AmazonAgentCoreConfig._extract_content_from_message
+  L336-L345; AmazonAgentCoreConfig._calculate_usage L347-L380; AmazonAgentCoreConfig._parse_json_response L382-L453;
+  AmazonAgentCoreConfig._get_parsed_response L455-L480; AmazonAgentCoreConfig._parse_sse_stream L482-L529; AmazonAgentCoreConfig.transform_response
+  L986-L1051 belong to B654; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig.__init__ L55-L57; AmazonAgentCoreConfig.get_supported_openai_params
+  L59-L63; AmazonAgentCoreConfig.map_openai_params L65-L75; AmazonAgentCoreConfig.get_complete_url L77-L114; AmazonAgentCoreConfig.sign_request
+  L116-L156; AmazonAgentCoreConfig._get_agent_runtime_arn L158-L169; AmazonAgentCoreConfig._extract_region_from_arn
+  L171-L180; AmazonAgentCoreConfig._get_runtime_session_id L182-L194; AmazonAgentCoreConfig._get_runtime_user_id
+  L196-L203; AmazonAgentCoreConfig.transform_request L205-L271; AmazonAgentCoreConfig._should_forward_multimodal_content
+  L274-L292; AmazonAgentCoreConfig.has_custom_stream_wrapper L974-L976; AmazonAgentCoreConfig.supports_stream_param_in_request_body
+  L979-L984; AmazonAgentCoreConfig.validate_environment L1053-L1063; AmazonAgentCoreConfig.get_error_class L1065-L1066;
+  AmazonAgentCoreConfig.should_fake_stream L1068-L1075 belong to B653; reuse that implementation or its injected
+  typed boundary.
+pitfalls:
+- AgentCore data lines are parsed separately; standard SSE multiline joining changes the emitted chunks.
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+review_level: standard

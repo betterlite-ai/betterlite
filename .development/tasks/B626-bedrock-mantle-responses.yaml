@@ -1,0 +1,205 @@
+id: B626
+title: Bedrock Mantle standalone Responses
+description: >-
+  Add standalone Mantle Responses mapping over shared Responses records. Preserve supported options, provider identity,
+  model names, response paths, signing and native websocket capability metadata; do not duplicate OpenAI response
+  decoding.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock_mantle/responses/transformation.py:
+  BedrockMantleResponsesAPIConfig.__init__ L63-L70; BedrockMantleResponsesAPIConfig.custom_llm_provider L73-L74;
+  BedrockMantleResponsesAPIConfig.get_error_class L76-L79; BedrockMantleResponsesAPIConfig.get_complete_url L81-L99;
+  BedrockMantleResponsesAPIConfig.validate_environment L101-L108; BedrockMantleResponsesAPIConfig.supports_native_file_search
+  L110-L111; BedrockMantleResponsesAPIConfig.supports_native_websocket L113-L114; BedrockMantleResponsesAPIConfig._filter_unsupported_tools
+  L117-L126; BedrockMantleResponsesAPIConfig._handle_unsupported_service_tier L129-L148; BedrockMantleResponsesAPIConfig._handle_unsupported_reasoning_summary
+  L150-L181; BedrockMantleResponsesAPIConfig.transform_responses_api_request L183-L212; BedrockMantleResponsesAPIConfig._params_with_hoisted_tools
+  L215-L221; BedrockMantleResponsesAPIConfig._model_map_lookup_name L224-L225; BedrockMantleResponsesAPIConfig.map_openai_params
+  L227-L257.
+
+
+  litellm_params.aws_bedrock_project_id becomes OpenAI-Project; the request-scoped typed setting belongs here. service_tier
+  outside auto/default and reasoning.summary other than auto raise UnsupportedParamsError status 400 when drop_params
+  is false; otherwise warn and drop. B907 supplies hoist_additional_tools, normalize_codex_input_items and drop_unsupported_tools
+  through an injected normalized-input seam from composition, never a leaf dependency on betterlite-core.
+
+
+  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
+  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
+  and no copied helper algorithm is permitted.
+
+
+  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/mantle_responses.rs with adjacent tests under mantle_responses/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_mantle_responses in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function mantle_responses_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): mantle_responses_url, mantle_response_options, mantle_model_name, unsupported_params_400, mantle_response_auth,
+  unsupported_params_warn_drop, openai_project_header. Each case exercises its named outcome independently; use
+  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
+  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses* using HelperCase: kind:
+  helper and the externally tagged bedrock_mantle_responses variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_mantle_responses that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 171 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 200 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 416 planned, 425 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/mantle_responses.rs
+  - crates/betterlite-bedrock/src/mantle_responses/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_mantle_responses.rs
+  - tools/oracle/src/helpers/bedrock_mantle_responses/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_mantle_responses.py
+  - tools/oracle/cases/helpers/providers/bedrock-mantle-responses/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock_mantle/responses/transformation.py#L63-L257
+  why: >-
+    Own BedrockMantleResponsesAPIConfig.__init__, BedrockMantleResponsesAPIConfig.custom_llm_provider, BedrockMantleResponsesAPIConfig.get_error_class,
+    BedrockMantleResponsesAPIConfig.get_complete_url, BedrockMantleResponsesAPIConfig.validate_environment, BedrockMantleResponsesAPIConfig.supports_native_file_search,
+    BedrockMantleResponsesAPIConfig.supports_native_websocket, BedrockMantleResponsesAPIConfig._filter_unsupported_tools,
+    BedrockMantleResponsesAPIConfig._handle_unsupported_service_tier, BedrockMantleResponsesAPIConfig._handle_unsupported_reasoning_summary,
+    BedrockMantleResponsesAPIConfig.transform_responses_api_request, BedrockMantleResponsesAPIConfig._params_with_hoisted_tools,
+    BedrockMantleResponsesAPIConfig._model_map_lookup_name, BedrockMantleResponsesAPIConfig.map_openai_params. Other
+    functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    mantle responses url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-responses-url.yaml.
+  proof:
+  - case-mantle-responses-url
+  - oracle
+  - helper-python
+- text: >-
+    mantle response options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-options.yaml.
+  proof:
+  - case-mantle-response-options
+  - oracle
+  - helper-python
+- text: 'mantle model name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-model-name.yaml.'
+  proof:
+  - case-mantle-model-name
+  - oracle
+  - helper-python
+- text: >-
+    unsupported params 400: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/unsupported-params-400.yaml.
+  proof:
+  - case-unsupported-params-400
+  - oracle
+  - helper-python
+- text: >-
+    mantle response auth: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-auth.yaml.
+  proof:
+  - case-mantle-response-auth
+  - oracle
+  - helper-python
+- text: >-
+    unsupported params warn drop: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/unsupported-params-warn-drop.yaml.
+  proof:
+  - case-unsupported-params-warn-drop
+  - oracle
+  - helper-python
+- text: >-
+    openai project header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-responses/openai-project-header.yaml.
+  proof:
+  - case-openai-project-header
+  - oracle
+  - helper-python
+- text: New bedrock_mantle_responses seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-mantle-responses-url
+    why: The mantle-responses-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_responses_url$/)'
+  - id: case-mantle-response-options
+    why: The mantle-response-options behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_response_options$/)'
+  - id: case-mantle-model-name
+    why: The mantle-model-name behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_model_name$/)'
+  - id: case-unsupported-params-400
+    why: The unsupported-params-400 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_unsupported_params_400$/)'
+  - id: case-mantle-response-auth
+    why: The mantle-response-auth behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_mantle_response_auth$/)'
+  - id: case-unsupported-params-warn-drop
+    why: The unsupported-params-warn-drop behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_unsupported_params_warn_drop$/)'
+  - id: case-openai-project-header
+    why: The openai-project-header behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_responses_cases::case_[0-9]+_openai_project_header$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_responses.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses*")"
+      && grep -lq 'bedrock_mantle_responses' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_responses* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_responses$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-responses-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-options.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-model-name.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/unsupported-params-400.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/mantle-response-auth.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/unsupported-params-warn-drop.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-responses/openai-project-header.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- aws_bedrock_project_id is the source of OpenAI-Project, not organization or a generic metadata field.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: standard

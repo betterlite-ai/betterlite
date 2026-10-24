@@ -1,0 +1,278 @@
+id: B025
+title: Azure provider registration and operation composition
+description: >-
+  Compose Azure chat, stream, embedding and text call variants using the Azure leaf modules; B695 and B696 install
+  media and resource families. Own main.py _complete_azure and _complete_azure_text: resolve api_base and api_version
+  once, merge absent provider defaults, route o-series models and retain extra_headers/max_retries. Reuse B529/B531
+  credential resolution rather than reading environment in the dispatcher.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/main.py: _complete_azure
+  L1338-L1469; _complete_azure_text L1472-L1563.
+
+
+  api_base ranks explicit, litellm.api_base, AZURE_API_BASE. Chat api_version also falls back to AZURE_DEFAULT_API_VERSION;
+  Azure text has no final default and a missing base raises ValueError. Keys rank explicit, litellm.api_key, litellm.azure_key,
+  AZURE_OPENAI_API_KEY, AZURE_API_KEY; extra_body.azure_ad_token precedes AZURE_AD_TOKEN. AZURE_API_TYPE defaults
+  azure. Pass these resolved inputs to B529/B531.
+
+
+  Provider composition changes existing chat dispatch, not route registration: add the HTTP dispatch case through
+  the booted proxy for POST /v1/chat/completions and /chat/completions with the source provider prefix. Assert upstream
+  request, auth, response status, error type/param/code and response headers. Keep the existing router as the sole
+  route owner; pure helper cases exercise the other typed provider operations without calling FastAPI globals.
+
+
+  Implement crates/betterlite-provider/src/azure_dispatch.rs with adjacent tests under azure_dispatch/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation azure_provider in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function azure_dispatch_cases in betterlite-provider with these exact named cases (one per oracle
+  file): azure_chat_dispatch, azure_embedding_dispatch, azure_text_dispatch, azure_openai_regression, azure_missing_base,
+  azure_config_ranks, azure_o_series_dispatch, azure_provider_dispatch_http. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert
+  both client response and captured upstream request. Existing API tasks retain route registration; this task must
+  not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_provider* using HelperCase: kind: helper
+  and the externally tagged azure_provider variant inside call. Do not put the Python stdin operation field in a
+  HelperCase. Add oracle test helper_seeds_select_azure_provider that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 190 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 117 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 444 planned, 450 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/azure_dispatch.rs
+  - crates/betterlite-provider/src/azure_dispatch/**
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/Cargo.toml
+  - deny.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_provider.rs
+  - tools/oracle/src/helpers/azure_provider/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_provider.py
+  - tools/oracle/cases/helpers/providers/azure-provider/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_provider*
+  - tools/oracle/cases/chat/azure_provider-dispatch-http.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L47-L478
+  why: Provider behavior composed from the named prerequisite modules; this final slice owns dispatch and exports
+    only.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1338-L1564
+  why: Azure chat and text dispatch, environment ranks and o-series branch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L1338-L1563
+  why: Own _complete_azure, _complete_azure_text. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'azure chat dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-provider/azure-chat-dispatch.yaml.'
+  proof:
+  - case-azure-chat-dispatch
+  - oracle
+  - helper-python
+- text: 'azure embedding dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-provider/azure-embedding-dispatch.yaml.'
+  proof:
+  - case-azure-embedding-dispatch
+  - oracle
+  - helper-python
+- text: 'azure text dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-provider/azure-text-dispatch.yaml.'
+  proof:
+  - case-azure-text-dispatch
+  - oracle
+  - helper-python
+- text: 'azure openai regression: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-provider/azure-openai-regression.yaml.'
+  proof:
+  - case-azure-openai-regression
+  - oracle
+  - helper-python
+- text: 'azure missing base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-provider/azure-missing-base.yaml.'
+  proof:
+  - case-azure-missing-base
+  - oracle
+  - helper-python
+- text: 'azure config ranks: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-provider/azure-config-ranks.yaml.'
+  proof:
+  - case-azure-config-ranks
+  - oracle
+  - helper-python
+- text: 'azure o series dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-provider/azure-o-series-dispatch.yaml.'
+  proof:
+  - case-azure-o-series-dispatch
+  - oracle
+  - helper-python
+- text: 'azure_provider dispatch http: the production result, omission or failure matches tools/oracle/cases/chat/azure_provider-dispatch-http.yaml.'
+  proof:
+  - case-azure-provider-dispatch-http
+  - oracle
+- text: New azure_provider seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-azure-chat-dispatch
+    why: The azure-chat-dispatch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_chat_dispatch$/)'
+  - id: case-azure-embedding-dispatch
+    why: The azure-embedding-dispatch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_embedding_dispatch$/)'
+  - id: case-azure-text-dispatch
+    why: The azure-text-dispatch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_text_dispatch$/)'
+  - id: case-azure-openai-regression
+    why: The azure-openai-regression behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_openai_regression$/)'
+  - id: case-azure-missing-base
+    why: The azure-missing-base behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_missing_base$/)'
+  - id: case-azure-config-ranks
+    why: The azure-config-ranks behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_config_ranks$/)'
+  - id: case-azure-o-series-dispatch
+    why: The azure-o-series-dispatch behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_o_series_dispatch$/)'
+  - id: case-azure-provider-dispatch-http
+    why: The azure_provider-dispatch-http behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_dispatch_cases::case_[0-9]+_azure_provider_dispatch_http$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_provider.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_provider*")"
+      && grep -lq 'azure_provider' tools/oracle/fuzz/corpus/helper_case/azure_provider* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_provider$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-provider/azure-chat-dispatch.yaml
+- tools/oracle/cases/helpers/providers/azure-provider/azure-embedding-dispatch.yaml
+- tools/oracle/cases/helpers/providers/azure-provider/azure-text-dispatch.yaml
+- tools/oracle/cases/helpers/providers/azure-provider/azure-openai-regression.yaml
+- tools/oracle/cases/helpers/providers/azure-provider/azure-missing-base.yaml
+- tools/oracle/cases/helpers/providers/azure-provider/azure-config-ranks.yaml
+- tools/oracle/cases/helpers/providers/azure-provider/azure-o-series-dispatch.yaml
+- tools/oracle/cases/chat/azure_provider-dispatch-http.yaml
+deviations: []
+out_of_scope:
+- >-
+  B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
+  B157-B166 own Python SDK facades, callable hooks and SDK module globals.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai L2590-L2728 belong to B024;
+  reuse that implementation or its injected typed boundary.
+- 'litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026; reuse that implementation or its injected typed
+  boundary.'
+- 'litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945 belong to B027; reuse
+  that implementation or its injected typed boundary.'
+- >-
+  litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178; _complete_bedrock L4178-L4304
+  belong to B028; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375; Chat.__init__ L379-L385; Completions.__init__
+  L389-L391; Completions.create L393-L401; AsyncCompletions.__init__ L405-L407; AsyncCompletions.create L409-L417;
+  acompletion L422-L740; _resolve_dispatched_chat_response L743-L746; _model_response_from_cached_dict L749-L750;
+  _transcription_response_from_cached_dict L753-L754; _async_streaming L757-L771; _handle_mock_potential_exceptions
+  L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async L831-L842; _sleep_for_timeout L845-L851;
+  _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883; admitted_prompt_token_counter L886-L889;
+  mock_completion L892-L1057; _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base L1069-L1080; responses_api_bridge_check
+  L1083-L1194; _is_claude_tool_target L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys
+  L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers L1229-L1229; _proxy_auth_headers L1232-L1233; _provider_config_items
+  L1236-L1237; _locals_snapshot L1240-L1241; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
+  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _dispatch_metadata L1320-L1321; _dispatch_client_http
+  L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai L1334-L1335; _custom_api_first_output
+  L4909-L4910; completion L5145-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136;
+  responses_with_retries L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6196-L6250; embedding L6257-L6278;
+  embedding L6283-L6304; embedding L6310-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
+  L7385-L7386; atext_completion L7390-L7456; text_completion L7460-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
+  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7793-L7864; atranscription L7871-L7929;
+  transcription L7933-L8195; aspeech L8199-L8234; speech L8238-L8719; ahealth_check L8725-L8831; print_verbose L8836-L8842;
+  config_completion L8845-L8853; stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
+  L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations L8935-L8938; _stream_builder_model_map_cost
+  L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost L8961-L8968; _stream_choice_delta
+  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271;
+  acount_tokens L9277-L9372; _load_module_encoding L9379-L9382; _get_encoding L9385-L9391; _load_default_encoding
+  L9394-L9397; __getattr__ L9400-L9411 belong to B158; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception L4045-L4106 belong to B038;
+  reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957; _complete_groq L2111-L2170;
+  _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface L3181-L3221; _complete_openrouter
+  L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649; _complete_predibase L3936-L3992;
+  _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041; reuse that implementation or its
+  injected typed boundary.
+- >-
+  litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci L3224-L3256; _complete_databricks
+  L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143; _complete_sagemaker L4146-L4171;
+  _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake L4655-L4705; _complete_gdc
+  L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042; reuse that implementation or its injected typed boundary.
+- 'litellm/main.py: _complete_ragflow L2010-L2057 belong to B049; reuse that implementation or its injected typed
+  boundary.'
+- >-
+  litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
+  L3995-L4042 belong to B036; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow L5094-L5140 belong
+  to B050; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995; _complete_aleph_alpha L2998-L3044;
+  _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir L3521-L3545; _complete_gradient_ai
+  L4708-L4740 belong to B043; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979; _complete_custom_providers
+  L4982-L5042 belong to B044; reuse that implementation or its injected typed boundary.
+- 'litellm/main.py: _complete_minimax L2500-L2543 belong to B039; reuse that implementation or its injected typed
+  boundary.'
+- >-
+  litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332; _complete_vllm L4421-L4455;
+  _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton L4540-L4573; _complete_petals
+  L4615-L4652; _complete_lemonade L4822-L4859 belong to B040; reuse that implementation or its injected typed boundary.
+- 'litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037; reuse that implementation or its injected
+  typed boundary.'
+- 'litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046; reuse that implementation or its injected typed
+  boundary.'
+- 'litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933 belong to B031; reuse
+  that implementation or its injected typed boundary.'
+pitfalls:
+- This final part owns module/package exports and declaration-only __init__/alias files left after the splits.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: standard

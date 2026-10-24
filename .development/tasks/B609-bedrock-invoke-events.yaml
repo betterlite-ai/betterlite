@@ -1,0 +1,212 @@
+id: B609
+title: Bedrock Invoke provider and JSON-mode streams
+description: >-
+  Add typed InvokeStream selectors for Claude3, Titan, Mistral and JSON-mode fake tool conversion over existing
+  provider chunks. Share frame parsing and stateful ownership, preserve terminal usage and async/sync wrapper observable
+  ordering, and keep each accumulator bounded.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_handler.py:
+  AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser L835-L836;
+  AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856; AmazonOpenAICompatibleStreamDecoder.__init__
+  L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874; MockResponseIterator.__init__ L878-L881;
+  MockResponseIterator.__iter__ L884-L885; MockResponseIterator._handle_json_mode_chunk L887-L913; MockResponseIterator._chunk_parser
+  L915-L953; MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__ L962-L963; MockResponseIterator.__anext__
+  L965-L969. litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py: AmazonDeepseekR1ResponseIterator.__init__
+  L83-L85; AmazonDeepseekR1ResponseIterator.chunk_parser L87-L121.
+
+
+  Reuse ModelResponseIterator.__init__ from B581 (litellm/llms/anthropic/chat/handler.py); its implementation remains
+  with that prerequisite.
+
+
+  Own the DeepSeek streaming iterator here alongside provider stream selection, so B612 does not depend back on
+  B615 buffered response normalization.
+
+
+  Implement crates/betterlite-bedrock/src/invoke_events.rs with adjacent tests under invoke_events/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_invoke_events in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function invoke_events_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  claude3_invoke_stream, titan_invoke_stream, mistral_invoke_stream, json_mode_tool_chunk, json_mode_stop, empty_tool_input,
+  deepseek_stream_chunks. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events* using HelperCase: kind:
+  helper and the externally tagged bedrock_invoke_events variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_invoke_events that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 162 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 190 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 406 planned, 425 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/invoke_events.rs
+  - crates/betterlite-bedrock/src/invoke_events/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_invoke_events.rs
+  - tools/oracle/src/helpers/bedrock_invoke_events/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_invoke_events.py
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-events/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L817-L969
+  why: >-
+    Own AmazonAnthropicClaudeStreamDecoder.__init__, AmazonAnthropicClaudeStreamDecoder._chunk_parser, AmazonDeepSeekR1StreamDecoder.__init__,
+    AmazonDeepSeekR1StreamDecoder._chunk_parser, AmazonOpenAICompatibleStreamDecoder.__init__, AmazonOpenAICompatibleStreamDecoder._chunk_parser,
+    MockResponseIterator.__init__, MockResponseIterator.__iter__, MockResponseIterator._handle_json_mode_chunk,
+    MockResponseIterator._chunk_parser, MockResponseIterator.__next__, MockResponseIterator.__aiter__, MockResponseIterator.__anext__.
+    Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py#L83-L121
+  why: Own AmazonDeepseekR1ResponseIterator.__init__, AmazonDeepseekR1ResponseIterator.chunk_parser. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'claude3 invoke stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/claude3-invoke-stream.yaml.'
+  proof:
+  - case-claude3-invoke-stream
+  - oracle
+  - helper-python
+- text: 'titan invoke stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/titan-invoke-stream.yaml.'
+  proof:
+  - case-titan-invoke-stream
+  - oracle
+  - helper-python
+- text: 'mistral invoke stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/mistral-invoke-stream.yaml.'
+  proof:
+  - case-mistral-invoke-stream
+  - oracle
+  - helper-python
+- text: 'json mode tool chunk: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-tool-chunk.yaml.'
+  proof:
+  - case-json-mode-tool-chunk
+  - oracle
+  - helper-python
+- text: 'json mode stop: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-stop.yaml.'
+  proof:
+  - case-json-mode-stop
+  - oracle
+  - helper-python
+- text: 'empty tool input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/empty-tool-input.yaml.'
+  proof:
+  - case-empty-tool-input
+  - oracle
+  - helper-python
+- text: >-
+    deepseek stream chunks: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/deepseek-stream-chunks.yaml.
+  proof:
+  - case-deepseek-stream-chunks
+  - oracle
+  - helper-python
+- text: New bedrock_invoke_events seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-claude3-invoke-stream
+    why: The claude3-invoke-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_claude3_invoke_stream$/)'
+  - id: case-titan-invoke-stream
+    why: The titan-invoke-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_titan_invoke_stream$/)'
+  - id: case-mistral-invoke-stream
+    why: The mistral-invoke-stream behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_mistral_invoke_stream$/)'
+  - id: case-json-mode-tool-chunk
+    why: The json-mode-tool-chunk behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_json_mode_tool_chunk$/)'
+  - id: case-json-mode-stop
+    why: The json-mode-stop behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_json_mode_stop$/)'
+  - id: case-empty-tool-input
+    why: The empty-tool-input behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_empty_tool_input$/)'
+  - id: case-deepseek-stream-chunks
+    why: The deepseek-stream-chunks behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_deepseek_stream_chunks$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_events.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events*")"
+      && grep -lq 'bedrock_invoke_events' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_events$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/claude3-invoke-stream.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/titan-invoke-stream.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/mistral-invoke-stream.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-tool-chunk.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-stop.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/empty-tool-input.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/deepseek-stream-chunks.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
+  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
+  L146-L166 belong to B611; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360 belong to B691; reuse
+  that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418; AWSEventStreamDecoder.check_empty_tool_call_args
+  L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str L442-L447; AWSEventStreamDecoder.translate_thinking_blocks
+  L449-L472; AWSEventStreamDecoder._initialize_converse_response_id L474-L483; AWSEventStreamDecoder._handle_converse_start_event
+  L485-L528; AWSEventStreamDecoder._handle_converse_delta_event L530-L585; AWSEventStreamDecoder._handle_converse_stop_event
+  L587-L609; AWSEventStreamDecoder.converse_chunk_parser L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743
+  belong to B608; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; _response_header L363-L364; _EventStreamTally.__init__
+  L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event L379-L381; _EventStreamTally.undecoded_stream_error
+  L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AWSEventStreamDecoder._parse_message_from_event
+  L788-L813 belong to B599; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py: AmazonDeepSeekR1Config.transform_response
+  L32-L79 belong to B615; reuse that implementation or its injected typed boundary.
+pitfalls:
+- The stream selector invokes the DeepSeek iterator owned here and injects other family projections without a dependency
+  cycle.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: standard

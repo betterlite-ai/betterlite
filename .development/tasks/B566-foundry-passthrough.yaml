@@ -1,0 +1,201 @@
+id: B566
+title: Foundry passthrough URLs and response projections
+description: >-
+  Add FoundryPassthroughPlan with route-prefix deduplication, query relaying and typed OCR/nonstream/stream logging
+  projection. B101/B103 own routing and forwarding, and B092 owns the public OCR response API. Keep endpoint selection
+  operator-derived.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/passthrough/transformation.py:
+  api_version_from L40-L44; foundry_root L47-L51; is_repeated_native_prefix L54-L55; without_repeated_native_prefix
+  L58-L72; relay_query_params L75-L85; AzureAIPassthroughConfig.__init__ L95-L97; AzureAIPassthroughConfig.is_streaming_request
+  L99-L100; AzureAIPassthroughConfig.get_complete_url L102-L120; AzureAIPassthroughConfig.validate_environment L122-L137;
+  AzureAIPassthroughConfig.logging_non_streaming_response L139-L166; AzureAIPassthroughConfig.logged_ocr_response
+  L168-L189; AzureAIPassthroughConfig.handle_logging_collected_chunks L191-L207.
+
+
+  Reuse B101 RelayShape, strip_leading_model_segment, model_group_from, format_url, logged_relay_shape and relayed_body.
+  logged_ocr_response calls the native binding even when LITELLM_RUST=false: Python helper oracle cases capture
+  its arguments with a stub; Rust behavior tests verify the OCR projection from the MIT native source without importing
+  the bridge.
+
+
+  Reuse api_key_header_for_base from B549 (litellm/llms/azure_ai/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse get_azure_ai_auth_headers from B549 (litellm/llms/azure_ai/common_utils.py); its implementation remains
+  with that prerequisite.
+
+
+  Implement crates/betterlite-foundry/src/passthrough.rs with adjacent tests under passthrough/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_passthrough in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function passthrough_cases in betterlite-foundry with these exact named cases (one per oracle file):
+  foundry_root_path, repeated_native_prefix, query_api_version_precedence, ocr_usage_log, stream_collected_log,
+  auth_selection. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_passthrough* using HelperCase: kind:
+  helper and the externally tagged foundry_passthrough variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_passthrough that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_logged_ocr_reply consumes OCR passthrough response bytes for the selected OCR projector
+  in crates/betterlite-foundry/src/passthrough.rs (or its scoped child module). Add cargo-fuzz target crates/betterlite-foundry/fuzz/fuzz_targets/foundry_passthrough.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-foundry/fuzz/corpus/foundry_passthrough.
+  The adjacent test replays_the_foundry_passthrough_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 142 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 170 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 428 planned, 450 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/passthrough.rs
+  - crates/betterlite-foundry/src/passthrough/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_passthrough.rs
+  - tools/oracle/src/helpers/foundry_passthrough/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_passthrough.py
+  - tools/oracle/cases/helpers/providers/foundry-passthrough/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_passthrough*
+  - crates/betterlite-foundry/fuzz/Cargo.toml
+  - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_passthrough.rs
+  - crates/betterlite-foundry/fuzz/corpus/foundry_passthrough/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/python-bridge/src/routes/ocr/mod.rs#L114-L125
+  why: The native OCR logging entry point; bridge is excluded from the adapter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/core/src/ocr/provider_config.rs#L162-L189
+  why: Native OCR route recognition and normalized response projection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/passthrough/transformation.py#L40-L207
+  why: >-
+    Own api_version_from, foundry_root, is_repeated_native_prefix, without_repeated_native_prefix, relay_query_params,
+    AzureAIPassthroughConfig.__init__, AzureAIPassthroughConfig.is_streaming_request, AzureAIPassthroughConfig.get_complete_url,
+    AzureAIPassthroughConfig.validate_environment, AzureAIPassthroughConfig.logging_non_streaming_response, AzureAIPassthroughConfig.logged_ocr_response,
+    AzureAIPassthroughConfig.handle_logging_collected_chunks. Other functions in this file remain with the owners
+    listed below.
+dod:
+- text: 'foundry root path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/foundry-root-path.yaml.'
+  proof:
+  - case-foundry-root-path
+  - oracle
+  - helper-python
+- text: 'repeated native prefix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/repeated-native-prefix.yaml.'
+  proof:
+  - case-repeated-native-prefix
+  - oracle
+  - helper-python
+- text: >-
+    query api version precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/query-api-version-precedence.yaml.
+  proof:
+  - case-query-api-version-precedence
+  - oracle
+  - helper-python
+- text: 'ocr usage log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/ocr-usage-log.yaml.'
+  proof:
+  - case-ocr-usage-log
+  - oracle
+  - helper-python
+- text: 'stream collected log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/stream-collected-log.yaml.'
+  proof:
+  - case-stream-collected-log
+  - oracle
+  - helper-python
+- text: 'auth selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-passthrough/auth-selection.yaml.'
+  proof:
+  - case-auth-selection
+  - oracle
+  - helper-python
+- text: New foundry_passthrough seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_logged_ocr_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-foundry-root-path
+    why: The foundry-root-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_foundry_root_path$/)'
+  - id: case-repeated-native-prefix
+    why: The repeated-native-prefix behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_repeated_native_prefix$/)'
+  - id: case-query-api-version-precedence
+    why: The query-api-version-precedence behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_query_api_version_precedence$/)'
+  - id: case-ocr-usage-log
+    why: The ocr-usage-log behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_ocr_usage_log$/)'
+  - id: case-stream-collected-log
+    why: The stream-collected-log behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_stream_collected_log$/)'
+  - id: case-auth-selection
+    why: The auth-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_auth_selection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_passthrough.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_passthrough*")"
+      && grep -lq 'foundry_passthrough' tools/oracle/fuzz/corpus/helper_case/foundry_passthrough* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_passthrough$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_passthrough)"
+      && grep -q 'decode_logged_ocr_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_passthrough.rs &&
+      cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_passthrough_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-passthrough/foundry-root-path.yaml
+- tools/oracle/cases/helpers/providers/foundry-passthrough/repeated-native-prefix.yaml
+- tools/oracle/cases/helpers/providers/foundry-passthrough/query-api-version-precedence.yaml
+- tools/oracle/cases/helpers/providers/foundry-passthrough/ocr-usage-log.yaml
+- tools/oracle/cases/helpers/providers/foundry-passthrough/stream-collected-log.yaml
+- tools/oracle/cases/helpers/providers/foundry-passthrough/auth-selection.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm-rust/crates/core/src/ocr/provider_config.rs: resolve_provider_config and OCR response bodies belong to
+  B092; this task recognizes the logged_ocr_response seam and invokes an injected OCR projector from that owner.
+pitfalls:
+- LITELLM_RUST=false does not bypass get_native_bridge for OCR logging, so the oracle must capture that seam explicitly.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,177 @@
+id: B512
+title: OpenAI image edit multipart mapping
+description: >-
+  Add typed ImageEditRequest with supplied byte/file descriptors and bounded multipart serialization through betterlite-http.
+  Preserve DALL-E 2 versus GPT image fields, image-array part names, masks, filenames and media types. SDK local-path
+  opening stays with B159; proxy request strings never authorize filesystem reads.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/image_edit/__init__.py:
+  get_openai_image_edit_config L15-L31. litellm/llms/openai/image_edit/transformation.py: OpenAIImageEditConfig.get_supported_openai_params
+  L35-L55; OpenAIImageEditConfig.map_openai_params L57-L64; OpenAIImageEditConfig._add_image_to_files L66-L78; OpenAIImageEditConfig.transform_image_edit_request
+  L80-L140; OpenAIImageEditConfig.transform_image_edit_response L142-L153; OpenAIImageEditConfig.validate_environment
+  L155-L169; OpenAIImageEditConfig.get_complete_url L171-L191. litellm/llms/openai/image_edit/dalle2_transformation.py:
+  DallE2ImageEditConfig.transform_image_edit_request L30-L98.
+
+
+  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
+  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
+  and no copied helper algorithm is permitted.
+
+
+  Reuse the existing image reply decoder from the image-generation result owner; this slice adds no parallel JSON
+  parser.
+
+
+  Implement crates/betterlite-openai/src/image_edits.rs with adjacent tests under image_edits/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation openai_image_edits in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function image_edits_cases in betterlite-openai with these exact named cases (one per oracle file):
+  single_image_and_mask, multiple_image_array, dalle2_fields, gpt_image_optional_fields, filename_and_mime, inline_data_edit.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_image_edits* using HelperCase: kind: helper
+  and the externally tagged openai_image_edits variant inside call. Do not put the Python stdin operation field
+  in a HelperCase. Add oracle test helper_seeds_select_openai_image_edits that parses every prefixed seed with the
+  production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 198 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 225 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 428 planned, 450 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/image_edits.rs
+  - crates/betterlite-openai/src/image_edits/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_image_edits.rs
+  - tools/oracle/src/helpers/openai_image_edits/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_image_edits.py
+  - tools/oracle/cases/helpers/providers/openai-image-edits/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_image_edits*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_edit/__init__.py#L15-L31
+  why: Own get_openai_image_edit_config. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_edit/transformation.py#L35-L191
+  why: >-
+    Own OpenAIImageEditConfig.get_supported_openai_params, OpenAIImageEditConfig.map_openai_params, OpenAIImageEditConfig._add_image_to_files,
+    OpenAIImageEditConfig.transform_image_edit_request, OpenAIImageEditConfig.transform_image_edit_response, OpenAIImageEditConfig.validate_environment,
+    OpenAIImageEditConfig.get_complete_url. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_edit/dalle2_transformation.py#L30-L98
+  why: Own DallE2ImageEditConfig.transform_image_edit_request. Other functions in this file remain with the owners
+    listed below.
+dod:
+- text: 'single image and mask: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-edits/single-image-and-mask.yaml.'
+  proof:
+  - case-single-image-and-mask
+  - oracle
+  - helper-python
+- text: 'multiple image array: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-edits/multiple-image-array.yaml.'
+  proof:
+  - case-multiple-image-array
+  - oracle
+  - helper-python
+- text: 'dalle2 fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-edits/dalle2-fields.yaml.'
+  proof:
+  - case-dalle2-fields
+  - oracle
+  - helper-python
+- text: >-
+    gpt image optional fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-edits/gpt-image-optional-fields.yaml.
+  proof:
+  - case-gpt-image-optional-fields
+  - oracle
+  - helper-python
+- text: 'filename and mime: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-edits/filename-and-mime.yaml.'
+  proof:
+  - case-filename-and-mime
+  - oracle
+  - helper-python
+- text: 'inline data edit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-edits/inline-data-edit.yaml.'
+  proof:
+  - case-inline-data-edit
+  - oracle
+  - helper-python
+- text: New openai_image_edits seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-single-image-and-mask
+    why: The single-image-and-mask behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_single_image_and_mask$/)'
+  - id: case-multiple-image-array
+    why: The multiple-image-array behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_multiple_image_array$/)'
+  - id: case-dalle2-fields
+    why: The dalle2-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_dalle2_fields$/)'
+  - id: case-gpt-image-optional-fields
+    why: The gpt-image-optional-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_gpt_image_optional_fields$/)'
+  - id: case-filename-and-mime
+    why: The filename-and-mime behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_filename_and_mime$/)'
+  - id: case-inline-data-edit
+    why: The inline-data-edit behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_inline_data_edit$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_image_edits.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_image_edits*")"
+      && grep -lq 'openai_image_edits' tools/oracle/fuzz/corpus/helper_case/openai_image_edits* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_image_edits$/)' &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-image-edits/single-image-and-mask.yaml
+- tools/oracle/cases/helpers/providers/openai-image-edits/multiple-image-array.yaml
+- tools/oracle/cases/helpers/providers/openai-image-edits/dalle2-fields.yaml
+- tools/oracle/cases/helpers/providers/openai-image-edits/gpt-image-optional-fields.yaml
+- tools/oracle/cases/helpers/providers/openai-image-edits/filename-and-mime.yaml
+- tools/oracle/cases/helpers/providers/openai-image-edits/inline-data-edit.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve DALL-E 2 versus GPT image fields, image-array part names, masks, filenames and media types.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: standard

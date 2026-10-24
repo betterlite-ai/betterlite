@@ -1,0 +1,189 @@
+id: B615
+title: Bedrock Qwen and DeepSeek reasoning replies
+description: >-
+  Add Qwen2/Qwen3/DeepSeek parameter, prompt and reply projections, sharing native base transport and bounded reasoning-tag
+  decoding. Preserve usage, finish reasons and reasoning_content separately from visible text; local templates only.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py:
+  AmazonQwen2Config.transform_response L37-L95. litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py:
+  AmazonQwen3Config.__init__ L38-L50; AmazonQwen3Config.get_supported_openai_params L52-L60; AmazonQwen3Config.map_openai_params
+  L62-L82; AmazonQwen3Config.transform_request L84-L115; AmazonQwen3Config._convert_messages_to_prompt L117-L161;
+  AmazonQwen3Config.transform_response L163-L219. litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py:
+  AmazonDeepSeekR1Config.transform_response L32-L79.
+
+
+  Reuse AmazonInvokeConfig.__init__ from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  its implementation remains with that prerequisite.
+
+
+  The DeepSeekR1StreamingIterator and its stream-chunk case belong to B609; this leaf only normalizes buffered replies
+  and parameters.
+
+
+  Implement crates/betterlite-bedrock/src/qwen_deepseek.rs with adjacent tests under qwen_deepseek/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_qwen_deepseek in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function qwen_deepseek_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  qwen2_output, qwen3_chat_prompt, qwen3_options, qwen3_reasoning_content, deepseek_buffered_response. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use
+  the booted proxy and assert both client response and captured upstream request. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek* using HelperCase: kind:
+  helper and the externally tagged bedrock_qwen_deepseek variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_qwen_deepseek that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_qwen_reply consumes Qwen/DeepSeek provider JSON reply bytes in crates/betterlite-bedrock/src/qwen_deepseek.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_qwen_deepseek.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_qwen_deepseek.
+  The adjacent test replays_the_bedrock_qwen_deepseek_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 247 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 270 production lines, 90 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 515 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/qwen_deepseek.rs
+  - crates/betterlite-bedrock/src/qwen_deepseek/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_qwen_deepseek.rs
+  - tools/oracle/src/helpers/bedrock_qwen_deepseek/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_qwen_deepseek.py
+  - tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_qwen_deepseek.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_qwen_deepseek/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py#L37-L95
+  why: Own AmazonQwen2Config.transform_response. Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen3_transformation.py#L38-L219
+  why: >-
+    Own AmazonQwen3Config.__init__, AmazonQwen3Config.get_supported_openai_params, AmazonQwen3Config.map_openai_params,
+    AmazonQwen3Config.transform_request, AmazonQwen3Config._convert_messages_to_prompt, AmazonQwen3Config.transform_response.
+    Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py#L32-L79
+  why: Own AmazonDeepSeekR1Config.transform_response. Other functions in this file remain with the owners listed
+    below.
+dod:
+- text: 'qwen2 output: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen2-output.yaml.'
+  proof:
+  - case-qwen2-output
+  - oracle
+  - helper-python
+- text: 'qwen3 chat prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-chat-prompt.yaml.'
+  proof:
+  - case-qwen3-chat-prompt
+  - oracle
+  - helper-python
+- text: 'qwen3 options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-options.yaml.'
+  proof:
+  - case-qwen3-options
+  - oracle
+  - helper-python
+- text: >-
+    qwen3 reasoning content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-reasoning-content.yaml.
+  proof:
+  - case-qwen3-reasoning-content
+  - oracle
+  - helper-python
+- text: >-
+    deepseek buffered response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/deepseek-buffered-response.yaml.
+  proof:
+  - case-deepseek-buffered-response
+  - oracle
+  - helper-python
+- text: New bedrock_qwen_deepseek seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_qwen_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-qwen2-output
+    why: The qwen2-output behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen2_output$/)'
+  - id: case-qwen3-chat-prompt
+    why: The qwen3-chat-prompt behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen3_chat_prompt$/)'
+  - id: case-qwen3-options
+    why: The qwen3-options behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen3_options$/)'
+  - id: case-qwen3-reasoning-content
+    why: The qwen3-reasoning-content behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_qwen3_reasoning_content$/)'
+  - id: case-deepseek-buffered-response
+    why: The deepseek-buffered-response behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::qwen_deepseek_cases::case_[0-9]+_deepseek_buffered_response$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_qwen_deepseek.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek*")"
+      && grep -lq 'bedrock_qwen_deepseek' tools/oracle/fuzz/corpus/helper_case/bedrock_qwen_deepseek* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_qwen_deepseek$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_qwen_deepseek)"
+      && grep -q 'decode_qwen_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_qwen_deepseek.rs && cargo
+      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_qwen_deepseek_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen2-output.yaml
+- tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-chat-prompt.yaml
+- tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-options.yaml
+- tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/qwen3-reasoning-content.yaml
+- tools/oracle/cases/helpers/providers/bedrock-qwen-deepseek/deepseek-buffered-response.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py: AmazonDeepseekR1ResponseIterator.__init__
+  L83-L85; AmazonDeepseekR1ResponseIterator.chunk_parser L87-L121 belong to B609; reuse that implementation or its
+  injected typed boundary.
+pitfalls:
+- DeepSeek reasoning_content remains distinct from visible text and its streaming iterator belongs to B609.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

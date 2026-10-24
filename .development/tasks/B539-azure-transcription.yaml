@@ -1,0 +1,278 @@
+id: B539
+title: Azure native and OpenAI transcription
+description: >-
+  Add AzureTranscription mapping for cognitive/STT hosts and deployment OpenAI audio transcription. Preserve region
+  inference, response-format projection and text extraction from the native reply; share multipart upload descriptors
+  and error handling with OpenAI transcription. Native speech requires api_base/api_key or AZURE_SPEECH_API_BASE/AZURE_SPEECH_API_KEY,
+  has no endpoint/key default, and uses language en-US when omitted.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/audio_transcription/transformation.py:
+  AzureSpeechAudioTranscriptionConfig.get_supported_openai_params L44-L45; AzureSpeechAudioTranscriptionConfig.map_openai_params
+  L47-L58; AzureSpeechAudioTranscriptionConfig.validate_environment L60-L81; AzureSpeechAudioTranscriptionConfig.get_complete_url
+  L83-L109; AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_request L111-L123; AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_response
+  L125-L141; AzureSpeechAudioTranscriptionConfig.get_error_class L143-L148; AzureSpeechAudioTranscriptionConfig._resolve_stt_base_url
+  L150-L171; AzureSpeechAudioTranscriptionConfig._is_cognitive_services_endpoint L173-L174; AzureSpeechAudioTranscriptionConfig._is_stt_endpoint
+  L176-L177; AzureSpeechAudioTranscriptionConfig._is_azure_openai_endpoint L179-L180; AzureSpeechAudioTranscriptionConfig._extract_region_from_hostname
+  L182-L185; AzureSpeechAudioTranscriptionConfig._build_stt_base_url L187-L190; AzureSpeechAudioTranscriptionConfig._get_azure_response_format
+  L192-L195; AzureSpeechAudioTranscriptionConfig._extract_text L197-L207. litellm/llms/azure/audio_transcriptions.py:
+  AzureAudioTranscription.audio_transcriptions L24-L111; AzureAudioTranscription.async_audio_transcriptions L113-L205.
+
+
+  Reuse extract_duration_from_srt_or_vtt from B515 (litellm/utils.py); its implementation remains with that prerequisite.
+
+
+  Implement crates/betterlite-azure/src/transcription.rs with adjacent tests under transcription/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation azure_transcription in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function transcription_cases in betterlite-azure with these exact named cases (one per oracle file):
+  openai_transcription_route, cognitive_stt_base, regional_stt_host, native_json_text_extraction, verbose_transcript,
+  file_language_prompt. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_transcription* using HelperCase: kind:
+  helper and the externally tagged azure_transcription variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_azure_transcription that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_native_transcription consumes Azure native transcription JSON response bytes in
+  crates/betterlite-azure/src/transcription.rs (or its scoped child module). Add cargo-fuzz target crates/betterlite-azure/fuzz/fuzz_targets/azure_transcription.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-azure/fuzz/corpus/azure_transcription.
+  The adjacent test replays_the_azure_transcription_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/azure/transcription.rs
+  and its loader wiring: AZURE_SPEECH_API_BASE, AZURE_SPEECH_API_KEY. Module-level settings enter litellm_settings;
+  deployment settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified
+  above and in the linked branches; existing key owners remain unchanged. Write config rstest azure_transcription_config_cases
+  with named cases loads_azure_speech_api_base, loads_azure_speech_api_key, plus rejects_unrelated_key. Each loads
+  case calls the real config loader with that key and asserts the resolved value, default, precedence and secret
+  redaction where applicable. Seed B002 config_yaml with new azure_transcription* files for every key; reuse its
+  parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone azure_transcription_credential_identity_isolation in betterlite-azure for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone azure_transcription_secret_safe_failure in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 306 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 325 production lines, 143 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 31 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 658 planned, 675 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/transcription.rs
+  - crates/betterlite-azure/src/transcription/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_transcription.rs
+  - tools/oracle/src/helpers/azure_transcription/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_transcription.py
+  - tools/oracle/cases/helpers/providers/azure-transcription/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_transcription*
+  - crates/betterlite-azure/fuzz/Cargo.toml
+  - crates/betterlite-azure/fuzz/fuzz_targets/azure_transcription.rs
+  - crates/betterlite-azure/fuzz/corpus/azure_transcription/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/transcription.rs
+  - crates/betterlite-config/src/providers/azure/transcription/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_transcription_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcription/transformation.py#L44-L207
+  why: >-
+    Own AzureSpeechAudioTranscriptionConfig.get_supported_openai_params, AzureSpeechAudioTranscriptionConfig.map_openai_params,
+    AzureSpeechAudioTranscriptionConfig.validate_environment, AzureSpeechAudioTranscriptionConfig.get_complete_url,
+    AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_request, AzureSpeechAudioTranscriptionConfig.transform_audio_transcription_response,
+    AzureSpeechAudioTranscriptionConfig.get_error_class, AzureSpeechAudioTranscriptionConfig._resolve_stt_base_url,
+    AzureSpeechAudioTranscriptionConfig._is_cognitive_services_endpoint, AzureSpeechAudioTranscriptionConfig._is_stt_endpoint,
+    AzureSpeechAudioTranscriptionConfig._is_azure_openai_endpoint, AzureSpeechAudioTranscriptionConfig._extract_region_from_hostname,
+    AzureSpeechAudioTranscriptionConfig._build_stt_base_url, AzureSpeechAudioTranscriptionConfig._get_azure_response_format,
+    AzureSpeechAudioTranscriptionConfig._extract_text. Other functions in this file remain with the owners listed
+    below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/audio_transcriptions.py#L24-L205
+  why: >-
+    Own AzureAudioTranscription.audio_transcriptions, AzureAudioTranscription.async_audio_transcriptions. Other
+    functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    openai transcription route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/openai-transcription-route.yaml.
+  proof:
+  - case-openai-transcription-route
+  - oracle
+  - helper-python
+- text: 'cognitive stt base: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/cognitive-stt-base.yaml.'
+  proof:
+  - case-cognitive-stt-base
+  - oracle
+  - helper-python
+- text: 'regional stt host: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/regional-stt-host.yaml.'
+  proof:
+  - case-regional-stt-host
+  - oracle
+  - helper-python
+- text: >-
+    native json text extraction: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/native-json-text-extraction.yaml.
+  proof:
+  - case-native-json-text-extraction
+  - oracle
+  - helper-python
+- text: 'verbose transcript: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/verbose-transcript.yaml.'
+  proof:
+  - case-verbose-transcript
+  - oracle
+  - helper-python
+- text: 'file language prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-transcription/file-language-prompt.yaml.'
+  proof:
+  - case-file-language-prompt
+  - oracle
+  - helper-python
+- text: New azure_transcription seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_native_transcription has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+- text: AZURE_SPEECH_API_BASE is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-azure-speech-api-base
+  - config-corpus
+- text: AZURE_SPEECH_API_KEY is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-azure-speech-api-key
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-openai-transcription-route
+    why: The openai-transcription-route behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_openai_transcription_route$/)'
+  - id: case-cognitive-stt-base
+    why: The cognitive-stt-base behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_cognitive_stt_base$/)'
+  - id: case-regional-stt-host
+    why: The regional-stt-host behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_regional_stt_host$/)'
+  - id: case-native-json-text-extraction
+    why: The native-json-text-extraction behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_native_json_text_extraction$/)'
+  - id: case-verbose-transcript
+    why: The verbose-transcript behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_verbose_transcript$/)'
+  - id: case-file-language-prompt
+    why: The file-language-prompt behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::transcription_cases::case_[0-9]+_file_language_prompt$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_transcription.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_transcription*")"
+      && grep -lq 'azure_transcription' tools/oracle/fuzz/corpus/helper_case/azure_transcription* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_transcription$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/fuzz/corpus/azure_transcription)"
+      && grep -q 'decode_native_transcription' crates/betterlite-azure/fuzz/fuzz_targets/azure_transcription.rs
+      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::replays_the_azure_transcription_corpus$/)'
+  - id: config-azure-speech-api-base
+    why: The AZURE_SPEECH_API_BASE setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_loads_azure_speech_api_base$/)'
+      && grep -lq 'AZURE_SPEECH_API_BASE' crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*
+  - id: config-azure-speech-api-key
+    why: The AZURE_SPEECH_API_KEY setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_loads_azure_speech_api_key$/)'
+      && grep -lq 'AZURE_SPEECH_API_KEY' crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_transcription_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_transcription*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_transcription_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_transcription_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-transcription/openai-transcription-route.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/cognitive-stt-base.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/regional-stt-host.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/native-json-text-extraction.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/verbose-transcript.yaml
+- tools/oracle/cases/helpers/providers/azure-transcription/file-language-prompt.yaml
+deviations: []
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- >-
+  Preserve region inference, response-format projection and text extraction from the native reply; share multipart
+  upload descriptors and error handling with OpenAI transcription.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

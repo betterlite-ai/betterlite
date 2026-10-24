@@ -1,0 +1,192 @@
+id: B627
+title: Bedrock Titan and Cohere embeddings
+description: >-
+  Add typed Titan/Cohere embedding maps over the existing exact-decimal embedding wire records. Preserve v1/v2 dimensions/normalize/binary
+  embedding variants, multimodal image/text inputs and Cohere input_type/truncate fields. Reuse the bounded media
+  helper without fetching request URLs.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/embed/amazon_titan_g1_transformation.py:
+  AmazonTitanG1Config.__init__ L27-L33; AmazonTitanG1Config.get_config L36-L51; AmazonTitanG1Config.get_supported_openai_params
+  L53-L54; AmazonTitanG1Config.map_openai_params L56-L57; AmazonTitanG1Config._transform_request L59-L60; AmazonTitanG1Config._transform_response
+  L62-L82. litellm/llms/bedrock/embed/amazon_titan_v2_transformation.py: AmazonTitanV2Config.__init__ L33-L37; AmazonTitanV2Config.get_config
+  L40-L55; AmazonTitanV2Config.get_supported_openai_params L57-L58; AmazonTitanV2Config.map_openai_params L60-L74;
+  AmazonTitanV2Config._transform_request L76-L77; AmazonTitanV2Config._transform_response L79-L117. litellm/llms/bedrock/embed/amazon_titan_multimodal_transformation.py:
+  AmazonTitanMultimodalEmbeddingG1Config.__init__ L30-L31; AmazonTitanMultimodalEmbeddingG1Config.get_supported_openai_params
+  L33-L34; AmazonTitanMultimodalEmbeddingG1Config.map_openai_params L36-L40; AmazonTitanMultimodalEmbeddingG1Config._transform_request
+  L42-L53; AmazonTitanMultimodalEmbeddingG1Config._transform_response L55-L93. litellm/llms/bedrock/embed/cohere_transformation.py:
+  BedrockCohereEmbeddingConfig.__init__ L14-L15; BedrockCohereEmbeddingConfig.get_supported_openai_params L17-L18;
+  BedrockCohereEmbeddingConfig.map_openai_params L20-L28; BedrockCohereEmbeddingConfig._transform_request L33-L43.
+
+
+  Implement crates/betterlite-bedrock/src/titan_embeddings.rs with adjacent tests under titan_embeddings/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_titan_embeddings in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function titan_embeddings_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): titan_g1_request, titan_v2_dimensions_normalize, titan_v2_binary_embedding, titan_multimodal_image, cohere_v3_input_type,
+  token_count_response. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings* using HelperCase:
+  kind: helper and the externally tagged bedrock_other_titan_embeddings variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_titan_embeddings that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 189 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 418 planned, 425 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/titan_embeddings.rs
+  - crates/betterlite-bedrock/src/titan_embeddings/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_titan_embeddings.rs
+  - tools/oracle/src/helpers/bedrock_other_titan_embeddings/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_titan_embeddings.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_g1_transformation.py#L27-L82
+  why: >-
+    Own AmazonTitanG1Config.__init__, AmazonTitanG1Config.get_config, AmazonTitanG1Config.get_supported_openai_params,
+    AmazonTitanG1Config.map_openai_params, AmazonTitanG1Config._transform_request, AmazonTitanG1Config._transform_response.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_v2_transformation.py#L33-L117
+  why: >-
+    Own AmazonTitanV2Config.__init__, AmazonTitanV2Config.get_config, AmazonTitanV2Config.get_supported_openai_params,
+    AmazonTitanV2Config.map_openai_params, AmazonTitanV2Config._transform_request, AmazonTitanV2Config._transform_response.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_titan_multimodal_transformation.py#L30-L93
+  why: >-
+    Own AmazonTitanMultimodalEmbeddingG1Config.__init__, AmazonTitanMultimodalEmbeddingG1Config.get_supported_openai_params,
+    AmazonTitanMultimodalEmbeddingG1Config.map_openai_params, AmazonTitanMultimodalEmbeddingG1Config._transform_request,
+    AmazonTitanMultimodalEmbeddingG1Config._transform_response. Other functions in this file remain with the owners
+    listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/cohere_transformation.py#L14-L43
+  why: >-
+    Own BedrockCohereEmbeddingConfig.__init__, BedrockCohereEmbeddingConfig.get_supported_openai_params, BedrockCohereEmbeddingConfig.map_openai_params,
+    BedrockCohereEmbeddingConfig._transform_request. Other functions in this file remain with the owners listed
+    below.
+dod:
+- text: 'titan g1 request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-g1-request.yaml.'
+  proof:
+  - case-titan-g1-request
+  - oracle
+  - helper-python
+- text: >-
+    titan v2 dimensions normalize: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-v2-dimensions-normalize.yaml.
+  proof:
+  - case-titan-v2-dimensions-normalize
+  - oracle
+  - helper-python
+- text: >-
+    titan v2 binary embedding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-v2-binary-embedding.yaml.
+  proof:
+  - case-titan-v2-binary-embedding
+  - oracle
+  - helper-python
+- text: >-
+    titan multimodal image: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-multimodal-image.yaml.
+  proof:
+  - case-titan-multimodal-image
+  - oracle
+  - helper-python
+- text: >-
+    cohere v3 input type: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/cohere-v3-input-type.yaml.
+  proof:
+  - case-cohere-v3-input-type
+  - oracle
+  - helper-python
+- text: >-
+    token count response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/token-count-response.yaml.
+  proof:
+  - case-token-count-response
+  - oracle
+  - helper-python
+- text: New bedrock_other_titan_embeddings seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-titan-g1-request
+    why: The titan-g1-request behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_g1_request$/)'
+  - id: case-titan-v2-dimensions-normalize
+    why: The titan-v2-dimensions-normalize behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_v2_dimensions_normalize$/)'
+  - id: case-titan-v2-binary-embedding
+    why: The titan-v2-binary-embedding behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_v2_binary_embedding$/)'
+  - id: case-titan-multimodal-image
+    why: The titan-multimodal-image behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_titan_multimodal_image$/)'
+  - id: case-cohere-v3-input-type
+    why: The cohere-v3-input-type behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_cohere_v3_input_type$/)'
+  - id: case-token-count-response
+    why: The token-count-response behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::titan_embeddings_cases::case_[0-9]+_token_count_response$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_titan_embeddings.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*")"
+      && grep -lq 'bedrock_other_titan_embeddings' tools/oracle/fuzz/corpus/helper_case/bedrock_other_titan_embeddings*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_titan_embeddings$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-g1-request.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-v2-dimensions-normalize.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-v2-binary-embedding.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/titan-multimodal-image.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/cohere-v3-input-type.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-titan-embeddings/token-count-response.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- 'litellm/llms/bedrock/embed/cohere_transformation.py: BedrockCohereEmbeddingConfig._is_v3_model L30-L31 have no
+  caller at the pin; do not port them.'
+pitfalls:
+- Preserve v1/v2 dimensions/normalize/binary embedding variants, multimodal image/text inputs and Cohere input_type/truncate
+  fields.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: standard

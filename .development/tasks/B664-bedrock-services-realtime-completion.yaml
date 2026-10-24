@@ -1,0 +1,222 @@
+id: B664
+title: Bedrock realtime end events usage and tools
+description: >-
+  Add realtime terminal event sequencing, usage deltas, tool-use calls and tool-result input projection. Preserve
+  contentEnd/promptEnd/response.done ordering, leftover usage and tool call id/name/arguments exactly, using bounded
+  per-call accumulators.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/realtime/transformation.py:
+  BedrockRealtimeConfig._take_usage_delta L854-L875; BedrockRealtimeConfig.leftover_usage_done_events L877-L893;
+  BedrockRealtimeConfig.transform_content_end_event L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event
+  L1103-L1127; BedrockRealtimeConfig._response_done_events L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event
+  L1159-L1210.
+
+
+  Implement crates/betterlite-bedrock/src/realtime_completion.rs with adjacent tests under realtime_completion/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_realtime_completion in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function realtime_completion_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): content_end_text_audio, prompt_end_response_done, incremental_usage_delta, leftover_usage_done, tool_use_event,
+  tool_result_conversation_item, multiple_content_blocks. Each case exercises its named outcome independently; use
+  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
+  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_realtime_completion variant inside call. Do not put the
+  Python stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_realtime_completion
+  that parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on
+  zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_realtime_tool_input consumes toolUse.input JSON bytes in crates/betterlite-bedrock/src/realtime_completion.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_completion.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_completion.
+  The adjacent test replays_the_bedrock_services_realtime_completion_corpus uses the same function and asserts expected
+  success/failure categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 214 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 240 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 511 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/realtime_completion.rs
+  - crates/betterlite-bedrock/src/realtime_completion/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_realtime_completion.rs
+  - tools/oracle/src/helpers/bedrock_services_realtime_completion/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_realtime_completion.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_completion.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_completion/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L854-L893
+  why: Own BedrockRealtimeConfig._take_usage_delta, BedrockRealtimeConfig.leftover_usage_done_events. Other functions
+    in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1001-L1210
+  why: >-
+    Own BedrockRealtimeConfig.transform_content_end_event, BedrockRealtimeConfig.transform_prompt_end_event, BedrockRealtimeConfig._response_done_events,
+    BedrockRealtimeConfig.transform_tool_use_event. Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    content end text audio: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/content-end-text-audio.yaml.
+  proof:
+  - case-content-end-text-audio
+  - oracle
+  - helper-python
+- text: >-
+    prompt end response done: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/prompt-end-response-done.yaml.
+  proof:
+  - case-prompt-end-response-done
+  - oracle
+  - helper-python
+- text: >-
+    incremental usage delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/incremental-usage-delta.yaml.
+  proof:
+  - case-incremental-usage-delta
+  - oracle
+  - helper-python
+- text: >-
+    leftover usage done: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/leftover-usage-done.yaml.
+  proof:
+  - case-leftover-usage-done
+  - oracle
+  - helper-python
+- text: >-
+    tool use event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-use-event.yaml.
+  proof:
+  - case-tool-use-event
+  - oracle
+  - helper-python
+- text: >-
+    tool result conversation item: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-result-conversation-item.yaml.
+  proof:
+  - case-tool-result-conversation-item
+  - oracle
+  - helper-python
+- text: >-
+    multiple content blocks: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/multiple-content-blocks.yaml.
+  proof:
+  - case-multiple-content-blocks
+  - oracle
+  - helper-python
+- text: New bedrock_services_realtime_completion seeds parse as the intended call variant and replay through the
+    shared production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_realtime_tool_input has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-content-end-text-audio
+    why: The content-end-text-audio behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_content_end_text_audio$/)'
+  - id: case-prompt-end-response-done
+    why: The prompt-end-response-done behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_prompt_end_response_done$/)'
+  - id: case-incremental-usage-delta
+    why: The incremental-usage-delta behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_incremental_usage_delta$/)'
+  - id: case-leftover-usage-done
+    why: The leftover-usage-done behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_leftover_usage_done$/)'
+  - id: case-tool-use-event
+    why: The tool-use-event behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_tool_use_event$/)'
+  - id: case-tool-result-conversation-item
+    why: The tool-result-conversation-item behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_tool_result_conversation_item$/)'
+  - id: case-multiple-content-blocks
+    why: The multiple-content-blocks behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_completion_cases::case_[0-9]+_multiple_content_blocks$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_completion.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion*")"
+      && grep -lq 'bedrock_services_realtime_completion' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_completion*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_completion$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_realtime_completion)"
+      && grep -q 'decode_realtime_tool_input' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_realtime_completion.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_realtime_completion_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/content-end-text-audio.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/prompt-end-response-done.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/incremental-usage-delta.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/leftover-usage-done.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-use-event.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/tool-result-conversation-item.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-realtime-completion/multiple-content-blocks.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
+  L358-L423; BedrockRealtimeConfig.transform_input_audio_buffer_commit_event L425-L450; BedrockRealtimeConfig.transform_conversation_item_create_event
+  L452-L518; BedrockRealtimeConfig.transform_response_create_event L520-L566; BedrockRealtimeConfig._response_trigger_audio_messages
+  L568-L583; BedrockRealtimeConfig.transform_response_cancel_event L585-L597; BedrockRealtimeConfig.session_close_messages
+  L599-L626; BedrockRealtimeConfig.transform_realtime_request L628-L668; BedrockRealtimeConfig.transform_conversation_item_create_tool_result_event
+  L1212-L1273 belong to B662; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event L709-L820;
+  BedrockRealtimeConfig._parse_generation_stage L823-L831; BedrockRealtimeConfig._current_user_item_id L833-L837;
+  BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event L849-L852;
+  BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
+  L909-L922; BedrockRealtimeConfig.transform_text_output_event L924-L964; BedrockRealtimeConfig.transform_audio_output_event
+  L966-L999 belong to B663; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response L1275-L1415
+  belong to B665; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.__init__ L83-L124; BedrockRealtimeConfig.get_error_class
+  L126-L132; BedrockRealtimeConfig.validate_environment L134-L136; BedrockRealtimeConfig.get_complete_url L138-L140;
+  BedrockRealtimeConfig.requires_session_configuration L142-L144; BedrockRealtimeConfig.session_configuration_request
+  L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate
+  L216-L233; BedrockRealtimeConfig.transform_session_update_event L235-L356; BedrockRealtimeConfig._session_object
+  L670-L682; BedrockRealtimeConfig.session_created_event L684-L694; BedrockRealtimeConfig.session_updated_event
+  L696-L707 belong to B661; reuse that implementation or its injected typed boundary.
+pitfalls:
+- Preserve contentEnd/promptEnd/response.done ordering, leftover usage and tool call id/name/arguments exactly,
+  using bounded per-call accumulators.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

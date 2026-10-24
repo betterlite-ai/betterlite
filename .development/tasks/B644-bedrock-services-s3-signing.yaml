@@ -1,0 +1,350 @@
+id: B644
+title: Bedrock S3 signed requests and object upload
+description: >-
+  Add S3RequestPlan for object upload and provider file metadata. Preserve managed object names, upload URL to S3
+  conversion, service=s3 signing, encryption headers, bucket-owner expectations, actual UTF-8 byte size and generated
+  job names from an injected clock/id source. Use only trusted bucket settings for destination selection, including
+  upload paths.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/files/transformation.py:
+  _uploaded_object_size L375-L384; BedrockFilesConfig.__init__ L392-L394; BedrockFilesConfig.custom_llm_provider
+  L397-L398; BedrockFilesConfig.file_upload_http_method L401-L405; BedrockFilesConfig.validate_environment L407-L423;
+  BedrockFilesConfig._get_content_from_openai_file L425-L460; BedrockFilesConfig._get_s3_object_name_from_batch_jsonl
+  L462-L478; BedrockFilesConfig.get_object_name L480-L504; BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params
+  L549-L550; BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
+  L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
+  L1265-L1266. litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027.
+
+
+  Implement crates/betterlite-bedrock/src/s3_signing.rs with adjacent tests under s3_signing/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_s3_signing in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function s3_signing_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  managed_upload_object_name, s3_virtual_and_path_style, s3_signature_service, kms_encryption_header, bucket_owner_header,
+  upload_content_size, generated_job_name, create_file_object. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
+  response and captured upstream request. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_s3_signing variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_s3_signing that parses
+  every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds;
+  then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_upload_record consumes uploaded JSONL record bytes used for file metadata in crates/betterlite-bedrock/src/s3_signing.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_signing.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_signing.
+  The adjacent test replays_the_bedrock_services_s3_signing_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_services_s3_signing_credential_identity_isolation in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Write standalone bedrock_services_s3_signing_secret_safe_failure in betterlite-bedrock for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Budget from 323 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 340 production lines, 147 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 654 planned, 675 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/s3_signing.rs
+  - crates/betterlite-bedrock/src/s3_signing/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_s3_signing.rs
+  - tools/oracle/src/helpers/bedrock_services_s3_signing/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_s3_signing.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_signing.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_signing/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L11-L167
+  why: S3 managed-object naming and bucket/prefix authorization called by the covered provider functions; port the
+    S3-specific helper here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L375-L559
+  why: >-
+    Own _uploaded_object_size, BedrockFilesConfig.__init__, BedrockFilesConfig.custom_llm_provider, BedrockFilesConfig.file_upload_http_method,
+    BedrockFilesConfig.validate_environment, BedrockFilesConfig._get_content_from_openai_file, BedrockFilesConfig._get_s3_object_name_from_batch_jsonl,
+    BedrockFilesConfig.get_object_name, BedrockFilesConfig.get_complete_file_url, BedrockFilesConfig.get_supported_openai_params,
+    BedrockFilesConfig.map_openai_params. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1110-L1266
+  why: >-
+    Own BedrockFilesConfig._sign_s3_request, BedrockFilesConfig._convert_https_url_to_s3_uri, BedrockFilesConfig.transform_create_file_response,
+    BedrockFilesConfig.get_error_class. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1906-L1984
+  why: Own CommonBatchFilesUtils.sign_aws_request, CommonBatchFilesUtils.generate_unique_job_name. Other functions
+    in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L2023-L2027
+  why: Own CommonBatchFilesUtils.get_error_class. Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    managed upload object name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/managed-upload-object-name.yaml.
+  proof:
+  - case-managed-upload-object-name
+  - oracle
+  - helper-python
+- text: >-
+    s3 virtual and path style: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-virtual-and-path-style.yaml.
+  proof:
+  - case-s3-virtual-and-path-style
+  - oracle
+  - helper-python
+- text: >-
+    s3 signature service: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-signature-service.yaml.
+  proof:
+  - case-s3-signature-service
+  - oracle
+  - helper-python
+- text: >-
+    kms encryption header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/kms-encryption-header.yaml.
+  proof:
+  - case-kms-encryption-header
+  - oracle
+  - helper-python
+- text: >-
+    bucket owner header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/bucket-owner-header.yaml.
+  proof:
+  - case-bucket-owner-header
+  - oracle
+  - helper-python
+- text: >-
+    upload content size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/upload-content-size.yaml.
+  proof:
+  - case-upload-content-size
+  - oracle
+  - helper-python
+- text: 'generated job name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/generated-job-name.yaml.'
+  proof:
+  - case-generated-job-name
+  - oracle
+  - helper-python
+- text: 'create file object: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/create-file-object.yaml.'
+  proof:
+  - case-create-file-object
+  - oracle
+  - helper-python
+- text: New bedrock_services_s3_signing seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_upload_record has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-managed-upload-object-name
+    why: The managed-upload-object-name behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_managed_upload_object_name$/)'
+  - id: case-s3-virtual-and-path-style
+    why: The s3-virtual-and-path-style behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_s3_virtual_and_path_style$/)'
+  - id: case-s3-signature-service
+    why: The s3-signature-service behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_s3_signature_service$/)'
+  - id: case-kms-encryption-header
+    why: The kms-encryption-header behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_kms_encryption_header$/)'
+  - id: case-bucket-owner-header
+    why: The bucket-owner-header behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_bucket_owner_header$/)'
+  - id: case-upload-content-size
+    why: The upload-content-size behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_upload_content_size$/)'
+  - id: case-generated-job-name
+    why: The generated-job-name behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_generated_job_name$/)'
+  - id: case-create-file-object
+    why: The create-file-object behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_create_file_object$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_signing.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing*")"
+      && grep -lq 'bedrock_services_s3_signing' tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_s3_signing$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_signing)"
+      && grep -q 'decode_upload_record' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_signing.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_signing_corpus$/)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_s3_signing_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_s3_signing_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/managed-upload-object-name.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-virtual-and-path-style.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-signature-service.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/kms-encryption-header.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/bucket-owner-header.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/upload-content-size.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/generated-job-name.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/create-file-object.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
+  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
+  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
+  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
+  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
+  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
+  reuse that implementation or its injected typed boundary.
+- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
+  or its injected typed boundary.'
+- >-
+  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
+  L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
+  BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
+- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
+  or its injected typed boundary.'
+- >-
+  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
+  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
+  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
+  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
+  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
+  _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
+  L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
+  L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
+  L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
+  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
+  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
+  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
+  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
+  its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
+  bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
+  L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
+  normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
+  belong to B690; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
+  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
+  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
+  that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
+  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
+  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
+  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298; _listing_query L301-L305; _requested_listing_purpose
+  L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted L318-L321; _listing_bucket_name
+  L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372; BedrockFilesConfig.transform_retrieve_file_request
+  L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response L1276-L1282; BedrockFilesConfig.transform_delete_file_request
+  L1284-L1292; BedrockFilesConfig.transform_delete_file_response L1294-L1307; BedrockFilesConfig.transform_list_files_request
+  L1309-L1317; BedrockFilesConfig.transform_list_files_next_request L1319-L1335; BedrockFilesConfig._signed_listing_request
+  L1337-L1361; BedrockFilesConfig.transform_list_files_response L1363-L1391; BedrockFilesConfig.transform_file_content_request
+  L1393-L1412; BedrockFilesConfig._transform_s3_file_request L1414-L1432; BedrockFilesConfig._s3_request_target
+  L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body L1459-L1488 belong to B645; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record L575-L614; BedrockFilesConfig._is_titan_v2_embed_model
+  L639-L681; BedrockFilesConfig._lookup_provider_specific_field L684-L715; BedrockFilesConfig._coerce_embedding_input_to_string
+  L718-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params L773-L819 belong to B647; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
+  L822-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L846-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
+  L858-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
+  L954-L965; BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content L967-L1024; BedrockFilesConfig.transform_create_file_request
+  L1026-L1108 belong to B648; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response L1490-L1503;
+  BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537; BedrockJsonlFilesTransformation._get_s3_object_name
+  L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file L1555-L1590 belong to B646; reuse that
+  implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
+  no caller at the pin; do not port them.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model L95-L96; _strip_llm_routing_prefix
+  L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials L192-L198; get_configured_s3_bucket_name
+  L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets L233-L250; _rejected_file_id
+  L256-L266; _resolve_managed_s3_object L269-L279 belong to B643; reuse that implementation or its injected typed
+  boundary.
+pitfalls:
+- >-
+  Preserve managed object names, upload URL to S3 conversion, service=s3 signing, encryption headers, bucket-owner
+  expectations, actual UTF-8 byte size and generated job names from an injected clock/id source.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: security

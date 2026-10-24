@@ -1,0 +1,246 @@
+id: B595
+title: Bedrock SigV4 and bearer request signing
+description: >-
+  Add AwsSignedRequest using a maintained SigV4 library, not handwritten cryptography. Preserve exact serialized
+  bytes, service/region, signing-header filtering, computed header replacement, session token and the source explicit
+  non-AWS Authorization override. Bearer-compatible operations skip credential discovery; operations that cannot
+  use bearer explicitly request SigV4. Keep all signing inputs request-local and derive destinations only from settings.
+  Async credential work stays off blocking paths.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/base_aws_llm.py:
+  BaseAWSLLM._get_boto_credentials_from_optional_params L1520-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1528-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params L1536-L1568; BaseAWSLLM.get_request_headers
+  L1571-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655; BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post
+  L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws L1770-L1779.
+
+
+  Implement crates/betterlite-bedrock/src/signing.rs with adjacent tests under signing/. Keep each Rust module at
+  most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation bedrock_signing in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function signing_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  fixed_clock_sigv4, session_token_signature, signed_header_allowlist, computed_header_replacement, bearer_skips_sts,
+  explicit_non_aws_auth_override, empty_credentials_error, body_bytes_match_signature. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy
+  and assert both client response and captured upstream request. Existing API tasks retain route registration; this
+  task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_signing* using HelperCase: kind: helper
+  and the externally tagged bedrock_signing variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_bedrock_signing that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone bedrock_signing_credential_identity_isolation in betterlite-bedrock for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Write standalone bedrock_signing_secret_safe_failure in betterlite-bedrock for this Rust-specific invariant; it
+  is not a Python oracle case.
+
+
+  Budget from 214 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 240 production lines, 147 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 499 planned, 500 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/signing.rs
+  - crates/betterlite-bedrock/src/signing/**
+  - Cargo.toml
+  - deny.toml
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_signing.rs
+  - tools/oracle/src/helpers/bedrock_signing/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_signing.py
+  - tools/oracle/cases/helpers/providers/bedrock-signing/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_signing*
+  lint_tables: false
+references:
+- url: https://docs.rs/aws-sigv4/latest/aws_sigv4/http_request/
+  why: Maintained SigV4 HTTP signing over exact already-serialized body bytes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1520-L1779
+  why: >-
+    Own BaseAWSLLM._get_boto_credentials_from_optional_params, BaseAWSLLM._get_boto_credentials_from_optional_params,
+    BaseAWSLLM._get_boto_credentials_from_optional_params, BaseAWSLLM.get_request_headers, BaseAWSLLM._filter_headers_for_aws_signature,
+    BaseAWSLLM._sign_request, sign_aws_json_post, run_aws_signing, sign_request_off_loop_if_aws. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'fixed clock sigv4: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/fixed-clock-sigv4.yaml.'
+  proof:
+  - case-fixed-clock-sigv4
+  - oracle
+  - helper-python
+- text: 'session token signature: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/session-token-signature.yaml.'
+  proof:
+  - case-session-token-signature
+  - oracle
+  - helper-python
+- text: 'signed header allowlist: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/signed-header-allowlist.yaml.'
+  proof:
+  - case-signed-header-allowlist
+  - oracle
+  - helper-python
+- text: >-
+    computed header replacement: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/computed-header-replacement.yaml.
+  proof:
+  - case-computed-header-replacement
+  - oracle
+  - helper-python
+- text: 'bearer skips sts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/bearer-skips-sts.yaml.'
+  proof:
+  - case-bearer-skips-sts
+  - oracle
+  - helper-python
+- text: >-
+    explicit non aws auth override: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/explicit-non-aws-auth-override.yaml.
+  proof:
+  - case-explicit-non-aws-auth-override
+  - oracle
+  - helper-python
+- text: 'empty credentials error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/empty-credentials-error.yaml.'
+  proof:
+  - case-empty-credentials-error
+  - oracle
+  - helper-python
+- text: >-
+    body bytes match signature: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/body-bytes-match-signature.yaml.
+  proof:
+  - case-body-bytes-match-signature
+  - oracle
+  - helper-python
+- text: New bedrock_signing seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: credential identity isolation holds at this task’s owned boundary.
+  proof:
+  - credential-identity-isolation
+- text: secret safe failure holds at this task’s owned boundary.
+  proof:
+  - secret-safe-failure
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-fixed-clock-sigv4
+    why: The fixed-clock-sigv4 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_fixed_clock_sigv4$/)'
+  - id: case-session-token-signature
+    why: The session-token-signature behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_session_token_signature$/)'
+  - id: case-signed-header-allowlist
+    why: The signed-header-allowlist behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_signed_header_allowlist$/)'
+  - id: case-computed-header-replacement
+    why: The computed-header-replacement behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_computed_header_replacement$/)'
+  - id: case-bearer-skips-sts
+    why: The bearer-skips-sts behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_bearer_skips_sts$/)'
+  - id: case-explicit-non-aws-auth-override
+    why: The explicit-non-aws-auth-override behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_explicit_non_aws_auth_override$/)'
+  - id: case-empty-credentials-error
+    why: The empty-credentials-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_empty_credentials_error$/)'
+  - id: case-body-bytes-match-signature
+    why: The body-bytes-match-signature behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_body_bytes_match_signature$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_signing.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_signing*")"
+      && grep -lq 'bedrock_signing' tools/oracle/fuzz/corpus/helper_case/bedrock_signing* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_signing$/)' && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: credential-identity-isolation
+    why: The credential identity isolation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_signing_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: The secret safe failure invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_signing_secret_safe_failure$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-signing/fixed-clock-sigv4.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/session-token-signature.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/signed-header-allowlist.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/computed-header-replacement.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/bearer-skips-sts.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/explicit-non-aws-auth-override.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/empty-credentials-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/body-bytes-match-signature.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L346-L510; BaseAWSLLM.resolve_credentials L512-L525;
+  BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
+  L1258-L1390 belong to B594; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn L538-L560; BaseAWSLLM._get_provider_from_model_path
+  L563-L580; BaseAWSLLM.get_bedrock_invoke_provider L583-L616; BaseAWSLLM.get_bedrock_model_id L619-L667; BaseAWSLLM._get_model_id_from_model_with_spec
+  L670-L678; BaseAWSLLM.encode_model_id L681-L689; BaseAWSLLM.get_bedrock_embedding_provider L692-L730; BaseAWSLLM._get_aws_region_name
+  L732-L790; BaseAWSLLM._validate_aws_region_name L793-L804; BaseAWSLLM._parse_sts_region_from_endpoint L807-L815;
+  BaseAWSLLM._resolve_sts_region L818-L828; BaseAWSLLM._build_sts_client_kwargs L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls
+  L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499; BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong
+  to B591; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name L875-L910; BaseAWSLLM._is_already_running_as_role
+  L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214 belong to B592; reuse that implementation or its
+  injected typed boundary.
+- >-
+  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience L972-L988; BaseAWSLLM._auth_with_web_identity_token
+  L991-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155; BaseAWSLLM._handle_irsa_same_account L1157-L1191
+  belong to B593; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params L81-L97; build_web_identity_session_policy
+  L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194; AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__
+  L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key L273-L279; BaseAWSLLM._get_or_set_cached_credentials
+  L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L314-L319; BaseAWSLLM._is_auth_with_aws_role L322-L323;
+  BaseAWSLLM._is_auth_with_aws_profile L326-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple L330-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key
+  L338-L343; BaseAWSLLM._auth_with_aws_profile L1393-L1402; BaseAWSLLM._auth_with_aws_session_token L1405-L1423;
+  BaseAWSLLM._auth_with_access_key_and_secret_key L1426-L1448; BaseAWSLLM._auth_with_env_vars L1451-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials
+  L1463-L1469 belong to B590; reuse that implementation or its injected typed boundary.
+pitfalls:
+- >-
+  Preserve exact serialized bytes, service/region, signing-header filtering, computed header replacement, session
+  token and the source explicit non-AWS Authorization override.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

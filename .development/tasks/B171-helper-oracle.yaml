@@ -1,8 +1,10 @@
 id: B171
 title: Direct helper oracle and URL path encoding
 description: >-
-  Extend B001's betterlite-oracle with direct helper cases so core functions can be compared with pinned Python
-  without inventing proxy routes. Keep the existing HTTP case format and CLI unchanged. Every file under tools/oracle/cases/helpers/**
+  Bootstrap the minimal betterlite-http crate and its URL path module directly after B001; do not depend on chat
+  execution. B001 already owns the HTTP oracle runner and seeds, so B004 can later extend this crate. Extend B001's
+  betterlite-oracle with direct helper cases so core functions can be compared with pinned Python without inventing
+  proxy routes. Keep the existing HTTP case format and CLI unchanged. Every file under tools/oracle/cases/helpers/**
   parses as HelperCase; every other case parses as HttpCase. HelperCase has kind: helper, name, call (an externally
   tagged enum with an operation-specific typed input), env, and compare.ignore; all records reject unknown and duplicate
   fields. The first operation is url_path for the single-segment and multi-segment encoders, implemented in betterlite-http.
@@ -42,30 +44,25 @@ scope:
   - tools/oracle/cases/helpers/url-path/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L96-L129
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L96-L129
   why: The two encoder functions and their exceptions.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L59-L92
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/mock_transport.py#L59-L92
   why: Existing in-process test transport; Rust tests replace its Python-specific mechanics.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/asgi_handler.py#L17-L46
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/asgi_handler.py#L17-L46
   why: ASGI is an injectable test dependency, not another production HTTP backend.
 - url: https://docs.astral.sh/uv/concepts/projects/sync/
   why: Run the pinned environment without changing its lock at test time.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L561-L563
   why: Import initializes the model map; children must disable remote fetching.
 dod:
-- text: >-
-    Helper success, error and self-check cases compare independent implementations, and a deliberately changed Rust
-    result causes exit 1 with a useful pointer.
+- text: Helper success, error and self-check cases compare independent implementations, and a deliberately changed
+    Rust result causes exit 1 with a useful pointer.
   proof:
   - helper-runner-tests
   - oracle
   - helper-python
-- text: >-
-    Unknown operations, unknown fields, duplicate fields, hung children and excess output fail; children are always
-    reaped.
+- text: Unknown operations, unknown fields, duplicate fields, hung children and excess output fail; children are
+    always reaped.
   proof:
   - helper-runner-tests
 - text: All existing HTTP seed cases remain executable and unchanged.
@@ -123,11 +120,9 @@ out_of_scope:
 pitfalls:
 - Do not compare a fixture to itself or let --self-check substitute for the normal Rust-versus-Python run.
 - B001's existing crate-level untyped fixture allowance can be reused; production path encoders remain typed.
-- >-
-  The local source checkout is reading material; workers execute the pinned uv environment and must not import code
+- The local source checkout is reading material; workers execute the pinned uv environment and must not import code
   from an unpinned checkout.
-- >-
-  Add each new helper operation to the common dispatch module so the ordinary oracle check runs its listed cases.
+- Add each new helper operation to the common dispatch module so the ordinary oracle check runs its listed cases.
 - Importing litellm fetches the model cost map unless LITELLM_LOCAL_MODEL_COST_MAP=True is set before import.
 review_level: standard
 budget:

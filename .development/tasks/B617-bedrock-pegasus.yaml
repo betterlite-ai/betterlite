@@ -1,0 +1,173 @@
+id: B617
+title: Bedrock TwelveLabs Pegasus video chat
+description: >-
+  Add Pegasus input-media source and text prompt projection, response-format normalization and reply transformation.
+  Preserve provider-supported S3 references as descriptors without downloading them at request transformation time;
+  supplied inline bytes use the bounded media helper.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py:
+  AmazonTwelveLabsPegasusConfig.get_supported_openai_params L46-L52; AmazonTwelveLabsPegasusConfig.map_openai_params
+  L54-L68; AmazonTwelveLabsPegasusConfig._normalize_response_format L70-L101; AmazonTwelveLabsPegasusConfig.transform_request
+  L103-L130; AmazonTwelveLabsPegasusConfig._build_media_source L132-L156; AmazonTwelveLabsPegasusConfig._convert_messages_to_prompt
+  L158-L180; AmazonTwelveLabsPegasusConfig.transform_response L182-L270.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/pegasus.rs with adjacent tests under pegasus/. Keep each Rust module at
+  most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation bedrock_pegasus in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function pegasus_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  pegasus_media_source, text_video_prompt, response_format_json, segments_and_response, usage_and_finish_reason.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
+  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus* using HelperCase: kind: helper
+  and the externally tagged bedrock_pegasus variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_bedrock_pegasus that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_pegasus_reply consumes Pegasus response JSON bytes in crates/betterlite-bedrock/src/pegasus.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_pegasus.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_pegasus.
+  The adjacent test replays_the_bedrock_pegasus_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 189 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 90 behavior/config-test lines,
+  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 460 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/pegasus.rs
+  - crates/betterlite-bedrock/src/pegasus/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_pegasus.rs
+  - tools/oracle/src/helpers/bedrock_pegasus/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_pegasus.py
+  - tools/oracle/cases/helpers/providers/bedrock-pegasus/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_pegasus.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_pegasus/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L46-L270
+  why: >-
+    Own AmazonTwelveLabsPegasusConfig.get_supported_openai_params, AmazonTwelveLabsPegasusConfig.map_openai_params,
+    AmazonTwelveLabsPegasusConfig._normalize_response_format, AmazonTwelveLabsPegasusConfig.transform_request, AmazonTwelveLabsPegasusConfig._build_media_source,
+    AmazonTwelveLabsPegasusConfig._convert_messages_to_prompt, AmazonTwelveLabsPegasusConfig.transform_response.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: 'pegasus media source: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/pegasus-media-source.yaml.'
+  proof:
+  - case-pegasus-media-source
+  - oracle
+  - helper-python
+- text: 'text video prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/text-video-prompt.yaml.'
+  proof:
+  - case-text-video-prompt
+  - oracle
+  - helper-python
+- text: 'response format json: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/response-format-json.yaml.'
+  proof:
+  - case-response-format-json
+  - oracle
+  - helper-python
+- text: 'segments and response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/segments-and-response.yaml.'
+  proof:
+  - case-segments-and-response
+  - oracle
+  - helper-python
+- text: 'usage and finish reason: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-pegasus/usage-and-finish-reason.yaml.'
+  proof:
+  - case-usage-and-finish-reason
+  - oracle
+  - helper-python
+- text: New bedrock_pegasus seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_pegasus_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-pegasus-media-source
+    why: The pegasus-media-source behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_pegasus_media_source$/)'
+  - id: case-text-video-prompt
+    why: The text-video-prompt behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_text_video_prompt$/)'
+  - id: case-response-format-json
+    why: The response-format-json behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_response_format_json$/)'
+  - id: case-segments-and-response
+    why: The segments-and-response behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_segments_and_response$/)'
+  - id: case-usage-and-finish-reason
+    why: The usage-and-finish-reason behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::pegasus_cases::case_[0-9]+_usage_and_finish_reason$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_pegasus.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus*")"
+      && grep -lq 'bedrock_pegasus' tools/oracle/fuzz/corpus/helper_case/bedrock_pegasus* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_pegasus$/)' && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_pegasus)"
+      && grep -q 'decode_pegasus_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_pegasus.rs && cargo
+      nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_pegasus_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-pegasus/pegasus-media-source.yaml
+- tools/oracle/cases/helpers/providers/bedrock-pegasus/text-video-prompt.yaml
+- tools/oracle/cases/helpers/providers/bedrock-pegasus/response-format-json.yaml
+- tools/oracle/cases/helpers/providers/bedrock-pegasus/segments-and-response.yaml
+- tools/oracle/cases/helpers/providers/bedrock-pegasus/usage-and-finish-reason.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- >-
+  Preserve provider-supported S3 references as descriptors without downloading them at request transformation time;
+  supplied inline bytes use the bounded media helper.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

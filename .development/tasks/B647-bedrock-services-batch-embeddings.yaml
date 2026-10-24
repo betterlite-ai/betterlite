@@ -1,0 +1,227 @@
+id: B647
+title: Bedrock batch embedding record conversion
+description: >-
+  Add BatchRecordKind and Titan-v2 batch embedding projection, preserving URL-before-body classification, registry
+  invocation-schema overrides, single-string coercion and unsupported embedding model errors. Do not silently treat
+  every input-bearing batch row as embeddings when a route says Responses.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/files/transformation.py:
+  BedrockFilesConfig._classify_batch_record L575-L614; BedrockFilesConfig._is_titan_v2_embed_model L639-L681; BedrockFilesConfig._lookup_provider_specific_field
+  L684-L715; BedrockFilesConfig._coerce_embedding_input_to_string L718-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params
+  L773-L819.
+
+
+  Reuse AmazonTitanV2Config.__init__ from B627 (litellm/llms/bedrock/embed/amazon_titan_v2_transformation.py); its
+  implementation remains with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/batch_embeddings.rs with adjacent tests under batch_embeddings/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_batch_embeddings in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function batch_embeddings_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): url_before_body_classification, no_url_body_classification, titan_v2_registry_schema, titan_v2_name_boundary,
+  single_input_coercion, invalid_multi_input, dimensions_normalize_fields. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert
+  both client response and captured upstream request. Existing API tasks retain route registration; this task must
+  not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_embeddings* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_batch_embeddings variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_batch_embeddings that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 179 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 205 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 421 planned, 425 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/batch_embeddings.rs
+  - crates/betterlite-bedrock/src/batch_embeddings/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_batch_embeddings.rs
+  - tools/oracle/src/helpers/bedrock_services_batch_embeddings/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_batch_embeddings.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_embeddings*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L575-L614
+  why: Own BedrockFilesConfig._classify_batch_record. Other functions in this file remain with the owners listed
+    below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L639-L819
+  why: >-
+    Own BedrockFilesConfig._is_titan_v2_embed_model, BedrockFilesConfig._lookup_provider_specific_field, BedrockFilesConfig._coerce_embedding_input_to_string,
+    BedrockFilesConfig._map_openai_embedding_to_bedrock_params. Other functions in this file remain with the owners
+    listed below.
+dod:
+- text: >-
+    url before body classification: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/url-before-body-classification.yaml.
+  proof:
+  - case-url-before-body-classification
+  - oracle
+  - helper-python
+- text: >-
+    no url body classification: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/no-url-body-classification.yaml.
+  proof:
+  - case-no-url-body-classification
+  - oracle
+  - helper-python
+- text: >-
+    titan v2 registry schema: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/titan-v2-registry-schema.yaml.
+  proof:
+  - case-titan-v2-registry-schema
+  - oracle
+  - helper-python
+- text: >-
+    titan v2 name boundary: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/titan-v2-name-boundary.yaml.
+  proof:
+  - case-titan-v2-name-boundary
+  - oracle
+  - helper-python
+- text: >-
+    single input coercion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/single-input-coercion.yaml.
+  proof:
+  - case-single-input-coercion
+  - oracle
+  - helper-python
+- text: >-
+    invalid multi input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/invalid-multi-input.yaml.
+  proof:
+  - case-invalid-multi-input
+  - oracle
+  - helper-python
+- text: >-
+    dimensions normalize fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/dimensions-normalize-fields.yaml.
+  proof:
+  - case-dimensions-normalize-fields
+  - oracle
+  - helper-python
+- text: New bedrock_services_batch_embeddings seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-url-before-body-classification
+    why: The url-before-body-classification behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_embeddings_cases::case_[0-9]+_url_before_body_classification$/)'
+  - id: case-no-url-body-classification
+    why: The no-url-body-classification behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_embeddings_cases::case_[0-9]+_no_url_body_classification$/)'
+  - id: case-titan-v2-registry-schema
+    why: The titan-v2-registry-schema behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_embeddings_cases::case_[0-9]+_titan_v2_registry_schema$/)'
+  - id: case-titan-v2-name-boundary
+    why: The titan-v2-name-boundary behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_embeddings_cases::case_[0-9]+_titan_v2_name_boundary$/)'
+  - id: case-single-input-coercion
+    why: The single-input-coercion behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_embeddings_cases::case_[0-9]+_single_input_coercion$/)'
+  - id: case-invalid-multi-input
+    why: The invalid-multi-input behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_embeddings_cases::case_[0-9]+_invalid_multi_input$/)'
+  - id: case-dimensions-normalize-fields
+    why: The dimensions-normalize-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_embeddings_cases::case_[0-9]+_dimensions_normalize_fields$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_embeddings.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_embeddings*")"
+      && grep -lq 'bedrock_services_batch_embeddings' tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_embeddings*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_batch_embeddings$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/url-before-body-classification.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/no-url-body-classification.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/titan-v2-registry-schema.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/titan-v2-name-boundary.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/single-input-coercion.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/invalid-multi-input.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-embeddings/dimensions-normalize-fields.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298; _listing_query L301-L305; _requested_listing_purpose
+  L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted L318-L321; _listing_bucket_name
+  L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372; BedrockFilesConfig.transform_retrieve_file_request
+  L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response L1276-L1282; BedrockFilesConfig.transform_delete_file_request
+  L1284-L1292; BedrockFilesConfig.transform_delete_file_response L1294-L1307; BedrockFilesConfig.transform_list_files_request
+  L1309-L1317; BedrockFilesConfig.transform_list_files_next_request L1319-L1335; BedrockFilesConfig._signed_listing_request
+  L1337-L1361; BedrockFilesConfig.transform_list_files_response L1363-L1391; BedrockFilesConfig.transform_file_content_request
+  L1393-L1412; BedrockFilesConfig._transform_s3_file_request L1414-L1432; BedrockFilesConfig._s3_request_target
+  L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body L1459-L1488 belong to B645; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _uploaded_object_size L375-L384; BedrockFilesConfig.__init__ L392-L394;
+  BedrockFilesConfig.custom_llm_provider L397-L398; BedrockFilesConfig.file_upload_http_method L401-L405; BedrockFilesConfig.validate_environment
+  L407-L423; BedrockFilesConfig._get_content_from_openai_file L425-L460; BedrockFilesConfig._get_s3_object_name_from_batch_jsonl
+  L462-L478; BedrockFilesConfig.get_object_name L480-L504; BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params
+  L549-L550; BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
+  L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
+  L1265-L1266 belong to B644; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
+  L822-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L846-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
+  L858-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
+  L954-L965; BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content L967-L1024; BedrockFilesConfig.transform_create_file_request
+  L1026-L1108 belong to B648; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response L1490-L1503;
+  BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537; BedrockJsonlFilesTransformation._get_s3_object_name
+  L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file L1555-L1590 belong to B646; reuse that
+  implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
+  no caller at the pin; do not port them.
+- >-
+  litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model L95-L96; _strip_llm_routing_prefix
+  L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials L192-L198; get_configured_s3_bucket_name
+  L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets L233-L250; _rejected_file_id
+  L256-L266; _resolve_managed_s3_object L269-L279 belong to B643; reuse that implementation or its injected typed
+  boundary.
+pitfalls:
+- >-
+  The BedrockFilesConfig._classify_batch_record branch must retain the literal defaults and omissions in the linked
+  range; use the named fixtures to distinguish them.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: standard

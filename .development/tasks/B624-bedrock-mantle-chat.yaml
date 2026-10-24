@@ -1,0 +1,209 @@
+id: B624
+title: Bedrock Mantle Claude chat and Messages
+description: >-
+  Add Mantle native Claude chat/Message overrides, using configured endpoint selection, beta-header relocation,
+  model/body restoration and Anthropic SSE decoding rather than AWS event frames. Preserve usage/body fields returned
+  by Mantle and native request header filtering.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/mantle/transformation.py:
+  AmazonMantleConfig.get_complete_url L39-L53; AmazonMantleConfig.validate_environment L55-L77; AmazonMantleConfig.transform_request
+  L79-L104; AmazonMantleConfig.async_transform_request L106-L120; AmazonMantleConfig._restore_mantle_body_fields
+  L123-L125; AmazonMantleConfig.has_custom_stream_wrapper L128-L129; AmazonMantleConfig.get_model_response_iterator
+  L131-L143. litellm/llms/bedrock/messages/mantle_transformation.py: _move_betas_into_header L43-L48; AmazonMantleMessagesConfig.beta_headers_provider
+  L60-L61; AmazonMantleMessagesConfig.should_filter_anthropic_beta_headers L63-L64; AmazonMantleMessagesConfig.get_complete_url
+  L66-L80; AmazonMantleMessagesConfig.validate_anthropic_messages_environment L82-L116; AmazonMantleMessagesConfig.transform_anthropic_messages_request
+  L118-L147; AmazonMantleMessagesConfig.transform_anthropic_messages_response L149-L166; AmazonMantleMessagesConfig.get_async_streaming_response_iterator
+  L168-L181.
+
+
+  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
+  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
+  and no copied helper algorithm is permitted.
+
+
+  remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
+  status 400 before transport under the current open request-download decision; inject the same failed-download
+  seam into the pinned helper. Inline bytes continue to compare normally; provider-forwardable URL descriptors remain
+  unchanged where the source forwards them.
+
+
+  Reuse ModelResponseIterator.__init__ from B581 (litellm/llms/anthropic/chat/handler.py); its implementation remains
+  with that prerequisite.
+
+
+  Reuse build_mantle_messages_url from B690 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/mantle_chat.rs with adjacent tests under mantle_chat/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_mantle_chat in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function mantle_chat_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  mantle_chat_url, mantle_message_url, beta_header_not_body, model_body_restoration, mantle_native_sse, mantle_usage_fields,
+  remote_url_current_rejection. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
+  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_chat* using HelperCase: kind:
+  helper and the externally tagged bedrock_mantle_chat variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_mantle_chat that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 213 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 240 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 456 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/mantle_chat.rs
+  - crates/betterlite-bedrock/src/mantle_chat/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_mantle_chat.rs
+  - tools/oracle/src/helpers/bedrock_mantle_chat/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_mantle_chat.py
+  - tools/oracle/cases/helpers/providers/bedrock-mantle-chat/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_chat*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/mantle/transformation.py#L39-L143
+  why: >-
+    Own AmazonMantleConfig.get_complete_url, AmazonMantleConfig.validate_environment, AmazonMantleConfig.transform_request,
+    AmazonMantleConfig.async_transform_request, AmazonMantleConfig._restore_mantle_body_fields, AmazonMantleConfig.has_custom_stream_wrapper,
+    AmazonMantleConfig.get_model_response_iterator. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/mantle_transformation.py#L43-L181
+  why: >-
+    Own _move_betas_into_header, AmazonMantleMessagesConfig.beta_headers_provider, AmazonMantleMessagesConfig.should_filter_anthropic_beta_headers,
+    AmazonMantleMessagesConfig.get_complete_url, AmazonMantleMessagesConfig.validate_anthropic_messages_environment,
+    AmazonMantleMessagesConfig.transform_anthropic_messages_request, AmazonMantleMessagesConfig.transform_anthropic_messages_response,
+    AmazonMantleMessagesConfig.get_async_streaming_response_iterator. Other functions in this file remain with the
+    owners listed below.
+dod:
+- text: 'mantle chat url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-chat-url.yaml.'
+  proof:
+  - case-mantle-chat-url
+  - oracle
+  - helper-python
+- text: 'mantle message url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-message-url.yaml.'
+  proof:
+  - case-mantle-message-url
+  - oracle
+  - helper-python
+- text: 'beta header not body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-chat/beta-header-not-body.yaml.'
+  proof:
+  - case-beta-header-not-body
+  - oracle
+  - helper-python
+- text: 'model body restoration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-chat/model-body-restoration.yaml.'
+  proof:
+  - case-model-body-restoration
+  - oracle
+  - helper-python
+- text: 'mantle native sse: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-native-sse.yaml.'
+  proof:
+  - case-mantle-native-sse
+  - oracle
+  - helper-python
+- text: 'mantle usage fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-usage-fields.yaml.'
+  proof:
+  - case-mantle-usage-fields
+  - oracle
+  - helper-python
+- text: >-
+    remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-mantle-chat/remote-url-current-rejection.yaml.
+  proof:
+  - case-remote-url-current-rejection
+  - oracle
+  - helper-python
+- text: New bedrock_mantle_chat seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-mantle-chat-url
+    why: The mantle-chat-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_chat_cases::case_[0-9]+_mantle_chat_url$/)'
+  - id: case-mantle-message-url
+    why: The mantle-message-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_chat_cases::case_[0-9]+_mantle_message_url$/)'
+  - id: case-beta-header-not-body
+    why: The beta-header-not-body behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_chat_cases::case_[0-9]+_beta_header_not_body$/)'
+  - id: case-model-body-restoration
+    why: The model-body-restoration behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_chat_cases::case_[0-9]+_model_body_restoration$/)'
+  - id: case-mantle-native-sse
+    why: The mantle-native-sse behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_chat_cases::case_[0-9]+_mantle_native_sse$/)'
+  - id: case-mantle-usage-fields
+    why: The mantle-usage-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_chat_cases::case_[0-9]+_mantle_usage_fields$/)'
+  - id: case-remote-url-current-rejection
+    why: The remote-url-current-rejection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::mantle_chat_cases::case_[0-9]+_remote_url_current_rejection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_mantle_chat.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_chat*")"
+      && grep -lq 'bedrock_mantle_chat' tools/oracle/fuzz/corpus/helper_case/bedrock_mantle_chat* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_mantle_chat$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-chat-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-message-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-chat/beta-header-not-body.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-chat/model-body-restoration.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-native-sse.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-chat/mantle-usage-fields.yaml
+- tools/oracle/cases/helpers/providers/bedrock-mantle-chat/remote-url-current-rejection.yaml
+deviations:
+- what: >-
+    Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled request-URL
+    downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local bytes are required;
+    only supplied bytes or already authorized local file handles may be read.
+  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
+    feature that depends on fetching.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/mantle/transformation.py#L39-L143
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve usage/body fields returned by Mantle and native request header filtering.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard
