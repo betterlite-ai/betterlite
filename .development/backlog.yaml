@@ -268,6 +268,7 @@ tasks:
     - B331
     - B332
     - B333
+    - B334
     file: null
     covers:
     - router_plugins.json
@@ -2283,3 +2284,16 @@ tasks:
     covers:
     - litellm/router_strategy/complexity_router/{jev_classifier,tier_predictor}.py
     - litellm/router_strategy/complexity_router/artifacts/**
+
+  - id: B334
+    milestone: M2 routing
+    title: Tier pools, request overrides and context placement
+    status: todo
+    depends_on:
+    - B329
+    - B323
+    - B324
+    - B013
+    file: tasks/B334-complexity-placement.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
