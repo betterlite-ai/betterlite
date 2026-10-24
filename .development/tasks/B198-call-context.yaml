@@ -46,7 +46,7 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568-L576
   why: Existing timeout defaults, not a reason to add global state.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/env_utils.py#L10-L61
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/env_utils.py#L10-L59
   why: Integer parsing fallbacks and optional outcomes.
 dod:
 - text: Explicit context/phase/billing-time projections and AWS partition helpers match listed oracle cases.
