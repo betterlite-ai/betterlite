@@ -277,6 +277,7 @@ tasks:
     - B340
     - B341
     - B342
+    - B343
     file: null
     covers:
     - router_plugins.json
@@ -2410,3 +2411,20 @@ tasks:
     covers:
     - litellm/router_strategy/savings_baseline.py
     - litellm/proxy/hooks/autorouter_baseline_cache.py
+
+  - id: B343
+    milestone: M2 routing
+    title: Auto-router identity, member permissions and inference checks
+    status: todo
+    depends_on:
+    - B329
+    - B331
+    - B052
+    - B057
+    - B058
+    - B060
+    file: tasks/B343-auto-router-access.yaml
+    covers:
+    - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
+    - litellm/proxy/auth/auto_router_checks.py
+    - litellm/proxy/management_helpers/auto_router_permissions.py
