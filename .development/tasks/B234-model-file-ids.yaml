@@ -1,0 +1,99 @@
+id: B234
+title: Supplied model-file and vector-ID mappings
+description: >-
+  Implement get_format_from_file_id, update_messages_with_model_file_ids, update_responses_input_with_model_file_ids,
+  _decode_vector_store_ids_in_tools and update_responses_tools_with_model_file_ids (common_utils.py 490-786), plus
+  get_file_ids_from_messages (1648-1671). Accept an injected mapping and bounded typed chat/Responses projections,
+  without managed storage or future endpoint dependencies. Preserve absent/unmapped IDs and exact rewritten shape.
+  Budget 260 mapping/types, 100 adapters, 300 tests/fuzz and 60 wiring (720 total). Add the model_file_ids cargo-fuzz
+  target, call the production parser, and commit/replay malformed and boundary seeds. Write the behavior rstest
+  functions b234_behavior_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Register helper operations model_file_ids in tools/oracle/src/helpers/mod.rs
+  and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/file_ids.rs
+  - crates/betterlite-prompts/src/file_ids/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/model-file-ids/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-prompts/fuzz/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L490-L786
+  why: All model-file/vector mapping functions.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1648-L1671
+  why: File-ID extraction.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: The outside-byte parser has its target and newly committed production replay corpus.
+  proof:
+  - model_file_ids-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/::b234_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'model_file_ids' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: model_file_ids-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-prompts/fuzz/corpus/model_file_ids)"
+      && test -f crates/betterlite-prompts/fuzz/fuzz_targets/model_file_ids.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/model_file_ids)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_model_file_ids_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/model-file-ids/mapped-file-id.yaml
+- tools/oracle/cases/helpers/model-file-ids/embedded-file-id.yaml
+- tools/oracle/cases/helpers/model-file-ids/responses-file-id.yaml
+- tools/oracle/cases/helpers/model-file-ids/vector-id.yaml
+- tools/oracle/cases/helpers/model-file-ids/extract-file-ids.yaml
+- tools/oracle/cases/helpers/model-file-ids/unmapped-id.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B183 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
