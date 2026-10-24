@@ -20,10 +20,12 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/complexity-scoring/**
-  - tools/oracle/src/router_probes/complexity-scoring/**
+  - tools/oracle/src/router_probes/complexity_scoring/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/complexity_scoring.py
   - tools/oracle/litellm/probes/registry.py
+  - Cargo.toml
+  - deny.toml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1555-L1803
@@ -40,7 +42,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the complexity_scoring prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
