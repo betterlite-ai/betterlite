@@ -36,9 +36,7 @@ fn render(policy: &ProxyPolicy, target: &str) -> String {
         ProxyWarning::SecureProxyIgnored { name, scheme } => format!(" warn {name} {scheme}"),
         ProxyWarning::NetrcUnusable { .. } => " warn netrc".to_owned(),
     });
-    let mut line = route;
-    line.extend(warnings);
-    line
+    format!("{route}{}", warnings.collect::<String>())
 }
 
 #[rstest]

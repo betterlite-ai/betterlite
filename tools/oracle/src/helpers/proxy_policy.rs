@@ -18,11 +18,9 @@ pub(crate) fn invoke(
     input: &ProxyPolicyInput,
 ) -> Result<serde_json::Value, Box<super::HelperError>> {
     let settings = LiteLlmSettings {
-        num_retries: None,
-        request_timeout: None,
-        drop_params: None,
         aiohttp_trust_env: input.aiohttp_trust_env,
         disable_aiohttp_trust_env: input.disable_aiohttp_trust_env,
+        ..LiteLlmSettings::default()
     };
     let policy = ProxyPolicy::resolve(&settings, &input.environment);
     let message = match Url::parse(&input.url).map(|url| policy.route(&url)) {
