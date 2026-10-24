@@ -1,0 +1,95 @@
+id: B186
+title: Native provider error classifiers
+description: >-
+  Add the remaining native error-family classifiers under betterlite-error/native. Cover Anthropic, Replicate, Bedrock/Mantle,
+  SageMaker, Vertex/Gemini, Cloudflare, Cohere, Hugging Face, AI21, NLP Cloud, Together, Aleph Alpha, Ollama and
+  vLLM using the common facts/parser/status fallback from B185. Build explicit ErrorFamily matches and ordered predicates
+  rather than dynamic class-name registries. SDK-shaped error facts are typed inputs supplied by later provider
+  adapters; synthetic oracle helpers construct Python equivalents without loading real cloud credentials or making
+  requests. Cases must include every family's specialized branch and fallback, plus competing message/status signals,
+  and additions to provider_error corpus for native nested bodies. Budget 400 classifier/table lines, 70 adapter
+  lines and 280 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-error/Cargo.toml
+  - crates/betterlite-error/src/lib.rs
+  - crates/betterlite-error/src/error.rs
+  - crates/betterlite-error/src/native.rs
+  - crates/betterlite-error/src/native/**
+  - crates/betterlite-error/src/parse.rs
+  - crates/betterlite-error/src/parse/**
+  - crates/betterlite-error/src/status.rs
+  - crates/betterlite-error/src/status/**
+  - crates/betterlite-error/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/native-errors/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L527-L729
+  why: Anthropic and Replicate.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L857-L1363
+  why: AWS and Vertex family mappings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L1366-L1923
+  why: Remaining native provider families.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358-L2737
+  why: Cross-family dispatch, already-mapped errors and final fallbacks.
+dod:
+- text: Every native family has oracle coverage for its specialized branches and generic fallback using synthetic
+    exceptions.
+  proof:
+  - oracle
+- text: Existing mapped errors are idempotent, unknown error shapes keep a typed source, and mapping never accesses
+    network or credentials.
+  proof:
+  - native-error-tests
+- text: Native error-body seeds replay through the same bounded parser as the OpenAI-family errors.
+  proof:
+  - provider-error-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: native-error-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(/native_error/)'
+  - id: provider-error-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-error/fuzz/fuzz_targets/provider_error.rs && test -n "$(ls -A crates/betterlite-error/fuzz/corpus/provider_error)"
+      && cargo nextest run --locked -p betterlite-error --no-tests=fail -E 'test(replays_the_provider_error_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/native-errors/anthropic.yaml
+- tools/oracle/cases/helpers/native-errors/replicate.yaml
+- tools/oracle/cases/helpers/native-errors/bedrock-mantle.yaml
+- tools/oracle/cases/helpers/native-errors/sagemaker.yaml
+- tools/oracle/cases/helpers/native-errors/vertex-gemini.yaml
+- tools/oracle/cases/helpers/native-errors/cloudflare.yaml
+- tools/oracle/cases/helpers/native-errors/cohere.yaml
+- tools/oracle/cases/helpers/native-errors/huggingface.yaml
+- tools/oracle/cases/helpers/native-errors/ai21.yaml
+- tools/oracle/cases/helpers/native-errors/nlp-cloud.yaml
+- tools/oracle/cases/helpers/native-errors/together.yaml
+- tools/oracle/cases/helpers/native-errors/aleph-alpha.yaml
+- tools/oracle/cases/helpers/native-errors/ollama-vllm.yaml
+- tools/oracle/cases/helpers/native-errors/already-mapped.yaml
+- tools/oracle/cases/helpers/native-errors/competing-signals.yaml
+deviations: []
+out_of_scope:
+- Provider HTTP adapters, signing and SDK replacement are B024-B050.
+- Error alerts and logging sinks are B012 and later integrations.
+pitfalls:
+- Do not instantiate cloud SDK clients in the oracle when a typed synthetic exception is sufficient.
+- The provider-specific predicate ordering is part of compatibility.
+- Unknown exceptions need a defined generic result, not a swallowed mapping failure.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
