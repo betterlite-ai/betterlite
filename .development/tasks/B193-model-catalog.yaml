@@ -8,7 +8,8 @@ description: >-
   build canonical/alias lookup indexes without overwriting earlier entries. Alias collision decisions must be reported,
   not silently dropped. Expose typed exact lookup and provider/model metadata projections used by B174; do not implement
   pricing formulas. Add model_catalog helper cases against get_model_cost_map's load/finalization helpers plus full-fixture
-  parsing tests, and model_catalog fuzz target. Budget 300 loader/index lines, 80 adapters and 330 tests.
+  parsing tests, and model_catalog fuzz target. Budget 300 loader/index lines, 80 adapters and 330 tests. Seed B171's
+  shared helper_case corpus with every added operation and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -23,6 +24,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/model-catalog/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
@@ -46,6 +48,9 @@ dod:
   proof:
   - model-catalog-tests
   - model-catalog-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -72,6 +77,11 @@ checks:
       329113e5820834dc2a206500db9ec7861a17c74b86fe79601dec05478c06327e  crates/betterlite-models/fixtures/model_prices_and_context_window_backup.json
 
       SUMS'
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/model-catalog/packaged-map.yaml
 - tools/oracle/cases/helpers/model-catalog/canonical-lookup.yaml
