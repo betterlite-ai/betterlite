@@ -1,0 +1,87 @@
+id: B192
+title: Private JSON serialization and atomic files
+description: >-
+  Add private serialization and atomic local-file helpers under betterlite-logging/private_json, reusable by later
+  integration settings/cache writers. Accept typed Serialize records or a named bounded passthrough field, redact
+  credentials with B187 before diagnostic serialization, and implement safe JSON load/dump semantics on supported
+  JSON-native values. Stage files in the target directory, set owner-only permissions before writing, flush/sync
+  and atomically rename; provide explicit discard and existing-file overwrite operations with typed source errors.
+  Paths are trusted caller configuration, never HTTP fields; reject symlink targets/parents and preserve the old
+  file on failed staged writes. Use async filesystem primitives or an owned bounded blocking adapter so disk work
+  never blocks the runtime. Add private_json helper cases for JSON-native normalization and Unix file mode/atomicity
+  probes in private temporary directories, plus parser fuzzing and injected-I/O-failure tests. Budget 270 serialization/file
+  lines, 100 adapters and 350 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/private_json.rs
+  - crates/betterlite-logging/src/private_json/**
+  - crates/betterlite-logging/fuzz/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/private-json/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/private_json.py#L9-L90
+  why: Private directory/file modes, staging, commit, discard and explicit overwrite.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L12-L93
+  why: Safe JSON-native values and NUL removal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L9-L16
+  why: Safe load fallback behavior.
+dod:
+- text: JSON-native serialization/load and private file lifecycle helper cases match observable pinned results.
+  proof:
+  - oracle
+- text: Staged-write/rename failures preserve the original and remove temporary files; symlinks and unsafe paths
+    cannot redirect writes.
+  proof:
+  - private-json-tests
+- text: Unix permissions are owner-only before any secret bytes are written, and concurrent writes never reveal
+    a partial staged result.
+  proof:
+  - private-json-tests
+- text: The bounded JSON parser has corpus replay coverage.
+  proof:
+  - private-json-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: private-json-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/private_json/)'
+  - id: private-json-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-logging/fuzz/fuzz_targets/private_json.rs && test -n "$(ls -A crates/betterlite-logging/fuzz/corpus/private_json)"
+      && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_private_json_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/private-json/nul-normalization.yaml
+- tools/oracle/cases/helpers/private-json/valid-json.yaml
+- tools/oracle/cases/helpers/private-json/invalid-json-fallback.yaml
+- tools/oracle/cases/helpers/private-json/stage-commit.yaml
+- tools/oracle/cases/helpers/private-json/stage-discard.yaml
+- tools/oracle/cases/helpers/private-json/overwrite-existing.yaml
+- tools/oracle/cases/helpers/private-json/owner-permissions.yaml
+deviations: []
+out_of_scope:
+- No files are written by default merely because a request is logged.
+- Python-specific set/datetime/custom-object coercion is owned by B164/B166 adapters.
+- Windows ACL parity must be added with B170's platform packaging; this task's permission tests run on pinned Debian.
+pitfalls:
+- Explicit overwrite is non-atomic and must never be an automatic fallback after failed staging.
+- A restrictive final file mode does not undo a secret leaked through a permissive temporary file.
+- Use tempfile or an equivalent existing atomic-file facility rather than building random filenames by hand.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
