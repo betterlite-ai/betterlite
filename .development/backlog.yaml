@@ -2095,6 +2095,6 @@ tasks:
     title: Typed model metadata and capability fields
     status: todo
     depends_on: [B204]
-    file: null
+    file: tasks/B205-model-metadata-types.yaml
     covers:
       - "model_prices_and_context_window.schema.json"
