@@ -9,7 +9,8 @@ description: >-
   Python's ties-to-even rounding. Add token_count helper cases for threshold boundaries and known/unknown model
   mappings; avoid declaring all counts exact because LiteLLM itself samples large inputs. Extend a token_request
   fuzz target for the typed helper input while reusing B004's chat parser at the HTTP boundary. Budget 330 accounting/formatting
-  lines, 80 wiring and 320 tests.
+  lines, 80 wiring and 320 tests. Seed B171's shared helper_case corpus with every added operation and replay it
+  through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -28,6 +29,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/token-count/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L374-L690
@@ -48,6 +50,9 @@ dod:
   proof:
   - token-request-corpus
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -70,6 +75,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/token-count/text.yaml
 - tools/oracle/cases/helpers/token-count/text-list-joined.yaml
