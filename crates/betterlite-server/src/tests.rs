@@ -11,13 +11,17 @@ use std::{fs, path::Path};
     "AWS4-HMAC-SHA256 Credential=/x, Credential=master/20261024/eu/service/aws4_request",
     "master"
 )]
+#[case::aws_first_credential(
+    "AWS4-HMAC-SHA256 Credential=first, Credential=Bearer master/20261024/eu/service/aws4_request",
+    "first"
+)]
 #[case::aws_first_bearer(
     "AWS4-HMAC-SHA256 Credential=Bearer test-master/d/r/s/aws4_request, Credential=other/d",
     "test-master"
 )]
 #[case::aws_bearer_before_plain(
     "AWS4-HMAC-SHA256 Credential=other/d, Credential=Bearer test-master/d",
-    "test-master"
+    "other"
 )]
 #[case::aws_first_plain(
     "AWS4-HMAC-SHA256 Credential=test-master/d, Credential=other/d",

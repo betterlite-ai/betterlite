@@ -1,0 +1,16 @@
+name: auth-liveness-without-key
+config: |
+  general_settings:
+    master_key: oracle-master
+env: {}
+request:
+  method: GET
+  path: /health/liveness
+  headers: {}
+  body: null
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
