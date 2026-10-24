@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 
 use serde::Serialize;
 use uuid::Uuid;
@@ -238,8 +239,8 @@ pub struct BatchConfigBase;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChatCompletionId(pub Uuid);
 
-impl std::fmt::Display for ChatCompletionId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for ChatCompletionId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "chatcmpl-{}", self.0)
     }
 }
