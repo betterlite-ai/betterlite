@@ -221,15 +221,12 @@ where
     })
 }
 
-fn environment_defaults<L>(
-    modify_params: Option<bool>,
-    lookup: &L,
-) -> Result<(bool, i64), ConfigError>
+fn environment_defaults<L>(configured: Option<bool>, lookup: &L) -> Result<(bool, i64), ConfigError>
 where
     L: EnvironmentLookup,
 {
     // LiteLLM reads bool(os.getenv(...)), so every nonempty value, "false" included, turns it on
-    let modify_params = modify_params.unwrap_or_else(|| {
+    let modify_params = configured.unwrap_or_else(|| {
         lookup
             .lookup("LITELLM_MODIFY_PARAMS")
             .is_some_and(|value| !value.is_empty())
