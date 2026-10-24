@@ -1,92 +1,175 @@
 id: B329
 title: Custom complexity tiers and bounded dimensions
-description: Extend B328's schema with custom tier definitions, non-reasoning tier, display labels, fallback
-  tier, tier pools and per-tier parameter overrides. Add custom dimension keywords/patterns, binary/match-count
-  scoring and the pinned bounded-pattern validation. Normalize once at configuration load into typed structures;
-  B334 consumes pools and B331 consumes custom classifier prompts. Reject unimplemented optional keys
-  until their owning tasks land and never silently reduce a custom ladder to the four default tiers. Use
-  the existing Rust crate boundaries from B004 and B008; integrate through the server when the provider
-  dispatcher or callbacks live in another core crate. This task's source slices are the linked ranges,
-  not a port of their Python classes. Add the listed oracle cases and the matching adapters to B301's
-  component runner where state is not observable over HTTP; adapters call production logic and never reproduce
-  it. Use deterministic candidate sets or supplied random samples for comparisons, and separate seeded
-  distribution tests for random choices. Extend the existing config_yaml fuzz target and committed corpus
-  for every newly accepted config form; unsupported keys still fail by full path. Keep the implementation,
-  adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+description: 'Finish complexity cross-field validation over B374 tier definitions and B373 custom dimensions.
+  Validate keyword tiers, plan floors, semantic/adaptive pool constraints, heuristic-first/hybrid bounds,
+  labels and parameter placement. Consumers own validation of their classifier-specific fields; config
+  does not enable unimplemented runtime features. Configuration boundary keys introduced or consumed here:
+  escalation_keywords, plan_mode_min_tier, plan_mode_patterns, housekeeping_patterns, heuristic_first_max_tier,
+  hybrid_boundary_margin. Pinned declaration defaults: escalation_keywords=None; plan_mode_min_tier=None;
+  plan_mode_patterns=None; housekeeping_patterns=None; heuristic_first_max_tier=None; hybrid_boundary_margin=None.
+  Resolve env values once in betterlite-config, never in router code. Implement the owned native service
+  in crates/betterlite-router/src/complexity_config.rs. Add ProbeOperation::B329 in tools/oracle/src/router_probes/mod.rs
+  and the corresponding B329 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
+  lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
+  services instead of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/config.py:
+  ComplexityRouterConfig._normalize_escalation_keywords (L1572-L1575), ComplexityRouterConfig._coerce_plan_mode_min_tier
+  (L1579-L1584), ComplexityRouterConfig._normalize_plan_mode_patterns (L1588-L1594), ComplexityRouterConfig._normalize_housekeeping_patterns
+  (L1598-L1603), ComplexityRouterConfig._validate_plan_mode_min_tier (L1606-L1620), ComplexityRouterConfig._coerce_heuristic_first_max_tier
+  (L1765-L1770), ComplexityRouterConfig._validate_heuristic_first_max_tier (L1773-L1804), ComplexityRouterConfig._validate_hybrid_boundary_margin
+  (L1807-L1821), ComplexityRouterConfig._reject_blank_optional_text (L1825-L1831), ComplexityRouterConfig._normalize_classification_prompt_field
+  (L1835-L1836), ComplexityRouterConfig._normalize_classification_examples_field (L1840-L1841), ComplexityRouterConfig._validate_keyword_rule_tiers
+  (L2037-L2049), ComplexityRouterConfig._validate_adaptive_pools (L2052-L2062), ComplexityRouterConfig._validate_semantic_matching
+  (L2065-L2072), ComplexityRouterConfig._validate_plugins_adaptive_combo (L2107-L2113), ComplexityRouterConfig._validate_stall_escalation
+  (L2116-L2132), ComplexityRouterConfig._validate_tier_param_placement (L2135-L2154). Implement these
+  behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
+  the same primitive instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/complexity-config/**
+  - crates/betterlite-router/src/complexity_config.rs
+  - crates/betterlite-router/src/complexity_config/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/complexity_config.rs
+  - crates/betterlite-server/src/routing/complexity_config/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/complexity_config.rs
   - tools/oracle/src/router_probes/complexity_config/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/complexity_config.py
   - tools/oracle/litellm/probes/registry.py
-  - Cargo.toml
-  - deny.toml
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/complexity_config.py
+  - tools/oracle/cases/routing/complexity-config/**
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/router.rs
+  - crates/betterlite-config/src/complexity_config.rs
+  - crates/betterlite-config/src/complexity_config/**
+  - crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/b329-*
+  - crates/betterlite-config/fuzz/Cargo.toml
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L97-L273
-  why: Tier models, labels and custom prompt normalization.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L737-L842
-  why: Custom pattern work limits and dimensions.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1508-L1603
-  why: Tier and marker normalization.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1743-L2184
-  why: Cross-field validation for ladders, overrides and matching.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1572-L1620
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1765-L1841
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L2037-L2072
+  why: Implementation boundary verified against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L2107-L2154
+  why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Write tests named b329_behaviors and b329_boundaries under complexity_config::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b329-behaviors
+  - b329-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the complexity_config prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
+  - probe-python
+  - oracle
+- text: Add crates/betterlite-config/fuzz/corpus/config_yaml/b329-valid.yaml and crates/betterlite-config/fuzz/corpus/config_yaml/b329-invalid.yaml;
+    the valid seed contains escalation_keywords. The cargo-fuzz target config_yaml and normal replays_the_config_yaml_corpus
+    test call the production bounded parser. Both new files must be added relative to GATE_BASE.
   proof:
   - config-corpus
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - b329-boundaries
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(complexity_config)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: b329-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b329_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b329-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b329_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/complexity_config.py && test -n "$(git diff --name-only "$GATE_BASE"
+      -- tools/oracle/litellm/probes/complexity_config.py)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm basedpyright
+      tools/oracle/litellm/probes
+  - id: config-corpus
+    why: new task-specific parser seeds, operation/key or replay are missing
+    run: test -f crates/betterlite-config/fuzz/corpus/config_yaml/b329-valid.yaml && test -f crates/betterlite-config/fuzz/corpus/config_yaml/b329-invalid.yaml
+      && git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml
+      | grep -Fq "/b329-" && grep -Fq 'escalation_keywords' crates/betterlite-config/fuzz/corpus/config_yaml/b329-valid.yaml
+      && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && cargo nextest run --locked
+      -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-- tools/oracle/cases/routing/complexity-config/custom-ladder-order.yaml
-- tools/oracle/cases/routing/complexity-config/non-reasoning-tier.yaml
-- tools/oracle/cases/routing/complexity-config/display-labels-not-boundary-keys.yaml
-- tools/oracle/cases/routing/complexity-config/string-object-mixed-pool.yaml
-- tools/oracle/cases/routing/complexity-config/tier-override-validation.yaml
-- tools/oracle/cases/routing/complexity-config/custom-binary-and-count.yaml
-- tools/oracle/cases/routing/complexity-config/pattern-work-limit.yaml
 - tools/oracle/cases/routing/complexity-config/invalid-cross-field-config.yaml
 deviations: []
 out_of_scope:
 - The actual pooled deployment choice (B334).
 - LLM classifier credentials and response parsers.
+- B373 owns bounded custom complexity dimensions; consume its tested public interface.
+- B374 owns custom tier and pool schema; consume its tested public interface.
+- 'litellm/router_strategy/complexity_router/config.py: B328 owns: tier_severity_order (L87-L88).'
+- 'litellm/router_strategy/complexity_router/config.py: B331 owns: ClassifierLLMConfig._reject_blank_system_prompt
+  (L582-L587), ClassifierLLMConfig._reject_rubric_with_system_prompt (L590-L602), ComplexityRouterConfig._validate_classifier_config
+  (L1623-L1633).'
+- 'litellm/router_strategy/complexity_router/config.py: B332 owns: ComplexityRouterConfig._validate_capability_classifier_config
+  (L1636-L1646), ComplexityRouterConfig._validate_capability_classifier_tiers (L1660-L1681), ComplexityRouterConfig._validate_capability_classifier_prompt_policy
+  (L1684-L1704).'
+- 'litellm/router_strategy/complexity_router/config.py: B333 owns: JevClassifierConfig._reject_blank_instructions
+  (L697-L700), JevClassifierConfig._reject_blank_api_key (L704-L707), JevClassifierConfig._keep_the_environment_key_on_the_environment_base
+  (L710-L722), ComplexityRouterConfig._validate_jev_classifier_config (L1649-L1657).'
+- 'litellm/router_strategy/complexity_router/config.py: B336 owns: ComplexityRouterConfig._normalize_context_compaction
+  (L1342-L1343).'
+- 'litellm/router_strategy/complexity_router/config.py: B353 owns: ComplexityRouterConfig._validate_llm_v2
+  (L1707-L1740).'
+- 'litellm/router_strategy/complexity_router/config.py: B359 owns: KeywordTierRule._coerce_tier (L113-L118),
+  KeywordTierRule._normalize_keywords (L121-L130).'
+- 'litellm/router_strategy/complexity_router/config.py: B373 owns: _atom_steps (L742-L745), _repeat_cost
+  (L748-L755), _node_cost (L758-L777), _sequence_cost (L780-L795), custom_pattern_work (L798-L805), CustomDimension._validate_matchers
+  (L825-L835), CustomDimension.pattern_work (L837-L841), ComplexityRouterConfig._validate_custom_dimensions
+  (L1743-L1761).'
+- 'litellm/router_strategy/complexity_router/config.py: B374 owns: TierDefinition._normalize (L190-L215),
+  ComplexityTierModel._freeze_litellm_params (L252-L253), ComplexityTierModel._serialize_litellm_params
+  (L256-L257), _normalize_tier_entries (L260-L273), ComplexityRouterConfig._coerce_tier_values (L1508-L1519),
+  ComplexityRouterConfig._normalize_tier_model_configs (L1523-L1568), ComplexityRouterConfig.has_custom_tiers
+  (L1844-L1846), ComplexityRouterConfig.uses_llm_classifier (L1849-L1854), ComplexityRouterConfig.active_tier_severity_order
+  (L1856-L1858), ComplexityRouterConfig.tier_names (L1860-L1864), ComplexityRouterConfig.classifier_wire_labels
+  (L1866-L1870), ComplexityRouterConfig.resolve_classified_tier (L1872-L1877), ComplexityRouterConfig._built_in_opening_conflicts
+  (L1879-L1906), ComplexityRouterConfig._tier_definition_conflicts (L1908-L1954), ComplexityRouterConfig._validate_non_reasoning_tier
+  (L1957-L1984), ComplexityRouterConfig._validate_tier_definitions (L1987-L2034), ComplexityRouterConfig._validate_tier_labels
+  (L2075-L2104), ComplexityRouterConfig.tier_label (L2156-L2158), ComplexityRouterConfig.labeled_tiers
+  (L2160-L2162), ComplexityRouterConfig.tier_for_label (L2164-L2171).'
+- 'litellm/router_strategy/complexity_router/config.py: B375 owns: _normalize_operator_section (L144-L158),
+  normalize_classification_prompt (L161-L163), normalize_classification_examples (L166-L168).'
+- 'litellm/router_strategy/complexity_router/config.py: B384 owns: ReminderMarkerPair._normalize (L230-L239).'
+- 'litellm/router_strategy/complexity_router/config.py: B394 owns: CapabilityCalibrationConfig.calibrate
+  (L612-L615), CapabilityClassifierConfig._normalize_tier (L664-L668), CapabilityClassifierConfig._validate_threshold_range
+  (L671-L674).'
 pitfalls:
 - Python's bounded-pattern validator is a policy as well as a parser; a linear Rust regex engine does
   not automatically reproduce its accepted language.
 - Keep duplicate tier model entries visible for validation rather than overwriting them in a map.
 - Do not enable plugin fields until B021 supplies their runtime.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: standard
 budget:
   max_changed_lines: 800

@@ -2264,12 +2264,14 @@ tasks:
     title: Custom complexity tiers and bounded dimensions
     status: todo
     depends_on:
-    - B328
+    - B374
+    - B373
     - B010
+    - B301
+    - B002
     file: tasks/B329-complexity-config.yaml
     covers:
     - litellm/router_strategy/complexity_router/config.py
-
   - id: B330
     milestone: M2 routing
     title: Build bounded classifier context from request messages
@@ -2844,6 +2846,29 @@ tasks:
     covers:
     - litellm/router_utils/pre_call_checks/deployment_affinity_check.py
     - litellm/caching/affinity_cache.py
+  - id: B373
+    milestone: M2 routing
+    title: Bounded custom complexity dimensions
+    status: todo
+    depends_on:
+    - B328
+    - B301
+    - B002
+    file: tasks/B373-custom-dimensions.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/config.py
+  - id: B374
+    milestone: M2 routing
+    title: Custom tier and pool schema
+    status: todo
+    depends_on:
+    - B328
+    - B010
+    - B301
+    - B002
+    file: tasks/B374-tier-definitions.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/config.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
