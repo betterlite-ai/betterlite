@@ -12,8 +12,8 @@ description: Serve POST /fallback and GET/DELETE /fallback/{model} using B309's 
   where state is not observable over HTTP; adapters call production logic and never reproduce it. Use
   deterministic candidate sets or supplied random samples for comparisons, and separate seeded distribution
   tests for random choices. Extend the existing config_yaml fuzz target and committed corpus for every
-  newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target fallback_request
-  under crates/betterlite-server/fuzz and a normal replays_the_fallback_request_corpus test using the
+  newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target fallback
+  under crates/betterlite-server/fuzz and a normal replays_the_fallback_corpus test using the
   production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures and
   oracle cases are budget-excluded by checks.yaml.
 scope:
@@ -22,7 +22,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/fallback-management/**
-  - tools/oracle/src/router_probes/fallback-management/**
+  - tools/oracle/src/router_probes/fallback_management/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/fallback_management.py
   - tools/oracle/litellm/probes/registry.py
@@ -30,17 +30,18 @@ scope:
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L42-L204
   why: Create/update validation and database requirement.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L207-L376
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/fallback_management_endpoints.py#L207-L357
   why: Read and delete contracts.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/router_settings_endpoints.py#L1-L140
-  why: Fallback wire types; locate their definitions in this module.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/router_settings_endpoints.py#L1-L67
+  why: Fallback request and response types.
 dod:
 - text: Every listed case compares the production result and relevant state transitions against the pinned
     LiteLLM implementation.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the fallback_management prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -69,8 +70,8 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-server/fuzz/fuzz_targets/fallback_request.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/fallback_request)"
-      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_fallback_request_corpus)'
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/fallback.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/fallback)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_fallback_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
