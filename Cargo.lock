@@ -203,6 +203,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-paths"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
