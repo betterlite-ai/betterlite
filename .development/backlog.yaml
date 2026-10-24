@@ -2001,10 +2001,14 @@ tasks:
     milestone: M1 openai data plane
     title: Bounded inline media conversion
     status: todo
-    depends_on: [B179, B009]
+    depends_on:
+    - B179
+    - B009
+    - B234
+    - B235
     file: tasks/B183-inline-media.yaml
     covers:
-      - "litellm/litellm_core_utils/prompt_templates/{image_handling,common_utils}.py"
+    - litellm/litellm_core_utils/prompt_templates/image_handling.py
   - id: B184
     milestone: M1 openai data plane
     title: Shared provider error taxonomy
@@ -2482,3 +2486,23 @@ tasks:
     file: tasks/B233-gemini-tool-results.yaml
     covers:
     - litellm/litellm_core_utils/prompt_templates/factory.py
+  - id: B234
+    milestone: M1 openai data plane
+    title: Supplied model-file and vector-ID mappings
+    status: todo
+    depends_on:
+    - B179
+    - B171
+    file: tasks/B234-model-file-ids.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
+  - id: B235
+    milestone: M1 openai data plane
+    title: Media metadata and MIME inference
+    status: todo
+    depends_on:
+    - B179
+    - B171
+    file: tasks/B235-media-metadata.yaml
+    covers:
+    - litellm/litellm_core_utils/prompt_templates/common_utils.py
