@@ -304,6 +304,7 @@ tasks:
     depends_on:
     - B016
     - B346
+    - B347
     file: null
     covers:
     - litellm/scheduler.py
@@ -2473,3 +2474,14 @@ tasks:
     covers:
     - litellm/scheduler.py
     - litellm/types/scheduler.py
+
+  - id: B347
+    milestone: M2 routing
+    title: Adaptive concurrency permits
+    status: todo
+    depends_on:
+    - B016
+    - B301
+    file: tasks/B347-adaptive-concurrency.yaml
+    covers:
+    - litellm/integrations/adaptive_concurrency.py

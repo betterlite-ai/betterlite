@@ -1,0 +1,76 @@
+id: B347
+title: Adaptive concurrency permits
+description: Implement the reusable additive-increase/multiplicative-decrease concurrency limiter using
+  owned permits, bounded waiter storage and injected outcomes. Keep it separate from B303 deployment hard
+  caps and B022's global admission controls; expose it to existing integration callbacks through the server.
+  Preserve the pinned floor, ceiling and clean-streak transitions, and supply a caller deadline for every
+  wait. Set the proposed waiter cap to 1024 with a typed overload result for callers. Use the existing
+  Rust crate boundaries from B004 and B008; integrate through the server when the provider dispatcher
+  or callbacks live in another core crate. This task's source slices are the linked ranges, not a port
+  of their Python classes. Add the listed oracle cases and the matching adapters to B301's component runner
+  where state is not observable over HTTP; adapters call production logic and never reproduce it. Use
+  deterministic candidate sets or supplied random samples for comparisons, and separate seeded distribution
+  tests for random choices. Keep the implementation, adapters and tests within 600 changed lines; fixtures
+  and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/adaptive-concurrency/**
+  - tools/oracle/src/router_probes/adaptive-concurrency/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/adaptive_concurrency.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L18-L93
+  why: Limit transitions, cancellation race and waiter grants.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(adaptive_concurrency)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/adaptive-concurrency/initial-clamped.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/invalid-floor-ceiling.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/clean-streak-adds-one.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/throttle-halves-to-floor.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/fixed-width-mode.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/cancel-before-grant.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/cancel-after-grant.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/ceiling-no-growth.yaml
+deviations:
+- what: Adaptive concurrency waits are bounded by a deadline and a 1024-waiter capacity.
+  why: The pinned deque is unbounded, contrary to async-hygiene and bounded-inputs.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L23-L69
+out_of_scope:
+- Attaching adaptive limits to unrelated storage integrations before their own tasks exist.
+- CPU or latency-driven adaptation; the source responds to explicit throttle samples.
+pitfalls:
+- Reducing the limit does not cancel calls already in flight.
+- Cancellation after a grant must return the reserved slot exactly once.
+- The architect must acknowledge the bounded waiter cap before dispatch.
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
