@@ -133,7 +133,7 @@ fn resolver_drops_invalid_pairs(long: &str) {
     let caller = mapping(&[
         ("ok", text("v")),
         ("bad!", text("v")),
-        ("k", text("caf\u{e9}")),
+        ("k", text("\u{e9}t\u{e9}")),
         ("n", raw("1")),
         (long, text("v")),
         ("long", text(long)),
