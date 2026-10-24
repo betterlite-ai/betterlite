@@ -1,19 +1,21 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde::Serialize;
 
 use crate::case::Case;
 use crate::compare;
 use crate::mock::ProviderRequest;
 
-use super::{Captured, HarnessError};
+use super::HarnessError;
+use crate::http::Response;
 
+#[derive(Clone, Copy)]
 pub(crate) struct ArtifactInput<'a> {
     pub(crate) root: &'a Path,
     pub(crate) case: &'a Case,
-    pub(crate) first: &'a Captured,
-    pub(crate) second: &'a Captured,
+    pub(crate) first: &'a Response,
+    pub(crate) second: &'a Response,
     pub(crate) first_requests: &'a [ProviderRequest],
     pub(crate) second_requests: &'a [ProviderRequest],
     pub(crate) first_log: &'a Path,
@@ -21,47 +23,32 @@ pub(crate) struct ArtifactInput<'a> {
     pub(crate) result: Option<&'a compare::Difference>,
 }
 
-pub(crate) fn write(input: ArtifactInput<'_>) -> Result<(), HarnessError> {
-    let ArtifactInput {
-        root,
-        case,
-        first,
-        second,
-        first_requests,
-        second_requests,
-        first_log,
-        second_log,
-        result,
-    } = input;
-    let directory = root.join(super::safe_name(&case.name));
+pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, HarnessError> {
+    let directory = input
+        .root
+        .join(super::safe_name(&input.case.name))
+        .join(super::unique_id()?.to_string());
     super::create_dir(&directory)?;
-    write_json(
-        &directory.join("client-litellm.json"),
-        &compare::response_document(&first.response),
-    )?;
-    write_json(
-        &directory.join("client-betterlite.json"),
-        &compare::response_document(&second.response),
-    )?;
-    write_json(
-        &directory.join("provider-litellm.json"),
-        &serde_json::to_value(first_requests).map_err(HarnessError::Json)?,
-    )?;
-    write_json(
-        &directory.join("provider-betterlite.json"),
-        &serde_json::to_value(second_requests).map_err(HarnessError::Json)?,
-    )?;
-    copy_file(first_log, &directory.join("litellm.log"))?;
-    copy_file(second_log, &directory.join("betterlite.log"))?;
-    let diff = result.map_or(Value::Null, difference_document);
-    write_json(&directory.join("diff.json"), &diff)
-}
-
-fn difference_document(error: &compare::Difference) -> Value {
-    let mut document = serde_json::Map::new();
-    document.insert("pointer".to_owned(), Value::String(error.pointer.clone()));
-    document.insert("message".to_owned(), Value::String(error.message.clone()));
-    Value::Object(document)
+    for (name, response, requests, log) in [
+        (
+            "litellm",
+            input.first,
+            input.first_requests,
+            input.first_log,
+        ),
+        (
+            "betterlite",
+            input.second,
+            input.second_requests,
+            input.second_log,
+        ),
+    ] {
+        write_json(&directory.join(format!("client-{name}.json")), response)?;
+        write_json(&directory.join(format!("provider-{name}.json")), requests)?;
+        copy_file(log, &directory.join(format!("{name}.log")))?;
+    }
+    write_json(&directory.join("diff.json"), &input.result)?;
+    Ok(directory)
 }
 
 fn copy_file(source: &Path, destination: &Path) -> Result<(), HarnessError> {
@@ -72,7 +59,7 @@ fn copy_file(source: &Path, destination: &Path) -> Result<(), HarnessError> {
     Ok(())
 }
 
-fn write_json(path: &Path, value: &Value) -> Result<(), HarnessError> {
+fn write_json<Data: Serialize + ?Sized>(path: &Path, value: &Data) -> Result<(), HarnessError> {
     let text = serde_json::to_string_pretty(value).map_err(HarnessError::Json)?;
     super::write_text(path, &text)
 }

@@ -1,0 +1,27 @@
+{
+  "left": {
+    "status": 200,
+    "headers": {
+      "x": "one"
+    },
+    "body": {}
+  },
+  "right": {
+    "status": 200,
+    "headers": {
+      "x": "two"
+    },
+    "body": {}
+  },
+  "left_requests": [],
+  "right_requests": [],
+  "compare": {
+    "headers": [
+      "X"
+    ],
+    "headers_present": [],
+    "upstream_headers": [],
+    "ignore": []
+  },
+  "expected": "/headers/x"
+}

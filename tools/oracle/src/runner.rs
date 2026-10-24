@@ -1,3 +1,4 @@
+use reqwest::blocking::Client;
 use std::collections::BTreeMap;
 use std::fs;
 use std::net::TcpListener;
@@ -7,10 +8,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use thiserror::Error;
 
-use crate::case::{Case, CaseError};
+use crate::case::Case;
 use crate::cli::Options;
 use crate::compare;
-use crate::http::{self, Client, HttpError, Response};
+use crate::http::{self, HttpError, Response};
 use crate::mock::{MockError, MockProvider};
 use crate::process::{Gateway, ProcessError};
 
@@ -21,10 +22,6 @@ pub(crate) mod artifacts;
 
 #[derive(Debug, Error)]
 pub(crate) enum HarnessError {
-    #[error("{0}")]
-    Cli(#[from] clap::Error),
-    #[error("{0}")]
-    Cases(#[from] CaseError),
     #[error("{0}")]
     Http(#[from] HttpError),
     #[error("{0}")]
@@ -42,21 +39,14 @@ pub(crate) enum HarnessError {
     Clock(#[source] std::time::SystemTimeError),
 }
 
-pub(crate) struct Captured {
-    pub(crate) response: Response,
-}
-
-pub(crate) fn run_cases(
-    options: &Options,
-    cases: Vec<(PathBuf, Case)>,
-) -> Result<ExitCode, HarnessError> {
+pub(crate) fn run_cases(options: &Options, cases: Vec<Case>) -> Result<ExitCode, HarnessError> {
     if cases.is_empty() {
         return Err(missing_capture(0));
     }
-    let mut groups = BTreeMap::<String, Vec<(PathBuf, Case)>>::new();
-    for (path, case) in cases {
+    let mut groups = BTreeMap::<String, Vec<Case>>::new();
+    for case in cases {
         let group_key = format!("{}\n{:?}", case.config, case.env);
-        groups.entry(group_key).or_default().push((path, case));
+        groups.entry(group_key).or_default().push(case);
     }
     let root = artifact_root()?;
     let mut different = false;
@@ -73,11 +63,11 @@ pub(crate) fn run_cases(
 pub(crate) fn run_group(
     options: &Options,
     root: &Path,
-    cases: Vec<(PathBuf, Case)>,
+    cases: Vec<Case>,
 ) -> Result<bool, HarnessError> {
     let upstream_answers = cases
         .iter()
-        .flat_map(|(_, case)| case.upstream.iter())
+        .flat_map(|case| case.upstream.iter())
         .cloned()
         .collect::<Vec<_>>();
     let mut answers = upstream_answers.clone();
@@ -86,34 +76,22 @@ pub(crate) fn run_group(
     let group_dir = root.join(format!("group-{}", unique_id()?));
     create_dir(&group_dir)?;
     let config_path = group_dir.join("config.yaml");
-    let case_env = cases
-        .first()
-        .map(|(_, case)| &case.env)
-        .ok_or_else(|| missing_capture(0))?;
-    let config = cases
-        .first()
-        .map(|(_, case)| case.config.replace("{{upstream}}", &mock.base_url))
-        .unwrap_or_default();
+    let case = cases.first().ok_or_else(|| missing_capture(0))?;
+    let case_env = &case.env;
+    let config = case.config.replace("{{upstream}}", &mock.base_url);
     write_text(&config_path, &config)?;
-    let client = Client;
-    let first = start_gateway(GatewayInput {
+    let client = http::client()?;
+    let input = GatewayInput {
         options,
         group_dir: &group_dir,
         config_path: &config_path,
         upstream: &mock.base_url,
         case_env,
-        first: true,
-    })?;
+    };
+    let first = start_gateway(&input, true)?;
     let first_log = first.log_path.to_owned();
     let first_results = capture_gateway(&client, first, &cases)?;
-    let second = start_gateway(GatewayInput {
-        options,
-        group_dir: &group_dir,
-        config_path: &config_path,
-        upstream: &mock.base_url,
-        case_env,
-        first: false,
-    })?;
+    let second = start_gateway(&input, false)?;
     let second_log = second.log_path.to_owned();
     let second_results = capture_gateway(&client, second, &cases)?;
     let provider_requests = mock.finish()?;
@@ -122,8 +100,7 @@ pub(crate) fn run_group(
     let second_requests = provider_requests.get(midpoint..).unwrap_or_default();
     let mut different = false;
     let mut first_offset = 0;
-    let mut second_offset = 0;
-    for (index, (_, case)) in cases.iter().enumerate() {
+    for (index, case) in cases.iter().enumerate() {
         let request_count = case.upstream.len();
         let first_capture = first_results
             .get(index)
@@ -132,12 +109,11 @@ pub(crate) fn run_group(
             .get(index)
             .ok_or_else(|| missing_capture(index))?;
         let first_slice = request_slice(first_requests, first_offset, request_count);
-        let second_slice = request_slice(second_requests, second_offset, request_count);
+        let second_slice = request_slice(second_requests, first_offset, request_count);
         first_offset = advance_offset(first_offset, request_count);
-        second_offset = advance_offset(second_offset, request_count);
         let result = compare::compare(
-            &first_capture.response,
-            &second_capture.response,
+            first_capture,
+            second_capture,
             first_slice,
             second_slice,
             &case.compare,
@@ -187,12 +163,12 @@ pub(crate) fn accumulate_difference(first: bool, second: bool) -> bool {
 pub(crate) fn capture_gateway(
     client: &Client,
     mut gateway: Gateway,
-    cases: &[(PathBuf, Case)],
-) -> Result<Vec<Captured>, HarnessError> {
+    cases: &[Case],
+) -> Result<Vec<Response>, HarnessError> {
     let mut captures = Vec::with_capacity(cases.len());
-    for (_, case) in cases {
+    for case in cases {
         let response = http::send(client, &gateway.base_url, &case.request)?;
-        captures.push(Captured { response });
+        captures.push(response);
     }
     gateway.stop()?;
     Ok(captures)
@@ -225,13 +201,8 @@ pub(crate) fn write_text(path: &Path, text: &str) -> Result<(), HarnessError> {
 }
 
 pub(crate) fn free_port() -> Result<u16, HarnessError> {
-    let listener =
-        TcpListener::bind(("127.0.0.1", 0)).map_err(|source| HarnessError::Filesystem {
-            path: PathBuf::from("127.0.0.1:0"),
-            source,
-        })?;
-    let port = listener
-        .local_addr()
+    let port = TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|listener| listener.local_addr())
         .map_err(|source| HarnessError::Filesystem {
             path: PathBuf::from("127.0.0.1:0"),
             source,

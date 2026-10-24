@@ -1,0 +1,37 @@
+{
+  "left": {
+    "status": 200,
+    "headers": {},
+    "body": {}
+  },
+  "right": {
+    "status": 200,
+    "headers": {},
+    "body": {}
+  },
+  "left_requests": [
+    {
+      "method": "POST",
+      "path": "/chat/completions",
+      "headers": {},
+      "body": {}
+    }
+  ],
+  "right_requests": [
+    {
+      "method": "POST",
+      "path": "/chat/completions",
+      "headers": {},
+      "body": {
+        "different": true
+      }
+    }
+  ],
+  "compare": {
+    "headers": [],
+    "headers_present": [],
+    "upstream_headers": [],
+    "ignore": []
+  },
+  "expected": "/upstream/0/body"
+}

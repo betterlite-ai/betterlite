@@ -65,7 +65,7 @@ pub(crate) enum CaseError {
     Invalid { path: PathBuf, message: String },
 }
 
-pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Case)>, CaseError> {
+pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<Case>, CaseError> {
     let mut files = Vec::new();
     for path in paths {
         collect_yaml(path, &mut files)?;
@@ -82,7 +82,7 @@ pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Case)>, Case
             source,
         })?;
         validate(&path, &case)?;
-        cases.push((path, case));
+        cases.push(case);
     }
     if cases.is_empty() {
         return Err(CaseError::Invalid {
@@ -94,10 +94,11 @@ pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<(PathBuf, Case)>, Case
 }
 
 fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), CaseError> {
-    let metadata = fs::metadata(path).map_err(|source| CaseError::Read {
+    let read_error = |source| CaseError::Read {
         path: path.to_owned(),
         source,
-    })?;
+    };
+    let metadata = fs::metadata(path).map_err(&read_error)?;
     if metadata.is_file() {
         if path
             .extension()
@@ -107,15 +108,9 @@ fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), CaseError> 
         }
         return Ok(());
     }
-    let entries = fs::read_dir(path).map_err(|source| CaseError::Read {
-        path: path.to_owned(),
-        source,
-    })?;
+    let entries = fs::read_dir(path).map_err(&read_error)?;
     for entry in entries {
-        let entry = entry.map_err(|source| CaseError::Read {
-            path: path.to_owned(),
-            source,
-        })?;
+        let entry = entry.map_err(&read_error)?;
         collect_yaml(&entry.path(), files)?;
     }
     Ok(())

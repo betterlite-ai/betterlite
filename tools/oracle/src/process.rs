@@ -1,3 +1,4 @@
+use reqwest::blocking::Client;
 use std::fs::File;
 use std::io::Error;
 use std::path::{Path, PathBuf};
@@ -7,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use thiserror::Error;
 
-use crate::http::{self, Client, HttpError};
+use crate::http::{self, HttpError};
 
 pub(crate) struct Gateway {
     pub(crate) child: Child,
@@ -42,14 +43,12 @@ pub(crate) enum ProcessError {
 
 impl Gateway {
     pub(crate) fn start(spec: &GatewaySpec<'_>) -> Result<Self, ProcessError> {
-        let log = File::create(spec.log_path).map_err(|source| ProcessError::Log {
-            path: spec.log_path.to_owned(),
-            source,
-        })?;
-        let stderr = log.try_clone().map_err(|source| ProcessError::Log {
-            path: spec.log_path.to_owned(),
-            source,
-        })?;
+        let (log, stderr) = File::create(spec.log_path)
+            .and_then(|log| Ok((log.try_clone()?, log)))
+            .map_err(|source| ProcessError::Log {
+                path: spec.log_path.to_owned(),
+                source,
+            })?;
         let mut process = Command::new(spec.command);
         process
             .args(spec.args)
@@ -75,7 +74,8 @@ impl Gateway {
             }
             match http::ready(client, &self.base_url) {
                 Ok(true) => return Ok(()),
-                Ok(false) | Err(HttpError::Connect { .. } | HttpError::Io(_)) => {}
+                Ok(false) | Err(HttpError::Io(_)) => {}
+                Err(HttpError::Request(error)) if error.is_connect() || error.is_timeout() => {}
                 Err(error) => return Err(ProcessError::Ready(error)),
             }
             thread::park_timeout(Duration::from_millis(250));
@@ -99,9 +99,6 @@ pub(crate) fn before_deadline(now: Instant, deadline: Instant) -> bool {
 
 impl Drop for Gateway {
     fn drop(&mut self) {
-        if self.child.try_wait().ok().flatten().is_none() {
-            let _kill_result = self.child.kill();
-        }
-        let _wait_result = self.child.wait();
+        let _stopped = self.stop();
     }
 }

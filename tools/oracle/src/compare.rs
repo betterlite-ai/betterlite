@@ -1,17 +1,17 @@
 use std::collections::BTreeSet;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 use thiserror::Error;
 
 use crate::case::Compare;
 use crate::http::Response;
 use crate::mock::ProviderRequest;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, serde::Serialize)]
 #[error("first differing JSON pointer {pointer}: {message}")]
 pub(crate) struct Difference {
-    pub(crate) pointer: String,
     pub(crate) message: String,
+    pub(crate) pointer: String,
 }
 
 pub(crate) fn compare(
@@ -93,36 +93,14 @@ fn remove_pointer(value: &mut Value, pointer: &str) {
         *value = Value::Null;
         return;
     }
-    let Some((head, tail)) = pointer
-        .strip_prefix('/')
-        .and_then(|rest| rest.split_once('/'))
-    else {
-        if let Some(object) = value.as_object_mut() {
-            object.remove(&unescape(pointer.trim_start_matches('/')));
+    if let Some((parent, key)) = pointer.rsplit_once('/') {
+        let decoded = key.replace("~1", "/").replace("~0", "~");
+        if let Some(Value::Object(object)) = value.pointer_mut(parent) {
+            object.remove(&decoded);
+        } else if let Some(child) = value.pointer_mut(pointer) {
+            *child = Value::Null;
         }
-        return;
-    };
-    let key = unescape(head);
-    match value {
-        Value::Object(object) => {
-            if let Some(child) = object.get_mut(&key) {
-                remove_pointer(child, &format!("/{tail}"));
-            }
-        }
-        Value::Array(array) => {
-            if let Ok(index) = key.parse::<usize>()
-                && let Some(child) = array.get_mut(index)
-            {
-                remove_pointer(child, &format!("/{tail}"));
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
-}
-
-fn unescape(value: &str) -> String {
-    let unescaped = value.replace("~1", "/").replace("~0", "~");
-    unescaped
 }
 
 fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String> {
@@ -173,15 +151,4 @@ fn difference(pointer: &str, message: &str) -> Difference {
         message: message.to_owned(),
     };
     difference
-}
-
-pub(crate) fn response_document(response: &Response) -> Value {
-    let mut document = Map::new();
-    document.insert("status".to_owned(), Value::from(response.status));
-    document.insert(
-        "headers".to_owned(),
-        serde_json::to_value(&response.headers).unwrap_or(Value::Null),
-    );
-    document.insert("body".to_owned(), response.body.clone());
-    Value::Object(document)
 }
