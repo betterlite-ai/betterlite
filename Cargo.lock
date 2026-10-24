@@ -213,7 +213,9 @@ dependencies = [
 name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
+ "betterlite-secrets",
  "insta",
+ "rstest",
  "secrecy",
  "serde",
  "serde-saphyr",

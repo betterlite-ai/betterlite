@@ -43,5 +43,9 @@ Ok(
             drop_params: None,
         },
         environment_variables: {},
+        cipher: CipherSettings {
+            signing_key: None,
+            algorithm: XSalsa20Poly1305,
+        },
     },
 )

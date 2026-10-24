@@ -5,8 +5,9 @@ use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::raw::{
-    RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
+    RawConfig, RawDeployment, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
 };
+use crate::secret_codec::resolve_cipher;
 use crate::resolve::{
     parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
 };
@@ -95,12 +96,19 @@ where
     for (index, deployment) in raw.model_list.into_iter().enumerate() {
         model_list.push(convert_deployment(deployment, index, lookup)?);
     }
+    let general_settings = convert_general(raw.general_settings.master_key, lookup)?;
+    let cipher = resolve_cipher(
+        raw.general_settings.encryption_algorithm,
+        general_settings.master_key.as_ref(),
+        lookup,
+    );
     Ok(Config {
         model_list,
-        general_settings: convert_general(raw.general_settings, lookup)?,
+        general_settings,
         router_settings: convert_router(raw.router_settings, lookup)?,
         litellm_settings: convert_litellm(raw.litellm_settings, lookup)?,
         environment_variables: convert_environment(raw.environment_variables, lookup)?,
+        cipher,
     })
 }
 
@@ -173,11 +181,11 @@ where
     Ok(ModelInfo { id })
 }
 
-fn convert_general<L>(raw: RawGeneral, lookup: &L) -> Result<GeneralSettings, ConfigError>
+fn convert_general<L>(raw: Option<String>, lookup: &L) -> Result<GeneralSettings, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
+    let master_key = resolve_secret(raw, "general_settings.master_key", lookup)?;
     Ok(GeneralSettings { master_key })
 }
 

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_secrets::secret_codec::CipherSettings;
 use secrecy::SecretString;
 use serde::Deserialize;
 
@@ -10,6 +11,7 @@ pub struct Config {
     pub router_settings: RouterSettings,
     pub litellm_settings: LiteLlmSettings,
     pub environment_variables: BTreeMap<String, Option<SecretString>>,
+    pub cipher: CipherSettings,
 }
 
 #[derive(Debug, Clone)]
