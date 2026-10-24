@@ -281,6 +281,7 @@ tasks:
     - B344
     - B345
     - B350
+    - B352
     file: null
     covers:
     - router_plugins.json
@@ -2519,3 +2520,17 @@ tasks:
     covers:
     - litellm/router_strategy/lar1_routing.py
     - litellm/types/lar1.py
+
+  - id: B352
+    milestone: M2 routing
+    title: Image and health gates for complexity placement
+    status: todo
+    depends_on:
+    - B334
+    - B335
+    - B020
+    - B308
+    - B319
+    file: tasks/B352-complexity-placement-gates.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/complexity_router.py
