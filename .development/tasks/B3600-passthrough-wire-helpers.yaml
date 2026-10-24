@@ -8,7 +8,7 @@ description: >-
   hop-by-hop headers, streaming-response detection by Content-Type: text/event-stream,
   and buffering-decision logic that reads JSON and AWS JSON responses into memory while
   relaying octet-stream/batch results without accumulating.
-  
+
   Build PassthroughStandardLoggingPayload as a typed record with url, request_method,
   request_body and response_body fields plus optional cost_per_request. Implement
   EndpointType enum with VertexAi, Gemini, Anthropic, OpenAi, Tinyfish, Generic and
@@ -17,14 +17,14 @@ description: >-
   *.openai.com), path patterns (generateContent, streamGenerateContent, rawPredict,
   streamRawPredict for Vertex), custom_llm_provider (typesafe v1/systemone becomes
   Decisions), and the is_tinyfish_agent_url predicate.
-  
+
   Path joining normalizes .. segments silently with posixpath.normpath instead of
   raising; if combined path climbs out of the base, fall back to the base. Trailing
   slashes on subpaths are preserved through normalization. URL construction with
   subpath handles missing trailing slash on the base, preserves the original trailing
   slash on the subpath after normalization, and returns the base when include_subpath
   is false or the subpath is empty.
-  
+
   Response-body parsing attempts response.json() and returns None on any exception.
   Response-header filtering excludes transfer-encoding, content-encoding,
   content-length, server, date, connection and keep-alive, adds the x-litellm-call-id
@@ -33,10 +33,10 @@ description: >-
   framework defaults. Streaming detection checks for text/event-stream in the
   content-type header. Buffering reads JSON and x-amz-json responses into memory,
   buffers upstream errors (status >= 400), and streams everything else.
-  
+
   Build stream-param resolution that reads stream from the request body if present,
   falling back to the parameter passed to the route handler.
-  
+
   Implement the state-key constants as module-level Final strings: LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY,
   LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY, LITELLM_PASS_THROUGH_DEPLOYMENT_MODEL_INFO_STATE_KEY
   and LITELLM_PASS_THROUGH_ENDPOINT_MARKER for FastAPI endpoint discovery by auth.
