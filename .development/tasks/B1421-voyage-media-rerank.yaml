@@ -1,0 +1,99 @@
+id: B1421
+title: Voyage multimodal embeddings and token-priced reranking
+description: >-
+  Add voyage_multimodal and voyage_rerank in betterlite-openai. Multimodal selection is
+  a case-insensitive multimodal substring. Its URL appends /multimodalembeddings without
+  trimming the supplied base, or defaults to https://api.voyageai.com/v1/multimodalembeddings.
+  Advertise dimensions only and rename it output_dimension. Reuse B1420's None-only
+  three-alias key resolution, then reject any falsey result; headers contain only Bearer.
+  Wrap scalar input in a list and turn each string into one text content block. Objects
+  with a content key preserve other fields and normalize each content item, treating a
+  falsey content value as an empty list. Other input shapes pass through.
+
+  For image_url content, unwrap an object through its url field and reject only None,
+  despite the error wording saying non-empty. Strings beginning exactly data:image/
+  become image_base64 with the substring after the first comma, even if empty or invalid
+  base64; other values remain image_url. Do not fetch these references. Caller options
+  overlay model/inputs. Extend B1420's reply variant to use the multimodal error class
+  and synthetic URL while retaining its nullable fields and total-token usage. Replay
+  a new multimodal seed through that existing decoder rather than adding a second one.
+
+  Rerank maps top_n to top_k when non-None and keeps return_documents when non-None;
+  other declared controls are ignored. None base selects https://api.voyageai.com/v1/rerank;
+  supplied bases lose trailing slashes, preserve /v1/rerank, append /rerank to /v1,
+  otherwise append /v1/rerank. Its key resolution accepts only VOYAGE_API_KEY and
+  VOYAGE_AI_API_KEY, rejects final None, accepts an explicit empty string and discards
+  caller headers. Extend voyage_credentials tests to prove VOYAGE_AI_TOKEN is ignored here.
+  Require exact HTTP 200 before logging or parsing. decode_voyage_rerank reads data,
+  requires it to be non-None, retains index/relevance_score and turns string documents
+  into {text: ...}; preserve nonstring document values. Falsey id uses an injected UUID.
+  Convert usage.total_tokens to billed total_tokens and tokens.input_tokens, output zero.
+  Price input with B193 decimal arithmetic only when model input_cost_per_token and billed
+  total_tokens are non-None; missing inputs return two zeros. Expose this calculator to
+  B068 later without depending on the billing umbrella.
+
+  Helper voyage_media_rank dispatches to the actual two configs, recording post_call
+  timing and injected UUID. Add tagged helper seeds and voyage_rerank decoder fuzz/replay.
+  Source comprises 152 multimodal and 148 rerank lines plus four documentation-only
+  handler lines. Budget 280 production, 210 tests, 140 adapters and 110 fuzz/settings
+  wiring, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,voyage_multimodal,voyage_rerank}.rs
+    - crates/betterlite-openai/src/{voyage_multimodal,voyage_rerank}/**
+    - crates/betterlite-openai/src/voyage_embedding/**
+    - crates/betterlite-openai/src/voyage_embedding.rs
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/voyage_rerank.rs
+    - crates/betterlite-openai/fuzz/corpus/{voyage_rerank,voyage_embedding_reply}/**
+    - crates/betterlite-config/tests/voyage_credentials.rs
+    - tools/oracle/src/helpers/{mod,voyage_media_rank}.rs
+    - tools/oracle/helpers/{dispatch,voyage_media_rank}.py
+    - tools/oracle/cases/helpers/voyage-media-rank/**
+    - tools/oracle/fuzz/corpus/helper_case/voyage_media_rank*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/embedding/transformation_multimodal.py#L21-L172
+    why: Minimal content normalization and stricter multimodal credential check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/voyage/rerank/transformation.py#L27-L173
+    why: Two key aliases, exact-200 handling, result conversion and token-based cost.
+dod:
+  - text: Multimodal inputs preserve reference values and option overrides while enforcing their distinct key rule.
+    proof: [voyage-media-rank-tests, voyage-rank-credentials, voyage-media-rank-python, oracle]
+  - text: Rerank replies, hook timing and token pricing match the native endpoint.
+    proof: [voyage-media-rank-tests, voyage-media-rank-python, oracle]
+  - text: New rerank bytes, multimodal reply bytes and helper variants all replay through production code.
+    proof: [voyage-media-rank-corpus, voyage-media-rank-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: voyage-media-rank-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E '(test(/^voyage_multimodal::/) | test(/^voyage_rerank::/)) - test(replays_the_voyage_rerank_corpus)'
+      why: The shared provider name must not hide different key and status policies across operations.
+    - id: voyage-rank-credentials
+      run: cargo nextest run --locked -p betterlite-config --test voyage_credentials --no-tests=fail -E 'test(rerank_ignores_token_alias) | test(multimodal_requires_truthy_key)'
+      why: Both new loader cases must fail before the operation-specific policy is added.
+    - id: voyage-media-rank-python
+      run: test -f tools/oracle/helpers/voyage_media_rank.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Independent pinned calls must retain the rerank hook and UUID behavior.
+    - id: voyage-media-rank-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/voyage_rerank.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/voyage_rerank)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/voyage_embedding_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_voyage_rerank_corpus) | test(replays_the_voyage_embedding_reply_corpus)'
+      why: Both the new parser and the added multimodal error variant need fresh corpus evidence.
+    - id: voyage-media-rank-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/voyage_media_rank*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::voyage_media_rank::/)'
+      why: Seed tests assert a nonzero set of call.voyage_media_rank variants.
+oracle_cases:
+  - tools/oracle/cases/helpers/voyage-media-rank/image-url-null-empty-and-data-prefix.yaml
+  - tools/oracle/cases/helpers/voyage-media-rank/content-object-and-option-overlay.yaml
+  - tools/oracle/cases/helpers/voyage-media-rank/operation-key-differences.yaml
+  - tools/oracle/cases/helpers/voyage-media-rank/top-k-url-and-status.yaml
+  - tools/oracle/cases/helpers/voyage-media-rank/document-id-and-token-cost.yaml
+deviations: []
+out_of_scope:
+  - B1420 retains text/contextual embedding methods; B1013 supplies rerank wire records and B037 installs the executable provider variants.
+pitfalls:
+  - A data:image/ value without a comma produces an empty image_base64 string rather than a local decoding error.
+  - Voyage rerank does not consult VOYAGE_AI_TOKEN even though every embedding variant does.
+  - HTTP 201 fails before post_call in the rerank response method.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

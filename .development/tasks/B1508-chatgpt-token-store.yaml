@@ -1,0 +1,99 @@
+id: B1508
+title: Read ChatGPT token records and derive expiry and account hints
+description: >-
+  Add ChatGptTokenStore under betterlite-openai/src/chatgpt/token_store.rs with injected files and wall
+  clock. Own authenticator.py _optional_str, Authenticator.__init__, get_api_base, get_account_id,
+  _ensure_token_dir, _read_auth_file, _write_auth_file, _is_token_expired, _get_expires_at,
+  _decode_jwt_claims, _extract_account_id, _build_auth_record, _get_device_code_cooldown_remaining,
+  _record_device_code_request and _wait_for_access_token. B1509 owns the network/login methods.
+  Config resolves CHATGPT_TOKEN_DIR (default ~/.config/litellm/chatgpt), CHATGPT_AUTH_FILE (auth.json),
+  CHATGPT_API_BASE then OPENAI_CHATGPT_API_BASE then https://chatgpt.com/backend-api/codex.
+  Directory/file env values use getenv semantics, including explicit empty strings; API base uses truthy
+  fallthrough. Expand only the default home path and preserve absolute auth-file override behavior.
+
+  An absent/unreadable file returns None; malformed/non-object JSON warns then returns None. Writes
+  truncate the file and log OSError without throwing, preserving source effect order rather than adding
+  atomic replacement. Store access_token, refresh_token and id_token as secrets, with a bounded
+  additional_fields passthrough so account/expiry updates retain unrelated record members. Expiry checks
+  use now >= expires_at-60 when the stored value is numeric; otherwise decode the token payload without
+  verifying its signature, persist a truthy derived exp, and treat absent exp as expired. JWT hints are
+  never authentication proof. Derived account id uses id_token or access_token and the
+  https://api.openai.com/auth.chatgpt_account_id string; a truthy id_token that lacks that claim does not
+  fall back to access_token. Cached account_id wins and a derived id is written back.
+
+  Device cooldown lasts 300 seconds from a numeric or numeric-string device_code_requested_at, clamped
+  below at zero. Waiting rereads the file until the deadline, sleeping at most five seconds each turn,
+  and returns only a nonexpired token. Build decode_auth_record and decode_token_claims for bounded JSON
+  and base64url bytes; fuzz both with the auth_record target and replay through replays_auth_record.
+  The chatgpt_token_store helper drives pinned methods using temporary files and a scripted clock.
+  Cases expiry_boundary, jwt_claim_hints, id_token_priority, invalid_record_warning, write_failure and
+  cooldown_observes_other_login include file effects. Named loader test chatgpt_token_paths_load checks
+  all four env keys and empty/absolute paths. The owned ranges contain 127 nonblank/non-comment lines;
+  allow 205 store/codec, 180 tests, 105 adapters, 85 fuzz/replay and 90 config/wiring lines, capped at 700.
+scope:
+  paths:
+    - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/token_store.rs
+    - crates/betterlite-openai/src/chatgpt/token_store/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/auth_record.rs
+    - crates/betterlite-openai/fuzz/corpus/auth_record/**
+    - crates/betterlite-config/src/providers/chatgpt.rs
+    - crates/betterlite-config/src/providers/chatgpt/token_store.rs
+    - crates/betterlite-config/src/providers/chatgpt/token_store/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_token_store*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/chatgpt_token_store.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/chatgpt_token_store.py
+    - tools/oracle/cases/helpers/chatgpt-token-store/**
+    - tools/oracle/fuzz/corpus/helper_case/chatgpt_token_store*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L27-L151
+    why: Token-file construction and local read/write/account/expiry methods, excluding get_access_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L343-L386
+    why: Record assembly, cooldown marker and waiting for another login's write.
+dod:
+  - text: Local token expiry, account derivation and cooldown polling preserve the source reads, writes and fallbacks.
+    proof: [token-store-tests, oracle, token-store-python]
+  - text: Token path/base environment settings load without ambient environment reads or credential disclosure.
+    proof: [token-store-config]
+  - text: Corrupt token JSON/JWT data stays bounded and the new decoder corpus is replayed in ordinary tests.
+    proof: [auth-record-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: token-store-tests
+      why: expiry or file failure behavior differs, or a secret is printable
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chatgpt::token_store::/) - test(replays_auth_record)'
+    - id: token-store-config
+      why: the token location and API base cannot be loaded through the real configuration API
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_token_store*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(chatgpt_token_paths_load)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: token-store-python
+      why: token persistence parity has no typed independent adapter
+      run: grep -qE '^[[:space:]]+chatgpt_token_store:' tools/oracle/fuzz/corpus/helper_case/chatgpt_token_store* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/chatgpt_token_store.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: auth-record-corpus
+      why: the auth-file and JWT hint decoders are not replayed from added fuzz seeds
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/auth_record.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/auth_record)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_auth_record)'
+oracle_cases:
+  - tools/oracle/cases/helpers/chatgpt-token-store/expiry-boundary.yaml
+  - tools/oracle/cases/helpers/chatgpt-token-store/jwt-claim-hints.yaml
+  - tools/oracle/cases/helpers/chatgpt-token-store/id-token-priority.yaml
+  - tools/oracle/cases/helpers/chatgpt-token-store/invalid-record-warning.yaml
+  - tools/oracle/cases/helpers/chatgpt-token-store/write-failure.yaml
+  - tools/oracle/cases/helpers/chatgpt-token-store/cooldown-observes-other-login.yaml
+deviations:
+  - what: Auth files above 1 MiB warn and behave as unreadable, while JWT hints above 16 KiB yield no claims; callers refresh or start device login instead of accepting those oversized cached credentials.
+    why: Local credential files are outside bytes and must have finite decode/allocation limits; this layer adds no HTTP error status or code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L96-L140
+out_of_scope:
+  - B1509 implements get_access_token, _login_device_code, _request_device_code, _poll_for_authorization_code, _exchange_code_for_tokens and _refresh_tokens in this same covered file.
+pitfalls:
+  - Token payload claims are decoded without signature verification only to determine refresh timing and the outbound account hint.
+  - A failed auth-file write is logged and swallowed rather than invalidating a successfully refreshed token.
+  - The 60-second expiry skew uses greater-than-or-equal at its boundary.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

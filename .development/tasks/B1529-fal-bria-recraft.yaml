@@ -1,0 +1,84 @@
+id: B1529
+title: Handle Fal Bria and Recraft URL-only image results
+description: >-
+  Implement api::fal::bria and api::fal::recraft for the complete Bria and Recraft-v3 generation classes.
+  They inherit B1525's Fal authentication/base policy but use fixed bria/text-to-image/3.2 and
+  fal-ai/recraft/v3/text-to-image endpoints. Both advertise n, response_format and size while ignoring
+  n and response_format during mapping; they do not generate extra requests to honor n. Existing
+  original option keys suppress translation. Unsupported keys produce the pinned ValueError unless
+  drop_params is true. Each final body lets provider options override prompt and does not inject any
+  of the advertised provider-side defaults.
+
+  Bria maps the eight exact aliases first, then its ordered ratio intervals, preserving inclusive
+  boundaries and overlaps: 1.3 selects 4:3 before 5:4, 0.7 selects 3:4 before 2:3, and 0.8 selects
+  3:4 before 4:5. Invalid/gap values become 1:1. Recraft uses six presets including 576x1024 and
+  1024x576, converts other lowercase-x dimensions into integer objects, and falls back to square_hd.
+  Do not substitute Flux's 1792x1024 preset table for Recraft's dimensions.
+
+  Bria consumes singular image only when it is a truthy dictionary, appending one URL-only ImageObject;
+  empty dictionaries and a plural images field do nothing. Recraft accepts a plural images list,
+  appending URL-only objects for dictionary or string members and ignoring other member types.
+  Neither carries width, height, b64_json or seed metadata. Preserve existing response images and
+  propagate invalid ImageObject field values using B997's conversion semantics. Extend B1525's
+  decode_fal_image_reply with the singular-image field without replacing the permissive record view
+  needed by these projections. Feed new singular/empty/wrong-field seeds into its existing fuzz target
+  and replay them; malformed JSON keeps source status and headers.
+
+  Helper call.fal_single_image_models invokes pinned Bria/Recraft classes for ignored_count,
+  bria_overlap_edges, recraft_preset_dimensions, singular_vs_plural, empty_image_map and
+  discarded_reply_metadata. Tests run in api::fal::bria and api::fal::recraft. Count 364 source lines;
+  plan 240 profile/decoder-extension, 240 tests, 110 adapters and 45 corpus/wiring lines, maximum 700.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/{bria,recraft,images}.rs
+    - crates/betterlite-core/src/api/fal/bria/**
+    - crates/betterlite-core/src/api/fal/recraft/**
+    - crates/betterlite-core/fuzz/corpus/fal_image_reply/bria_*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_single_image_models.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_single_image_models.py
+    - tools/oracle/cases/helpers/fal-single-image-models/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_single_image_models*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bria_transformation.py#L19-L230
+    why: Bria's ratio overlaps and singular image envelope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/recraft_v3_transformation.py#L19-L225
+    why: Recraft preset dimensions and URL-only list projection.
+dod:
+  - text: Bria and Recraft mapping preserve ignored options, endpoint paths and their distinct size boundaries.
+    proof: [single-model-tests, oracle, single-model-python]
+  - text: Singular and plural reply forms produce only the source's URL fields, with new boundary seeds reaching the shared decoder.
+    proof: [single-model-tests, bria-reply-corpus, oracle, single-model-python]
+checks:
+  optional: []
+  commands:
+    - id: single-model-tests
+      why: Bria or Recraft profiles lack their independent mapping/result tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::bria::/) | test(/^api::fal::recraft::/)'
+    - id: bria-reply-corpus
+      why: the added singular-image decoder field has no committed replay seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-core/fuzz/corpus/fal_image_reply/bria_*')" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_fal_image_reply_corpus)'
+    - id: single-model-python
+      why: singular-image model behavior has no checked source adapter
+      run: grep -qE '^[[:space:]]+fal_single_image_models:' tools/oracle/fuzz/corpus/helper_case/fal_single_image_models* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_single_image_models.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-single-image-models/ignored-count.yaml
+  - tools/oracle/cases/helpers/fal-single-image-models/bria-overlap-edges.yaml
+  - tools/oracle/cases/helpers/fal-single-image-models/recraft-preset-dimensions.yaml
+  - tools/oracle/cases/helpers/fal-single-image-models/singular-vs-plural.yaml
+  - tools/oracle/cases/helpers/fal-single-image-models/empty-image-map.yaml
+  - tools/oracle/cases/helpers/fal-single-image-models/discarded-reply-metadata.yaml
+deviations: []
+out_of_scope:
+  - Direct recraft/ provider behavior is B1521; these profiles are selected only under Fal by B046.
+pitfalls:
+  - Bria ignores a populated images list if the singular image field is absent.
+  - Recraft's 1792x1024 request becomes custom dimensions rather than landscape_16_9.
+  - Bria's overlapping inclusive ratio intervals are resolved by source order, not nearest distance.
+review_level: standard
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

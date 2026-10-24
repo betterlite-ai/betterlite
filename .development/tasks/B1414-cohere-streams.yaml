@@ -1,0 +1,94 @@
+id: B1414
+title: Cohere versioned event streams and shared chat headers
+description: >-
+  Add cohere_streams to betterlite-openai for common_utils.CohereError,
+  validate_environment and both response iterators. Keep the version distinction in
+  a closed CohereStreamVersion. The shared header builder overwrites Request-Source
+  with unspecified:litellm and accept/content-type with application/json; only a
+  truthy key overwrites Authorization, so an empty key leaves a supplied header intact.
+  These functions accept resolved settings and do not read the environment themselves.
+
+  V1 prioritizes the presence of text over is_finished=true, converts index using Python
+  integer semantics with default zero, and forwards citations as provider-specific fields.
+  It never synthesizes usage or tools. V2 checks type=content-delta and type=tool-call-delta
+  before event-based tool-plan-delta, citation-start and message-end. Content can be a
+  string or an object containing text; tool deltas use only the first delta.tool_calls
+  entry and its direct name/arguments fields. Tool plans and citation starts live below
+  data.delta.message; default citation start/end to zero, text to empty, sources to empty
+  and type to TEXT_CONTENT. Message-end reads data.delta, defaults finish_reason to stop,
+  and builds usage from usage.tokens only when usage is truthy. A top-level citations
+  field overrides the event's citations even when empty. Unknown events yield an empty
+  unfinished chunk rather than disappearing.
+
+  Implement decode_cohere_line(version, bytes-or-text) at the existing bounded line
+  stream boundary. For byte input, decode UTF-8, find data: and retain that prefix before
+  JSON decoding, reproducing the pinned failure for SSE-prefixed bytes; text goes directly
+  to JSON decoding. The native stream wrapper must preserve receiving-versus-parsing
+  failures and turn ValueError into the corresponding RuntimeError, while normal EOF
+  remains EOF. V2 chunk_parser catches every transformation exception as ValueError;
+  V1 catches only JSONDecodeError. B005 supplies cancellation and limits, without fixing
+  this provider's wire quirk. Add fuzz target cohere_line with invalid UTF-8, prefixed
+  lines, bad indices and mixed type/event records, plus a separately named corpus replay.
+
+  Helper cohere_stream_record invokes the pinned iterator's conversion/chunk methods
+  and compares headers, normalized chunks and error categories. Its new HelperCase seeds
+  use call.cohere_stream_record and an adapter test verifies that tag in every seed.
+  Of 335 nonblank/noncomment source lines, the CohereModelInfo block is excluded below;
+  the owned imports, error, header and stream spans are 283 lines. Reserve 285 production,
+  205 behavior tests, 125 adapters and 80 fuzz/export lines, with a 725-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,cohere_streams}.rs
+    - crates/betterlite-openai/src/cohere_streams/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/cohere_line.rs
+    - crates/betterlite-openai/fuzz/corpus/cohere_line/**
+    - tools/oracle/src/helpers/{mod,cohere_stream_record}.rs
+    - tools/oracle/helpers/{dispatch,cohere_stream_record}.py
+    - tools/oracle/cases/helpers/cohere-stream-record/**
+    - tools/oracle/fuzz/corpus/helper_case/cohere_stream_record*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/common_utils.py#L86-L213
+    why: Header writes, V1 field precedence and the byte-line data-prefix bug.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/common_utils.py#L216-L405
+    why: V2 separates type records from event records and catches transformation failures.
+dod:
+  - text: Cohere stream records retain their version's event precedence, usage source and failure category.
+    proof: [cohere-stream-tests, cohere-stream-python, oracle]
+  - text: Malformed lines are bounded and every committed cohere_line seed reaches the production decoder.
+    proof: [cohere-line-corpus]
+  - text: Shared auth headers and fresh helper tags are exercised independently of provider routing.
+    proof: [cohere-stream-tests, cohere-stream-python, cohere-stream-seeds, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cohere-stream-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^cohere_streams::/) - test(replays_the_cohere_line_corpus)'
+      why: Version-specific events need behavior tests separate from decoder replay.
+    - id: cohere-line-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_line.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_line)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_line_corpus)'
+      why: A pre-existing OpenAI SSE corpus cannot establish this line decoder's behavior.
+    - id: cohere-stream-python
+      run: test -f tools/oracle/helpers/cohere_stream_record.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The comparison must call Cohere's versioned methods with correctly typed fixtures.
+    - id: cohere-stream-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_stream_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_stream_record::/)'
+      why: The seed test requires nonempty input and the exact cohere_stream_record variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/cohere-stream-record/v1-text-before-finish.yaml
+  - tools/oracle/cases/helpers/cohere-stream-record/bytes-retain-data-prefix.yaml
+  - tools/oracle/cases/helpers/cohere-stream-record/v2-type-before-event.yaml
+  - tools/oracle/cases/helpers/cohere-stream-record/first-tool-and-plan.yaml
+  - tools/oracle/cases/helpers/cohere-stream-record/citation-overwrite-and-token-usage.yaml
+  - tools/oracle/cases/helpers/cohere-stream-record/empty-key-keeps-auth.yaml
+deviations: []
+out_of_scope:
+  - B2230 owns CohereModelInfo.get_cohere_route in this same file; its other metadata methods have no caller at the pin and are not implemented.
+  - B1415 and B1416 own complete chat replies; B037 selects and executes the appropriate iterator after dispatch.
+pitfalls:
+  - 'Bytes containing data: do not become valid JSON merely because they came from an SSE transport.'
+  - V2 message-end reads event, while content-delta reads type, so changing them to one discriminator changes accepted input.
+  - The first tool delta's name is not nested under a function object.
+budget: {max_changed_lines: 725, max_new_expects: 0}
+review_level: security

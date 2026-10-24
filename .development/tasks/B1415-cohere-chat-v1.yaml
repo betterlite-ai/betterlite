@@ -1,0 +1,94 @@
+id: B1415
+title: Cohere v1 chat history and tool schema conversion
+description: >-
+  Port CohereChatConfig and its local CohereError into betterlite-openai::cohere_chat_v1.
+  Consume B182's final-message/history result and B1414's headers/iterator. Reuse B668
+  for get_config: every declared constructor setting starts absent, and non-None values
+  become isolated resolved defaults; B159 handles Python class mutation. Fill only missing
+  optional keys from those defaults. Map n to num_generations, top_p to p, stop to
+  stop_sequences and both token limits to max_tokens in input iteration order. Preserve
+  stream, temperature, penalties, tools and seed; tool_choice and extra_headers are
+  advertised but not mapped by this method.
+
+  Translate each tool to name, required description and parameter_definitions. For each
+  property retain only description default empty, type default empty and required from
+  membership in the function's required list; enum and nested schema are discarded.
+  A final string becomes message and a final tool-result object becomes singleton
+  tool_results. Do not insert the separately returned chat_history into the request:
+  the pinned transform never does. A nonempty history ending in USER sets force_single_step
+  to true regardless of whether tool_results was supplied. Return the resulting options
+  object without adding a model field.
+
+  decode_cohere_chat_v1 reads upstream JSON and requires text before considering tools;
+  parse/text lookup failures use the upstream status. Forward top-level citations even
+  when null. Nonempty tool_calls replace the assistant content with null and produce
+  call_{generation_id}, default empty name/id and json.dumps(parameters default {}) with
+  Python spacing and escaping. Usage reads meta.billed_units, never meta.tokens; missing
+  counts become zero. Set model to the request model and created to the injected clock,
+  leaving other response fields, including finish_reason, unchanged. The local error's
+  synthetic request is POST https://api.cohere.ai/v1/chat; get_error_class drops passed
+  headers. B1414's common error remains a distinct type.
+
+  Own the ChatHistory and tool-result declarations in types/llms/cohere.py through L44;
+  adapt them to B182's existing records without a second prompt implementation. Register
+  cohere_v1_chat helper calls for config, tool construction and reply projection against
+  the actual pinned methods. Test explicit null versus absent defaults, both token-limit
+  orders, missing tool description and text missing despite valid tools. Add decoder fuzz
+  target cohere_chat_v1 and fresh helper seeds whose exact variant is asserted by the
+  adapter tests. Count 323 source lines plus 27 history declarations; 300 implementation,
+  210 tests, 145 adapters and 90 fuzz/wiring lines fit the 800-line budget.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,cohere_chat_v1}.rs
+    - crates/betterlite-openai/src/cohere_chat_v1/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v1.rs
+    - crates/betterlite-openai/fuzz/corpus/cohere_chat_v1/**
+    - tools/oracle/src/helpers/{mod,cohere_v1_chat}.rs
+    - tools/oracle/helpers/{dispatch,cohere_v1_chat}.py
+    - tools/oracle/cases/helpers/cohere-v1-chat/**
+    - tools/oracle/fuzz/corpus/helper_case/cohere_v1_chat*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/chat/transformation.py#L26-L365
+    why: Entire v1 config, required tool description, request assembly and billed-unit reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/cohere.py#L1-L44
+    why: History/tool-result declarations consumed by the existing prompt helper.
+dod:
+  - text: V1 request conversion retains final-message selection, schema loss and absent-only defaults.
+    proof: [cohere-v1-tests, cohere-v1-python, oracle]
+  - text: Replies require text, use billed units and replace tool content with the pinned argument serialization.
+    proof: [cohere-v1-tests, cohere-v1-python, oracle]
+  - text: New wire and helper seeds replay through their production variants.
+    proof: [cohere-v1-corpus, cohere-v1-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cohere-v1-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^cohere_chat_v1::/) - test(replays_the_cohere_chat_v1_corpus)'
+      why: A generic chat test would miss the discarded history and required pre-tool text.
+    - id: cohere-v1-python
+      run: test -f tools/oracle/helpers/cohere_v1_chat.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Fixture defaults and response clocks must be supplied to the pinned v1 implementation.
+    - id: cohere-v1-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/cohere_chat_v1.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cohere_chat_v1)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cohere_chat_v1_corpus)'
+      why: Cohere's nonstream text-before-tools failure needs its own byte corpus.
+    - id: cohere-v1-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cohere_v1_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cohere_v1_chat::/)'
+      why: Newly parsed seeds must select call.cohere_v1_chat and cannot be an empty collection.
+oracle_cases:
+  - tools/oracle/cases/helpers/cohere-v1-chat/token-order-and-ignored-choice.yaml
+  - tools/oracle/cases/helpers/cohere-v1-chat/history-not-inserted.yaml
+  - tools/oracle/cases/helpers/cohere-v1-chat/tool-definition-loss.yaml
+  - tools/oracle/cases/helpers/cohere-v1-chat/text-required-before-tools.yaml
+  - tools/oracle/cases/helpers/cohere-v1-chat/billed-units-and-citations.yaml
+deviations: []
+out_of_scope:
+  - B1416 owns the v2 response declarations after L44 of types/llms/cohere.py; B182 owns prompt history construction, including its input-mutation boundary.
+  - B037 handles COHERE_API_KEY/CO_API_KEY and main.py selection; this config adds no environment lookup or HTTP route.
+pitfalls:
+  - Cohere v1 advertises tool_choice without copying it in map_openai_params.
+  - The response cannot omit text merely because tool_calls will later erase that text.
+  - A USER history tail forces force_single_step even for a plain-string final message.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: standard

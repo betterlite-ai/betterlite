@@ -1,0 +1,96 @@
+id: B1409
+title: Mistral message cleanup and distinct reply formats
+description: >-
+  Implement mistral_chat in betterlite-openai from the message/request/reply portion
+  of MistralConfig and MistralChatResponseIterator, plus types/llms/mistral.py. Strip
+  reasoning_content and thinking_blocks only from assistant input before choosing a
+  message path. Any nonempty content list containing image_url or file sends the entire
+  conversation through B503's parent media transform and then lifts a truthy file.file_id
+  into file_id, removing file. That branch skips Mistral's ordinary name/tool/empty-message
+  cleanup. Otherwise use B218 text-list and None cleanup, retain nonblank name only on
+  tool messages, project tool_calls to id/type=function/function, and apply the source
+  empty-message predicate over assistant field names without adding a role check.
+
+  B1408 supplies the reasoning prompt. For a truthy _add_reasoning_prompt on a Magistral
+  request, prepend it with two newlines to the first system message, preserving string
+  versus list content, or insert a system message. Consume the flag only when applied,
+  and always omit client_metadata upstream. Own _transform_messages and both concrete
+  sync/async implementations, _handle_message_with_file, _add_reasoning_system_prompt_if_needed,
+  _strip_output_only_fields, _handle_name_in_message, _handle_tool_call_message,
+  _is_empty_assistant_message, transform_request, transform_response, iterator creation,
+  _handle_empty_content_response, _handle_content_list_to_str_conversion and both iterator
+  methods. Sync/async share one native implementation with the same observable ordering.
+
+  Decode native JSON/content blocks with decode_mistral_chat and reuse B004/B504 final
+  response conversion. First turn empty string content into null, then process a nonempty
+  content list: the last text block and last thinking block win, and thinking text entries
+  join with newline. Stream blocks instead concatenate all text, emit nonempty thinking
+  blocks with signature=mistral and join their reasoning strings with newline; no text
+  means null. Remove stale thinking fields when no thinking survives. Any stream custom
+  processing exception falls back to the parent chunk parser with the mutations already
+  made. Preserve response-header logging through B249. Helper mistral_chat compares parsed
+  transformations and diagnostics; fuzz the native reply decoder, including malformed
+  stream content. Count 336 lines in the owned chat spans plus 22 type lines; budget 340
+  implementation, 220 tests, 120 adapters and 100 fuzz/wiring, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,mistral_chat}.rs
+    - crates/betterlite-openai/src/mistral_chat/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/mistral_chat.rs
+    - crates/betterlite-openai/fuzz/corpus/mistral_chat/**
+    - tools/oracle/src/helpers/{mod,mistral_chat}.rs
+    - tools/oracle/helpers/{dispatch,mistral_chat}.py
+    - tools/oracle/cases/helpers/mistral-chat/**
+    - tools/oracle/fuzz/corpus/helper_case/mistral_chat*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L229-L372
+    why: Media short-circuit, file-ID lifting and prompt placement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L406-L493
+    why: Role-sensitive output-field cleanup, tool projection and role-insensitive empty predicate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L504-L684
+    why: Nonstream last-block projection versus stream concatenation and fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/mistral.py#L1-L24
+    why: Tool-call and thinking-block records carried by the native decoder.
+dod:
+  - text: Media and text message branches preserve their different name, file and empty-message handling.
+    proof: [mistral-chat-tests, mistral-chat-python, oracle]
+  - text: Reply and chunk conversion retain last-block versus concatenation semantics and fallback behavior.
+    proof: [mistral-chat-tests, oracle, mistral-chat-python]
+  - text: Malformed native content and newly tagged helper cases replay successfully.
+    proof: [mistral-chat-corpus, mistral-chat-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: mistral-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^mistral_chat::/) - test(replays_mistral_chat_corpus)'
+      why: Ordinary content tests alone miss the early media return and stream-specific normalization.
+    - id: mistral-chat-python
+      run: test -f tools/oracle/helpers/mistral_chat.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Reference transformations must preserve their in-place mutation order.
+    - id: mistral-chat-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/mistral_chat.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/mistral_chat)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_mistral_chat_corpus)'
+      why: Provider-specific content blocks must reach the native byte decoder during replay.
+    - id: mistral-chat-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mistral_chat::/)'
+      why: New Mistral cases must be selected by the shared typed helper parser.
+oracle_cases:
+  - tools/oracle/cases/helpers/mistral-chat/media-bypasses-name-cleanup.yaml
+  - tools/oracle/cases/helpers/mistral-chat/file-id-lifting.yaml
+  - tools/oracle/cases/helpers/mistral-chat/assistant-output-fields-and-empty-tools.yaml
+  - tools/oracle/cases/helpers/mistral-chat/reasoning-system-string-and-list.yaml
+  - tools/oracle/cases/helpers/mistral-chat/client-metadata-omission.yaml
+  - tools/oracle/cases/helpers/mistral-chat/last-nonstream-block-wins.yaml
+  - tools/oracle/cases/helpers/mistral-chat/stream-concatenation-and-signature.yaml
+  - tools/oracle/cases/helpers/mistral-chat/malformed-stream-parent-fallback.yaml
+deviations: []
+out_of_scope:
+  - B1408 owns option/config/prompt helpers and schema cleanup in the same chat file.
+  - _convert_thinking_block_to_reasoning_content at L495-L502 has no caller at the pin; its alternate join behavior gets no implementation or cases.
+pitfalls:
+  - A single file part changes cleanup for every message in the conversation.
+  - Nonstreaming response text blocks overwrite one another instead of concatenating.
+  - Stream fallback receives partially modified choices rather than an untouched copy.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: standard

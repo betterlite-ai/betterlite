@@ -1,0 +1,81 @@
+id: B1405
+title: Grok Voice realtime event normalization
+description: >-
+  Implement every method in xai/realtime/handler.py and transformation.py as xai_realtime
+  in betterlite-openai. B528 supplies websocket URL/TLS and handshake mechanics; override
+  its default origin with https://api.x.ai/v1, send only Authorization, and create a new
+  normalizer per session. Consume B1004's decoded realtime records. Drop exactly ping
+  events. Apply content-part repair, conversation role repair, index insertion and usage
+  normalization in that order. Cache parts by response_id/item_id/content_index, where
+  missing content_index means zero; completed text/transcript updates retain a previously
+  declared part type. Missing parts fall back to cached values or audio with empty transcript.
+  Preserve explicit null indices; insert absent output/content indices only for the source
+  event sets. conversation.item.added changes any tool role to assistant, without checking
+  item.type. response.created usage={} becomes null, whereas response.done usage={} becomes
+  the zero GA record; non-mapping usage becomes null, and missing usage is untouched.
+  Preserve extra token-detail fields while supplying cached/text/audio defaults.
+
+  For outgoing session.update, insert create_response=true only in server_vad configurations
+  lacking that key, both at turn_detection and audio.input.turn_detection. A false or null
+  existing value survives. Register helper xai_realtime accepting ordered event sequences
+  and session patches, comparing all emitted records to a fresh XAIRealtimeNormalizer.
+  Bound the part cache at 4096 distinct keys; exceeding it returns a typed limit failure
+  for B036 to close the client with 1009. Test cache isolation, key reuse and that bound
+  separately from parity cases. No additional JSON or websocket decoder is introduced.
+  Source count is 267 nonblank/noncomment lines including the package export; estimate
+  250 normalization, 200 tests, 120 adapter and 40 enum/export lines, cap 650.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,xai_realtime}.rs
+    - crates/betterlite-openai/src/xai_realtime/**
+    - tools/oracle/src/helpers/{mod,xai_realtime}.rs
+    - tools/oracle/helpers/{dispatch,xai_realtime}.py
+    - tools/oracle/cases/helpers/xai-realtime/**
+    - tools/oracle/fuzz/corpus/helper_case/xai_realtime*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/realtime/transformation.py#L22-L286
+    why: Per-session cache, index sets, role/usage repair and server VAD defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/realtime/handler.py#L16-L48
+    why: xAI origin and Authorization-only websocket headers.
+dod:
+  - text: Grok Voice event sequences and VAD session patches match the normalizer in order.
+    proof: [voice-normalizer-tests, voice-normalizer-python, oracle]
+  - text: Cache entries cannot cross sessions or grow past the documented limit.
+    proof: [voice-cache-bound]
+  - text: Ordered realtime helper cases select the new dispatch variant.
+    proof: [voice-normalizer-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: voice-normalizer-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_realtime::/) - test(part_cache_limit)'
+      why: Usage nullability and content repair depend on earlier events, not isolated snapshots.
+    - id: voice-cache-bound
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_realtime::.*part_cache_limit$/)'
+      why: The deliberate cache bound must fail on its first excess distinct key.
+    - id: voice-normalizer-python
+      run: test -f tools/oracle/helpers/xai_realtime.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: A fresh Python normalizer must process the same ordered sequence as Rust.
+    - id: voice-normalizer-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_realtime*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_realtime::/)'
+      why: Sequence fixtures must parse under call.xai_realtime.
+oracle_cases:
+  - tools/oracle/cases/helpers/xai-realtime/ping-and-index-sets.yaml
+  - tools/oracle/cases/helpers/xai-realtime/content-part-backfill.yaml
+  - tools/oracle/cases/helpers/xai-realtime/tool-role-on-nonfunction-item.yaml
+  - tools/oracle/cases/helpers/xai-realtime/created-versus-done-usage.yaml
+  - tools/oracle/cases/helpers/xai-realtime/vad-missing-false-and-null.yaml
+  - tools/oracle/cases/helpers/xai-realtime/authorization-without-beta.yaml
+deviations:
+  - what: A Grok Voice session exceeding 4096 cached content-part keys closes with websocket code 1009 instead of retaining unlimited history.
+    why: The bounded-input rule requires a finite per-session allocation limit; existing-key updates do not consume another slot.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/realtime/transformation.py#L57-L61
+out_of_scope:
+  - B036 installs this normalizer into the realtime operation; B1008 owns bidirectional relay and B1125 owns public websocket aliases.
+pitfalls:
+  - An existing null content_index is a different cache key from an absent content_index.
+  - response.done with an absent usage field stays absent rather than gaining a zero usage object.
+  - The source repairs tool roles even when item.type is not function_call.
+budget: {max_changed_lines: 650, max_new_expects: 0}
+review_level: standard

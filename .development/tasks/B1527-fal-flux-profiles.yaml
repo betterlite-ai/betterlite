@@ -1,0 +1,83 @@
+id: B1527
+title: Preserve Fal Flux aspect-ratio and image-size variants
+description: >-
+  Implement api::fal::flux profiles for every method in the Ultra, Pro v1.1, Schnell and Dev generation
+  modules. Compose B1525's Fal credentials and decoded image records. Fixed endpoints are
+  fal-ai/flux-pro/v1.1-ultra, fal-ai/flux-pro/v1.1, fal-ai/flux/schnell and fal-ai/flux/dev respectively.
+  Share equal mappings deliberately while retaining Ultra's aspect_ratio versus the others' image_size.
+  All advertise n/response_format/size, map n to num_images and url/b64_json response formats to jpeg,
+  and check existence of the original input key before writing the translated destination. Thus an
+  existing num_images may be overwritten by n while an existing n blocks translation. Unsupported
+  keys fail unless drop_params. The body overlays provider fields on prompt without installing the
+  defaults described only in docstrings.
+
+  Ultra first uses its ten exact size aliases, then evaluates its ordered ratio intervals. Preserve
+  the overlapping intervals: a custom 1500x1000 maps to 4:3, even though exact 1536x1024 maps to 3:2;
+  custom ratios in [0.65,0.7) select 3:4 before the 2:3 branch. Invalid/zero-height inputs fall back
+  to 16:9. Pro/Schnell/Dev use the six image-size aliases, pass nonstrings (including size objects)
+  unchanged, convert custom lowercase-x dimensions to integer width/height, and otherwise choose
+  landscape_4_3. Do not add positivity checks or change fallback to square.
+
+  Ultra's response projection, inherited by the other profiles, appends B1525 image objects and copies
+  seed, timings and has_nsfw_concepts into existing hidden parameters when their keys are present,
+  retaining null values. Reuse decode_fal_image_reply; this task operates on its typed metadata and
+  does not introduce an external-byte parser. Source reply errors retain HTTP status and headers.
+
+  The fal_flux helper invokes each pinned class for original_key_precedence, exact_vs_custom_ratio,
+  portrait_overlap, unknown_size_fallback, dev_endpoint and hidden_metadata_presence. Register
+  call.fal_flux and test api::fal::flux with boundary values around each interval. Four modules contain
+  345 nonblank/non-comment lines; duplicate Pro/Schnell algorithms share native code, allowing 230
+  implementation, 240 tests and 110 adapters/wiring lines within a 650-line budget.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/flux.rs
+    - crates/betterlite-core/src/api/fal/flux/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_flux.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_flux.py
+    - tools/oracle/cases/helpers/fal-flux/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_flux*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_ultra_transformation.py#L19-L243
+    why: Ordered Ultra ratio branches and hidden reply metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_pro_v11_transformation.py#L6-L89
+    why: Pro uses image_size aliases and custom dimension objects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_schnell_transformation.py#L6-L90
+    why: Schnell endpoint and equivalent size mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/flux_dev_transformation.py#L1-L13
+    why: Dev inherits Schnell policy with one endpoint override.
+dod:
+  - text: Flux variants preserve their endpoint, option precedence and exact-versus-custom size behavior.
+    proof: [flux-tests, oracle, flux-python]
+  - text: Flux image results retain shared object fields and presence-sensitive hidden metadata.
+    proof: [flux-tests, oracle, flux-python]
+checks:
+  optional: []
+  commands:
+    - id: flux-tests
+      why: Flux profiles or their overlapping ratio cases are missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::flux::/)'
+    - id: flux-python
+      why: the Flux family has no runnable source-backed mapping comparisons
+      run: grep -qE '^[[:space:]]+fal_flux:' tools/oracle/fuzz/corpus/helper_case/fal_flux* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_flux.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-flux/original-key-precedence.yaml
+  - tools/oracle/cases/helpers/fal-flux/exact-vs-custom-ratio.yaml
+  - tools/oracle/cases/helpers/fal-flux/portrait-overlap.yaml
+  - tools/oracle/cases/helpers/fal-flux/unknown-size-fallback.yaml
+  - tools/oracle/cases/helpers/fal-flux/dev-endpoint.yaml
+  - tools/oracle/cases/helpers/fal-flux/hidden-metadata-presence.yaml
+deviations: []
+out_of_scope:
+  - B046 selects Flux variants from model names; this task supplies the four profiles without owning the shared factory.
+pitfalls:
+  - Ultra's later 1.4-to-1.6 ratio branch is shadowed by the earlier 1.3-to-1.7 branch.
+  - A dimension object survives Pro/Schnell mapping instead of being coerced into an aspect ratio.
+  - Default seed and safety values mentioned in the Flux docstring are not inserted into requests.
+review_level: standard
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

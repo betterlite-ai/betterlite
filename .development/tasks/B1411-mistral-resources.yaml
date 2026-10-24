@@ -1,0 +1,88 @@
+id: B1411
+title: Mistral native file purposes and batch-job records
+description: >-
+  Add mistral_files and mistral_batches to betterlite-openai for all methods and native
+  records in the two covered transformation files. Reuse B1410 resource credentials,
+  B171 path encoding, B235 extracted bytes and B1015/B1035 public records. File upload
+  sends fine-tune/batch unchanged and maps ocr/user_data to ocr; every other purpose is
+  a native MistralError 400, never silently batch. Readback maps ocr and unknown purposes
+  to user_data, while missing purpose defaults batch. Preserve filename/MIME/time defaults
+  file_<time>.jsonl, application/octet-stream and current integer time; bytes defaults
+  zero, deleted true and status uploaded. List sends no purpose for a falsey value, or
+  the same upload-purpose mapping otherwise. Encode resource IDs as individual segments;
+  content requires a non-None file_id and returns the binary response untouched. These
+  reply methods decode JSON directly and do not add xAI's raise_for_status step.
+
+  Batch create targets /v1/batch/jobs with input_files containing the single input_file_id,
+  endpoint and selected model; reject None input/endpoint but retain empty strings. Include
+  only truthy metadata. Retrieval returns the explicit GET request form with its own
+  resolved credentials, rather than an OpenAI POST-shaped body. Normalize QUEUED/RUNNING/
+  SUCCESS/FAILED/TIMEOUT_EXCEEDED/CANCELLATION_REQUESTED/CANCELLED to validating/in_progress/
+  completed/failed/expired/cancelling/cancelled respectively. Use completed_at only for the
+  matching terminal timestamp, input_files[0] or empty, completion_window=24h, output/error
+  file IDs as supplied, and succeeded_requests for completed count. Ignore completed_requests
+  in accounting. Error messages append ' (x<count>)' only for count greater than one.
+
+  Decode provider file/list/delete and batch envelopes with decode_mistral_resource,
+  fuzzed through tagged resource inputs. Helper mistral_resources invokes the source
+  transforms with fixed time and checks pure request/output facts; generic resource
+  executors remain the callers. The files total 405 nonblank/noncomment lines, largely
+  shared public record construction and method signatures; budget 340 native code,
+  205 tests, 125 adapters and 100 fuzz/export lines, maximum 800. No new configuration
+  keys or resource routes are added by this leaf.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,mistral_files,mistral_batches}.rs
+    - crates/betterlite-openai/src/{mistral_files,mistral_batches}/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/mistral_resource.rs
+    - crates/betterlite-openai/fuzz/corpus/mistral_resource/**
+    - tools/oracle/src/helpers/{mod,mistral_resources}.rs
+    - tools/oracle/helpers/{dispatch,mistral_resources}.py
+    - tools/oracle/cases/helpers/mistral-resources/**
+    - tools/oracle/fuzz/corpus/helper_case/mistral_resources*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L36-L265
+    why: Bidirectional purpose mapping, upload defaults and native file method contracts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/batches/transformation.py#L29-L218
+    why: One-model jobs, uppercase status mapping and retrieval's explicit GET plan.
+dod:
+  - text: Mistral file purposes preserve OCR round trips and reject unsupported upload/list values.
+    proof: [mistral-resource-tests, mistral-resource-python, oracle]
+  - text: Batch requests and status records retain required-field presence and succeeded-request accounting.
+    proof: [mistral-resource-tests, oracle, mistral-resource-python]
+  - text: Every native resource envelope passes through fuzzed decoding and newly tagged helper seeds.
+    proof: [mistral-resource-corpus, mistral-resource-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: mistral-resource-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^mistral_(files|batches)::/) - test(replays_mistral_resource_corpus)'
+      why: Purpose rejection and terminal timestamp mapping must both have behavior tests.
+    - id: mistral-resource-python
+      run: test -f tools/oracle/helpers/mistral_resources.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: File and job projection share an adapter but call their separate pinned config classes.
+    - id: mistral-resource-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/mistral_resource.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/mistral_resource)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_mistral_resource_corpus)'
+      why: Invalid status literals and missing native IDs must not bypass bounded decoding.
+    - id: mistral-resource-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_resources*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mistral_resources::/)'
+      why: Added seeds must parse as the mistral_resources operation.
+oracle_cases:
+  - tools/oracle/cases/helpers/mistral-resources/ocr-user-data-round-trip.yaml
+  - tools/oracle/cases/helpers/mistral-resources/unsupported-purpose-400.yaml
+  - tools/oracle/cases/helpers/mistral-resources/file-defaults-and-list-purpose.yaml
+  - tools/oracle/cases/helpers/mistral-resources/batch-none-versus-empty.yaml
+  - tools/oracle/cases/helpers/mistral-resources/native-retrieve-get.yaml
+  - tools/oracle/cases/helpers/mistral-resources/all-job-statuses.yaml
+  - tools/oracle/cases/helpers/mistral-resources/succeeded-count-and-error-multiplicity.yaml
+deviations: []
+out_of_scope:
+  - B036 selects native file and batch operations; B1050/B1051 and B1032/B1033/B1034 remain public route owners.
+pitfalls:
+  - Rewriting an unsupported purpose to batch would bypass the caller's batch-file validation path.
+  - completed_requests is present in the native schema but succeeded_requests supplies the normalized completed count.
+  - Batch retrieve carries credentials in its explicit GET plan rather than relying on the outer create-request headers.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

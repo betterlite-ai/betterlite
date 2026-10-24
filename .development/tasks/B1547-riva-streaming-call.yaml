@@ -1,0 +1,89 @@
+id: B1547
+title: Execute Riva recognition through the optional streaming SDK
+description: >-
+  Build api::riva::call for every handler.py callable, folding protocol declarations and trivial
+  _auth_factory/_audio_encoding accessors into typed B165 SDK bindings. Reuse nvidia-riva-client
+  instead of maintaining a second gRPC/protobuf stack. Import riva.client lazily; if it lacks
+  RecognitionConfig, use riva.client.proto.riva_asr_pb2. Missing imports return the source Riva 500
+  install hint. Sync and async entries run one implementation, with async work offloaded through
+  B165's tracked blocking executor. This task takes resolved api_base/api_key; B047 handles their
+  existing NVIDIA_RIVA environment sources.
+
+  Reject a falsey endpoint with the pinned 400 host:port requirement. Process audio through B1001,
+  resample with B1546, build B1545's payload, then overwrite sample_rate_hertz/audio_channel_count/
+  encoding to 16000/1/LINEAR_PCM so caller settings cannot disagree with the bytes. NVCF function-id
+  metadata makes TLS default true; self-hosted defaults false. A non-null use_ssl override uses
+  source truthiness. Add bearer metadata only for a truthy key. Try Auth keyword arguments first and
+  retry the old positional signature only on TypeError.
+
+  Convert recognition integers/bools at the SDK boundary, select the named encoding or LINEAR_PCM,
+  and construct nonempty endpointing settings with CopyFrom. Ignore any endpointing constructor/copy
+  failure so older SDKs keep defaults. Set interim_results=false. Stream 3200-byte slices with no
+  pacing; the source's 50-ms comment is inaccurate because 1600 samples at 16 kHz is 100 ms. Forward
+  timeout only when the generator signature has timeout or **kwargs; inspection errors omit it.
+  Consume only final results with a first alternative, retaining empty final transcripts and copying
+  word/start_time/end_time with integer-or-zero conversion. SDK decoding stays in the maintained
+  client; no new raw protobuf parser or fuzz target is needed.
+
+  Preserve the narrow error boundary: ASR service construction, stream creation and collection map
+  failures through B1545; earlier auth/config/resampling errors retain their own causes. B249 pre_call
+  records recognition options and function-ID presence, post_call uses the original audio filename.
+  B004 response conversion updates the supplied response and hidden model/provider/duration from
+  resampled sample count. call.riva_call scripts real source handler seams for missing_endpoint,
+  nvcf_metadata, self_hosted_tls, legacy_auth, endpointing_fallback, timeout_capability,
+  wire_format_override and final_only_chunks. Rust additionally tests identity isolation and tracked
+  cleanup on cancellation without claiming an older SDK accepts a deadline. The handler has 395
+  physical source lines including protocol surfaces; estimate 290 bindings/orchestration, 250 tests
+  and 160 oracle lines, capped at 800.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/riva.rs
+    - crates/betterlite-core/src/api/riva/call.rs
+    - crates/betterlite-core/src/api/riva/call/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/riva_call.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/riva_call.py
+    - tools/oracle/cases/helpers/riva-call/**
+    - tools/oracle/fuzz/corpus/helper_case/riva_call*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_riva/audio_transcription/handler.py#L55-L485
+    why: SDK compatibility bindings, request orchestration and final stream collection.
+  - url: https://github.com/nvidia-riva/python-clients/blob/main/riva/client/asr.py
+    why: Maintained streaming SDK API used through the optional bridge; behavioral compatibility remains pinned to LiteLLM.
+dod:
+  - text: Riva SDK calls reproduce authentication, TLS defaults, protobuf options and fixed PCM chunk boundaries.
+    proof: [riva-call-tests, oracle, riva-call-python]
+  - text: Final-result aggregation, timeout capability and source error boundaries are preserved without blocking the async runtime.
+    proof: [riva-call-tests, oracle, riva-call-python]
+checks:
+  optional: []
+  commands:
+    - id: riva-call-tests
+      why: Riva execution and SDK compatibility behavior have no production tests
+      run: uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::riva::call::/)'
+    - id: riva-call-python
+      why: scripted Riva SDK effects lack a checked source-handler comparison
+      run: grep -qE '^[[:space:]]+riva_call:' tools/oracle/fuzz/corpus/helper_case/riva_call* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/riva_call.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/riva-call/missing-endpoint.yaml
+  - tools/oracle/cases/helpers/riva-call/nvcf-metadata.yaml
+  - tools/oracle/cases/helpers/riva-call/self-hosted-tls.yaml
+  - tools/oracle/cases/helpers/riva-call/legacy-auth.yaml
+  - tools/oracle/cases/helpers/riva-call/endpointing-fallback.yaml
+  - tools/oracle/cases/helpers/riva-call/timeout-capability.yaml
+  - tools/oracle/cases/helpers/riva-call/wire-format-override.yaml
+  - tools/oracle/cases/helpers/riva-call/final-only-chunks.yaml
+deviations: []
+out_of_scope:
+  - Empty Riva package initializers add no behavior; recognition mapping and audio conversion belong to B1545/B1546.
+pitfalls:
+  - nvcf_function_id changes TLS's default even when no API key is supplied.
+  - Unknown endpointing fields are silently ignored rather than turning a recognition call into a failure.
+  - A generator exposing neither timeout nor keyword variadics must not receive a timeout argument.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

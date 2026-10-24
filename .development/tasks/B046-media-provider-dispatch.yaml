@@ -1,0 +1,107 @@
+id: B046
+title: Compose image, video and Runway speech providers in the gateway
+description: >-
+  Connect black_forest_labs, recraft, stability, topaz, fal_ai and runwayml operations through
+  api::media_providers in betterlite-core, composing B1517-B1539. Extend B010's closed provider
+  identities/contracts and B174 selection at the upper layer; lower provider crates must not import
+  core services. Feed prepared image calls into B998/B999, Topaz native variations into B1000,
+  Runway speech into B1084 and queued video operations into B093's existing executor. Register the
+  provider pricing functions once. B1534's settings are shared by Runway operations; this composer
+  adds no settings or parsers.
+
+  Own the Fal image configuration selector and package exports, _complete_fal_ai at main.py
+  3652-3680, and the Runway speech branch at 8590-8620. Fal image selection lowercases the model and
+  tests substrings in source order: gpt-image-2; nano-banana/gemini-25-flash-image; imagen4/imagen-4;
+  recraft; bria; flux-pro with ultra subtest; flux/dev/flux-dev; flux/schnell/flux-schnell/schnell;
+  bytedance/seedream; bytedance/dreamina; ideogram; stable-diffusion; generic fallback. Preserve these
+  collisions rather than choosing by final path component. Fal chat rejects stream at dispatch,
+  resolves explicit-or-global API key before the provider environment fallback, forwards caller-or-
+  global headers and dispatch context, then performs the source post_call. Runway speech reports the
+  missing-configuration BadRequestError or invokes B1536 with aspeech default false.
+
+  Existing route factories alone mount POST /v1/images/generations, /images/generations,
+  /openai/deployments/{model:path}/images/generations and their edits counterparts; POST /v1/audio/speech
+  and /audio/speech; and the four chat paths /v1/chat/completions, /chat/completions,
+  /engines/{model}/chat/completions, /openai/deployments/{model}/chat/completions. Compose B093's paired
+  /v1/videos and /videos prefixes for POST create and GET list, GET /{video_id}, GET /{video_id}/content,
+  POST /{video_id}/remix, POST /characters, GET /characters/{character_id}, POST /edits and POST
+  /extensions. Unsupported provider operations reach their existing error paths. No variations or
+  video-delete HTTP route exists at this pin; exercise those native operations through Rust tests.
+
+  Boot both proxies with deterministic mock jobs and artifact servers. Parameterized HTTP fixtures
+  cover every alias, each image provider, local multipart edits, Fal selector collisions and vision
+  chat/stream rejection, BFL terminal/timeout errors, Runway default-host polling and binary speech,
+  Fal/Runway video create-retrieve-content, unsupported video methods, upstream errors and absent/
+  invalid proxy keys. Compare status, error.type/param/code, returned content/headers and upstream
+  method/path/body/authentication; verify no artifact receives provider credentials. Use B900 multipart
+  expectations and existing endpoint fixtures. Tests under media_providers run in core and server.
+  The selector/module surface is 102 nonblank/non-comment lines and main dispatch adds 55; budget
+  220 composition, 270 tests and 210 fixtures, capped at 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/media_providers.rs
+    - crates/betterlite-core/src/api/media_providers/**
+    - crates/betterlite-provider/src/provider.rs
+    - crates/betterlite-provider/src/dispatch.rs
+    - crates/betterlite-server/src/media_providers.rs
+    - crates/betterlite-server/src/media_providers/**
+    - crates/betterlite-server/src/lib.rs
+    - tools/oracle/cases/providers/media/**
+    - tools/oracle/fixtures/media/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/__init__.py#L1-L84
+    why: Ordered image profile selection and its exposed configurations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3652-L3680
+    why: Fal chat dispatch rejects streaming before the generic HTTP handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8590-L8620
+    why: Runway-specific speech configuration and dispatch branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L67-L85
+    why: Existing generation aliases beginning at their decorators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L226-L243
+    why: Multipart edit aliases reused by the provider fixtures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12522-L12532
+    why: Authenticated speech route aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11930-L11952
+    why: Chat decorators used for the Fal vision cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/video_endpoints/endpoints.py#L33-L841
+    why: All nine pairs of video operation decorators, with no delete route.
+dod:
+  - text: Each media provider selects its implemented operation and executes through the preexisting API families without duplicate mounts.
+    proof: [media-provider-tests, oracle]
+  - text: Mocked job lifecycles, credential boundaries and source-compatible error envelopes are observable through every relevant HTTP alias.
+    proof: [media-provider-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: media-provider-tests
+      why: media composition or its booted-proxy behavior suite is absent
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/media_providers::/)'
+oracle_cases:
+  - tools/oracle/cases/providers/media/generation-provider-aliases.yaml
+  - tools/oracle/cases/providers/media/edit-provider-aliases.yaml
+  - tools/oracle/cases/providers/media/fal-profile-collisions.yaml
+  - tools/oracle/cases/providers/media/fal-chat-aliases.yaml
+  - tools/oracle/cases/providers/media/fal-stream-rejected.yaml
+  - tools/oracle/cases/providers/media/bfl-job-errors.yaml
+  - tools/oracle/cases/providers/media/runway-job-polling.yaml
+  - tools/oracle/cases/providers/media/runway-speech-aliases.yaml
+  - tools/oracle/cases/providers/media/video-create-status-content.yaml
+  - tools/oracle/cases/providers/media/video-unsupported-aliases.yaml
+  - tools/oracle/cases/providers/media/provider-error-envelope.yaml
+  - tools/oracle/cases/providers/media/proxy-auth-before-provider.yaml
+deviations: []
+out_of_scope:
+  - B1517-B1539 implement the provider leaves removed from this entry; root __init__.py files only expose those implementations.
+  - main.py completion ownership outside Fal follows the provider families B024-B043, with custom/Aleph/proxy branches B044, subscription stanzas B045, Ragflow B049 and A2A/Langgraph/Langflow B050; the concrete _complete_ suffix determines that family's adapter rather than a new generic implementation here.
+  - In main.py, OpenAI-base resolution stays B500, default/module encoding B195/B196, dispatch context and client helpers B198, print_verbose B2239, and stream_chunk_builder through _simple_text_part B2227; B158 owns remaining facades/mocks/retry/registration scaffolding, while the audio facade outside the Runway branch remains B083/B1083/B1084.
+  - URL download behavior for BFL edits is specified solely by B1518; this composer does not add a fetcher or broaden its allowed file inputs.
+pitfalls:
+  - A model containing both gpt-image-2 and recraft must select the GPT image profile.
+  - Fal chat's stream rejection happens before any provider request is sent.
+  - Runway cancellation is callable natively but must not create a new DELETE videos route.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

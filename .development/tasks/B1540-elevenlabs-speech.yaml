@@ -1,0 +1,87 @@
+id: B1540
+title: Resolve ElevenLabs voices and separate speech query parameters
+description: >-
+  Implement api::elevenlabs::speech and a shared ElevenLabsError for common_utils.py and every
+  text_to_speech transformation method. Use B1135's speech contract and B2228's owned-key predicate.
+  Load ELEVENLABS_API_BASE (https://api.elevenlabs.io) and ELEVENLABS_API_KEY (unset) in betterlite-config;
+  elevenlabs_speech_settings loads both and checks defaults. Speech auth resolves explicit key,
+  litellm.api_key, litellm.openai_key, then environment, rejecting null but not an empty final value.
+  Update xi-api-key and Content-Type while preserving other headers.
+
+  Resolve a trimmed voice string, or the first nonempty string among mapping keys voice_id/id/name,
+  through the ten case-insensitive VOICE_MAPPINGS. Preserve the source's whitespace-string branch:
+  an explicitly whitespace-only string resolves to an empty ID at mapping time and fails URL building,
+  rather than consuming the voice_id fallback. Only unresolved voices pop optional voice_id. Encode
+  the selected ID as a path segment with B171 under /v1/text-to-speech/{id}. response_format maps mp3,
+  pcm and opus to the source output_format values; other strings pass through. The pcm_44100 constant
+  is not an automatically inserted query default when response_format is absent.
+
+  Work from a shallow copy of options. Parse speed numerically into voice_settings.speed, retaining
+  other voice settings and omitting invalid speed; remove instructions. Remaining non-null fields,
+  then kwargs.extra_body, then nonreserved/non-LiteLLM kwargs form the mapped body in that precedence.
+  Consume forwarded kwargs and extra_body; place query values in __elevenlabs_query_params__ only
+  when nonempty and always place __elevenlabs_voice_id__. Preserve the shared nested voice_settings
+  mutation visible in Python's shallow-copy behavior through the returned effect record.
+
+  Request construction starts with text/model_id, overlays mapped options and then non-null extra_body
+  members, allowing caller overrides, and returns only Content-Type in the request-header fragment.
+  URL encoding follows urlencode without list expansion; final response is the unchanged binary
+  wrapper. This task transforms parsed records only. Register call.elevenlabs_speech with voice_forms,
+  whitespace_voice, optional_voice_consumption, format_query, speed_settings, kwargs_consumption,
+  body_override and credential_priority; compare source results and mutations. Source totals 260
+  nonblank/non-comment lines; allocate 250 implementation/config, 220 tests and 150 oracle lines,
+  maximum 750 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/elevenlabs.rs
+    - crates/betterlite-core/src/api/elevenlabs/{common,speech}.rs
+    - crates/betterlite-core/src/api/elevenlabs/speech/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/elevenlabs.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/elevenlabs_speech.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/elevenlabs_speech.py
+    - tools/oracle/cases/helpers/elevenlabs-speech/**
+    - tools/oracle/fuzz/corpus/helper_case/elevenlabs_speech*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/text_to_speech/transformation.py#L33-L318
+    why: Voice resolution, mutable kwargs bridge and speech URL/body construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/elevenlabs/common_utils.py#L1-L5
+    why: Shared provider exception preserves the base HTTP error contract.
+dod:
+  - text: Voice/query/body mapping and caller-visible option consumption agree with ElevenLabs source behavior.
+    proof: [elevenlabs-speech-tests, oracle, elevenlabs-speech-python]
+  - text: Loaded provider settings and global key precedence produce the required authenticated speech request.
+    proof: [elevenlabs-speech-tests, oracle, elevenlabs-speech-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: elevenlabs-speech-tests
+      why: ElevenLabs speech transformations or provider settings loading are absent
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::elevenlabs::speech::/) | test(elevenlabs_speech_settings)'
+    - id: elevenlabs-speech-python
+      why: voice and kwargs side effects have no pinned-source oracle adapter
+      run: grep -qE '^[[:space:]]+elevenlabs_speech:' tools/oracle/fuzz/corpus/helper_case/elevenlabs_speech* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/elevenlabs_speech.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/elevenlabs-speech/voice-forms.yaml
+  - tools/oracle/cases/helpers/elevenlabs-speech/whitespace-voice.yaml
+  - tools/oracle/cases/helpers/elevenlabs-speech/optional-voice-consumption.yaml
+  - tools/oracle/cases/helpers/elevenlabs-speech/format-query.yaml
+  - tools/oracle/cases/helpers/elevenlabs-speech/speed-settings.yaml
+  - tools/oracle/cases/helpers/elevenlabs-speech/kwargs-consumption.yaml
+  - tools/oracle/cases/helpers/elevenlabs-speech/body-override.yaml
+  - tools/oracle/cases/helpers/elevenlabs-speech/credential-priority.yaml
+deviations: []
+out_of_scope:
+  - B047 installs the speech operation in the existing dispatcher; transcription-specific behavior is B1541.
+pitfalls:
+  - A valid explicit voice leaves an optional voice_id field available for body forwarding.
+  - DEFAULT_OUTPUT_FORMAT is defined but never applied to an omitted response_format.
+  - kwargs.extra_body can replace text and model_id despite their initial request values.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 1

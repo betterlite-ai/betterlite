@@ -1,0 +1,90 @@
+id: B1549
+title: Bound Soniox polling options and redact transcription callbacks
+description: >-
+  Implement api::soniox::prepare for handler.py's record declarations and shared helpers from
+  _prepare through _raise_for_response. Consume B1548's loaded settings/authentication and typed
+  transcript records. Work from a local optional-parameter copy. Convert soniox_polling_interval
+  to Decimal seconds, default one, replace nonfinite with one and clamp to 0.5..60; invalid text/null
+  conversion still fails. Convert soniox_max_polling_attempts to integer, default 1800, fallback on
+  ValueError/OverflowError only, and clamp 1..6000. Preserve null's TypeError rather than treating it
+  as an absent value. soniox_cleanup defaults to file/transcription, null disables, a string is one
+  entry and other sequences are copied. Extract filename, audio_url, file_id and response_format,
+  remove leftover language, and return the remaining parameters unchanged.
+
+  Create-body construction starts with model, overlays every non-null remaining option, then writes
+  truthy audio_url and selected file_id. Both references may coexist; these are provider fields and
+  no request URL is fetched. Define decode_soniox_reply for bounded JSON bytes used by create/upload,
+  status, transcript and error responses, with typed resource/status/token fields and a raw metadata
+  passthrough required by B1548. Preserve absent versus null fields and non-object error fallback.
+  B1087 supplies JSON/item bounds. _transcription_meta projects a decoded status record. Responses
+  at least 400 choose truthy error_message, then error, then raw text, falling back to raw text on
+  parse/projection failure; wrap the action, original HTTP status and headers in SonioxException.
+
+  Logging receives a shallow body copy with every present non-null webhook_auth_header_value
+  replaced by [REDACTED], including false/zero. Other fields are unchanged. Pre-call input is null,
+  API URL ends /v1/transcriptions and atranscription is always true. Post-call uses B1001 filename
+  extraction only for a truthy audio input. Suppress any logging callback or filename-extraction
+  error without mutating the real outgoing body. Route these callbacks through B249.
+
+  call.soniox_prepare compares polling_clamps, invalid_attempts, cleanup_shapes, retained_options,
+  dual_references, webhook_redaction, callback_failure and provider_error_priority against source
+  helpers. Add soniox_reply fuzzing and replays_the_soniox_reply_corpus with malformed IDs, tokens,
+  JSON scalars and invalid UTF-8. The 28 record plus 146 helper lines support 230 implementation,
+  230 tests and 160 oracle/fuzz lines within 700 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/soniox.rs
+    - crates/betterlite-core/src/api/soniox/prepare.rs
+    - crates/betterlite-core/src/api/soniox/prepare/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/soniox_reply.rs
+    - crates/betterlite-core/fuzz/corpus/soniox_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/soniox_prepare.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/soniox_prepare.py
+    - tools/oracle/cases/helpers/soniox-prepare/**
+    - tools/oracle/fuzz/corpus/helper_case/soniox_prepare*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L61-L102
+    why: Typed resource, metadata, error and handler-option surfaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L173-L357
+    why: Polling clamps, shallow secret redaction and provider-error extraction.
+dod:
+  - text: Soniox preparation preserves option mutation boundaries, source conversion failures and clamped polling values.
+    proof: [soniox-prepare-tests, oracle, soniox-prepare-python]
+  - text: Logging cannot expose the webhook credential or alter the request, and malformed provider replies retain typed error behavior.
+    proof: [soniox-prepare-tests, soniox-reply-corpus, oracle, soniox-prepare-python]
+checks:
+  optional: []
+  commands:
+    - id: soniox-prepare-tests
+      why: Soniox preparation, redaction or HTTP-error interpretation is absent
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::soniox::prepare::/) - test(replays_the_soniox_reply_corpus)'
+    - id: soniox-reply-corpus
+      why: Soniox's shared provider decoder has no newly added byte corpus
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/soniox_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_soniox_reply_corpus)'
+    - id: soniox-prepare-python
+      why: option and callback effect traces are not checked against the source helpers
+      run: grep -qE '^[[:space:]]+soniox_prepare:' tools/oracle/fuzz/corpus/helper_case/soniox_prepare* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/soniox_prepare.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/soniox-prepare/polling-clamps.yaml
+  - tools/oracle/cases/helpers/soniox-prepare/invalid-attempts.yaml
+  - tools/oracle/cases/helpers/soniox-prepare/cleanup-shapes.yaml
+  - tools/oracle/cases/helpers/soniox-prepare/retained-options.yaml
+  - tools/oracle/cases/helpers/soniox-prepare/dual-references.yaml
+  - tools/oracle/cases/helpers/soniox-prepare/webhook-redaction.yaml
+  - tools/oracle/cases/helpers/soniox-prepare/callback-failure.yaml
+  - tools/oracle/cases/helpers/soniox-prepare/provider-error-priority.yaml
+deviations: []
+out_of_scope:
+  - B047 owns audio_transcriptions at 111-172, B1550 the upload/poll/cleanup pairs at 482-588 and 716-816, and B1551 the sync/async pipeline bodies at 358-481 and 589-715.
+pitfalls:
+  - soniox_max_polling_attempts=null fails while an invalid numeric string falls back to 1800.
+  - The redaction target is webhook_auth_header_value, not webhook_auth_header_name.
+  - Pre-call logging says atranscription=true even when the caller selected synchronous execution.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

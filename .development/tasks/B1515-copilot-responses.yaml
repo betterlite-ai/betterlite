@@ -1,0 +1,85 @@
+id: B1515
+title: Select Copilot Responses models and stabilize streamed item identities
+description: >-
+  Add api::copilot_responses in betterlite-core for the complete Responses transformation module.
+  Compose B506/B507/B508 records with B1512 headers and B1513 authentication. Native Responses support
+  first consults B2225 merged model metadata: mode=responses accepts, mode=chat rejects even a dual
+  endpoint model, otherwise read supported_endpoints from B193's raw catalog at the resolved key.
+  Missing metadata or lookup failure returns false with the source debug diagnostic. Native WebSocket
+  capability is always false. Preserve the incoming optional-parameter dictionary unchanged.
+
+  Allocate the output-index map anew per request. output_item.added anchors a string item.id, including
+  an empty string. Later events with a string item_id replace it from that index; otherwise an
+  output_item.done dictionary receives the anchored nested id. Events before an anchor pass through;
+  repeated added events replace the anchor. Preserve Python's integer test, including bool indices,
+  at the typed compatibility boundary. Apply this rewrite before B508 event conversion, without
+  implementing another SSE decoder. For reasoning input items, keep non-null encrypted_content and
+  discard every null-valued field; other item types are unchanged.
+
+  Require a truthy subscription key. Merge caller headers over defaults, then classify only input
+  obtained from the typed params object's input attribute; a plain map is not inspected. Missing or
+  falsey roles and case-insensitive assistant roles mean agent; a tool role alone means user. Vision
+  detection follows lists and content lists, recognizes input_image case-insensitively, and warns then
+  returns false only beyond DEFAULT_MAX_RECURSE_DEPTH (100). Reuse B002's setting with a named
+  copilot_vision_depth_settings loader test. Base precedence is explicit, authenticated endpoint,
+  GITHUB_COPILOT_API_BASE from B1514, default https://api.githubcopilot.com; trim slashes and add /responses.
+
+  The copilot_responses helper compares model_mode_opt_out, catalog_endpoint, changing_item_ids,
+  pre_anchor_delta, null_reasoning_fields, typed_input_only, tool_role_user and depth_boundary.
+  Script catalog/auth dependencies around the pinned class and register call.copilot_responses.
+  Put unit tests in api::copilot_responses, including concurrent streams with the same indices.
+  Owned source totals 306 nonblank/non-comment lines; 300 production, 240 tests, 110 adapter and
+  50 wiring/config lines fit a 750-line ceiling.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/copilot_responses.rs
+    - crates/betterlite-core/src/api/copilot_responses/**
+    - crates/betterlite-config/src/providers/copilot.rs
+    - crates/betterlite-config/src/providers/copilot/responses.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/copilot_responses.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/copilot_responses.py
+    - tools/oracle/cases/helpers/copilot-responses/**
+    - tools/oracle/fuzz/corpus/helper_case/copilot_responses*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/responses/transformation.py#L43-L414
+    why: Model gate, stream anchors, encrypted reasoning retention and recursive input classification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L86
+    why: Shared recursion setting and default.
+dod:
+  - text: Copilot model mode overrides endpoint hints and authenticated request preparation respects typed input and depth settings.
+    proof: [copilot-responses-tests, oracle, copilot-responses-python]
+  - text: Every stream has isolated item anchors and preserves encrypted reasoning for replay without null fields.
+    proof: [copilot-responses-tests, oracle, copilot-responses-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: copilot-responses-tests
+      why: model gating, stream identity or the loaded vision depth is incorrect
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::copilot_responses::/) | test(copilot_vision_depth_settings)'
+    - id: copilot-responses-python
+      why: the Responses policy oracle lacks its checked operation and Python adapter
+      run: grep -qE '^[[:space:]]+copilot_responses:' tools/oracle/fuzz/corpus/helper_case/copilot_responses* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/copilot_responses.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/copilot-responses/model-mode-opt-out.yaml
+  - tools/oracle/cases/helpers/copilot-responses/catalog-endpoint.yaml
+  - tools/oracle/cases/helpers/copilot-responses/changing-item-ids.yaml
+  - tools/oracle/cases/helpers/copilot-responses/pre-anchor-delta.yaml
+  - tools/oracle/cases/helpers/copilot-responses/null-reasoning-fields.yaml
+  - tools/oracle/cases/helpers/copilot-responses/typed-input-only.yaml
+  - tools/oracle/cases/helpers/copilot-responses/tool-role-user.yaml
+  - tools/oracle/cases/helpers/copilot-responses/depth-boundary.yaml
+deviations: []
+out_of_scope:
+  - B045 consumes the native capability predicate in dispatch; B508 remains responsible for Responses event decoding and projection.
+pitfalls:
+  - mode=chat wins over supported_endpoints containing /v1/responses.
+  - encrypted_content=None is removed despite a nearby source comment claiming it is preserved.
+  - top-level item_id takes precedence over rewriting item.id on a done event carrying both fields.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0

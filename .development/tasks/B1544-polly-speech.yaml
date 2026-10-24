@@ -1,0 +1,87 @@
+id: B1544
+title: Map Polly speech options and sign the exact synthesis body
+description: >-
+  Implement api::polly::speech for the complete AWSPollyTextToSpeechConfig using B1135 speech
+  contracts and B1084 execution. Reuse B590 AWS settings, B591 non-LLM region resolution, B594
+  credentials, B595 generic SigV4 signing and B198 partition DNS suffixes. Dispatch takes truthy
+  kwargs.aws_region_name before optional_params.aws_region_name; only a null optional region invokes
+  the resolver, whose AWS_REGION overrides AWS_REGION_NAME and whose fallback is us-west-2. This
+  differs from the URL/signing methods' absent-field default us-east-1. Pass all ten source credential
+  arguments to the resolver, without adding an api_key bearer path or new environment settings.
+
+  Dispatch turns a voice mapping into its name member. Mapping recognizes the six exact lowercase
+  OpenAI voice names and otherwise preserves strings; request assembly uses Joanna for falsey voice.
+  Response formats follow FORMAT_MAPPINGS, including opus to ogg_vorbis, wav to pcm, and aac/flac to
+  mp3. Missing format defaults mp3. Extract engine from the second slash component only, lowercase it,
+  and accept standard/neural/long-form/generative; a bare standard model still selects neural.
+  Copy language_code/lexicon_names/sample_rate from kwargs to AWS-cased fields. Advertised speed has
+  no implementation and is discarded; do not add SSML prosody.
+
+  An explicit non-null base gains /v1/speech after slash trimming. Otherwise use the partition-aware
+  polly.{region} host. Request fields are Engine, OutputFormat, Text, VoiceId, TextType plus present
+  LanguageCode/LexiconNames/SampleRate, including nulls. Detect SSML solely by a case-sensitive
+  <speak> or <speak-space substring. Use B595's Python-compatible JSON serialization with original
+  insertion order, default spaces and Unicode escapes, then sign POST service=polly. Return exactly
+  those signed bytes via the speech contract's raw-body slot, never serialize the object a second
+  time. The initial signing headers contain only Content-Type application/json; response wrapping
+  preserves binary audio. SDK-import failures belong to the oracle environment, not a Rust boto3
+  runtime requirement.
+
+  call.polly_speech invokes pinned methods with fixed credentials/time and a scripted common handler.
+  Compare dispatch_region, bare_engine, voice_and_formats, ignored_speed, ssml_substring,
+  partition_endpoint, signed_unicode_bytes and credential_arguments. Tests assert signature and
+  outbound body agreement plus credential isolation. There are 301 source lines; target 240 Rust,
+  230 tests and 150 oracle lines under 750 changed lines, with no new byte parser.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/polly.rs
+    - crates/betterlite-core/src/api/polly/speech.rs
+    - crates/betterlite-core/src/api/polly/speech/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/polly_speech.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/polly_speech.py
+    - tools/oracle/cases/helpers/polly-speech/**
+    - tools/oracle/fuzz/corpus/helper_case/polly_speech*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aws_polly/text_to_speech/transformation.py#L30-L393
+    why: Polly dispatch, format/engine rules and raw signed JSON body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L845-L872
+    why: Reused region resolver has a different default from Polly's local constant.
+dod:
+  - text: Polly dispatch and synthesis body preserve region, engine, voice and format behavior, including accepted but unused speed.
+    proof: [polly-speech-tests, oracle, polly-speech-python]
+  - text: The body submitted to Polly is byte-identical to the payload signed with the selected AWS identity and partition endpoint.
+    proof: [polly-speech-tests, oracle, polly-speech-python]
+checks:
+  optional: []
+  commands:
+    - id: polly-speech-tests
+      why: Polly mapping or exact-body signing behavior has no executable coverage
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::polly::speech::/)'
+    - id: polly-speech-python
+      why: Polly signed requests are not compared against pinned botocore-backed methods
+      run: grep -qE '^[[:space:]]+polly_speech:' tools/oracle/fuzz/corpus/helper_case/polly_speech* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/polly_speech.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/polly-speech/dispatch-region.yaml
+  - tools/oracle/cases/helpers/polly-speech/bare-engine.yaml
+  - tools/oracle/cases/helpers/polly-speech/voice-and-formats.yaml
+  - tools/oracle/cases/helpers/polly-speech/ignored-speed.yaml
+  - tools/oracle/cases/helpers/polly-speech/ssml-substring.yaml
+  - tools/oracle/cases/helpers/polly-speech/partition-endpoint.yaml
+  - tools/oracle/cases/helpers/polly-speech/signed-unicode-bytes.yaml
+  - tools/oracle/cases/helpers/polly-speech/credential-arguments.yaml
+deviations: []
+out_of_scope:
+  - The empty aws_polly package initializers need no runtime implementation; AWS identity acquisition and signing internals remain B590-B595.
+pitfalls:
+  - Passing model=standard does not choose the standard engine without a slash-prefixed model string.
+  - API base is copied into effective parameters even when null, preserving dispatch's replacement semantics.
+  - The ssml_body field carries signed JSON here, not an XML payload.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0

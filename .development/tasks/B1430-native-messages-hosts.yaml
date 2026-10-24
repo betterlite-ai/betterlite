@@ -1,0 +1,99 @@
+id: B1430
+title: DeepSeek, Tencent and MiniMax native Messages policies
+description: >-
+  Add native_messages_hosts to betterlite-core, composing B960–B962 rather than
+  introducing a lower-crate dependency on the native Messages service. Implement every
+  override in the three source classes, including their provider tags and true
+  should_strip_billing_metadata result. Each key resolver uses a truthy explicit key,
+  its DEEPSEEK_API_KEY, TENCENT_API_KEY or MINIMAX_API_KEY environment setting, then
+  litellm.api_key. Missing env and global values default to None. DeepSeek's base order
+  is explicit, DEEPSEEK_ANTHROPIC_API_BASE, DEEPSEEK_API_BASE, then
+  https://api.deepseek.com/anthropic; Tencent uses explicit, TENCENT_ANTHROPIC_API_BASE,
+  TENCENT_API_BASE, then https://tokenhub-intl.tencentcloudmaas.com. MiniMax reads explicit,
+  MINIMAX_API_BASE, then https://api.minimax.io/anthropic/v1/messages. Exercise every
+  alias and the shared global fallback through native_messages_hosts_settings loaders.
+
+  DeepSeek removes trailing slashes; a complete /v1/messages containing /anthropic/
+  passes unchanged. Otherwise remove suffixes /v1/messages, /v1 and /beta in that
+  order, append /anthropic unless already ending with it or containing /anthropic/,
+  then append /v1/messages. Tencent trims slashes and accepts a complete Messages URL,
+  removes a final /v1/chat/completions or else /v1, then appends /v1/messages. MiniMax
+  accepts an exact complete suffix, otherwise adds v1/messages with only the separator
+  adjusted; an existing /v1 therefore becomes /v1/v1/messages. These are separate
+  endpoint policies, not one generalized URL canonicalizer.
+
+  Tencent and MiniMax delegate authentication to B961 with the resolved key, retaining
+  its case-insensitive auth detection, OAuth handling and missing-key error. DeepSeek
+  checks only exact lowercase x-api-key and authorization, inserts x-api-key when neither
+  exists and the resolved key is not None, and permits a missing key. It adds exact
+  lowercase anthropic-version=2023-06-01 and content-type=application/json only when
+  those names are absent. Call B960 beta synthesis with provider deepseek and retain
+  the original api_base in the validation result. Thus Authorization can coexist with
+  an inserted x-api-key only for the DeepSeek override.
+
+  After the parent request transformation, DeepSeek rewrites a tools list by removing
+  type only from dictionary entries whose value is custom; non-list tools, other tool
+  kinds and all other keys survive. Do not apply this to Tencent or MiniMax. Helper
+  native_messages_hosts invokes the real source overrides with isolated globals and
+  records endpoint, headers, sanitized request and typed error. Require a fresh seed
+  selecting call.native_messages_hosts and assertions that it exercised each host.
+  This is a 257-line source slice of parsed-record policies; budget 240 implementation,
+  205 tests, 135 adapters and 95 settings/export lines, maximum 725. Parent decoders
+  remain the byte boundary, so no new fuzz target belongs here.
+scope:
+  paths:
+    - crates/betterlite-core/src/{lib,native_messages_hosts}.rs
+    - crates/betterlite-core/src/native_messages_hosts/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,native_messages_hosts}.rs
+    - crates/betterlite-config/tests/native_messages_hosts_settings.rs
+    - tools/oracle/src/helpers/{mod,native_messages_hosts}.rs
+    - tools/oracle/helpers/{dispatch,native_messages_hosts}.py
+    - tools/oracle/cases/helpers/native-messages-hosts/**
+    - tools/oracle/fuzz/corpus/helper_case/native_messages_hosts*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/messages/transformation.py#L15-L128
+    why: DeepSeek bypasses the parent's authentication requirement and removes custom tool discriminators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/tencent/messages/transformation.py#L17-L85
+    why: TokenHub accepts its chat endpoint as the base for native Messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/minimax/messages/transformation.py#L14-L96
+    why: MiniMax's international default and intentionally limited suffix adjustment.
+dod:
+  - text: The three host URL and credential policies retain their observable differences.
+    proof: [messages-host-tests, messages-host-settings, messages-host-python, oracle]
+  - text: DeepSeek alone permits missing auth and strips custom tool type after parent preparation.
+    proof: [messages-host-tests, messages-host-python, oracle]
+  - text: Helper fixtures reach each selected host through the parsed operation tag.
+    proof: [messages-host-seeds]
+checks:
+  optional: []
+  commands:
+    - id: messages-host-tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^native_messages_hosts::/)'
+      why: Native header casing and parent-call order need tests in the composing service crate.
+    - id: messages-host-settings
+      run: cargo nextest run --locked -p betterlite-config --test native_messages_hosts_settings --no-tests=fail
+      why: Explicit, provider-specific and global settings must load before precedence can be tested.
+    - id: messages-host-python
+      run: test -f tools/oracle/helpers/native_messages_hosts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The oracle must call the parent authentication path for Tencent and MiniMax.
+    - id: messages-host-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/native_messages_hosts*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::native_messages_hosts::/)'
+      why: Parsed seeds assert the native_messages_hosts variant and nonzero coverage per provider.
+oracle_cases:
+  - tools/oracle/cases/helpers/native-messages-hosts/deepseek-beta-and-anthropic-paths.yaml
+  - tools/oracle/cases/helpers/native-messages-hosts/tencent-chat-base-conversion.yaml
+  - tools/oracle/cases/helpers/native-messages-hosts/minimax-existing-v1.yaml
+  - tools/oracle/cases/helpers/native-messages-hosts/authorization-case-and-missing-key.yaml
+  - tools/oracle/cases/helpers/native-messages-hosts/deepseek-custom-and-server-tools.yaml
+deviations: []
+out_of_scope:
+  - B038 and B043 bind their respective providers into Messages selection and booted HTTP cases; this task adds no route.
+  - B960, B961 and B962 own inherited beta, authentication and native wire algorithms.
+pitfalls:
+  - DeepSeek's lowercase authorization lookup is less permissive than Tencent's inherited header-name check.
+  - MiniMax does not remove /v1 before appending its Messages suffix.
+  - Only a tool with exact type=custom loses its discriminator after DeepSeek's parent transform.
+budget: {max_changed_lines: 725, max_new_expects: 0}
+review_level: security

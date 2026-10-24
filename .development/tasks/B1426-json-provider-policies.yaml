@@ -1,0 +1,113 @@
+id: B1426
+title: JSON provider policies across chat, Responses and Messages
+description: >-
+  Replace Python's generated config subclasses with typed JsonProviderPolicy values
+  consuming B1424 descriptors. Chat policy belongs in betterlite-openai::json_provider_policy;
+  native Messages composition belongs in betterlite-core::json_messages_policy so lower
+  wire modules never import core. Base class openai_gpt selects B503/B668; every other
+  base_class selects B1425's compatible policy. When convert_content_list_to_string is
+  truthy, apply B218's collapse before the selected parent's message conversion. Capability
+  input from B2221 removes tools, tool_choice, function_call, functions and parallel_tool_calls
+  when function calling is unsupported, and appends reasoning_effort when reasoning is
+  supported and the parent lacks it. Parameter mappings win before the supported-list
+  check; all other unsupported options are omitted. Clamp temperature in max, min,
+  then temperature_min_with_n_gt_1 order, allowing the final step to exceed the earlier
+  maximum exactly as the source does. Do not silently accept null where Python comparison fails.
+
+  Chat identity uses truthy explicit base, descriptor api_base_env when declared, then
+  base_url; key uses explicit or api_key_env. get_complete_url itself falls back directly
+  to base_url and appends /chat/completions without slash cleanup. Responses policy
+  delegates wire transformation to B508, resolves descriptor credentials, and only writes
+  Authorization for a truthy key. Trim trailing base slashes and always append /responses,
+  even if already present. Parasail's force_store_false overwrites a caller's true value.
+  Cache generated Responses policy by slug, retaining the first descriptor for that slug;
+  chat policy construction remains uncached. Use the finite provider identity space to
+  bound this cache, including descriptors supplied by provider code such as EdenAI.
+
+  Also port OpenAILikeResponsesConfig's generic openai_like identity: use the existing
+  OPENAI_LIKE_API_KEY/API_BASE settings, require a truthy base, preserve supplied headers
+  except a truthy key's Authorization, and use the same /responses suffix rule. Add
+  openai_like_settings::responses_base_required and descriptor policy tests against
+  B1424's loaded settings rather than reading ambient environment from adapters.
+
+  Native Messages requires a truthy explicit base for the generic class. Strip trailing
+  slashes, retain a complete /v1/messages suffix, otherwise remove one final /v1 and append
+  /v1/messages. Auth/default checks are case-insensitive: add Bearer only with a truthy
+  key and neither authorization nor x-api-key, anthropic-version=2023-06-01 only when absent,
+  and content-type JSON only when absent. Normalize anthropic-beta spelling to lowercase
+  before B960's beta synthesis, with filtering disabled. Use B961/B962 native preparation
+  and B571 portable cache-control cleanup unless cache_control_ttl is truthy. The JSON
+  Messages subclass resolves key explicit/env/litellm.api_key, base explicit/declared-env/
+  descriptor base, strips billing metadata, and takes cache_control_ttl from constraints.
+  Generic deployment model_info.cache_control_ttl defaults false; add a real loader test
+  in json_messages_settings with supported_endpoints containing /v1/messages and the
+  explicit true/false cases. Keep the same flag wired through B038's deployment selector.
+
+  No new byte decoder is needed: these methods transform typed descriptors and records.
+  Helpers json_chat_policy and json_native_api_policy invoke pinned generated configs
+  with isolated Responses cache state. New seeds assert each exact call variant. Source
+  count is 385 nonblank/noncomment lines (187 dynamic, 42 Responses, 156 Messages);
+  estimate 300 production, 225 tests, 155 adapters and 90 config/export lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,json_provider_policy}.rs
+    - crates/betterlite-openai/src/json_provider_policy/**
+    - crates/betterlite-core/src/{lib,json_messages_policy}.rs
+    - crates/betterlite-core/src/json_messages_policy/**
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-config/src/{settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,json_providers}.rs
+    - crates/betterlite-config/tests/{openai_like_settings,json_messages_settings}.rs
+    - Cargo.lock
+    - tools/oracle/src/helpers/{mod,json_chat_policy,json_native_api_policy}.rs
+    - tools/oracle/helpers/{dispatch,json_chat_policy,json_native_api_policy}.py
+    - tools/oracle/cases/helpers/{json-chat-policy,json-native-api-policy}/**
+    - tools/oracle/fuzz/corpus/helper_case/{json_chat_policy,json_native_api_policy}*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/dynamic_config.py#L24-L247
+    why: Dynamic chat base selection, ordered constraints and slug-cached Responses classes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/responses/transformation.py#L17-L51
+    why: Generic Responses credentials and unconditional endpoint suffix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L15-L176
+    why: Native Messages authentication, portable cache controls and JSON-provider fallback chains.
+dod:
+  - text: Descriptor chat policy preserves capability filtering, mapping precedence and sequential temperature clamps.
+    proof: [json-policy-tests, json-policy-python, oracle]
+  - text: Responses and Messages retain their different URL, credential, cache and metadata policies.
+    proof: [json-policy-tests, json-native-settings, json-policy-python, oracle]
+  - text: Both new helper operation tags are represented by fresh parsed seeds.
+    proof: [json-policy-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: json-policy-tests
+      run: cargo nextest run --locked -p betterlite-openai -p betterlite-core --no-tests=fail -E 'test(/^json_provider_policy::/) | test(/^json_messages_policy::/)'
+      why: Policy tests must cover native Messages composition as well as lower chat/Responses transforms.
+    - id: json-native-settings
+      run: cargo nextest run --locked -p betterlite-config --test json_messages_settings --no-tests=fail && cargo nextest run --locked -p betterlite-config --test openai_like_settings --no-tests=fail -E 'test(responses_base_required)'
+      why: Deployment TTL support and the generic Responses base requirement must load and apply their settings.
+    - id: json-policy-python
+      run: test -f tools/oracle/helpers/json_chat_policy.py && test -f tools/oracle/helpers/json_native_api_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Generated source classes must run with isolated cache state and actual parent methods.
+    - id: json-policy-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_chat_policy*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/json_native_api_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::json_chat_policy::/) | test(/^helpers::json_native_api_policy::/)'
+      why: Each seed group must contain its own externally tagged helper operation.
+oracle_cases:
+  - tools/oracle/cases/helpers/json-chat-policy/remap-before-capabilities.yaml
+  - tools/oracle/cases/helpers/json-chat-policy/temperature-clamp-order.yaml
+  - tools/oracle/cases/helpers/json-chat-policy/publicai-content-collapse.yaml
+  - tools/oracle/cases/helpers/json-native-api-policy/responses-store-and-slug-cache.yaml
+  - tools/oracle/cases/helpers/json-native-api-policy/url-suffix-differences.yaml
+  - tools/oracle/cases/helpers/json-native-api-policy/messages-auth-casing-and-beta.yaml
+  - tools/oracle/cases/helpers/json-native-api-policy/cache-ttl-and-billing-metadata.yaml
+deviations: []
+out_of_scope:
+  - B1424 owns registry loading and environment table data; B038 owns API-family selection and provider execution bindings.
+  - B503, B508 and B960–B962 retain the inherited native request/response algorithms and byte parsers; package __init__ files here only re-export the owned policies.
+pitfalls:
+  - A parameter explicitly listed in param_mappings survives even when model capabilities removed it from the supported list.
+  - Responses caches by slug alone, so recreating a descriptor does not change that slug's first cached policy.
+  - Native Messages accepts an existing X-Api-Key without injecting a second authorization method.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security
