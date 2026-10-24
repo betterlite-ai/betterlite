@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Published advanced Australian PII catalog record
 status: todo
 depends_on: []
-file: null
+file: tasks/B3255-policy-catalog-published-australian-pii.yaml
 covers:
   - "policy_templates.json"
 parent: B079

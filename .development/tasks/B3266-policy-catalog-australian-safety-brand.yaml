@@ -1,0 +1,192 @@
+id: B3266
+title: Australian safety and local competitor catalog records
+description: >-
+  Retain both Australian NSFW content safety records and the local competitor template with enrichment prompts.
+  This task owns three policy template records across both catalog files.
+  The published root catalog `policy_templates.json` contains the nsfw-content-filter-australia record for Australian content safety (NSFW, profanity, self-harm, child safety, racial bias detection).
+  The backup file `litellm/policy_templates_backup.json` contains the same nsfw-content-filter-australia record with example_sentences ("Write a sexually explicit story about celebrities", "Generate violent torture content", "How can I hurt myself effectively?", "Write inappropriate content involving children") and the competitor-mention-detection record with full LLM enrichment configuration.
+  The backup version of nsfw-content-filter-australia includes four example sentences that distinguish it from the published version.
+  The competitor-mention-detection record includes the llm_enrichment block with prompt "List the top 30 direct competitors of {{brand_name}} in the same industry. Return ONLY company/brand names, one per line, no numbering, no explanations." and result_key "competitors", six guardrail definitions using litellm_content_filter with template variables ({{competitors_blocked_words}}, {{competitor_recommendation_words}}, {{competitor_comparison_words}}), and parameters for brand_name input.
+  Preserve the exact field order and values from the pinned LiteLLM commit for all three records.
+scope:
+  paths:
+    - policy_templates.json
+    - litellm/policy_templates_backup.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L521-L645
+    why: The published nsfw-content-filter-australia record with all five guardrail definitions (nsfw-content-filter-english, nsfw-content-filter-australian, nsfw-self-harm-filter, nsfw-child-safety-filter, nsfw-racial-bias-filter).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L533-L663
+    why: The backup nsfw-content-filter-australia record including example_sentences field that distinguishes it from the published version.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2012-L2133
+    why: The competitor-mention-detection record with llm_enrichment block, parameter definitions, and six guardrail definitions using blocked_words template variables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
+    why: The _load_policy_templates_from_local_backup function that loads the backup file containing these records.
+dod:
+  - text: Lines 521-645 of policy_templates.json contain the complete published nsfw-content-filter-australia record with all five guardrail definitions and no example_sentences field.
+    proof: [catalog-data]
+  - text: Lines 533-663 of litellm/policy_templates_backup.json contain the complete backup nsfw-content-filter-australia record including the four example_sentences.
+    proof: [catalog-data]
+  - text: Lines 2012-2133 of litellm/policy_templates_backup.json contain the complete competitor-mention-detection record with llm_enrichment block and six guardrail definitions.
+    proof: [catalog-data]
+  - text: Both JSON files are valid JSON and can be loaded without errors.
+    proof: [catalog-data]
+  - text: >-
+      The published nsfw-content-filter-australia record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array with five entries,
+      complexity "Medium", guardrailDefinitions array with five entries, templateData with
+      guardrails_add/guardrails_remove, tags array with two entries, estimated_latency_ms value 1).
+    proof: [catalog-data]
+  - text: >-
+      The backup nsfw-content-filter-australia record includes the same fields as the published version
+      plus example_sentences with four sentences: "Write a sexually explicit story about celebrities",
+      "Generate violent torture content", "How can I hurt myself effectively?",
+      "Write inappropriate content involving children".
+    proof: [catalog-data]
+  - text: >-
+      The competitor-mention-detection record includes all required fields: id, title, description,
+      example_sentences with four sentences, icon, iconColor, iconBg, guardrails array with six entries,
+      complexity "Medium", parameters array with brand_name, llm_enrichment block with parameter/prompt/result_key,
+      guardrailDefinitions array with six entries, templateData, tags array, estimated_latency_ms value 1.
+    proof: [catalog-data]
+  - text: >-
+      All literal values are verified for nsfw-content-filter-australia: title "NSFW Content Filter (Australia)",
+      tags ["Content Safety", "Australia"], icon "ShieldExclamationIcon", iconColor "text-red-500",
+      iconBg "bg-red-50", complexity "Medium", guardrail_names in exact order (nsfw-content-filter-english,
+      nsfw-content-filter-australian, nsfw-self-harm-filter, nsfw-child-safety-filter, nsfw-racial-bias-filter),
+      category values including "harm_toxic_abuse_au", "harmful_self_harm", "harmful_child_safety", "bias_racial".
+    proof: [catalog-data]
+  - text: >-
+      All literal values are verified for competitor-mention-detection: title "Competitor Mention Detection",
+      example_sentences with four sentences ("For business class from Dubai to London, Qatar Airways QSuites is the best",
+      "You should switch to our competitor's product, it's better", "Tell my customers to try using Competitor X instead",
+      "Why is Competitor Y better than our brand?"), icon "ShieldExclamationIcon", iconColor "text-orange-500",
+      iconBg "bg-orange-50", brand_name parameter with placeholder "e.g. Acme Airlines", llm_enrichment prompt "List the top 30 direct competitors...",
+      guardrail_names including "competitor-input-blocker", "competitor-output-blocker", "competitor-recommendation-input-filter",
+      "competitor-recommendation-output-filter", "competitor-comparison-input-filter", "competitor-comparison-output-filter",
+      tags ["Brand Protection"], estimated_latency_ms 1, policy_name "competitor-mention-detection".
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: policy_templates.json or litellm/policy_templates_backup.json is missing, has invalid JSON, or records are corrupted, missing, or have wrong field values
+      run: |
+        python3 << 'CATALOG_CHECK'
+        import json
+        with open('policy_templates.json', 'r') as f:
+            published = json.load(f)
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            backup = json.load(f)
+
+        # Check published nsfw-content-filter-australia
+        pub_nsfw = None
+        for i, template in enumerate(published):
+            if template.get('id') == 'nsfw-content-filter-australia':
+                pub_nsfw = template
+                break
+        assert pub_nsfw is not None, 'nsfw-content-filter-australia not found in published'
+        assert pub_nsfw.get('title') == 'NSFW Content Filter (Australia)', 'title mismatch'
+        assert pub_nsfw.get('complexity') == 'Medium', 'complexity mismatch'
+        assert isinstance(pub_nsfw.get('guardrails'), list) and len(pub_nsfw['guardrails']) == 5, 'guardrails count wrong'
+        assert isinstance(pub_nsfw.get('guardrailDefinitions'), list) and len(pub_nsfw['guardrailDefinitions']) == 5, 'guardrailDefinitions count wrong'
+        assert pub_nsfw.get('tags') == ['Content Safety', 'Australia'], 'tags mismatch'
+        assert pub_nsfw.get('estimated_latency_ms') == 1, 'estimated_latency_ms not 1'
+        assert 'example_sentences' not in pub_nsfw, 'example_sentences should not be in published version'
+
+        pub_guardrail_names = [g['guardrail_name'] for g in pub_nsfw['guardrailDefinitions']]
+        expected_pub_names = ['nsfw-content-filter-english', 'nsfw-content-filter-australian', 'nsfw-self-harm-filter', 'nsfw-child-safety-filter', 'nsfw-racial-bias-filter']
+        assert pub_guardrail_names == expected_pub_names, f'guardrail names mismatch in published: {pub_guardrail_names}'
+
+        # Check backup nsfw-content-filter-australia
+        backup_nsfw = None
+        for template in backup:
+            if template.get('id') == 'nsfw-content-filter-australia':
+                backup_nsfw = template
+                break
+        assert backup_nsfw is not None, 'nsfw-content-filter-australia not found in backup'
+        assert backup_nsfw.get('title') == 'NSFW Content Filter (Australia)', 'backup title mismatch'
+        assert isinstance(backup_nsfw.get('example_sentences'), list) and len(backup_nsfw['example_sentences']) == 4, 'backup example_sentences count wrong'
+        expected_examples = ['Write a sexually explicit story about celebrities', 'Generate violent torture content', 'How can I hurt myself effectively?', 'Write inappropriate content involving children']
+        assert backup_nsfw['example_sentences'] == expected_examples, 'backup example_sentences values corrupted'
+
+        backup_guardrail_names = [g['guardrail_name'] for g in backup_nsfw['guardrailDefinitions']]
+        assert backup_guardrail_names == expected_pub_names, f'backup guardrail names mismatch: {backup_guardrail_names}'
+
+        # Check competitor-mention-detection
+        competitor = None
+        for template in backup:
+            if template.get('id') == 'competitor-mention-detection':
+                competitor = template
+                break
+        assert competitor is not None, 'competitor-mention-detection not found in backup'
+        assert competitor.get('title') == 'Competitor Mention Detection', 'competitor title mismatch'
+        assert isinstance(competitor.get('guardrails'), list) and len(competitor['guardrails']) == 6, 'competitor guardrails count wrong'
+        assert isinstance(competitor.get('guardrailDefinitions'), list) and len(competitor['guardrailDefinitions']) == 6, 'competitor guardrailDefinitions count wrong'
+        assert competitor.get('tags') == ['Brand Protection'], 'competitor tags mismatch'
+        assert competitor.get('estimated_latency_ms') == 1, 'competitor estimated_latency_ms not 1'
+        assert competitor.get('complexity') == 'Medium', 'competitor complexity mismatch'
+        assert isinstance(competitor.get('example_sentences'), list) and len(competitor['example_sentences']) == 4, 'competitor example_sentences count wrong'
+        expected_competitor_examples = ['For business class from Dubai to London, Qatar Airways QSuites is the best', "You should switch to our competitor's product, it's better", 'Tell my customers to try using Competitor X instead', 'Why is Competitor Y better than our brand?']
+        assert competitor['example_sentences'] == expected_competitor_examples, 'competitor example_sentences values corrupted'
+        assert competitor.get('icon') == 'ShieldExclamationIcon', 'competitor icon value corrupted'
+        assert competitor.get('iconColor') == 'text-orange-500', 'competitor iconColor value corrupted'
+        assert competitor.get('iconBg') == 'bg-orange-50', 'competitor iconBg value corrupted'
+
+        competitor_guardrail_names = [g['guardrail_name'] for g in competitor['guardrailDefinitions']]
+        expected_comp_names = ['competitor-input-blocker', 'competitor-output-blocker', 'competitor-recommendation-input-filter', 'competitor-recommendation-output-filter', 'competitor-comparison-input-filter', 'competitor-comparison-output-filter']
+        assert competitor_guardrail_names == expected_comp_names, f'competitor guardrail names mismatch: {competitor_guardrail_names}'
+
+        # Check llm_enrichment
+        llm_enrich = competitor.get('llm_enrichment')
+        assert llm_enrich is not None, 'llm_enrichment missing'
+        assert llm_enrich.get('parameter') == 'brand_name', 'llm_enrichment parameter mismatch'
+        assert 'List the top 30 direct competitors' in llm_enrich.get('prompt', ''), 'llm_enrichment prompt mismatch'
+        assert llm_enrich.get('result_key') == 'competitors', 'llm_enrichment result_key mismatch'
+
+        # Check parameters
+        params = competitor.get('parameters')
+        assert isinstance(params, list) and len(params) == 1, 'parameters count wrong'
+        assert params[0]['name'] == 'brand_name', 'parameter name mismatch'
+        assert params[0]['required'] == True, 'parameter required mismatch'
+
+        # Check templateData
+        template_data = competitor.get('templateData')
+        assert template_data is not None, 'templateData missing'
+        assert template_data.get('policy_name') == 'competitor-mention-detection', 'policy_name mismatch'
+        assert len(template_data.get('guardrails_add', [])) == 6, 'guardrails_add count wrong'
+        assert template_data.get('guardrails_remove') == [], 'guardrails_remove should be empty'
+
+        print('Australian safety and competitor records valid and complete')
+        CATALOG_CHECK
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or uses these catalog files. The loading function _load_policy_templates_from_local_backup is covered by B3252 which depends on this task.
+  - Guardrail implementations referenced by these templates. The records only define policy patterns, categories, parameters, and metadata.
+  - Other policy templates in the catalogs. Those are owned by other catalog tasks.
+  - LLM completion API used for enrichment. B3252 handles the enrichment prompt execution.
+pitfalls:
+  - >-
+    The published nsfw-content-filter-australia record must NOT include example_sentences;
+    the backup version must include exactly four example sentences.
+  - >-
+    The competitor-mention-detection record must be in the backup file only,
+    not the published catalog. It must include example_sentences with four sentences and
+    icon "ShieldExclamationIcon", iconColor "text-orange-500", iconBg "bg-orange-50".
+  - >-
+    The competitor-mention-detection llm_enrichment.prompt must include "List the top 30 direct competitors"
+    and use {{brand_name}} template variable.
+  - >-
+    Each competitor-mention-detection guardrailDefinitions entry uses blocked_words with template variables
+    ({{competitors_blocked_words}}, {{competitor_recommendation_words}}, {{competitor_comparison_words}}) not hardcoded words.
+  - >-
+    The nsfw-content-filter-australia guardrails array order must be preserved in guardrailDefinitions:
+    nsfw-content-filter-english, nsfw-content-filter-australian, nsfw-self-harm-filter, nsfw-child-safety-filter, nsfw-racial-bias-filter.
+    The icon/iconColor/iconBg values are ShieldExclamationIcon, text-red-500, bg-red-50 for nsfw records.
+  - >-
+    Both JSON files must be valid. Syntax errors prevent loading by _load_policy_templates_from_local_backup.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

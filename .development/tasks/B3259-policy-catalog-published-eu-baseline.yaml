@@ -1,0 +1,173 @@
+id: B3259
+title: Published EU AI Act and baseline PII catalog records
+description: >-
+  Retain the published EU AI Act and baseline PII records as remote-response fixtures. Keep them distinct from the backup versions in B3258, which add example_sentences.
+  The published root catalog `policy_templates.json` serves as the remote-response fixture for fetch requests by B3253. This task owns the complete baseline-pii-protection and eu-ai-act-article5 guardrail template records with all guardrailDefinitions, preserving language-specific category paths, guardrail ordering and source policy metadata.
+  Baseline-pii-protection is a low-complexity credentials and PII baseline with three guardrails (au-pii-tax-identifiers, credentials-api-keys, financial-pii) and no example sentences. The EU AI Act Article 5 record is high-complexity with ten guardrails in English and French (five pairs covering subliminal manipulation, vulnerability exploitation, social scoring, emotion recognition, and biometric profiling), referencing content filter category files with language-specific detection.
+  Record the field order and literal values at the pinned release. Both records include id, title, description, icon, iconColor, iconBg, guardrails array, complexity, guardrailDefinitions array with litellm_params, templateData with policy_name and guardrails_add/guardrails_remove, tags, and estimated_latency_ms (1). No example_sentences field.
+scope:
+  paths:
+    - policy_templates.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L382-L520
+    why: The complete baseline-pii-protection record with three guardrailDefinitions (au-pii-tax-identifiers, credentials-api-keys, financial-pii).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1060-L1294
+    why: The complete eu-ai-act-article5 record with ten guardrailDefinitions (five English, five French variants) covering Article 5 prohibited practices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L607-L664
+    why: The get_policy_templates route that fetches the root catalog and uses policy_templates.json as the published remote-response fixture.
+dod:
+  - text: The root catalog contains lines 382-520 with the complete baseline-pii-protection record including all three guardrail definitions and no example_sentences.
+    proof: [catalog-data]
+  - text: The root catalog contains lines 1060-1294 with the complete eu-ai-act-article5 record including all ten guardrail definitions (five English, five French) and no example_sentences.
+    proof: [catalog-data]
+  - text: The root catalog is valid JSON and can be parsed without errors.
+    proof: [catalog-data]
+  - text: >-
+      The baseline-pii-protection record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array,
+      complexity, guardrailDefinitions array with three entries, templateData,
+      tags, and estimated_latency_ms) with correct literal values, and no example_sentences.
+    proof: [catalog-data]
+  - text: >-
+      The eu-ai-act-article5 record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array with
+      ten entries, complexity, guardrailDefinitions array with ten entries,
+      templateData, tags, and estimated_latency_ms) with correct literal values, and no example_sentences.
+    proof: [catalog-data]
+  - text: >-
+      All baseline literal values verified: id "baseline-pii-protection", title "Baseline PII Protection",
+      icon "ShieldCheckIcon", iconColor "text-blue-500", iconBg "bg-blue-50", complexity "Low",
+      three guardrails [au-pii-tax-identifiers, credentials-api-keys, financial-pii],
+      tags [PII Protection], estimated_latency_ms 1, policy_name "baseline-pii-protection".
+    proof: [catalog-data]
+  - text: >-
+      EU AI Act record literal values verified: id "eu-ai-act-article5", title contains "EU AI Act Article 5",
+      icon "ShieldExclamationIcon", iconColor "text-red-500", iconBg "bg-red-50", complexity "High",
+      ten guardrails with English and French variants (manipulation, vulnerability, social-scoring,
+      emotion-recognition, biometric-profiling), tags [Regulatory, EU], estimated_latency_ms 1,
+      guardrailDefinitions with matching category names and category_file paths for each guardrail.
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: the policy_templates.json file is missing, has invalid JSON, or the baseline-pii-protection or eu-ai-act-article5 records are corrupted or missing required fields and literal values
+      run: |
+        python3 << 'CATALOG_CHECK'
+        import json
+        with open('policy_templates.json', 'r') as f:
+            templates = json.load(f)
+
+        assert len(templates) > 0, 'catalog is empty'
+
+        # Find baseline-pii-protection
+        baseline = None
+        eu_ai_act = None
+        for template in templates:
+            if template.get('id') == 'baseline-pii-protection':
+                baseline = template
+            elif template.get('id') == 'eu-ai-act-article5':
+                eu_ai_act = template
+
+        assert baseline is not None, 'baseline-pii-protection record not found'
+        assert eu_ai_act is not None, 'eu-ai-act-article5 record not found'
+
+        # Check baseline-pii-protection
+        required_fields_baseline = ['id', 'title', 'description', 'icon', 'iconColor',
+                                    'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
+                                    'tags', 'estimated_latency_ms']
+        for field in required_fields_baseline:
+            assert field in baseline, f'baseline missing field: {field}'
+
+        assert 'example_sentences' not in baseline, 'baseline should not have example_sentences'
+        assert isinstance(baseline['guardrails'], list) and len(baseline['guardrails']) == 3, 'baseline guardrails count wrong'
+        assert isinstance(baseline['guardrailDefinitions'], list) and len(baseline['guardrailDefinitions']) == 3, 'baseline guardrailDefinitions count wrong'
+        assert isinstance(baseline['tags'], list) and len(baseline['tags']) == 1, 'baseline tags count wrong'
+
+        assert baseline['id'] == 'baseline-pii-protection', 'baseline id corrupted'
+        assert baseline['title'] == 'Baseline PII Protection', 'baseline title corrupted'
+        assert baseline['icon'] == 'ShieldCheckIcon', 'baseline icon corrupted'
+        assert baseline['iconColor'] == 'text-blue-500', 'baseline iconColor corrupted'
+        assert baseline['iconBg'] == 'bg-blue-50', 'baseline iconBg corrupted'
+        assert baseline['complexity'] == 'Low', 'baseline complexity corrupted'
+        assert baseline['estimated_latency_ms'] == 1, 'baseline estimated_latency_ms not 1'
+        assert baseline['tags'] == ['PII Protection'], 'baseline tags corrupted'
+
+        baseline_guardrail_names = [g['guardrail_name'] for g in baseline['guardrailDefinitions']]
+        expected_baseline_names = ['au-pii-tax-identifiers', 'credentials-api-keys', 'financial-pii']
+        assert baseline_guardrail_names == expected_baseline_names, f'baseline guardrail names corrupted, got {baseline_guardrail_names}'
+
+        baseline_policy_name = baseline['templateData'].get('policy_name')
+        assert baseline_policy_name == 'baseline-pii-protection', 'baseline policy_name corrupted'
+
+        # Verify baseline guardrails have litellm_params and patterns
+        for guardrail in baseline['guardrailDefinitions']:
+            assert 'litellm_params' in guardrail, f"guardrail {guardrail.get('guardrail_name')} missing litellm_params"
+            assert 'patterns' in guardrail['litellm_params'], f"guardrail {guardrail.get('guardrail_name')} missing patterns"
+
+        # Check eu-ai-act-article5
+        required_fields_eu = ['id', 'title', 'description', 'icon', 'iconColor',
+                              'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
+                              'tags', 'estimated_latency_ms']
+        for field in required_fields_eu:
+            assert field in eu_ai_act, f'eu-ai-act missing field: {field}'
+
+        assert 'example_sentences' not in eu_ai_act, 'eu-ai-act should not have example_sentences'
+        assert isinstance(eu_ai_act['guardrails'], list) and len(eu_ai_act['guardrails']) == 10, 'eu-ai-act guardrails count wrong'
+        assert isinstance(eu_ai_act['guardrailDefinitions'], list) and len(eu_ai_act['guardrailDefinitions']) == 10, 'eu-ai-act guardrailDefinitions count wrong'
+        assert isinstance(eu_ai_act['tags'], list) and len(eu_ai_act['tags']) == 2, 'eu-ai-act tags count wrong'
+
+        assert eu_ai_act['id'] == 'eu-ai-act-article5', 'eu-ai-act id corrupted'
+        assert 'EU AI Act Article 5' in eu_ai_act['title'], 'eu-ai-act title corrupted'
+        assert eu_ai_act['icon'] == 'ShieldExclamationIcon', 'eu-ai-act icon corrupted'
+        assert eu_ai_act['iconColor'] == 'text-red-500', 'eu-ai-act iconColor corrupted'
+        assert eu_ai_act['iconBg'] == 'bg-red-50', 'eu-ai-act iconBg corrupted'
+        assert eu_ai_act['complexity'] == 'High', 'eu-ai-act complexity corrupted'
+        assert eu_ai_act['estimated_latency_ms'] == 1, 'eu-ai-act estimated_latency_ms not 1'
+        assert eu_ai_act['tags'] == ['Regulatory', 'EU'], 'eu-ai-act tags corrupted'
+
+        eu_guardrail_names = [g['guardrail_name'] for g in eu_ai_act['guardrailDefinitions']]
+        expected_eu_names = [
+            'eu-ai-act-art5-manipulation',
+            'eu-ai-act-art5-vulnerability',
+            'eu-ai-act-art5-social-scoring',
+            'eu-ai-act-art5-emotion-recognition',
+            'eu-ai-act-art5-biometric-profiling',
+            'eu-ai-act-art5-manipulation-fr',
+            'eu-ai-act-art5-vulnerability-fr',
+            'eu-ai-act-art5-social-scoring-fr',
+            'eu-ai-act-art5-emotion-recognition-fr',
+            'eu-ai-act-art5-biometric-profiling-fr'
+        ]
+        assert eu_guardrail_names == expected_eu_names, f'eu-ai-act guardrail names corrupted, got {eu_guardrail_names}'
+
+        eu_policy_name = eu_ai_act['templateData'].get('policy_name')
+        assert eu_policy_name == 'eu-ai-act-article5', 'eu-ai-act policy_name corrupted'
+
+        # Verify all eu-ai-act guardrails have litellm_params and categories with category_file
+        for guardrail in eu_ai_act['guardrailDefinitions']:
+            assert 'litellm_params' in guardrail, f"guardrail {guardrail.get('guardrail_name')} missing litellm_params"
+            assert 'categories' in guardrail['litellm_params'], f"guardrail {guardrail.get('guardrail_name')} missing categories"
+            for category in guardrail['litellm_params']['categories']:
+                assert 'category_file' in category, f"category in {guardrail.get('guardrail_name')} missing category_file"
+
+        print('EU AI Act and baseline PII records valid and complete')
+        CATALOG_CHECK
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or uses this catalog file. The published root catalog is fetched by B3253 which depends on this task. The route that fetches the root (get_policy_templates) is covered by B3253. The backup fallback is covered by B3252.
+  - Guardrail implementation behavior and detection patterns. The published catalog records only establish the schema, metadata and category file references.
+  - Content filter data files referenced by category_file paths. The published catalog defines file references but does not package the files themselves, which are managed as separate policy assets.
+  - Other policy templates in the root catalog. Those are owned by other catalog tasks.
+pitfalls:
+  - The file must be valid JSON. Any syntax errors prevent remote fetches by B3253; malformed JSON does not fall back to the backup.
+  - The published baseline-pii-protection record requires exactly three guardrailDefinitions in their original order; the published fixture must not reorder, duplicate, or omit any.
+  - The published eu-ai-act-article5 record must include exactly ten guardrailDefinitions (five English, five French variants). All must reference category_file paths with language-specific files; do not drop any guardrail or category reference.
+  - Unlike the backup catalog, the published root catalog does not include example_sentences field. Preserve their absence; do not add them to match the backup.
+  - The published catalog preserves the eu-ai-act-article5 record with category-based detection (category_file references) while the baseline uses pattern arrays; respect both methods in the published root catalog without alteration.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

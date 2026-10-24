@@ -1,0 +1,262 @@
+id: B3265
+title: "Published global safety and local financial AI and MCP records"
+description: >-
+  Retain published global content safety plus local MAS and MCP-security records as pure policy catalog data.
+  These are catalog records with no implementation; their descriptions reference guardrail definitions owned by policy engine tasks, not this data task.
+  Own the published nsfw-content-filter-all-regions record (policy_templates.json lines 750-933) with all eight guardrailDefinitions (nsfw-filter-english, nsfw-filter-spanish, nsfw-filter-french, nsfw-filter-german, nsfw-filter-australian, nsfw-self-harm-filter-global, nsfw-child-safety-filter-global, nsfw-racial-bias-filter-global).
+  Own the local mcp-security-unregistered-server-block record (backup lines 1337-1379) with one guardrailDefinition (mcp-security-block).
+  Own the local mas-ai-risk-management record (backup lines 2689-2819) with five guardrailDefinitions (sg-mas-fairness-bias, sg-mas-transparency-explainability, sg-mas-human-oversight, sg-mas-data-governance, sg-mas-model-security).
+  The published NSFW record covers multi-language content filtering for profanity, sexual content, self-harm, child safety and racial bias in English, Spanish, French, German and Australian.
+  The MCP record blocks requests referencing MCP servers not registered on the gateway.
+  The local MAS record covers Singapore financial AI risk management covering fairness, bias, transparency, explainability, human oversight, data governance and model security.
+  Preserve the exact field order and values from the pinned LiteLLM commit. All records include complete litellm_params with category definitions or pattern configurations and category_file references where applicable.
+scope:
+  paths:
+    - policy_templates.json
+    - litellm/policy_templates_backup.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L750-L933
+    why: The complete published nsfw-content-filter-all-regions record in the root catalog with 8 guardrailDefinitions for multi-language NSFW content filtering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L1337-L1379
+    why: The complete local mcp-security-unregistered-server-block record in the backup file with guardrailDefinition for blocking unregistered MCP servers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/policy_templates_backup.json#L2689-L2819
+    why: The complete local mas-ai-risk-management record in the backup file with 5 guardrailDefinitions covering Singapore MAS AI Risk Management guidelines.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/policy_endpoints/endpoints.py#L610-L624
+    why: The _load_policy_templates_from_local_backup function that loads the backup catalog file.
+dod:
+  - text: >-
+      The published file contains the complete nsfw-content-filter-all-regions record with
+      id "nsfw-content-filter-all-regions", title "NSFW Content Filter (All Regions)", and all 8 guardrail definitions.
+    proof: [catalog-published-nsfw]
+  - text: >-
+      The backup file contains the complete mcp-security-unregistered-server-block record with
+      id "mcp-security-unregistered-server-block", title "MCP Security: Block Unregistered Servers", and guardrailDefinition mcp-security-block.
+    proof: [catalog-local-mcp]
+  - text: >-
+      The backup file contains the complete mas-ai-risk-management record with
+      id "mas-ai-risk-management", title "Singapore MAS — AI Risk Management for Financial Institutions", and all 5 guardrail definitions.
+    proof: [catalog-local-mas]
+  - text: All three records in the catalog files are valid JSON and can be loaded without errors.
+    proof: [catalog-published-nsfw, catalog-local-mcp, catalog-local-mas]
+  - text: >-
+      The published NSFW record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array,
+      complexity, guardrailDefinitions array with 8 entries, templateData,
+      tags, and estimated_latency_ms) with correct literal values.
+    proof: [catalog-published-nsfw]
+  - text: >-
+      The local MCP record includes all required fields
+      (id, title, description, example_sentences, icon, iconColor, iconBg,
+      guardrails array, complexity, guardrailDefinitions array with 1 entry,
+      templateData, tags, and estimated_latency_ms) with correct literal values.
+    proof: [catalog-local-mcp]
+  - text: >-
+      The local MAS record includes all required fields
+      (id, title, description, icon, iconColor, iconBg, guardrails array,
+      complexity, guardrailDefinitions array with 5 entries, templateData,
+      tags, and estimated_latency_ms) with correct literal values.
+    proof: [catalog-local-mas]
+  - text: >-
+      The published NSFW record has all 8 guardrail definitions present with correct names
+      (nsfw-filter-english, nsfw-filter-spanish, nsfw-filter-french, nsfw-filter-german,
+      nsfw-filter-australian, nsfw-self-harm-filter-global, nsfw-child-safety-filter-global,
+      nsfw-racial-bias-filter-global).
+    proof: [catalog-published-nsfw]
+  - text: >-
+      The local MCP record has the guardrail definition mcp-security-block with
+      default_on true and on_violation "block".
+    proof: [catalog-local-mcp]
+  - text: >-
+      The local MAS record has all 5 guardrail definitions present with correct names
+      (sg-mas-fairness-bias, sg-mas-transparency-explainability, sg-mas-human-oversight,
+      sg-mas-data-governance, sg-mas-model-security).
+    proof: [catalog-local-mas]
+  - text: >-
+      Literal field values are verified: published NSFW title "NSFW Content Filter (All Regions)",
+      tags ["Content Safety"], estimated_latency_ms value 1, local MCP title
+      "MCP Security: Block Unregistered Servers", tags ["Security"], local MAS title
+      "Singapore MAS — AI Risk Management for Financial Institutions", tags
+      ["Financial Services", "Regulatory", "Singapore"], and all category_file references
+      are preserved exactly from the pinned commit.
+    proof: [catalog-published-nsfw, catalog-local-mcp, catalog-local-mas]
+checks:
+  optional: []
+  commands:
+    - id: catalog-published-nsfw
+      why: the policy_templates.json file is missing, has invalid JSON, or the nsfw-content-filter-all-regions record is corrupted, missing required fields, or literal values are wrong
+      run: |
+        python3 << 'CATALOG_CHECK_NSFW'
+        import json
+        with open('policy_templates.json', 'r') as f:
+            templates = json.load(f)
+
+        nsfw_record = None
+        for t in templates:
+            if t.get('id') == 'nsfw-content-filter-all-regions':
+                nsfw_record = t
+                break
+
+        assert nsfw_record is not None, 'nsfw-content-filter-all-regions record not found in published catalog'
+
+        required_fields = ['id', 'title', 'description', 'icon', 'iconColor',
+                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
+                          'tags', 'estimated_latency_ms']
+        for field in required_fields:
+            assert field in nsfw_record, f'missing field: {field}'
+
+        assert isinstance(nsfw_record['guardrails'], list) and len(nsfw_record['guardrails']) == 8, 'guardrails count wrong'
+        assert isinstance(nsfw_record['guardrailDefinitions'], list) and len(nsfw_record['guardrailDefinitions']) == 8, 'guardrailDefinitions count wrong'
+        assert isinstance(nsfw_record['tags'], list) and len(nsfw_record['tags']) == 1, 'tags count wrong'
+
+        assert nsfw_record['id'] == 'nsfw-content-filter-all-regions', 'id value corrupted'
+        assert nsfw_record['title'] == 'NSFW Content Filter (All Regions)', 'title value corrupted'
+        assert 'multi-language NSFW content filtering' in nsfw_record['description'], 'description value corrupted'
+        assert nsfw_record['tags'] == ['Content Safety'], 'tags values corrupted'
+        assert nsfw_record['icon'] == 'ShieldExclamationIcon', 'icon value corrupted'
+        assert nsfw_record['iconColor'] == 'text-purple-500', 'iconColor value corrupted'
+        assert nsfw_record['iconBg'] == 'bg-purple-50', 'iconBg value corrupted'
+        assert nsfw_record['complexity'] == 'High', 'complexity value corrupted'
+        assert nsfw_record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
+
+        guardrail_names = [g['guardrail_name'] for g in nsfw_record['guardrailDefinitions']]
+        expected_names = ['nsfw-filter-english', 'nsfw-filter-spanish', 'nsfw-filter-french', 'nsfw-filter-german',
+                         'nsfw-filter-australian', 'nsfw-self-harm-filter-global', 'nsfw-child-safety-filter-global',
+                         'nsfw-racial-bias-filter-global']
+        assert guardrail_names == expected_names, 'guardrail names corrupted or reordered'
+
+        for guardrail in nsfw_record['guardrailDefinitions']:
+            assert 'guardrail_name' in guardrail, 'guardrail missing name'
+            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
+            params = guardrail['litellm_params']
+            assert 'guardrail' in params, f'{guardrail["guardrail_name"]} missing guardrail type'
+            assert 'mode' in params, f'{guardrail["guardrail_name"]} missing mode'
+            assert 'categories' in params, f'{guardrail["guardrail_name"]} missing categories'
+
+        print('Published NSFW content filter record valid and complete')
+        CATALOG_CHECK_NSFW
+    - id: catalog-local-mcp
+      why: the litellm/policy_templates_backup.json file is missing, has invalid JSON, or the mcp-security-unregistered-server-block record is corrupted, missing required fields, or literal values are wrong
+      run: |
+        python3 << 'CATALOG_CHECK_MCP'
+        import json
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            templates = json.load(f)
+
+        mcp_record = None
+        for t in templates:
+            if t.get('id') == 'mcp-security-unregistered-server-block':
+                mcp_record = t
+                break
+
+        assert mcp_record is not None, 'mcp-security-unregistered-server-block record not found in backup'
+
+        required_fields = ['id', 'title', 'description', 'example_sentences', 'icon', 'iconColor',
+                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
+                          'tags', 'estimated_latency_ms']
+        for field in required_fields:
+            assert field in mcp_record, f'missing field: {field}'
+
+        assert isinstance(mcp_record['example_sentences'], list) and len(mcp_record['example_sentences']) == 3, 'example_sentences wrong'
+        assert isinstance(mcp_record['guardrails'], list) and len(mcp_record['guardrails']) == 1, 'guardrails count wrong'
+        assert isinstance(mcp_record['guardrailDefinitions'], list) and len(mcp_record['guardrailDefinitions']) == 1, 'guardrailDefinitions count wrong'
+        assert isinstance(mcp_record['tags'], list) and len(mcp_record['tags']) == 1, 'tags count wrong'
+
+        assert mcp_record['id'] == 'mcp-security-unregistered-server-block', 'id value corrupted'
+        assert mcp_record['title'] == 'MCP Security: Block Unregistered Servers', 'title value corrupted'
+        assert 'unregistered' in mcp_record['description'].lower(), 'description value corrupted'
+        assert mcp_record['tags'] == ['Security'], 'tags values corrupted'
+        assert mcp_record['icon'] == 'ShieldCheckIcon', 'icon value corrupted'
+        assert mcp_record['iconColor'] == 'text-red-500', 'iconColor value corrupted'
+        assert mcp_record['iconBg'] == 'bg-red-50', 'iconBg value corrupted'
+        assert mcp_record['complexity'] == 'Low', 'complexity value corrupted'
+        assert mcp_record['estimated_latency_ms'] == 200, 'estimated_latency_ms not 200'
+
+        guardrail_names = [g['guardrail_name'] for g in mcp_record['guardrailDefinitions']]
+        assert guardrail_names == ['mcp-security-block'], 'guardrail name corrupted'
+
+        mcp_guardrail = mcp_record['guardrailDefinitions'][0]
+        assert 'litellm_params' in mcp_guardrail, 'guardrail missing litellm_params'
+        params = mcp_guardrail['litellm_params']
+        assert params.get('guardrail') == 'mcp_security', 'guardrail type should be mcp_security'
+        assert params.get('mode') == 'pre_call', 'mode should be pre_call'
+        assert params.get('default_on') is True, 'default_on should be true'
+        assert params.get('on_violation') == 'block', 'on_violation should be block'
+
+        print('MCP security record valid and complete')
+        CATALOG_CHECK_MCP
+    - id: catalog-local-mas
+      why: the litellm/policy_templates_backup.json file is missing, has invalid JSON, or the mas-ai-risk-management record is corrupted, missing required fields, or literal values are wrong
+      run: |
+        python3 << 'CATALOG_CHECK_MAS'
+        import json
+        with open('litellm/policy_templates_backup.json', 'r') as f:
+            templates = json.load(f)
+
+        mas_record = None
+        for t in templates:
+            if t.get('id') == 'mas-ai-risk-management':
+                mas_record = t
+                break
+
+        assert mas_record is not None, 'mas-ai-risk-management record not found in backup catalog'
+
+        required_fields = ['id', 'title', 'description', 'icon', 'iconColor',
+                          'iconBg', 'guardrails', 'complexity', 'guardrailDefinitions', 'templateData',
+                          'tags', 'estimated_latency_ms']
+        for field in required_fields:
+            assert field in mas_record, f'missing field: {field}'
+
+        assert isinstance(mas_record['guardrails'], list) and len(mas_record['guardrails']) == 5, 'guardrails count wrong'
+        assert isinstance(mas_record['guardrailDefinitions'], list) and len(mas_record['guardrailDefinitions']) == 5, 'guardrailDefinitions count wrong'
+        assert isinstance(mas_record['tags'], list) and len(mas_record['tags']) == 3, 'tags count wrong'
+
+        assert mas_record['id'] == 'mas-ai-risk-management', 'id value corrupted'
+        assert mas_record['title'] == 'Singapore MAS — AI Risk Management for Financial Institutions', 'title value corrupted'
+        assert 'Monetary Authority of Singapore' in mas_record['description'], 'description value corrupted'
+        assert mas_record['tags'] == ['Financial Services', 'Regulatory', 'Singapore'], 'tags values corrupted'
+        assert mas_record['icon'] == 'ShieldCheckIcon', 'icon value corrupted'
+        assert mas_record['iconColor'] == 'text-blue-600', 'iconColor value corrupted'
+        assert mas_record['iconBg'] == 'bg-blue-50', 'iconBg value corrupted'
+        assert mas_record['complexity'] == 'High', 'complexity value corrupted'
+        assert mas_record['estimated_latency_ms'] == 1, 'estimated_latency_ms not 1'
+
+        guardrail_names = [g['guardrail_name'] for g in mas_record['guardrailDefinitions']]
+        expected_names = ['sg-mas-fairness-bias', 'sg-mas-transparency-explainability', 'sg-mas-human-oversight',
+                         'sg-mas-data-governance', 'sg-mas-model-security']
+        assert guardrail_names == expected_names, 'guardrail names corrupted or reordered'
+
+        for guardrail in mas_record['guardrailDefinitions']:
+            assert 'guardrail_name' in guardrail, 'guardrail missing name'
+            assert 'litellm_params' in guardrail, 'guardrail missing litellm_params'
+            params = guardrail['litellm_params']
+            assert 'guardrail' in params, f'{guardrail["guardrail_name"]} missing guardrail type'
+            assert 'mode' in params, f'{guardrail["guardrail_name"]} missing mode'
+            assert 'categories' in params, f'{guardrail["guardrail_name"]} missing categories'
+
+        print('Local MAS financial AI risk management record valid and complete')
+        CATALOG_CHECK_MAS
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or uses these catalog files. The loading function _load_policy_templates_from_local_backup is covered by B3252 which depends on this task. The route that uses both catalogs (get_policy_templates) is covered by B3253.
+  - Guardrail implementations or pattern/category definitions referenced by these templates. The records only define policy patterns, categories and metadata.
+  - Other policy templates in the backup or published files. Those are owned by other catalog tasks.
+  - Published nsfw-content-filter-all-regions record (policy_templates.json lines 750-933) is owned by B3265 (this task).
+  - Published mcp-security-unregistered-server-block record (policy_templates.json lines 1295-1332) is owned by B3260. This task owns the backup variant with example_sentences (litellm/policy_templates_backup.json lines 1337-1379).
+  - Published mas-ai-risk-management record (policy_templates.json lines 2248-2378) is owned by B3261. This task owns the backup variant with example_sentences (litellm/policy_templates_backup.json lines 2689-2819).
+  - Local nsfw records are owned by other catalog tasks (B3264 for local nsfw-content-filter-all-regions backup, B3266/B3268 for other local safety records).
+pitfalls:
+  - The published catalog policy_templates.json must be valid JSON. Any syntax errors break both local loading and remote fetch fallback.
+  - The backup file litellm/policy_templates_backup.json must be valid JSON. Any syntax errors prevent loading by _load_policy_templates_from_local_backup; the function returns empty list on file-not-found but not on malformed JSON.
+  - The nsfw-content-filter-all-regions record must contain exactly 8 guardrailDefinitions in the correct order at published lines 750-933; do not reorder or omit guardrail definitions.
+  - The mcp-security-unregistered-server-block record must be at backup lines 1337-1379 with default_on true and on_violation "block"; do not drop these MCP-specific settings.
+  - The mas-ai-risk-management record must contain exactly 5 guardrailDefinitions in the correct order at backup lines 2689-2819; do not reorder or omit guardrail definitions.
+  - >-
+    Each guardrailDefinitions entry must include the complete litellm_params block. For NSFW: categories entries with category, enabled, action, and severity_threshold. For MCP: mode, default_on, and on_violation. For MAS: categories entries with category, category_file, enabled, action, and severity_threshold.
+  - MAS record must include all category_file references unchanged (litellm/proxy/guardrails/content_filter_data/policy_templates/sg_mas_*.yaml). These are data references, not a request to implement filters.
+  - Catalog loading must not initialize the referenced providers or gate data display on their availability. The guardrail types referenced (litellm_content_filter, mcp_security) are only instantiated when actually applied to a request, never during catalog load.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
