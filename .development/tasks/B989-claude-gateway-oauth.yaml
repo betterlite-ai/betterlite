@@ -1,0 +1,252 @@
+id: B989
+title: Claude gateway oauth
+description: >-
+  Implement the Claude Code gateway's enable flag, OAuth discovery, device authorization and device-code token exchange
+  over B063's existing SSO device-flow primitives. Add general_settings.enable_claude_code_gateway=false; preserve
+  session TTL, polling interval, hashed secrets, the source device-session claim order and model/user authority.
+  No enterprise license gate is installed. Routes live under /claude_code_gateway and the device polling interval
+  is 5 seconds; reuse CLI_SSO_SESSION_TTL_SECONDS and CLI_JWT_EXPIRATION_HOURS from B063 configuration.
+
+
+  Implement crates/betterlite-server/src/api/claude_gateway_oauth.rs, crates/betterlite-core/src/api/claude_gateway_oauth.rs.
+  Use ClaudeGatewayOauthInput and ClaudeGatewayOauthResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: GET /claude_code_gateway/.well-known/oauth-authorization-server; POST
+  /claude_code_gateway/oauth/device_authorization; POST /claude_code_gateway/oauth/token. Each alias is exercised
+  through the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without
+  re-registering their methods/paths.
+
+
+  Extraction uses the typed path/query/body records named by the owned handler signatures.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): gateway_endpoints.py:134 status_code=err.status_code. Compare the actual source status, error
+  type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions gateway_disabled_404, device_authorization, authorization_pending,
+  expired_device_code, device_code_single_use, wrong_poll_secret, route_aliases, unauthenticated_route_contract
+  under api::claude_gateway_oauth::tests. Each named function drives production code and asserts its case result;
+  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): general_settings.use_x_forwarded_for
+  defaults to False; env.LITELLM_CLI_JWT_EXPIRATION_HOURS defaults to unset (None); general_settings.enable_claude_code_gateway
+  defaults to false; env.CLI_JWT_EXPIRATION_HOURS defaults to first nonempty CLI_JWT_EXPIRATION_HOURS then LITELLM_CLI_JWT_EXPIRATION_HOURS
+  then 24 hours. No environment reads occur outside betterlite-config. Test api::claude_gateway_oauth::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/anthropic_endpoints/gateway_endpoints.py: _oauth_error_response (L132-L134);
+  litellm/proxy/anthropic_endpoints/gateway_endpoints.py: oauth_authorization_server (L161-L176); litellm/proxy/anthropic_endpoints/gateway_endpoints.py:
+  device_authorization (L180-L230); litellm/proxy/anthropic_endpoints/gateway_endpoints.py: _validate_login (L233-L258);
+  litellm/proxy/anthropic_endpoints/gateway_endpoints.py: _mint_access_token (L261-L271); litellm/proxy/anthropic_endpoints/gateway_endpoints.py:
+  _claim_device_code (L274-L284); litellm/proxy/anthropic_endpoints/gateway_endpoints.py: _handle_device_code_grant
+  (L287-L324); litellm/proxy/anthropic_endpoints/gateway_endpoints.py: oauth_token (L328-L352). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 171 owned nonblank/non-comment/non-docstring Python lines (171 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 191 implementation,
+  88 behavior tests, 96 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 42 config tests/seeds and
+  38 wiring; 455 total within the 460-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B063 (SSO through OAuth providers,
+  Microsoft and SAML), B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B1132 (Claude
+  gateway enable and settings policy), B732 (Typed authentication principals and grant resolution), B855 (Authenticated
+  request admission and budget handoff), B756 (Authentication header selection and mode dispatch), B003 (HTTP server,
+  health routes and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces
+  and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas; the external
+  B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/claude_gateway_oauth.rs
+  - crates/betterlite-server/src/api/claude_gateway_oauth/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/claude_gateway_oauth.rs
+  - crates/betterlite-core/src/api/claude_gateway_oauth/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/claude_gateway_oauth.rs
+  - crates/betterlite-config/src/api/claude_gateway_oauth/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/claude-gateway-oauth-*
+  - tools/oracle/cases/api/claude-gateway-oauth/**
+  - tools/oracle/fixtures/claude-gateway-oauth/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L200-L200
+  why: Setting general_settings.use_x_forwarded_for and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1750-L1752
+  why: Setting env.CLI_JWT_EXPIRATION_HOURS and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L105-L106
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L109-L110
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L116-L117
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L123-L143
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L158-L352
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'gateway disabled 404: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-gateway-disabled-404
+  - oracle
+- text: 'device authorization: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-device-authorization
+  - oracle
+- text: 'authorization pending: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-authorization-pending
+  - oracle
+- text: 'expired device code: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-expired-device-code
+  - oracle
+- text: 'device code single use: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-device-code-single-use
+  - oracle
+- text: 'wrong poll secret: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-wrong-poll-secret
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'unauthenticated route contract: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-unauthenticated-route-contract
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
+      -E 'test(/^api::claude_gateway_oauth::/) - test(/::replays_corpus$/)'
+  - id: case-gateway-disabled-404
+    why: the gateway-disabled-404 behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::gateway_disabled_404($|::)/)'
+  - id: case-device-authorization
+    why: the device-authorization behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::device_authorization($|::)/)'
+  - id: case-authorization-pending
+    why: the authorization-pending behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::authorization_pending($|::)/)'
+  - id: case-expired-device-code
+    why: the expired-device-code behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::expired_device_code($|::)/)'
+  - id: case-device-code-single-use
+    why: the device-code-single-use behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::device_code_single_use($|::)/)'
+  - id: case-wrong-poll-secret
+    why: the wrong-poll-secret behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::wrong_poll_secret($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::route_aliases($|::)/)'
+  - id: case-unauthenticated-route-contract
+    why: the unauthenticated-route-contract behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::unauthenticated_route_contract($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::claude_gateway_oauth::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/claude-gateway-oauth-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/claude-gateway-oauth)"
+oracle_cases:
+- tools/oracle/cases/api/claude-gateway-oauth/gateway-disabled-404.yaml
+- tools/oracle/cases/api/claude-gateway-oauth/device-authorization.yaml
+- tools/oracle/cases/api/claude-gateway-oauth/authorization-pending.yaml
+- tools/oracle/cases/api/claude-gateway-oauth/expired-device-code.yaml
+- tools/oracle/cases/api/claude-gateway-oauth/device-code-single-use.yaml
+- tools/oracle/cases/api/claude-gateway-oauth/wrong-poll-secret.yaml
+- tools/oracle/cases/api/claude-gateway-oauth/route-aliases.yaml
+- tools/oracle/cases/api/claude-gateway-oauth/unauthenticated-route-contract.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/anthropic_endpoints/gateway_endpoints.py: B1132 owns _general_settings L101-L104, _is_gateway_enabled
+  L107-L108, ensure_gateway_enabled L111-L115, _managed_settings L118-L122.'
+- 'litellm/proxy/anthropic_endpoints/gateway_endpoints.py: B990 owns managed_settings L356-L370, _skip_otlp_body_parsing
+  L373-L374, _accept_otlp L380-L382, otlp_metrics L386-L387, otlp_logs L391-L392, otlp_traces L396-L397.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- 'gateway_endpoints.py:239 emits the diagnostic ''Claude Code gateway login session is malformed: %s''; retain
+  its level and fallback instead of turning it into a hard error.'
+- gateway_endpoints.py:134 uses status_code=err.status_code; preserve this envelope rather than a family-wide error
+  default.
+review_level: security
+budget:
+  max_changed_lines: 460
+  max_new_expects: 0

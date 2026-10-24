@@ -1,0 +1,134 @@
+id: B1087
+title: Api boundaries
+description: >-
+  Define ApiLimits and checked JSON/event/item guards below API modules. ApiLimits is max_json_bytes=16777216, max_event_bytes=1048576
+  and max_items=65536. Reuse B198 deadlines/B206 metadata and B014 dispatch; file/audio and batch JSONL remain streamed.
+
+
+  This task introduces no byte decoder and no fuzz target. Arithmetic/length guards take already known sizes. Test
+  exact cap and cap+1 for each limit: JSON overflow 413 invalid_request_error/body/request_too_large; provider event
+  overflow 502 bad_gateway/stream/event_too_large; request collection overflow 400 invalid_request_error/input/too_many_items.
+  Domain decoders own fuzz/replay later.
+
+
+  Implement crates/betterlite-core/src/api/api_boundaries.rs. Use ApiBoundariesInput and ApiBoundariesResult with
+  typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
+  constructors. Define ApiLimits here.
+
+
+  Write adjacent tests.rs behavior functions json_at_cap, json_over_cap, event_at_cap, event_over_cap, items_at_cap,
+  items_over_cap under api::api_boundaries::tests. Each named function drives production code and asserts its case
+  result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Implement tests::compatibility_deviations with one named rstest case per deviation below, asserting the exact
+  current betterlite result and the pinned contrast. These cases are not disguised as differential equality; oracle
+  inputs for unchanged behavior remain comparable.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 0 owned nonblank/non-comment/non-docstring Python lines (0 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 110 implementation,
+  76 behavior tests, 0 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 216 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
+  (Provider framework, provider resolution and parameter mapping), B014 (Call dispatch across providers and call
+  types, shared settings and helpers), B198 (Injected call context and shared settings), B206 (Common call metadata
+  and response helpers). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
+  ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/api_boundaries.rs
+  - crates/betterlite-core/src/api/api_boundaries/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/src/api/limits.rs
+  - crates/betterlite-core/src/api/limits/**
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/dispatch.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L300-L361
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+dod:
+- text: 'json at cap: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-json-at-cap
+- text: 'json over cap: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-json-over-cap
+- text: 'event at cap: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-event-at-cap
+- text: 'event over cap: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-event-over-cap
+- text: 'items at cap: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-items-at-cap
+- text: 'items over cap: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-items-over-cap
+- text: Every explicit deviation has a native test for its documented status/code or fallback.
+  proof:
+  - deviation-tests
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::/) - test(/::replays_corpus$/)'
+  - id: case-json-at-cap
+    why: the json-at-cap behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::tests::json_at_cap($|::)/)'
+  - id: case-json-over-cap
+    why: the json-over-cap behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::tests::json_over_cap($|::)/)'
+  - id: case-event-at-cap
+    why: the event-at-cap behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::tests::event_at_cap($|::)/)'
+  - id: case-event-over-cap
+    why: the event-over-cap behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::tests::event_over_cap($|::)/)'
+  - id: case-items-at-cap
+    why: the items-at-cap behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::tests::items_at_cap($|::)/)'
+  - id: case-items-over-cap
+    why: the items-over-cap behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::tests::items_over_cap($|::)/)'
+  - id: deviation-tests
+    why: the documented compatibility difference lacks a native assertion
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::api_boundaries::tests::compatibility_deviations($|::)/)'
+oracle_cases: []
+deviations:
+- what: API JSON inputs are capped at 16 MiB, provider events at 1 MiB and collected items at 65536; overflows return
+    the typed limit errors named in the description.
+  why: The bounded-inputs rule requires finite memory use where these pinned family implementations lack uniform
+    caps; file/audio byte streams and batch JSONL stay incremental.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L300-L532
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- A single event over 1 MiB returns event_too_large; the 16 MiB JSON request cap does not replace this streaming
+  event cap.
+- Guard checked counts before allocation and treat cap+1 as overflow without truncating an input collection.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

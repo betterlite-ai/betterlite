@@ -1,0 +1,212 @@
+id: B903
+title: Response id codecs
+description: >-
+  Build bounded typed codecs for response IDs, encrypted-item IDs, wrapped encrypted content and container IDs.
+  Export decoded provider/deployment/original-ID records for routing without treating any encoded ID as authorization.
+  Preserve diagnostic levels and unchanged-input outcomes where decoding falls back; a source debug diagnostic does
+  not become a warning.
+
+
+  ResponsesAPIRequestUtils.decode_container_id_to_original (litellm/responses/utils.py:L790-L797) has no MIT runtime
+  caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case
+  exercises that unused entry point.
+
+
+  Implement crates/betterlite-core/src/api/response_id_codecs.rs. Use ResponseIdCodecsInput and ResponseIdCodecsResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions response_id_roundtrip, malformed_base64_original, item_id_missing_padding,
+  container_semicolon, empty_provider_model under api::response_id_codecs::tests. Each named function drives production
+  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
+  replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::response_id_codecs::decode_response_id_codecs(bytes:
+  &[u8], limits: &ApiLimits), for base64.b64decode input cleaned.encode('utf-8') at litellm/responses/utils.py:409;
+  base64.b64decode input metadata_b64.encode('utf-8') at litellm/responses/utils.py:460; base64.b64decode input
+  cleaned_id.encode('utf-8') at litellm/responses/utils.py:636; base64.b64decode input cleaned_id.encode('utf-8')
+  at litellm/responses/utils.py:747. Place its implementation in crates/betterlite-core/src/api/response_id_codecs.rs
+  and call it from the actual boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/response_id_codecs.rs
+  passes arbitrary bounded bytes to that exact decoder; api::response_id_codecs::tests::replays_corpus replays newly
+  committed seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::ResponseIdCodecs in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {response_id_codecs: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/responses/utils.py: ResponsesAPIRequestUtils._build_encrypted_item_id (L385-L392);
+  litellm/responses/utils.py: ResponsesAPIRequestUtils._decode_encrypted_item_id (L395-L418); litellm/responses/utils.py:
+  ResponsesAPIRequestUtils._wrap_encrypted_content_with_model_id (L421-L431); litellm/responses/utils.py: ResponsesAPIRequestUtils._unwrap_encrypted_content_with_model_id
+  (L434-L464); litellm/responses/utils.py: ResponsesAPIRequestUtils._build_responses_api_response_id (L611-L621);
+  litellm/responses/utils.py: ResponsesAPIRequestUtils._decode_responses_api_response_id (L624-L674); litellm/responses/utils.py:
+  ResponsesAPIRequestUtils._is_litellm_encoded_response_id (L677-L682); litellm/responses/utils.py: ResponsesAPIRequestUtils.get_model_id_from_response_id
+  (L685-L690); litellm/responses/utils.py: ResponsesAPIRequestUtils.decode_previous_response_id_to_original_previous_response_id
+  (L693-L710); litellm/responses/utils.py: ResponsesAPIRequestUtils._build_container_id (L713-L727); litellm/responses/utils.py:
+  ResponsesAPIRequestUtils._decode_container_id (L730-L787). Abstract/protocol declarations map to native types
+  and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
+  stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 167 owned nonblank/non-comment/non-docstring Python lines (208 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 187 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 497 total within the 500-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/response_id_codecs.rs
+  - crates/betterlite-core/src/api/response_id_codecs/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/response_id_codecs.rs
+  - crates/betterlite-core/fuzz/corpus/response_id_codecs/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/response_id_codecs.rs
+  - tools/oracle/src/helpers/response_id_codecs/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/response_id_codecs.py
+  - tools/oracle/helpers/response_id_codecs/**
+  - tools/oracle/fuzz/corpus/helper_case/response_id_codecs-*
+  - tools/oracle/cases/helpers/response-id-codecs/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L385-L464
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L611-L789
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'response id roundtrip: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-response-id-roundtrip
+  - oracle
+- text: 'malformed base64 original: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-malformed-base64-original
+  - oracle
+- text: 'item id missing padding: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-item-id-missing-padding
+  - oracle
+- text: 'container semicolon: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-container-semicolon
+  - oracle
+- text: 'empty provider model: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-empty-provider-model
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_codecs::/) -
+      test(/::replays_corpus$/)'
+  - id: case-response-id-roundtrip
+    why: the response-id-roundtrip behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_codecs::tests::response_id_roundtrip($|::)/)'
+  - id: case-malformed-base64-original
+    why: the malformed-base64-original behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_codecs::tests::malformed_base64_original($|::)/)'
+  - id: case-item-id-missing-padding
+    why: the item-id-missing-padding behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_codecs::tests::item_id_missing_padding($|::)/)'
+  - id: case-container-semicolon
+    why: the container-semicolon behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_codecs::tests::container_semicolon($|::)/)'
+  - id: case-empty-provider-model
+    why: the empty-provider-model behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_codecs::tests::empty_provider_model($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/response_id_codecs)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/response_id_codecs.rs && grep -qF "decode_response_id_codecs"
+      crates/betterlite-core/fuzz/fuzz_targets/response_id_codecs.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::response_id_codecs::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/response_id_codecs.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/response_id_codecs-*)"
+      && grep -qE "^[[:space:]]+response_id_codecs:" tools/oracle/fuzz/corpus/helper_case/response_id_codecs-* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/response-id-codecs)"
+oracle_cases:
+- tools/oracle/cases/helpers/response-id-codecs/response-id-roundtrip.yaml
+- tools/oracle/cases/helpers/response-id-codecs/malformed-base64-original.yaml
+- tools/oracle/cases/helpers/response-id-codecs/item-id-missing-padding.yaml
+- tools/oracle/cases/helpers/response-id-codecs/container-semicolon.yaml
+- tools/oracle/cases/helpers/response-id-codecs/empty-provider-model.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/utils.py: B905 owns _apply_nested_drop_params L34-L36, _output_token_detail L39-L41, _is_object_sequence
+  L44-L45, _is_object_dict L48-L51, normalize_responses_api_stream_options L54-L62, _is_chat_text_part L65-L66,
+  _as_input_text_part L69-L72, ResponsesAPIRequestUtils.shape_prompt_managed_message_for_responses L82-L89, ResponsesAPIRequestUtils.responses_input_to_chat_messages
+  L92-L99, ResponsesAPIRequestUtils.merge_prompt_management_input L102-L151, ResponsesAPIRequestUtils.merge_client_forwarded_headers
+  L154-L173, ResponsesAPIRequestUtils._check_valid_arg L176-L196, ResponsesAPIRequestUtils.get_optional_params_responses_api
+  L199-L253, ResponsesAPIRequestUtils.get_requested_response_api_optional_param L256-L307, ResponsesAPIRequestUtils.convert_text_format_to_text_param
+  L1036-L1067, ResponsesAPIRequestUtils.extract_mcp_headers_from_request L1070-L1137.'
+- 'litellm/responses/utils.py: B904 owns ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
+  L312-L317, ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id L321-L326, ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
+  L331-L382, ResponsesAPIRequestUtils._update_encrypted_content_item_ids_in_response L467-L523, ResponsesAPIRequestUtils._restore_encrypted_content_item_ids_in_input
+  L526-L556, ResponsesAPIRequestUtils.strip_encrypted_reasoning_from_input L559-L578, ResponsesAPIRequestUtils._without_encrypted_reasoning
+  L581-L595, ResponsesAPIRequestUtils._has_readable_text L598-L608, ResponsesAPIRequestUtils._encode_container_ids_in_annotations
+  L800-L813, ResponsesAPIRequestUtils._encode_container_ids_in_message_content L816-L837, ResponsesAPIRequestUtils._encode_container_id_on_output_item
+  L840-L914, ResponsesAPIRequestUtils._collect_container_ids_from_annotations L917-L924, ResponsesAPIRequestUtils._collect_container_ids_from_message_content
+  L927-L944, ResponsesAPIRequestUtils._collect_container_ids_from_output_item L947-L983, ResponsesAPIRequestUtils.collect_container_ids_from_responses_response
+  L986-L1000, ResponsesAPIRequestUtils._update_container_ids_in_response L1003-L1033.'
+- 'litellm/responses/utils.py: ResponsesAPIRequestUtils.decode_container_id_to_original L790-L797 are out of scope:
+  no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/responses/utils.py: B906 owns ResponseAPILoggingUtils._is_response_api_usage L1142-L1148, ResponseAPILoggingUtils._transform_response_api_usage_to_chat_usage
+  L1151-L1263.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'utils.py:669 emits the diagnostic "Error decoding response_id ''%s'': %s"; retain its level and fallback instead
+  of turning it into a hard error.'
+- 'utils.py:782 emits the diagnostic "Error decoding container_id ''%s'': %s"; retain its level and fallback instead
+  of turning it into a hard error.'
+review_level: security
+budget:
+  max_changed_lines: 500
+  max_new_expects: 1

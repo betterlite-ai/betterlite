@@ -1,0 +1,216 @@
+id: B1070
+title: Vector management read
+description: >-
+  Implement /vector_store/list and info with owner-scoped visibility, source pagination and redacted registry/database
+  views. Reuse management redaction and expose is_config ownership without returning connection or embedding credentials.
+
+
+  Implement crates/betterlite-server/src/api/vector_management_read.rs, crates/betterlite-core/src/api/vector_management_read.rs.
+  Use VectorManagementReadInput and VectorManagementReadResult with typed nested records; inject only the clock,
+  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
+  do not introduce ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: GET /vector_store/list; GET /v1/vector_store/list; POST /vector_store/info.
+  Each alias is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts
+  its child factories without re-registering their methods/paths.
+
+
+  Extraction uses the typed path/query/body records named by the owned handler signatures.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): management_endpoints.py:450 status_code=500, exception_detail=FastAPI detail string; management_endpoints.py:548
+  status_code=500, exception_detail=FastAPI detail string; management_endpoints.py:602 status_code=500, exception_detail=FastAPI
+  detail string; management_endpoints.py:558 status_code=403, exception_detail=FastAPI detail string. Compare the
+  actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions managed_vector_list, managed_vector_info, managed_vector_page, nested_secret_never_returned,
+  route_aliases, auth_missing, auth_invalid under api::vector_management_read::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-server::api::vector_management_read::decode_vector_management_read(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input vector_store_metadata at litellm/proxy/vector_store_endpoints/management_endpoints.py:567.
+  Place its implementation in crates/betterlite-server/src/api/vector_management_read.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/vector_management_read.rs passes arbitrary
+  bounded bytes to that exact decoder; api::vector_management_read::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/vector_store_endpoints/management_endpoints.py: list_vector_stores (L356-L450);
+  litellm/proxy/vector_store_endpoints/management_endpoints.py: get_vector_store_info (L538-L602). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 132 owned nonblank/non-comment/non-docstring Python lines (143 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 152 implementation,
+  82 behavior tests, 84 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 416 total within the 420-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1060 (Vector store access), B1069
+  (Vector management write), B1087 (Api boundaries), B726 (Managed resources and transaction repositories), B858
+  (Typed managed-resource and analytics rows), B1062 (Vector store registry), B003 (HTTP server, health routes and
+  master key auth), B756 (Authentication header selection and mode dispatch), B1139 (Stateful HTTP oracle scenarios),
+  B856 (Management oracle namespaces and Postgres test fixture), B002 (Load LiteLLM config.yaml into typed config).
+  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
+  on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/vector_management_read.rs
+  - crates/betterlite-server/src/api/vector_management_read/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_management_read.rs
+  - crates/betterlite-core/src/api/vector_management_read/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/vector_management_read.rs
+  - crates/betterlite-server/fuzz/corpus/vector_management_read/**
+  - tools/oracle/cases/api/vector-management-read/**
+  - tools/oracle/fixtures/vector-management-read/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L344-L450
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/management_endpoints.py#L532-L602
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1196-L1212
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'managed vector list: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-vector-list
+  - oracle
+- text: 'managed vector info: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-vector-info
+  - oracle
+- text: 'managed vector page: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-vector-page
+  - oracle
+- text: 'nested secret never returned: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-nested-secret-never-returned
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::vector_management_read::/)
+      - test(/::replays_corpus$/)'
+  - id: case-managed-vector-list
+    why: the managed-vector-list behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_read::tests::managed_vector_list($|::)/)'
+  - id: case-managed-vector-info
+    why: the managed-vector-info behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_read::tests::managed_vector_info($|::)/)'
+  - id: case-managed-vector-page
+    why: the managed-vector-page behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_read::tests::managed_vector_page($|::)/)'
+  - id: case-nested-secret-never-returned
+    why: the nested-secret-never-returned behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_read::tests::nested_secret_never_returned($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_read::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_read::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_management_read::tests::auth_invalid($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/vector_management_read)"
+      && test -f crates/betterlite-server/fuzz/fuzz_targets/vector_management_read.rs && grep -qF "decode_vector_management_read"
+      crates/betterlite-server/fuzz/fuzz_targets/vector_management_read.rs && cargo nextest run --locked -p betterlite-server
+      --no-tests=fail -E 'test(/^api::vector_management_read::tests::replays_corpus$/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/vector-management-read)"
+oracle_cases:
+- tools/oracle/cases/api/vector-management-read/managed-vector-list.yaml
+- tools/oracle/cases/api/vector-management-read/managed-vector-info.yaml
+- tools/oracle/cases/api/vector-management-read/managed-vector-page.yaml
+- tools/oracle/cases/api/vector-management-read/nested-secret-never-returned.yaml
+- tools/oracle/cases/api/vector-management-read/route-aliases.yaml
+- tools/oracle/cases/api/vector-management-read/auth-missing.yaml
+- tools/oracle/cases/api/vector-management-read/auth-invalid.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/vector_store_endpoints/management_endpoints.py: B1069 owns _vector_store_table L52-L53, _row_to_vector_store
+  L56-L57, _raise_if_config_owned L65-L78, _with_ownership L81-L83, _redact_sensitive_litellm_params L92-L132, _fetch_and_authorize_vector_store
+  L135-L157, _check_vector_store_access L163-L176, create_vector_store_in_db L179-L266, new_vector_store L277-L341,
+  delete_vector_store L458-L529, update_vector_store L610-L697.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- management_endpoints.py:418 emits the diagnostic 'Removed deleted vector store %s from in-memory registry'; retain
+  its level and fallback instead of turning it into a hard error.
+- management_endpoints.py:450 uses status_code=500, detail=str(e); preserve this envelope rather than a family-wide
+  error default.
+review_level: security
+budget:
+  max_changed_lines: 420
+  max_new_expects: 0

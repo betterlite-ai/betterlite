@@ -1,0 +1,186 @@
+id: B900
+title: Multipart oracle
+description: >-
+  Extend B171 HttpCase body variants with JSON, ordered multipart parts and fixture bytes, preserving the existing
+  JSON/SSE case format and CLI.
+
+
+  request.body_kind is json (the default), multipart or bytes. With json, request.body remains the legacy bare JSON
+  value, even if it has fields named multipart, bytes or json. With multipart, body is a parts record preserving
+  order with name, optional filename/content_type, and exactly one text or fixture payload per part. With bytes,
+  body is a fixture/content_type record. The explicit discriminator avoids collisions with legacy application JSON.
+  upstream answers accept bytes with status/headers. Confine all binary files to tools/oracle/fixtures/multipart-oracle/;
+  no case-relative alternative. Limits are 16 MiB per fixture, 128 parts, 16 MiB captured request body. decode_multipart_capture
+  reads the bounded Content-Type boundary and bytes of both client and gateway-to-provider requests into ordered
+  parts; normalize only boundary tokens, retaining duplicate names/filenames/content types and payloads. Differences
+  use /request/parts/0/filename or /upstream/0/parts/0/filename, and /response/bytes for binary responses. decode_http_body
+  reads bounded case YAML into these variants; fuzz both production decoders. The sole replay test is multipart_oracle::tests::replays_corpus.
+  Self-check reruns the new fixtures plus tools/oracle/cases/chat and tools/oracle/cases/health. WAV health fixture
+  ownership moves to B1001.
+
+
+  Implement tools/oracle/src/multipart_oracle.rs. Use MultipartOracleInput and MultipartOracleResult with typed
+  nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
+  constructors. Define OracleLimits for the concrete harness caps above; product ApiLimits is not a tooling dependency.
+
+
+  Write adjacent tests.rs behavior functions ordered_duplicate_parts, binary_answer_exact, multipart_diff_pointer,
+  fixture_root_escape_rejected, rejects_unknown_field, rejects_duplicate_field, detects_changed_peer, rejects_oversize_input,
+  preserves_legacy_cases under multipart_oracle::tests. Each named function drives production code and asserts its
+  case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-oracle::multipart_oracle::decode_http_body(bytes: &[u8], limits:
+  &OracleLimits), for bounded HttpCase YAML and captured multipart bytes. Place its implementation in tools/oracle/src/multipart_oracle.rs
+  and call it from the actual boundary. The cargo-fuzz target tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs
+  passes arbitrary bounded bytes to that exact decoder; multipart_oracle::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 0 owned nonblank/non-comment/non-docstring Python lines (0 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 240 implementation,
+  94 behavior tests, 80 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 504 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding). These are callable/type/config owners,
+  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/error.rs
+  - tools/oracle/src/multipart_oracle.rs
+  - tools/oracle/src/multipart_oracle/**
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs
+  - tools/oracle/fuzz/corpus/multipart_oracle/**
+  - tools/oracle/fuzz/fuzz_targets/multipart_capture.rs
+  - tools/oracle/fuzz/corpus/multipart_capture/**
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/mock.rs
+  - tools/oracle/src/mock/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/compare/**
+  - tools/oracle/src/main.rs
+  - tools/oracle/cases/harness/multipart-oracle/**
+  - tools/oracle/fixtures/multipart-oracle/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L453-L467
+  why: Pinned HTTP/protocol contract used by this tooling extension.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L296-L320
+  why: Pinned HTTP/protocol contract used by this tooling extension.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L247-L255
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+dod:
+- text: 'ordered duplicate parts: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-ordered-duplicate-parts
+- text: 'binary answer exact: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-binary-answer-exact
+- text: 'multipart diff pointer: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-multipart-diff-pointer
+- text: 'fixture root escape rejected: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-fixture-root-escape-rejected
+- text: 'rejects unknown field: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-unknown-field
+- text: 'rejects duplicate field: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-duplicate-field
+- text: 'detects changed peer: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-detects-changed-peer
+- text: 'rejects oversize input: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-oversize-input
+- text: 'preserves legacy cases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-preserves-legacy-cases
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The same single replay function also replays multipart wire corpus through decode_multipart_capture.
+  proof:
+  - multipart-corpus
+- text: Independent harness runs include deliberate comparator mismatches and preserve existing chat/health cases.
+  proof:
+  - behavior-tests
+  - harness-self-check
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::/) - test(/::replays_corpus$/)'
+  - id: case-ordered-duplicate-parts
+    why: the ordered-duplicate-parts behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::ordered_duplicate_parts($|::)/)'
+  - id: case-binary-answer-exact
+    why: the binary-answer-exact behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::binary_answer_exact($|::)/)'
+  - id: case-multipart-diff-pointer
+    why: the multipart-diff-pointer behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::multipart_diff_pointer($|::)/)'
+  - id: case-fixture-root-escape-rejected
+    why: the fixture-root-escape-rejected behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::fixture_root_escape_rejected($|::)/)'
+  - id: case-rejects-unknown-field
+    why: the rejects-unknown-field behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_unknown_field($|::)/)'
+  - id: case-rejects-duplicate-field
+    why: the rejects-duplicate-field behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_duplicate_field($|::)/)'
+  - id: case-detects-changed-peer
+    why: the detects-changed-peer behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::detects_changed_peer($|::)/)'
+  - id: case-rejects-oversize-input
+    why: the rejects-oversize-input behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::rejects_oversize_input($|::)/)'
+  - id: case-preserves-legacy-cases
+    why: the preserves-legacy-cases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::preserves_legacy_cases($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/multipart_oracle)"
+      && test -f tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs && grep -qF "decode_http_body" tools/oracle/fuzz/fuzz_targets/multipart_oracle.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::replays_corpus$/)'
+  - id: multipart-corpus
+    why: multipart wire bytes never reach their actual production decoder in fuzz/replay
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/multipart_capture)"
+      && grep -qF decode_multipart_capture tools/oracle/fuzz/fuzz_targets/multipart_capture.rs && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^multipart_oracle::tests::replays_corpus$/)'
+  - id: harness-self-check
+    why: new harness fixtures or backwards-compatible HTTP modes fail
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/multipart-oracle)"
+      && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/multipart-oracle
+      tools/oracle/cases/chat tools/oracle/cases/health
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- get_form_data accumulates key[] values but retains only the last repeated plain key; compare the resulting upstream
+  form against that source behavior.
+- Multipart boundary strings are random; filenames, content types and ordered payloads are not.
+review_level: standard
+budget:
+  max_changed_lines: 510
+  max_new_expects: 0

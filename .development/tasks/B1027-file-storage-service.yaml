@@ -1,0 +1,169 @@
+id: B1027
+title: File storage service
+description: >-
+  Upload storage-only files and construct their MIT OpenAIFileObject/hidden storage metadata. A nonempty target_model_names
+  with no BaseFileEndpoints hook returns 400 invalid_request_error, param target_model_names, code 400 before upload.
+  With no targets, return after the storage write: no managed ID, managed row or hook is created. Unknown target_storage
+  returns 400 invalid_request_error/target_storage/400. Preserve the generated file-<24 hex> ID, uploaded status
+  and storage metadata.
+
+
+  _store_in_managed_files, _create_unified_file_id and orphan cleanup are unreachable from the OSS upload path:
+  targets fail before the upload, and no targets returns before registration. Their warning/cleanup cases are removed
+  rather than activating that hook-only branch.
+
+
+  Implement crates/betterlite-core/src/api/file_storage_service.rs. Use FileStorageServiceInput and FileStorageServiceResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): storage_backend_service.py:67 type='invalid_request_error', param='target_storage', code=400;
+  storage_backend_service.py:77 type='invalid_request_error', param='target_model_names', code=400. Compare the
+  actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs functions storage_file_object, storage_only_upload, storage_targets_400_befor_a0fe, unknown_storage_backend_400
+  under api::file_storage_service::tests; each independently drives the production result and effects described
+  here. HelperCase replay remains in B171.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::FileStorageService in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {file_storage_service: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership in litellm/proxy/openai_files_endpoints/storage_backend_service.py: upload_file_to_storage_backend
+  L36-L110; _create_file_object_with_storage_metadata L141-L182. These ranges stop at the absent-hook guards; excluded
+  continuations are listed below.
+
+
+  Sizing: 75 owned nonblank/non-comment/non-docstring Python lines (101 nonblank/non-comment physical lines including
+  docstrings), counted over the disjoint ranges above. Estimate 95 implementation, 64 behavior tests, 48 oracle
+  fixtures, 90 Rust/Python adapters, 0 config tests/seeds and 30 wiring: 327 total within the 400-line cap. No owned
+  decoder/fuzz work is required.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1018 (MIT resource owner compatibility),
+  B1021 (File upload options), B1025 (File storage contracts), B1026 (File azure storage), B1087 (Api boundaries).
+  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
+  on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/file_storage_service.rs
+  - crates/betterlite-core/src/api/file_storage_service/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/file_storage_service.rs
+  - tools/oracle/src/helpers/file_storage_service/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/file_storage_service.py
+  - tools/oracle/helpers/file_storage_service/**
+  - tools/oracle/fuzz/corpus/helper_case/file_storage_service-*
+  - tools/oracle/cases/helpers/file-storage-service/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L1-L269
+  why: Full source context; the explicit callable list owns only MIT-reachable branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L35-L110
+  why: Owned MIT-reachable slice without the enterprise hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L140-L182
+  why: Owned MIT-reachable slice without the enterprise hook.
+dod:
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: 'storage file object: assert the source result and ordered effects specified above.'
+  proof:
+  - case-storage-file-object
+  - oracle
+- text: 'storage only upload: assert the source result and ordered effects specified above.'
+  proof:
+  - case-storage-only-upload
+  - oracle
+- text: 'storage targets 400 before write: assert the source result and ordered effects specified above.'
+  proof:
+  - case-storage-targets-400-before-write
+  - oracle
+- text: 'unknown storage backend 400: assert the source result and ordered effects specified above.'
+  proof:
+  - case-unknown-storage-backend-400
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::/)
+      - test(/::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/file_storage_service.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_storage_service-*)"
+      && grep -qE "^[[:space:]]+file_storage_service:" tools/oracle/fuzz/corpus/helper_case/file_storage_service-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/file-storage-service)"
+  - id: case-storage-file-object
+    why: the storage-file-object source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::storage_file_object($|::)/)'
+  - id: case-storage-only-upload
+    why: the storage-only-upload source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::storage_only_upload($|::)/)'
+  - id: case-storage-targets-400-before-write
+    why: the storage-targets-400-before-write source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::storage_targets_400_befor_a0fe($|::)/)'
+  - id: case-unknown-storage-backend-400
+    why: the unknown-storage-backend-400 source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::tests::unknown_storage_backend_400($|::)/)'
+oracle_cases:
+- tools/oracle/cases/helpers/file-storage-service/storage-file-object.yaml
+- tools/oracle/cases/helpers/file-storage-service/storage-only-upload.yaml
+- tools/oracle/cases/helpers/file-storage-service/storage-targets-400-before-write.yaml
+- tools/oracle/cases/helpers/file-storage-service/unknown-storage-backend-400.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+- StorageBackendFileService upload continuation L111-L124, _discard_orphaned_content, _create_unified_file_id and
+  _store_in_managed_files have no reachable OSS caller without the enterprise hook; retain storage-only upload and
+  object construction, not managed registration/cleanup.
+pitfalls:
+- target_model_names fails before upload when the managed hook is absent, so an OSS failure creates no orphan to
+  clean up.
+- The storage-only result uses file- plus 24 UUID hex characters and stores the backend URL in hidden metadata;
+  it is not a unified managed-file ID.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

@@ -1,0 +1,163 @@
+id: B921
+title: Response chat dispatch
+description: >-
+  Wire chat calls backed by a native Responses provider through B014. Resolve bridge direction once, build request
+  and stream/nonstream response using the split converters, and expose the existing logging/context result seam
+  without a second terminal log.
+
+
+  Implement crates/betterlite-core/src/api/response_chat_dispatch.rs. Use ResponseChatDispatchInput and ResponseChatDispatchResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions native_responses_chat_dispatch, stream_chat_dispatch, provider_error_once,
+  previous_response_forwarding under api::response_chat_dispatch::tests. Each named function drives production code
+  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ResponseChatDispatch in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {response_chat_dispatch: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/completion_extras/litellm_responses_transformation/handler.py: _restore_routing_prefix
+  (L28-L30); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.__init__
+  (L34-L38); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._resolve_stream_flag
+  (L41-L45); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._is_preformatted_cached_chat_stream
+  (L48-L51); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._coerce_response_object
+  (L54-L75); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._collect_response_from_stream
+  (L77-L90); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._collect_response_from_stream_async
+  (L92-L105); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.validate_input_kwargs
+  (L107-L155); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.completion
+  (L157-L257); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.acompletion
+  (L259-L353); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._completed_response_as_stream
+  (L355-L372); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._apply_post_stream_processing
+  (L375-L393). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 332 owned nonblank/non-comment/non-docstring Python lines (337 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 352 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 584 total within the 590-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
+  (Direct helper oracle and URL path encoding), B918 (Response chat request), B919 (Response chat result), B920
+  (Responses to chat stream), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/response_chat_dispatch.rs
+  - crates/betterlite-core/src/api/response_chat_dispatch/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/response_chat_dispatch.rs
+  - tools/oracle/src/helpers/response_chat_dispatch/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/response_chat_dispatch.py
+  - tools/oracle/helpers/response_chat_dispatch/**
+  - tools/oracle/fuzz/corpus/helper_case/response_chat_dispatch-*
+  - tools/oracle/cases/helpers/response-chat-dispatch/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L1-L396
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'native responses chat dispatch: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-native-responses-chat-dispatch
+  - oracle
+- text: 'stream chat dispatch: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-stream-chat-dispatch
+  - oracle
+- text: 'provider error once: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-provider-error-once
+  - oracle
+- text: 'previous response forwarding: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-previous-response-forwarding
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::/)
+      - test(/::replays_corpus$/)'
+  - id: case-native-responses-chat-dispatch
+    why: the native-responses-chat-dispatch behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::native_responses_chat_dispatch($|::)/)'
+  - id: case-stream-chat-dispatch
+    why: the stream-chat-dispatch behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::stream_chat_dispatch($|::)/)'
+  - id: case-provider-error-once
+    why: the provider-error-once behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::provider_error_once($|::)/)'
+  - id: case-previous-response-forwarding
+    why: the previous-response-forwarding behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::previous_response_forwarding($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/response_chat_dispatch.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/response_chat_dispatch-*)"
+      && grep -qE "^[[:space:]]+response_chat_dispatch:" tools/oracle/fuzz/corpus/helper_case/response_chat_dispatch-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/response-chat-dispatch)"
+oracle_cases:
+- tools/oracle/cases/helpers/response-chat-dispatch/native-responses-chat-dispatch.yaml
+- tools/oracle/cases/helpers/response-chat-dispatch/stream-chat-dispatch.yaml
+- tools/oracle/cases/helpers/response-chat-dispatch/provider-error-once.yaml
+- tools/oracle/cases/helpers/response-chat-dispatch/previous-response-forwarding.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- ResponsesToCompletionBridgeHandler._resolve_stream_flag uses optional_params.get('stream'); retain its missing-value
+  behavior and field spelling in the typed projection.
+- ResponsesToCompletionBridgeHandler._resolve_stream_flag uses litellm_params.get('stream', False); retain its missing-value
+  behavior and field spelling in the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 590
+  max_new_expects: 1

@@ -1,0 +1,196 @@
+id: B1046
+title: Batch input accounting
+description: >-
+  Read authorized managed batch files and count per-line input/output usage, checking each row's model access before
+  submission. Use batch-records parsing and B013 offline token counts; preserve source fallback estimates and record
+  denied rows without exposing file contents.
+
+
+  Implement crates/betterlite-core/src/api/batch_input_accounting.rs. Use BatchInputAccountingInput and BatchInputAccountingResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): batch_rate_limiter.py:1070 status_code=403, exception_detail=FastAPI detail object; batch_rate_limiter.py:1118
+  status_code=403, exception_detail=FastAPI detail object. Compare the actual source status, error type, param and
+  code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions mixed_model_row_access, batch_input_tokens, batch_output_estimate,
+  managed_file_fetch_auth, unsupported_row_estimate under api::batch_input_accounting::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::batch_input_accounting::decode_batch_input_accounting(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input raw_line at litellm/proxy/hooks/batch_rate_limiter.py:950. Place
+  its implementation in crates/betterlite-core/src/api/batch_input_accounting.rs and call it from the actual boundary.
+  The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/batch_input_accounting.rs passes arbitrary bounded
+  bytes to that exact decoder; api::batch_input_accounting::tests::replays_corpus replays newly committed seeds
+  through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::BatchInputAccounting in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_input_accounting: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/hooks/batch_rate_limiter.py: _PROXY_BatchRateLimiter.count_input_file_usage
+  (L843-L1020); litellm/proxy/hooks/batch_rate_limiter.py: _PROXY_BatchRateLimiter._enforce_batch_file_model_access
+  (L1022-L1126); litellm/proxy/hooks/batch_rate_limiter.py: _PROXY_BatchRateLimiter._fetch_managed_file_content
+  (L1128-L1178). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 237 owned nonblank/non-comment/non-docstring Python lines (267 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 257 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 567 total within the 570-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B013 (Model cost map, provider capability data and token counting), B171 (Direct helper
+  oracle and URL path encoding), B1020 (File credentials), B1030 (File content stream), B1035 (Batch records), B1044
+  (Batch limit descriptors), B1087 (Api boundaries), B1019 (File routing ids), B1039 (Batch output usage). These
+  are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on
+  the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_input_accounting.rs
+  - crates/betterlite-core/src/api/batch_input_accounting/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/batch_input_accounting.rs
+  - crates/betterlite-core/fuzz/corpus/batch_input_accounting/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_input_accounting.rs
+  - tools/oracle/src/helpers/batch_input_accounting/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_input_accounting.py
+  - tools/oracle/helpers/batch_input_accounting/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_input_accounting-*
+  - tools/oracle/cases/helpers/batch-input-accounting/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_rate_limiter.py#L843-L1178
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'mixed model row access: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-mixed-model-row-access
+  - oracle
+- text: 'batch input tokens: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-input-tokens
+  - oracle
+- text: 'batch output estimate: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-output-estimate
+  - oracle
+- text: 'managed file fetch auth: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-file-fetch-auth
+  - oracle
+- text: 'unsupported row estimate: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unsupported-row-estimate
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_input_accounting::/)
+      - test(/::replays_corpus$/)'
+  - id: case-mixed-model-row-access
+    why: the mixed-model-row-access behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_input_accounting::tests::mixed_model_row_access($|::)/)'
+  - id: case-batch-input-tokens
+    why: the batch-input-tokens behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_input_accounting::tests::batch_input_tokens($|::)/)'
+  - id: case-batch-output-estimate
+    why: the batch-output-estimate behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_input_accounting::tests::batch_output_estimate($|::)/)'
+  - id: case-managed-file-fetch-auth
+    why: the managed-file-fetch-auth behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_input_accounting::tests::managed_file_fetch_auth($|::)/)'
+  - id: case-unsupported-row-estimate
+    why: the unsupported-row-estimate behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_input_accounting::tests::unsupported_row_estimate($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/batch_input_accounting)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/batch_input_accounting.rs && grep -qF "decode_batch_input_accounting"
+      crates/betterlite-core/fuzz/fuzz_targets/batch_input_accounting.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::batch_input_accounting::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_input_accounting.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_input_accounting-*)"
+      && grep -qE "^[[:space:]]+batch_input_accounting:" tools/oracle/fuzz/corpus/helper_case/batch_input_accounting-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-input-accounting)"
+oracle_cases:
+- tools/oracle/cases/helpers/batch-input-accounting/mixed-model-row-access.yaml
+- tools/oracle/cases/helpers/batch-input-accounting/batch-input-tokens.yaml
+- tools/oracle/cases/helpers/batch-input-accounting/batch-output-estimate.yaml
+- tools/oracle/cases/helpers/batch-input-accounting/managed-file-fetch-auth.yaml
+- tools/oracle/cases/helpers/batch-input-accounting/unsupported-row-estimate.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/hooks/batch_rate_limiter.py: B1044 owns _PROXY_BatchRateLimiter.__init__ L129-L149, _PROXY_BatchRateLimiter._get_file_bound_batch_model
+  L151-L180, _PROXY_BatchRateLimiter._get_batch_routing_model L182-L199, _PROXY_BatchRateLimiter._resolve_batch_provider
+  L201-L229, _PROXY_BatchRateLimiter._create_batch_rate_limit_descriptors L231-L285, _PROXY_BatchRateLimiter._project_has_any_io_token_limits
+  L288-L302, _PROXY_BatchRateLimiter._create_project_io_descriptors_for_models L304-L336, _PROXY_BatchRateLimiter._should_skip_batch_input_file_processing
+  L338-L403, _PROXY_BatchRateLimiter._warn_if_unsupported_model_skip_configured L405-L421, _PROXY_BatchRateLimiter._key_requires_batch_model_access_check
+  L424-L437, _PROXY_BatchRateLimiter._estimate_entry_output_tokens L439-L489, _PROXY_BatchRateLimiter._has_applicable_batch_rate_limits
+  L492-L503, _PROXY_BatchRateLimiter._resolve_batch_input_file_fetch_params L505-L563.'
+- 'litellm/proxy/hooks/batch_rate_limiter.py: B1045 owns _PROXY_BatchRateLimiter._reserve_batch_enqueued_tokens
+  L565-L589, _PROXY_BatchRateLimiter._raise_enqueued_limit_error L591-L616, _PROXY_BatchRateLimiter._raise_rate_limit_error
+  L618-L717, _PROXY_BatchRateLimiter._check_and_increment_batch_counters L719-L788, _PROXY_BatchRateLimiter._read_tpd_window_start
+  L790-L804, _PROXY_BatchRateLimiter._build_tpd_refund_ops L806-L841.'
+- 'litellm/proxy/hooks/batch_rate_limiter.py: B1047 owns _PROXY_BatchRateLimiter.async_pre_call_hook L1180-L1279.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'batch_rate_limiter.py:1010 emits the diagnostic ''Batch rejected: caller not authorized for a model named in
+  %s: %s''; retain its level and fallback instead of turning it into a hard error.'
+- 'batch_rate_limiter.py:1070 uses status_code=403, detail={''error'': ''Batch input file model access could not
+  be validated against the current team.''}; preserve this envelope rather than a family-wide error default.'
+review_level: security
+budget:
+  max_changed_lines: 570
+  max_new_expects: 1

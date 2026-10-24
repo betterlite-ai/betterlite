@@ -1,0 +1,172 @@
+id: B973
+title: Messages chat prepare
+description: >-
+  Prepare context-managed Messages-to-chat calls, normalize context edits and reasoning effort, and choose native
+  Responses routing for compatible OpenAI thinking targets. Consume the split editor outputs and resolved deployment
+  facts; request metadata cannot mark a call as an internal summary request.
+
+
+  Implement crates/betterlite-core/src/api/messages_chat_prepare.rs. Use MessagesChatPrepareInput and MessagesChatPrepareResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions context_polyfill_enabled, explicit_context_drop, openai_thinking_responses_b917,
+  effort_normalization, noncompact_edits_only under api::messages_chat_prepare::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::MessagesChatPrepare in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_chat_prepare: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/anthropic/pass_through/adapters/handler.py: _messages_have_compaction_block (L51-L60);
+  litellm/llms/anthropic/pass_through/adapters/handler.py: _proxy_router_fallback (L63-L68); litellm/llms/anthropic/pass_through/adapters/handler.py:
+  _extract_proxy_litellm_metadata (L71-L89); litellm/llms/anthropic/pass_through/adapters/handler.py: _prepare_context_managed_request
+  (L92-L159); litellm/llms/anthropic/pass_through/adapters/handler.py: _polyfill_will_run (L162-L186); litellm/llms/anthropic/pass_through/adapters/handler.py:
+  _spec_has_non_compact_edits (L189-L212); litellm/llms/anthropic/pass_through/adapters/handler.py: _context_management_explicitly_dropped
+  (L215-L224); litellm/llms/anthropic/pass_through/adapters/handler.py: _normalize_spec_edits (L227-L250); litellm/llms/anthropic/pass_through/adapters/handler.py:
+  _run_polyfill_if_enabled (L253-L312); litellm/llms/anthropic/pass_through/adapters/handler.py: LiteLLMMessagesToCompletionTransformationHandler._route_openai_thinking_to_responses_api_if_needed
+  (L323-L385); litellm/llms/anthropic/pass_through/adapters/handler.py: LiteLLMMessagesToCompletionTransformationHandler._plain_effort_for_chat_target
+  (L388-L428); litellm/llms/anthropic/pass_through/adapters/handler.py: LiteLLMMessagesToCompletionTransformationHandler._normalize_reasoning_effort
+  (L431-L464). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 277 owned nonblank/non-comment/non-docstring Python lines (334 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 297 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 547 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B198 (Injected call context and shared
+  settings), B931 (Responses provider selection), B967 (Messages chat transform), B972 (Messages compaction), B1087
+  (Api boundaries), B971 (Summary history), B968 (Messages context clear), B962 (Messages thinking). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/messages_chat_prepare.rs
+  - crates/betterlite-core/src/api/messages_chat_prepare/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/messages_chat_prepare.rs
+  - tools/oracle/src/helpers/messages_chat_prepare/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_chat_prepare.py
+  - tools/oracle/helpers/messages_chat_prepare/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_chat_prepare-*
+  - tools/oracle/cases/helpers/messages-chat-prepare/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/handler.py#L51-L464
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'context polyfill enabled: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-context-polyfill-enabled
+  - oracle
+- text: 'explicit context drop: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-explicit-context-drop
+  - oracle
+- text: 'openai thinking responses route: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-openai-thinking-responses-route
+  - oracle
+- text: 'effort normalization: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-effort-normalization
+  - oracle
+- text: 'noncompact edits only: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-noncompact-edits-only
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_prepare::/)
+      - test(/::replays_corpus$/)'
+  - id: case-context-polyfill-enabled
+    why: the context-polyfill-enabled behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_prepare::tests::context_polyfill_enabled($|::)/)'
+  - id: case-explicit-context-drop
+    why: the explicit-context-drop behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_prepare::tests::explicit_context_drop($|::)/)'
+  - id: case-openai-thinking-responses-route
+    why: the openai-thinking-responses-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_prepare::tests::openai_thinking_responses_b917($|::)/)'
+  - id: case-effort-normalization
+    why: the effort-normalization behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_prepare::tests::effort_normalization($|::)/)'
+  - id: case-noncompact-edits-only
+    why: the noncompact-edits-only behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_prepare::tests::noncompact_edits_only($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/messages_chat_prepare.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_chat_prepare-*)"
+      && grep -qE "^[[:space:]]+messages_chat_prepare:" tools/oracle/fuzz/corpus/helper_case/messages_chat_prepare-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-prepare)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-chat-prepare/context-polyfill-enabled.yaml
+- tools/oracle/cases/helpers/messages-chat-prepare/explicit-context-drop.yaml
+- tools/oracle/cases/helpers/messages-chat-prepare/openai-thinking-responses-route.yaml
+- tools/oracle/cases/helpers/messages-chat-prepare/effort-normalization.yaml
+- tools/oracle/cases/helpers/messages-chat-prepare/noncompact-edits-only.yaml
+deviations: []
+out_of_scope:
+- 'litellm/llms/anthropic/pass_through/adapters/handler.py: B974 owns LiteLLMMessagesToCompletionTransformationHandler._prepare_completion_kwargs
+  L467-L601, LiteLLMMessagesToCompletionTransformationHandler.async_anthropic_messages_handler L604-L689, LiteLLMMessagesToCompletionTransformationHandler.anthropic_messages_handler
+  L692-L824.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within _messages_have_compaction_block\'s isinstance(block, dict) and block.get('type') == 'compaction' branch,
+  preserve return True and its nested guards.
+- _messages_have_compaction_block uses msg.get('content'); retain its missing-value behavior and field spelling
+  in the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 1

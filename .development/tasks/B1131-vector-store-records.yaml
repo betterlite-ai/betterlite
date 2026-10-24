@@ -1,0 +1,167 @@
+id: B1131
+title: Vector store wire records
+description: >-
+  Define vector store DTOs, search filter/results and Bedrock Knowledge Base configuration records with decimal
+  scores and optional fields matching the pin.
+
+
+  Implement crates/betterlite-openai/src/api/vector_store_records.rs. Use VectorStoreRecordsInput and VectorStoreRecordsResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions vector_search_filter, search_result_score, bedrock_knowledgebase_config
+  under api::vector_store_records::tests. Each named function drives production code and asserts its case result;
+  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-openai::api::vector_store_records::decode_vector_store_records(bytes:
+  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
+  in crates/betterlite-openai/src/api/vector_store_records.rs and call it from the actual boundary. The cargo-fuzz
+  target crates/betterlite-openai/fuzz/fuzz_targets/vector_store_records.rs passes arbitrary bounded bytes to that
+  exact decoder; api::vector_store_records::tests::replays_corpus replays newly committed seeds through the same
+  function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::VectorStoreRecords in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_store_records: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/types/vector_stores.py: VectorStoreToolParams.to_dict (L333-L343). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 261 owned nonblank/non-comment/non-docstring Python lines (319 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 281 implementation,
+  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 555 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B004 (OpenAI chat completions without streaming), B171 (Direct helper oracle and URL path
+  encoding), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external
+  B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
+  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
+  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
+
+
+  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
+  convert B1087 limits into it. This record has no dependency on the core crate.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api/vector_store_records.rs
+  - crates/betterlite-openai/src/api/vector_store_records/**
+  - crates/betterlite-openai/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/vector_store_records.rs
+  - crates/betterlite-openai/fuzz/corpus/vector_store_records/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/vector_store_records.rs
+  - tools/oracle/src/helpers/vector_store_records/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_store_records.py
+  - tools/oracle/helpers/vector_store_records/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_store_records-*
+  - tools/oracle/cases/helpers/vector-store-records/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/vector_stores.py#L1-L343
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/rag/bedrock_knowledgebase.py#L1-L146
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'vector search filter: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-search-filter
+  - oracle
+- text: 'search result score: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-search-result-score
+  - oracle
+- text: 'bedrock knowledgebase config: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-bedrock-knowledgebase-config
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::vector_store_records::/)
+      - test(/::replays_corpus$/)'
+  - id: case-vector-search-filter
+    why: the vector-search-filter behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::vector_store_records::tests::vector_search_filter($|::)/)'
+  - id: case-search-result-score
+    why: the search-result-score behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::vector_store_records::tests::search_result_score($|::)/)'
+  - id: case-bedrock-knowledgebase-config
+    why: the bedrock-knowledgebase-config behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::vector_store_records::tests::bedrock_knowledgebase_config($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/vector_store_records)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/vector_store_records.rs && grep -qF "decode_vector_store_records"
+      crates/betterlite-openai/fuzz/fuzz_targets/vector_store_records.rs && cargo nextest run --locked -p betterlite-openai
+      --no-tests=fail -E 'test(/^api::vector_store_records::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/vector_store_records.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_records-*)"
+      && grep -qE "^[[:space:]]+vector_store_records:" tools/oracle/fuzz/corpus/helper_case/vector_store_records-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-store-records)"
+oracle_cases:
+- tools/oracle/cases/helpers/vector-store-records/vector-search-filter.yaml
+- tools/oracle/cases/helpers/vector-store-records/search-result-score.yaml
+- tools/oracle/cases/helpers/vector-store-records/bedrock-knowledgebase-config.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'The source field vector_store_name: str is part of the wire/default contract; preserve its omission and explicit-value
+  cases.'
+- 'The source field type: str is part of the wire/default contract; preserve its omission and explicit-value cases.'
+review_level: standard
+budget:
+  max_changed_lines: 560
+  max_new_expects: 1

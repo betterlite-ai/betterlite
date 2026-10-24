@@ -1,0 +1,224 @@
+id: B1077
+title: Vector retrieval context
+description: >-
+  Run authorized vector retrieval before chat completion, derive the query from messages and build context messages
+  through source templates. Scan retrieved content through B104 and preserve annotate/error configuration with warnings;
+  the registry chooses configured embeddings and callers cannot bypass tool permissions. Support litellm_settings.vector_store_search_failure_mode=annotate
+  with enum annotate/error; invalid values warn and fall back to annotate. Context starts with the literal Context
+  followed by colon and two newlines.
+
+
+  _configured_failure_mode and _requested_vector_store_ids belong here below B090; B090 only appends response metadata
+  after retrieval. Context text begins exactly Context:
+
+
+  .
+
+
+  Implement crates/betterlite-core/src/api/vector_retrieval_context.rs. Use VectorRetrievalContextInput and VectorRetrievalContextResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions query_from_last_user, retrieved_context_order, retrieval_guardrail_block,
+  retrieval_annotate_warning, retrieval_error under api::vector_retrieval_context::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.vector_store_search_failure_mode
+  defaults to 'annotate'. No environment reads occur outside betterlite-config. Test api::vector_retrieval_context::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::VectorRetrievalContext in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
+  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_retrieval_context: <typed
+  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
+  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
+  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
+  route tasks.
+
+
+  Callable ownership: litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: _scan_request
+  (L55-L66); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: ProxyRuntime.llm_router
+  (L70-L70); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: ProxyRuntime.prisma_client
+  (L72-L72); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: ProxyServerRuntime.llm_router
+  (L77-L82); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: ProxyServerRuntime.prisma_client
+  (L84-L89); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook.__init__
+  (L124-L126); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook.async_get_chat_completion_prompt
+  (L128-L205); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._scanned_context_messages
+  (L207-L226); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._scan_through
+  (L228-L239); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._augment_messages
+  (L241-L306); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._search_one
+  (L308-L347); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._extract_query_from_messages
+  (L349-L376); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._context_messages
+  (L378-L383); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._messages_with_context
+  (L385-L392); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: VectorStorePreCallHook._context_message
+  (L394-L413); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: _requested_vector_store_ids
+  (L515-L519); litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: _configured_failure_mode
+  (L522-L532). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 301 owned nonblank/non-comment/non-docstring Python lines (323 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 321 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
+  30 wiring; 604 total within the 610-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B014 (Call dispatch across providers
+  and call types, shared settings and helpers), B104 (Guardrail framework, registry and guardrail API), B171 (Direct
+  helper oracle and URL path encoding), B1063 (Vector tool selection), B1064 (Vector store search), B1087 (Api boundaries).
+  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
+  on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_retrieval_context.rs
+  - crates/betterlite-core/src/api/vector_retrieval_context/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/vector_retrieval_context.rs
+  - crates/betterlite-config/src/api/vector_retrieval_context/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/vector-retrieval-context-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/vector_retrieval_context.rs
+  - tools/oracle/src/helpers/vector_retrieval_context/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_retrieval_context.py
+  - tools/oracle/helpers/vector_retrieval_context/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_retrieval_context-*
+  - tools/oracle/cases/helpers/vector-retrieval-context/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L1519-L1519
+  why: Setting litellm_settings.vector_store_search_failure_mode and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L55-L413
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L515-L519
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py#L522-L532
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'query from last user: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-query-from-last-user
+  - oracle
+- text: 'retrieved context order: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-retrieved-context-order
+  - oracle
+- text: 'retrieval guardrail block: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-retrieval-guardrail-block
+  - oracle
+- text: 'retrieval annotate warning: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-retrieval-annotate-warning
+  - oracle
+- text: 'retrieval error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-retrieval-error
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_retrieval_context::/)
+      - test(/::replays_corpus$/)'
+  - id: case-query-from-last-user
+    why: the query-from-last-user behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_retrieval_context::tests::query_from_last_user($|::)/)'
+  - id: case-retrieved-context-order
+    why: the retrieved-context-order behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_retrieval_context::tests::retrieved_context_order($|::)/)'
+  - id: case-retrieval-guardrail-block
+    why: the retrieval-guardrail-block behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_retrieval_context::tests::retrieval_guardrail_block($|::)/)'
+  - id: case-retrieval-annotate-warning
+    why: the retrieval-annotate-warning behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_retrieval_context::tests::retrieval_annotate_warning($|::)/)'
+  - id: case-retrieval-error
+    why: the retrieval-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_retrieval_context::tests::retrieval_error($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_retrieval_context::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-retrieval-context-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/vector_retrieval_context.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_retrieval_context-*)"
+      && grep -qE "^[[:space:]]+vector_retrieval_context:" tools/oracle/fuzz/corpus/helper_case/vector_retrieval_context-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-retrieval-context)"
+oracle_cases:
+- tools/oracle/cases/helpers/vector-retrieval-context/query-from-last-user.yaml
+- tools/oracle/cases/helpers/vector-retrieval-context/retrieved-context-order.yaml
+- tools/oracle/cases/helpers/vector-retrieval-context/retrieval-guardrail-block.yaml
+- tools/oracle/cases/helpers/vector-retrieval-context/retrieval-annotate-warning.yaml
+- tools/oracle/cases/helpers/vector-retrieval-context/retrieval-error.yaml
+deviations: []
+out_of_scope:
+- 'litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py: B090 owns VectorStorePreCallHook.async_post_call_success_deployment_hook
+  L415-L470, VectorStorePreCallHook.async_post_call_streaming_deployment_hook L472-L512.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- vector_store_pre_call_hook.py:342 emits the diagnostic 'Vector store search completed for vector_store_id=%s.
+  Added context from %s results'; retain its level and fallback instead of turning it into a hard error.
+- vector_store_pre_call_hook.py:269 emits the diagnostic 'No query found in messages for vector store search'; retain
+  its level and fallback instead of turning it into a hard error.
+review_level: security
+budget:
+  max_changed_lines: 610
+  max_new_expects: 1

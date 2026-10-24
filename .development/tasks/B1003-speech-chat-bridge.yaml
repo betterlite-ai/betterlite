@@ -1,0 +1,238 @@
+id: B1003
+title: Speech chat bridge
+description: >-
+  Implement typed speech preparation and the speech-to-chat-audio bridge using B014, plus response content-type
+  selection/sniffing. Model voice, input, response_format, speed and returned audio bytes explicitly; use B900 to
+  verify binary results and preserve source format precedence.
+
+
+  Provider behavior comes through B010 prepared operation/capability values; no provider umbrella is a scheduling
+  dependency.
+
+
+  Implement crates/betterlite-core/src/api/speech_chat_bridge.rs. Use SpeechChatBridgeInput and SpeechChatBridgeResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions speech_chat_audio_request, voice_required, pcm_content_type, aac_mpeg_sniff,
+  explicit_response_format under api::speech_chat_bridge::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
+  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::speech_chat_bridge::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  The production external-byte decoder is betterlite-core::api::speech_chat_bridge::decode_speech_chat_bridge(bytes:
+  &[u8], limits: &ApiLimits), for base64.b64decode input audio_part.data at litellm/endpoints/speech/speech_to_completion_bridge/transformation.py:169.
+  Place its implementation in crates/betterlite-core/src/api/speech_chat_bridge.rs and call it from the actual boundary.
+  The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/speech_chat_bridge.rs passes arbitrary bounded
+  bytes to that exact decoder; api::speech_chat_bridge::tests::replays_corpus replays newly committed seeds through
+  the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::SpeechChatBridge in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {speech_chat_bridge: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/endpoints/speech/speech_to_completion_bridge/handler.py: SpeechToCompletionBridgeHandler.__init__
+  (L26-L30); litellm/endpoints/speech/speech_to_completion_bridge/handler.py: SpeechToCompletionBridgeHandler.validate_input_kwargs
+  (L32-L76); litellm/endpoints/speech/speech_to_completion_bridge/handler.py: SpeechToCompletionBridgeHandler.speech
+  (L78-L125); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: _completion_response_cost
+  (L15-L20); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler._validate_response_format
+  (L34-L52); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler._chat_completion_params
+  (L54-L61); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler._chat_audio_format
+  (L63-L67); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler._chat_audio_param
+  (L69-L79); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler.transform_request
+  (L81-L105); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler._convert_pcm16_to_wav
+  (L107-L145); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler._is_gemini_tts_model
+  (L147-L149); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler._gemini_tts_response_body
+  (L151-L154); litellm/endpoints/speech/speech_to_completion_bridge/transformation.py: SpeechToCompletionBridgeTransformationHandler.transform_response
+  (L156-L182); litellm/litellm_core_utils/audio_utils/utils.py: _speech_media_type_for_response_format (L337-L344);
+  litellm/litellm_core_utils/audio_utils/utils.py: resolve_speech_media_type (L347-L354); litellm/litellm_core_utils/audio_utils/utils.py:
+  _adts_aac_frame_media_type (L368-L370); litellm/litellm_core_utils/audio_utils/utils.py: _mpeg_audio_frame_media_type
+  (L373-L386); litellm/litellm_core_utils/audio_utils/utils.py: speech_media_type_from_audio_bytes (L389-L403).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 298 owned nonblank/non-comment/non-docstring Python lines (311 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 318 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
+  and 30 wiring; 661 total within the 670-line cap. The estimate includes tests and adapters, not just production
+  code.
+
+
+  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
+  (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B1135 (Speech provider contract), B002 (Load
+  LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/speech_chat_bridge.rs
+  - crates/betterlite-core/src/api/speech_chat_bridge/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/speech_chat_bridge.rs
+  - crates/betterlite-config/src/api/speech_chat_bridge/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/speech-chat-bridge-*
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/speech_chat_bridge.rs
+  - crates/betterlite-core/fuzz/corpus/speech_chat_bridge/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/speech_chat_bridge.rs
+  - tools/oracle/src/helpers/speech_chat_bridge/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/speech_chat_bridge.py
+  - tools/oracle/helpers/speech_chat_bridge/**
+  - tools/oracle/fuzz/corpus/helper_case/speech_chat_bridge-*
+  - tools/oracle/cases/helpers/speech-chat-bridge/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L804-L851
+  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/handler.py#L1-L128
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/transformation.py#L1-L182
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L337-L403
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'speech chat audio request: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-speech-chat-audio-request
+  - oracle
+- text: 'voice required: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-voice-required
+  - oracle
+- text: 'pcm content type: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-pcm-content-type
+  - oracle
+- text: 'aac mpeg sniff: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-aac-mpeg-sniff
+  - oracle
+- text: 'explicit response format: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-explicit-response-format
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::speech_chat_bridge::/)
+      - test(/::replays_corpus$/)'
+  - id: case-speech-chat-audio-request
+    why: the speech-chat-audio-request behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::speech_chat_audio_request($|::)/)'
+  - id: case-voice-required
+    why: the voice-required behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::voice_required($|::)/)'
+  - id: case-pcm-content-type
+    why: the pcm-content-type behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::pcm_content_type($|::)/)'
+  - id: case-aac-mpeg-sniff
+    why: the aac-mpeg-sniff behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::aac_mpeg_sniff($|::)/)'
+  - id: case-explicit-response-format
+    why: the explicit-response-format behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::explicit_response_format($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/speech-chat-bridge-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/speech_chat_bridge)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/speech_chat_bridge.rs && grep -qF "decode_speech_chat_bridge"
+      crates/betterlite-core/fuzz/fuzz_targets/speech_chat_bridge.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/speech_chat_bridge.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/speech_chat_bridge-*)"
+      && grep -qE "^[[:space:]]+speech_chat_bridge:" tools/oracle/fuzz/corpus/helper_case/speech_chat_bridge-* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/speech-chat-bridge)"
+oracle_cases:
+- tools/oracle/cases/helpers/speech-chat-bridge/speech-chat-audio-request.yaml
+- tools/oracle/cases/helpers/speech-chat-bridge/voice-required.yaml
+- tools/oracle/cases/helpers/speech-chat-bridge/pcm-content-type.yaml
+- tools/oracle/cases/helpers/speech-chat-bridge/aac-mpeg-sniff.yaml
+- tools/oracle/cases/helpers/speech-chat-bridge/explicit-response-format.yaml
+deviations: []
+out_of_scope:
+- 'litellm/litellm_core_utils/audio_utils/utils.py: B1001 owns process_audio_file L36-L129, normalize_transcription_language_to_bcp47
+  L148-L157, get_audio_file_name L160-L175, get_audio_file_content_hash L178-L244, get_audio_file_for_health_check
+  L247-L255, calculate_request_duration L258-L331.'
+- 'litellm/llms/base_llm/text_to_speech/transformation.py: B1135 owns BaseTextToSpeechConfig.__init__ L38-L39, BaseTextToSpeechConfig.get_config
+  L42-L58, BaseTextToSpeechConfig.get_supported_openai_params L61-L64, BaseTextToSpeechConfig.map_openai_params
+  L67-L77, BaseTextToSpeechConfig.validate_environment L80-L90, BaseTextToSpeechConfig.get_complete_url L93-L104,
+  BaseTextToSpeechConfig.transform_text_to_speech_request L107-L123, BaseTextToSpeechConfig.transform_text_to_speech_response
+  L126-L134, BaseTextToSpeechConfig.get_error_class L136-L143.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within SpeechToCompletionBridgeHandler.validate_input_kwargs\'s model is None or not isinstance(model, str) branch,
+  preserve raise ValueError('model is required') and its nested guards.
+- Within SpeechToCompletionBridgeHandler.validate_input_kwargs\'s custom_llm_provider is None or not isinstance(custom_llm_provider,
+  str) branch, preserve raise ValueError('custom_llm_provider is required') and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 670
+  max_new_expects: 1

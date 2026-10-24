@@ -1,0 +1,201 @@
+id: B1018
+title: MIT resource owner compatibility
+description: >-
+  Implement the live MIT resource_ownership.py predicates over B732 principal records. Retain raw legacy user IDs
+  and ordered user:, team:, org:, key: scopes, deduplicating api_key/token collisions; choose primary user then
+  team then org then api_key then token. Identity-less authenticated callers have no scopes; no-user context and
+  PROXY_ADMIN retain their source bypass.
+
+
+  BaseManagedResource.can_user_access_unified_resource_id, get_unified_resource_id, _resource_table and list_user_resources
+  remain documented MIT templates: no MIT subclass/caller. Their paging contract is default 20, id > after, created_at
+  descending, has_more when the page is full; do not activate new creation behavior to test them.
+
+
+  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
+  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
+  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
+  out of scope.
+
+
+  user_can_access_resource_owner(None, authenticated_non_admin) is false, while user_api_key_dict=None is true.
+  Read/cache storage remains B726; these predicates do not add transactions, rows or managed hook methods.
+
+
+  Implement crates/betterlite-core/src/api/managed_resource_store.rs. Use ManagedResourceStoreInput and ManagedResourceStoreResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions legacy_user_owner, scope_precedence, duplicate_key_scope, identityless_no_shared_owner,
+  none_context_bypass, proxy_admin_bypass under api::managed_resource_store::tests. Each named function drives production
+  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
+  replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ManagedResourceStore in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {managed_resource_store: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/common_utils/resource_ownership.py: is_proxy_admin (L6-L13); litellm/proxy/common_utils/resource_ownership.py:
+  get_resource_owner_scopes (L16-L53); litellm/proxy/common_utils/resource_ownership.py: get_primary_resource_owner_scope
+  (L56-L79); litellm/proxy/common_utils/resource_ownership.py: user_can_access_resource_owner (L82-L92). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 85 owned nonblank/non-comment/non-docstring Python lines (113 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 105 implementation,
+  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 373 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B732 (Typed authentication principals and grant resolution), B171 (Direct helper oracle
+  and URL path encoding), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/managed_resource_store.rs
+  - crates/betterlite-core/src/api/managed_resource_store/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/managed_resource_store.rs
+  - tools/oracle/src/helpers/managed_resource_store/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/managed_resource_store.py
+  - tools/oracle/helpers/managed_resource_store/**
+  - tools/oracle/fuzz/corpus/helper_case/managed_resource_store-*
+  - tools/oracle/cases/helpers/managed-resource-store/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/managed_resources/__init__.py#L1-L43
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/resource_ownership.py#L1-L92
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1132-L1194
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+dod:
+- text: 'legacy user owner: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-legacy-user-owner
+  - oracle
+- text: 'scope precedence: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-scope-precedence
+  - oracle
+- text: 'duplicate key scope: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-duplicate-key-scope
+  - oracle
+- text: 'identityless no shared owner: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-identityless-no-shared-owner
+  - oracle
+- text: 'none context bypass: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-none-context-bypass
+  - oracle
+- text: 'proxy admin bypass: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-proxy-admin-bypass
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_store::/)
+      - test(/::replays_corpus$/)'
+  - id: case-legacy-user-owner
+    why: the legacy-user-owner behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_store::tests::legacy_user_owner($|::)/)'
+  - id: case-scope-precedence
+    why: the scope-precedence behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_store::tests::scope_precedence($|::)/)'
+  - id: case-duplicate-key-scope
+    why: the duplicate-key-scope behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_store::tests::duplicate_key_scope($|::)/)'
+  - id: case-identityless-no-shared-owner
+    why: the identityless-no-shared-owner behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_store::tests::identityless_no_shared_owner($|::)/)'
+  - id: case-none-context-bypass
+    why: the none-context-bypass behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_store::tests::none_context_bypass($|::)/)'
+  - id: case-proxy-admin-bypass
+    why: the proxy-admin-bypass behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_store::tests::proxy_admin_bypass($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/managed_resource_store.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/managed_resource_store-*)"
+      && grep -qE "^[[:space:]]+managed_resource_store:" tools/oracle/fuzz/corpus/helper_case/managed_resource_store-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/managed-resource-store)"
+oracle_cases:
+- tools/oracle/cases/helpers/managed-resource-store/legacy-user-owner.yaml
+- tools/oracle/cases/helpers/managed-resource-store/scope-precedence.yaml
+- tools/oracle/cases/helpers/managed-resource-store/duplicate-key-scope.yaml
+- tools/oracle/cases/helpers/managed-resource-store/identityless-no-shared-owner.yaml
+- tools/oracle/cases/helpers/managed-resource-store/none-context-bypass.yaml
+- tools/oracle/cases/helpers/managed-resource-store/proxy-admin-bypass.yaml
+deviations: []
+out_of_scope:
+- 'litellm/llms/base_llm/managed_resources/base_managed_resource.py: _ManagedResourceRecord.model_dump L51-L51,
+  _ManagedResourceTable.create L55-L55, _ManagedResourceTable.find_first L57-L57, _ManagedResourceTable.find_many
+  L59-L61, _ManagedResourceTable.delete L63-L63, BaseManagedResource.__init__ L84-L90, BaseManagedResource._resource_table
+  L92-L93, BaseManagedResource.resource_type L101-L105, BaseManagedResource.table_name L109-L113, BaseManagedResource.get_unified_resource_id_format
+  L116-L134, BaseManagedResource.create_resource_for_model L137-L155, BaseManagedResource.store_unified_resource_id
+  L161-L241, BaseManagedResource.get_unified_resource_id L243-L277, BaseManagedResource.delete_unified_resource_id
+  L279-L311, BaseManagedResource.can_user_access_unified_resource_id L313-L343, BaseManagedResource.get_model_resource_id_mapping
+  L349-L387, BaseManagedResource.create_resource_for_each_model L393-L424, BaseManagedResource.generate_unified_resource_id
+  L426-L450, BaseManagedResource.extract_model_mappings_from_responses L452-L475, BaseManagedResource.async_filter_deployments
+  L481-L526, BaseManagedResource.get_unified_id_prefix L532-L539, BaseManagedResource.list_user_resources L541-L609
+  are out of scope: no MIT subclass/caller; abstract template and enterprise-hook branches are not activated.'
+- 'litellm/llms/base_llm/managed_resources/base_managed_resource.py: all BaseManagedResource methods, protocol declarations
+  and creation/mapping template bodies have no MIT subclass/caller at the pin. B726 owns the real managed-row repositories;
+  B1017 owns isolation.py predicates. Do not construct an enterprise-equivalent managed_files hook.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- A missing principal bypasses this low-level predicate, but an identity-less authenticated principal has no owner
+  scopes; HTTP authentication remains in the calling route.
+- Only PROXY_ADMIN gets the role bypass; a raw user ID remains valid for rows written before prefixed scopes.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

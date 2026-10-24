@@ -1,0 +1,169 @@
+id: B1002
+title: Audio subtitles
+description: >-
+  Group timestamped transcription tokens into subtitle cues and render SRT/WebVTT using exact decimal time conversion.
+  Preserve CJK word boundaries, cue width/duration splits and source punctuation handling; use typed word-timing
+  input with bounded token and output counts.
+
+
+  Implement crates/betterlite-core/src/api/audio_subtitles.rs. Use AudioSubtitlesInput and AudioSubtitlesResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions srt_timestamps, webvtt_header, cjk_word_boundaries, cue_duration_break,
+  invalid_word_timing under api::audio_subtitles::tests. Each named function drives production code and asserts
+  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::AudioSubtitles in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {audio_subtitles: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _is_cjk (L58-L60); litellm/litellm_core_utils/audio_utils/subtitle_utils.py:
+  _is_cjk_word_boundary (L63-L66); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _text_width (L69-L70);
+  litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _starts_new_word (L73-L81); litellm/litellm_core_utils/audio_utils/subtitle_utils.py:
+  _build_word (L84-L90); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _merge_tokens_into_words (L93-L106);
+  litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _cue_start (L109-L110); litellm/litellm_core_utils/audio_utils/subtitle_utils.py:
+  _cue_end (L113-L114); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _cue_text (L117-L118); litellm/litellm_core_utils/audio_utils/subtitle_utils.py:
+  _should_break (L121-L133); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _cue_start_indices (L136-L146);
+  litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _build_cue (L149-L155); litellm/litellm_core_utils/audio_utils/subtitle_utils.py:
+  group_subtitle_tokens_into_cues (L158-L182); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _format_timestamp
+  (L185-L190); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _render_srt (L193-L204); litellm/litellm_core_utils/audio_utils/subtitle_utils.py:
+  _render_vtt (L207-L217); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: render_subtitle_tokens_as_srt
+  (L220-L225); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: render_subtitle_tokens_as_vtt (L228-L230);
+  litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _seconds_to_ms (L245-L248); litellm/litellm_core_utils/audio_utils/subtitle_utils.py:
+  _word_to_subtitle_token (L251-L257); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: _parse_word_timings
+  (L260-L264); litellm/litellm_core_utils/audio_utils/subtitle_utils.py: synthesize_subtitle_document (L267-L279).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 180 owned nonblank/non-comment/non-docstring Python lines (213 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 200 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 450 total within the 450-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B204 (Typed model price fields and
+  exact decimal parsing), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/audio_subtitles.rs
+  - crates/betterlite-core/src/api/audio_subtitles/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/audio_subtitles.rs
+  - tools/oracle/src/helpers/audio_subtitles/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/audio_subtitles.py
+  - tools/oracle/helpers/audio_subtitles/**
+  - tools/oracle/fuzz/corpus/helper_case/audio_subtitles-*
+  - tools/oracle/cases/helpers/audio-subtitles/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/subtitle_utils.py#L1-L279
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'srt timestamps: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-srt-timestamps
+  - oracle
+- text: 'webvtt header: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-webvtt-header
+  - oracle
+- text: 'cjk word boundaries: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cjk-word-boundaries
+  - oracle
+- text: 'cue duration break: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cue-duration-break
+  - oracle
+- text: 'invalid word timing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-invalid-word-timing
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_subtitles::/) - test(/::replays_corpus$/)'
+  - id: case-srt-timestamps
+    why: the srt-timestamps behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_subtitles::tests::srt_timestamps($|::)/)'
+  - id: case-webvtt-header
+    why: the webvtt-header behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_subtitles::tests::webvtt_header($|::)/)'
+  - id: case-cjk-word-boundaries
+    why: the cjk-word-boundaries behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_subtitles::tests::cjk_word_boundaries($|::)/)'
+  - id: case-cue-duration-break
+    why: the cue-duration-break behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_subtitles::tests::cue_duration_break($|::)/)'
+  - id: case-invalid-word-timing
+    why: the invalid-word-timing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::audio_subtitles::tests::invalid_word_timing($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/audio_subtitles.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/audio_subtitles-*)"
+      && grep -qE "^[[:space:]]+audio_subtitles:" tools/oracle/fuzz/corpus/helper_case/audio_subtitles-* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/audio-subtitles)"
+oracle_cases:
+- tools/oracle/cases/helpers/audio-subtitles/srt-timestamps.yaml
+- tools/oracle/cases/helpers/audio-subtitles/webvtt-header.yaml
+- tools/oracle/cases/helpers/audio-subtitles/cjk-word-boundaries.yaml
+- tools/oracle/cases/helpers/audio-subtitles/cue-duration-break.yaml
+- tools/oracle/cases/helpers/audio-subtitles/invalid-word-timing.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within _is_cjk_word_boundary\'s not (_is_cjk(prev_ch) or _is_cjk(next_ch)) branch, preserve return False and its
+  nested guards.
+- Within _cue_start_indices\'s not words branch, preserve return () and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 1

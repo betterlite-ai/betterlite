@@ -1,0 +1,229 @@
+id: B087
+title: Managed file routes
+description: >-
+  Finish file delete routes and managed-file lifecycle integration over provider/storage deletion and authorized
+  metadata cleanup. Export the managed-file/credential services used directly by batches, fine-tuning, assistants
+  and vector stores; do not add a second resource owner policy.
+
+
+  The oracle has no litellm-enterprise. get_proxy_hook(managed_files) is absent: preserve each MIT caller's own
+  early return or exception, not a replacement enterprise hook. Retain MIT id codecs, model-embedded file routing,
+  storage-only operations and pre-existing-row readers. Enterprise-only creation/ownership/output-ID methods are
+  out of scope.
+
+
+  Implement crates/betterlite-server/src/api/managed_file_routes.rs, crates/betterlite-core/src/api/managed_file_routes.rs.
+  Use ManagedFileRoutesInput and ManagedFileRoutesResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: DELETE /{provider}/v1/files/{file_id:path}; DELETE /v1/files/{file_id:path};
+  DELETE /files/{file_id:path}. Each alias is exercised through the booted proxy. Every route factory is mounted
+  once; a family composer mounts its child factories without re-registering their methods/paths.
+
+
+  Route input projections: data.file_id (absent None); data.litellm_call_id (absent '').
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): files_endpoints.py:1488 status_code=403, exception_detail=FastAPI detail string; files_endpoints.py:1636
+  type=openai_error_type(e, error_status_code(e, status.HTTP_400_BAD_REQUEST)), param=openai_error_param(e), code=error_status_code(e,
+  status.HTTP_400_BAD_REQUEST); files_endpoints.py:1644 type=openai_error_type(e, error_status_code(e, 500)), param=openai_error_param(e),
+  code=error_status_code(e, 500); files_endpoints.py:1564 type=ProxyErrorTypes.internal_server_error.value, param=None,
+  code=500; files_endpoints.py:1571 type=ProxyErrorTypes.internal_server_error.value, param=None, code=500; files_endpoints.py:1578
+  type=ProxyErrorTypes.internal_server_error.value, param=None, code=500. Compare the actual source status, error
+  type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions managed_file_no_hook_500, native_file_delete, raw_cloud_admin_dispatch,
+  raw_cloud_nonadmin_403, native_provider_delete_error, route_aliases, auth_missing, auth_invalid under api::managed_file_routes::tests.
+  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
+  Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/openai_files_endpoints/files_endpoints.py: delete_file (L1449-L1649). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 180 owned nonblank/non-comment/non-docstring Python lines (191 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 200 implementation,
+  88 behavior tests, 96 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 422 total within the 430-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1017 (Managed resource access), B1018
+  (MIT resource owner compatibility), B1020 (File credentials), B1027 (File storage service), B1028 (File provider
+  write), B1032 (File upload route), B1033 (File content route), B1034 (File read route), B1087 (Api boundaries),
+  B1103 (Authenticated request preparation), B732 (Typed authentication principals and grant resolution), B855 (Authenticated
+  request admission and budget handoff), B756 (Authentication header selection and mode dispatch), B1021 (File upload
+  options), B1019 (File routing ids), B003 (HTTP server, health routes and master key auth), B1139 (Stateful HTTP
+  oracle scenarios), B856 (Management oracle namespaces and Postgres test fixture). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For a unified managed ID that does not take the earlier model-encoded route, absent managed_files returns 500
+  internal_server_error, param null, code 500. Raw cloud URI deletion is 403 for a non-PROXY_ADMIN caller; admin
+  only bypasses that URI guard and proceeds through the native dispatch branch. No cross-owner managed-hook denial
+  or multi-provider managed deletion is available in OSS. Model-embedded native IDs and configured team credentials
+  remain functional.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/managed_file_routes.rs
+  - crates/betterlite-server/src/api/managed_file_routes/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/managed_file_routes.rs
+  - crates/betterlite-core/src/api/managed_file_routes/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/cases/api/managed-file-routes/**
+  - tools/oracle/fixtures/managed-file-routes/**
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/dispatch.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1434-L1649
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'managed file no hook 500: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-file-no-hook-500
+  - oracle
+- text: 'native file delete: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-native-file-delete
+  - oracle
+- text: 'raw cloud admin dispatch: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-raw-cloud-admin-dispatch
+  - oracle
+- text: 'raw cloud nonadmin 403: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-raw-cloud-nonadmin-403
+  - oracle
+- text: 'native provider delete error: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-native-provider-delete-error
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::managed_file_routes::/)
+      - test(/::replays_corpus$/)'
+  - id: case-managed-file-no-hook-500
+    why: the managed-file-no-hook-500 behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::managed_file_no_hook_500($|::)/)'
+  - id: case-native-file-delete
+    why: the native-file-delete behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::native_file_delete($|::)/)'
+  - id: case-raw-cloud-admin-dispatch
+    why: the raw-cloud-admin-dispatch behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::raw_cloud_admin_dispatch($|::)/)'
+  - id: case-raw-cloud-nonadmin-403
+    why: the raw-cloud-nonadmin-403 behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::raw_cloud_nonadmin_403($|::)/)'
+  - id: case-native-provider-delete-error
+    why: the native-provider-delete-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::native_provider_delete_error($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::managed_file_routes::tests::auth_invalid($|::)/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/managed-file-routes)"
+oracle_cases:
+- tools/oracle/cases/api/managed-file-routes/managed-file-no-hook-500.yaml
+- tools/oracle/cases/api/managed-file-routes/native-file-delete.yaml
+- tools/oracle/cases/api/managed-file-routes/raw-cloud-admin-dispatch.yaml
+- tools/oracle/cases/api/managed-file-routes/raw-cloud-nonadmin-403.yaml
+- tools/oracle/cases/api/managed-file-routes/native-provider-delete-error.yaml
+- tools/oracle/cases/api/managed-file-routes/route-aliases.yaml
+- tools/oracle/cases/api/managed-file-routes/auth-missing.yaml
+- tools/oracle/cases/api/managed-file-routes/auth-invalid.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1031 owns _names_a_litellm_executed_provider L111-L113,
+  _litellm_executed_batch_input_model L116-L165, set_files_config L181-L195, get_files_provider_config L198-L209,
+  _deployment_provider L212-L214, _resolves_to_vertex_deployments_only L217-L224, _validate_passthrough_upload L227-L289,
+  _scan_batch_upload L292-L329, get_first_json_object L332-L351, get_model_from_json_obj L354-L363, _deprecated_loadbalanced_create_file
+  L366-L378, route_create_file L381-L527.'
+- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1032 owns create_file L545-L927.'
+- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1033 owns get_file_content L945-L1233.'
+- 'litellm/proxy/openai_files_endpoints/files_endpoints.py: B1034 owns get_file L1251-L1431, _as_file_list_page
+  L1652-L1655, list_files L1673-L1860.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- data reads 'file_id' with default None; omission and an explicit value must not collapse into one case.
+- files_endpoints.py:1488 uses status_code=403, detail='Raw cloud storage file ids can only be deleted by a proxy
+  admin key. Use the LiteLLM managed file id returned when the file was created.'; preserve this envelope rather
+  than a family-wide error default.
+review_level: security
+budget:
+  max_changed_lines: 430
+  max_new_expects: 0

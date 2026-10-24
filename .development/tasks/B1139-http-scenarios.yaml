@@ -1,0 +1,179 @@
+id: B1139
+title: Stateful HTTP oracle scenarios
+description: >-
+  Extend HttpCase with isolated Postgres/Redis fixture setup and ordered request sequences, so route auth and stored-resource
+  behavior is compared through two booted gateways. Reuse B856 process/schema isolation; never call FastAPI endpoint
+  functions from a helper adapter.
+
+
+  Keep legacy single request cases unchanged. HttpScenario has kind: http_scenario, name, config, env, setup (typed
+  key/team/managed-file/managed-object/vector-store rows and named Redis polling entries), steps (name, request,
+  upstream, capture, compare). A capture binds only declared response JSON pointers to later path/body placeholders;
+  secret captures never enter artifacts. Allocate distinct databases/Redis key namespaces for the two gateways and
+  seed identical logical identities. Maximum 32 steps, 256 seeded rows, 16 MiB total fixture bytes and 120-second
+  scenario deadline; no arbitrary SQL or Python in YAML. decode_http_scenario reads bounded YAML bytes and shares
+  B171 strict duplicate/unknown-field handling. Compare each step status, type/param/code, selected headers and
+  provider capture under /steps/<index>; deliberate changed status, row and ordering fail. Use tools/oracle/fixtures/http-scenarios/
+  as the only fixture root.
+
+
+  Implement tools/oracle/src/http_scenarios.rs. Use HttpScenariosInput and HttpScenariosResult with typed nested
+  records; inject only the clock, repositories, transports and resolved settings this slice uses through constructors.
+  Define OracleLimits for the concrete harness caps above; product ApiLimits is not a tooling dependency.
+
+
+  Write adjacent tests.rs behavior functions isolated_state, capture_substitution, secret_capture_redaction, changed_state_detected,
+  rejects_unknown_field, rejects_duplicate_field, detects_changed_peer, rejects_oversize_input, preserves_legacy_cases
+  under http_scenarios::tests. Each named function drives production code and asserts its case result; use named
+  rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-oracle::http_scenarios::decode_http_scenario(bytes: &[u8],
+  limits: &OracleLimits), for bounded scenario YAML. Place its implementation in tools/oracle/src/http_scenarios.rs
+  and call it from the actual boundary. The cargo-fuzz target tools/oracle/fuzz/fuzz_targets/http_scenarios.rs passes
+  arbitrary bounded bytes to that exact decoder; http_scenarios::tests::replays_corpus replays newly committed seeds
+  through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 0 owned nonblank/non-comment/non-docstring Python lines (0 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 250 implementation,
+  106 behavior tests, 80 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 526 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B001 (Oracle harness against the pinned LiteLLM), B171 (Direct helper oracle and URL path
+  encoding), B856 (Management oracle namespaces and Postgres test fixture), B126 (Redis, Redis Cluster and Valkey),
+  B900 (Multipart oracle). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
+  ids retain ownership on the provider and keys/data branches.
+
+
+  A seeded polling fixture declares its logical owner separately from the public response. Seed the MIT raw response
+  record and the native B935 private owner envelope through their typed fixture adapters; this is schema setup only,
+  not an implementation of authorization. Public parity steps use the allowed logical owner; denied native ownership
+  is checked by B938 native HTTP tests.
+scope:
+  paths:
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/error.rs
+  - tools/oracle/src/http_scenarios.rs
+  - tools/oracle/src/http_scenarios/**
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/http_scenarios.rs
+  - tools/oracle/fuzz/corpus/http_scenarios/**
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/mock.rs
+  - tools/oracle/src/mock/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/compare/**
+  - tools/oracle/src/main.rs
+  - tools/oracle/cases/harness/http-scenarios/**
+  - tools/oracle/fixtures/http-scenarios/**
+  - tools/postgres-fixture/Cargo.toml
+  - tools/postgres-fixture/src/fixtures/http_scenarios.rs
+  - tools/postgres-fixture/src/fixtures/http_scenarios/**
+  lint_tables: false
+references: []
+dod:
+- text: 'isolated state: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-isolated-state
+- text: 'capture substitution: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-capture-substitution
+- text: 'secret capture redaction: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-secret-capture-redaction
+- text: 'changed state detected: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-changed-state-detected
+- text: 'rejects unknown field: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-unknown-field
+- text: 'rejects duplicate field: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-duplicate-field
+- text: 'detects changed peer: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-detects-changed-peer
+- text: 'rejects oversize input: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-oversize-input
+- text: 'preserves legacy cases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-preserves-legacy-cases
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: Independent harness runs include deliberate comparator mismatches and preserve existing chat/health cases.
+  proof:
+  - behavior-tests
+  - harness-self-check
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::/) - test(/::replays_corpus$/)'
+  - id: case-isolated-state
+    why: the isolated-state behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::isolated_state($|::)/)'
+  - id: case-capture-substitution
+    why: the capture-substitution behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::capture_substitution($|::)/)'
+  - id: case-secret-capture-redaction
+    why: the secret-capture-redaction behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::secret_capture_redaction($|::)/)'
+  - id: case-changed-state-detected
+    why: the changed-state-detected behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::changed_state_detected($|::)/)'
+  - id: case-rejects-unknown-field
+    why: the rejects-unknown-field behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_unknown_field($|::)/)'
+  - id: case-rejects-duplicate-field
+    why: the rejects-duplicate-field behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_duplicate_field($|::)/)'
+  - id: case-detects-changed-peer
+    why: the detects-changed-peer behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::detects_changed_peer($|::)/)'
+  - id: case-rejects-oversize-input
+    why: the rejects-oversize-input behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::rejects_oversize_input($|::)/)'
+  - id: case-preserves-legacy-cases
+    why: the preserves-legacy-cases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::preserves_legacy_cases($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_scenarios)"
+      && test -f tools/oracle/fuzz/fuzz_targets/http_scenarios.rs && grep -qF "decode_http_scenario" tools/oracle/fuzz/fuzz_targets/http_scenarios.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http_scenarios::tests::replays_corpus$/)'
+  - id: harness-self-check
+    why: new harness fixtures or backwards-compatible HTTP modes fail
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/http-scenarios)"
+      && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/http-scenarios
+      tools/oracle/cases/chat tools/oracle/cases/health
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- Captured response IDs are substituted only at declared JSON-pointer/path placeholders; secret values cannot enter
+  artifacts.
+- Seed the two proxies into distinct Postgres databases and Redis prefixes so one proxy cannot satisfy the other
+  proxy's polling lookup.
+review_level: security
+budget:
+  max_changed_lines: 530
+  max_new_expects: 0

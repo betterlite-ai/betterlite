@@ -1,0 +1,310 @@
+id: B1035
+title: Batch records
+description: >-
+  Define typed batch create/list/retrieve/cancel contracts and normalize JSONL model rewriting, including the source
+  embedded-newline recovery. Preserve custom_id and operation URL, reuse B207 call types, and expose explicit source-aware
+  malformed-row outcomes.
+
+
+  validate_batch_list_limit raises 400 invalid_request_error with param limit. Its internal openai_code is integer_below_min_value
+  or integer_above_max_value, but the actual ProxyException HTTP error.code is the string "400" because to_dict
+  omits openai_code. The helper adapter compares the internal bound tag separately; route parity must retain the
+  string wire code. Build CreateBatchRequest/LiteLLMBatchCreateRequest/Retrieve/Cancel/List records, pinned endpoint
+  literals, completion_window=24h, output_expires_after and LiteLLMBatch.usage.
+
+
+  Implement crates/betterlite-core/src/api/batch_records.rs, crates/betterlite-openai/src/api/batch_records.rs,
+  crates/betterlite-provider/src/api/batch_records.rs. Use BatchRecordsInput and BatchRecordsResult with typed nested
+  records; inject only the clock, repositories, transports and resolved settings this slice uses through constructors.
+  Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): common_utils.py:12 type='invalid_request_error', param='limit', code=400, openai_code=openai_code.
+  Compare the actual source status, error type, param and code; ignore only error wording except in message-extraction
+  tests.
+
+
+  Write adjacent tests.rs behavior functions jsonl_embedded_newline, replace_body_model, preserve_custom_id, native_model_no_replace,
+  batch_retrieve_call_type, batch_limit_below, batch_limit_above under api::batch_records::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-openai::api::batch_records::decode_batch_records(bytes: &[u8],
+  limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
+  in crates/betterlite-openai/src/api/batch_records.rs and call it from the actual boundary. The cargo-fuzz target
+  crates/betterlite-openai/fuzz/fuzz_targets/batch_records.rs passes arbitrary bounded bytes to that exact decoder;
+  api::batch_records::tests::replays_corpus replays newly committed seeds through the same function. Transform-only
+  helpers reuse the already decoded records.
+
+
+  Register HelperCall::BatchRecords in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_records: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/base_llm/batches/transformation.py: BaseBatchesConfig.__init__ (L34-L35); litellm/llms/base_llm/batches/transformation.py:
+  BaseBatchesConfig.custom_llm_provider (L39-L40); litellm/llms/base_llm/batches/transformation.py: BaseBatchesConfig.get_config
+  (L43-L60); litellm/llms/base_llm/batches/transformation.py: BaseBatchesConfig.validate_environment (L63-L87);
+  litellm/llms/base_llm/batches/transformation.py: BaseBatchesConfig.get_complete_batch_url (L90-L112); litellm/llms/base_llm/batches/transformation.py:
+  BaseBatchesConfig.transform_create_batch_request (L115-L133); litellm/llms/base_llm/batches/transformation.py:
+  BaseBatchesConfig.transform_create_batch_response (L136-L154); litellm/llms/base_llm/batches/transformation.py:
+  BaseBatchesConfig.transform_retrieve_batch_request (L157-L173); litellm/llms/base_llm/batches/transformation.py:
+  BaseBatchesConfig.transform_retrieve_batch_response (L176-L194); litellm/llms/base_llm/batches/transformation.py:
+  BaseBatchesConfig.get_error_class (L197-L208); litellm/router_utils/batch_utils.py: InMemoryFile.__init__ (L12-L15);
+  litellm/router_utils/batch_utils.py: parse_jsonl_with_embedded_newlines (L18-L60); litellm/router_utils/batch_utils.py:
+  should_replace_model_in_jsonl (L63-L73); litellm/router_utils/batch_utils.py: replace_model_in_jsonl (L76-L150);
+  litellm/router_utils/batch_utils.py: _get_router_metadata_variable_name (L153-L173); litellm/router_utils/batch_utils.py:
+  is_batch_retrieve_call_type (L184-L191); litellm/proxy/batches_endpoints/common_utils.py: validate_batch_list_limit
+  (L4-L18); litellm/types/utils.py: LiteLLMBatch.__contains__ (L4324-L4326); litellm/types/utils.py: LiteLLMBatch.get
+  (L4328-L4330); litellm/types/utils.py: LiteLLMBatch.__getitem__ (L4332-L4334); litellm/types/utils.py: LiteLLMBatch.json
+  (L4336-L4341). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 271 owned nonblank/non-comment/non-docstring Python lines (393 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 291 implementation,
+  82 behavior tests, 84 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  46 wiring; 653 total within the 660-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
+  oracle and URL path encoding), B207 (Route and call-type metadata matching), B1015 (File contracts), B1087 (Api
+  boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
+  retain ownership on the provider and keys/data branches.
+
+
+  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
+  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
+  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
+
+
+  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
+  convert B1087 limits into it. This record has no dependency on the core crate.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_records.rs
+  - crates/betterlite-core/src/api/batch_records/**
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api/batch_records.rs
+  - crates/betterlite-openai/src/api/batch_records/**
+  - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/api/batch_records.rs
+  - crates/betterlite-provider/src/api/batch_records/**
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/batch_records.rs
+  - crates/betterlite-openai/fuzz/corpus/batch_records/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_records.rs
+  - tools/oracle/src/helpers/batch_records/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_records.py
+  - tools/oracle/helpers/batch_records/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_records-*
+  - tools/oracle/cases/helpers/batch-records/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/batches/transformation.py#L1-L208
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/batch_utils.py#L1-L191
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/common_utils.py#L1-L18
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L517-L577
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4320-L4341
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: Verify the internal openai_code versus serialized code distinction.
+dod:
+- text: 'jsonl embedded newline: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-jsonl-embedded-newline
+  - oracle
+- text: 'replace body model: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-replace-body-model
+  - oracle
+- text: 'preserve custom id: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-preserve-custom-id
+  - oracle
+- text: 'native model no replace: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-native-model-no-replace
+  - oracle
+- text: 'batch retrieve call type: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-retrieve-call-type
+  - oracle
+- text: 'batch limit below: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-limit-below
+  - oracle
+- text: 'batch limit above: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-batch-limit-above
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-openai -p betterlite-provider --no-tests=fail
+      -E 'test(/^api::batch_records::/) - test(/::replays_corpus$/)'
+  - id: case-jsonl-embedded-newline
+    why: the jsonl-embedded-newline behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_records::tests::jsonl_embedded_newline($|::)/)'
+  - id: case-replace-body-model
+    why: the replace-body-model behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_records::tests::replace_body_model($|::)/)'
+  - id: case-preserve-custom-id
+    why: the preserve-custom-id behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_records::tests::preserve_custom_id($|::)/)'
+  - id: case-native-model-no-replace
+    why: the native-model-no-replace behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_records::tests::native_model_no_replace($|::)/)'
+  - id: case-batch-retrieve-call-type
+    why: the batch-retrieve-call-type behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_records::tests::batch_retrieve_call_type($|::)/)'
+  - id: case-batch-limit-below
+    why: the batch-limit-below behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_records::tests::batch_limit_below($|::)/)'
+  - id: case-batch-limit-above
+    why: the batch-limit-above behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_records::tests::batch_limit_above($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/batch_records)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/batch_records.rs && grep -qF "decode_batch_records"
+      crates/betterlite-openai/fuzz/fuzz_targets/batch_records.rs && cargo nextest run --locked -p betterlite-openai
+      --no-tests=fail -E 'test(/^api::batch_records::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_records.py && uv run --locked --project tools/oracle/litellm ruff check
+      tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_records-*)"
+      && grep -qE "^[[:space:]]+batch_records:" tools/oracle/fuzz/corpus/helper_case/batch_records-* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-records)"
+oracle_cases:
+- tools/oracle/cases/helpers/batch-records/jsonl-embedded-newline.yaml
+- tools/oracle/cases/helpers/batch-records/replace-body-model.yaml
+- tools/oracle/cases/helpers/batch-records/preserve-custom-id.yaml
+- tools/oracle/cases/helpers/batch-records/native-model-no-replace.yaml
+- tools/oracle/cases/helpers/batch-records/batch-retrieve-call-type.yaml
+- tools/oracle/cases/helpers/batch-records/batch-limit-below.yaml
+- tools/oracle/cases/helpers/batch-records/batch-limit-above.yaml
+deviations: []
+out_of_scope:
+- 'litellm/types/llms/openai.py: B004 owns HttpxBinaryResponseContent.__init__ L124-L126, HttpxBinaryResponseContent.logging_summary
+  L128-L133, HttpxBinaryResponseContent._num_bytes L135-L139, HttpxBinaryResponseContent.set_response_cost L141-L145,
+  NotGiven.__bool__ L166-L167, NotGiven.__repr__ L170-L171, OpenAIFileObject._omit_absent_batch_guardrail L411-L417,
+  OpenAIFileObject.__contains__ L419-L421, OpenAIFileObject.get L423-L425, OpenAIFileObject.__getitem__ L427-L429,
+  OpenAIFileObject.json L431-L436, OpenAIChatCompletionChunk.__init__ L1112-L1115, OpenAIVideoObject.__contains__
+  L2563-L2564, OpenAIVideoObject.get L2566-L2567, OpenAIVideoObject.__getitem__ L2569-L2570, OpenAIVideoObject.json
+  L2572-L2576.'
+- 'litellm/types/llms/openai.py: B1138 owns ResponseAPIUsage.parse_cost L1360-L1364, ResponsesAPIResponse.validate_reasoning_to_dict
+  L1428-L1436, ResponsesAPIResponse.validate_usage L1440-L1446, ResponsesAPIResponse._serialize_output_filter_reasoning_nulls
+  L1450-L1473, ResponsesAPIResponse.output_text L1476-L1506.'
+- 'litellm/types/utils.py: B158 owns _nested_selector L94-L111, _generate_id L122-L123, SafeAttributeModel.__delattr__
+  L131-L146, ChatCompletionTokenLogprob.ensure_top_logprobs_is_list L1137-L1146, ChatCompletionTokenLogprob.__contains__
+  L1148-L1150, ChatCompletionTokenLogprob.get L1152-L1154, ChatCompletionTokenLogprob.__getitem__ L1156-L1158, ChoiceLogprobs.__contains__
+  L1165-L1167, ChoiceLogprobs.get L1169-L1171, ChoiceLogprobs.__getitem__ L1173-L1175, Function.__init__ L1187-L1209,
+  Function.__contains__ L1211-L1213, Function.get L1215-L1217, Function.__getitem__ L1219-L1221, Function.__setitem__
+  L1223-L1225, ChatCompletionDeltaToolCall.__contains__ L1234-L1236, ChatCompletionDeltaToolCall.get L1238-L1240,
+  ChatCompletionDeltaToolCall.__getitem__ L1242-L1244, ChatCompletionDeltaToolCall.__setitem__ L1246-L1248, _CustomToolCallAccess.__contains__
+  L1252-L1253, _CustomToolCallAccess.get L1255-L1256, _CustomToolCallAccess.__getitem__ L1258-L1259, _CustomToolCallAccess.__setitem__
+  L1261-L1262, ChatCompletionMessageToolCall.__init__ L1289-L1310, ChatCompletionMessageToolCall.__contains__ L1312-L1314,
+  ChatCompletionMessageToolCall.get L1316-L1318, ChatCompletionMessageToolCall.__getitem__ L1320-L1322, ChatCompletionMessageToolCall.__setitem__
+  L1324-L1326, is_custom_tool_call_dict L1329-L1330, chat_completion_tool_call_from_dict L1333-L1340, ChatCompletionAudioResponse.__init__
+  L1347-L1359, ChatCompletionAudioResponse.__contains__ L1361-L1363, ChatCompletionAudioResponse.get L1365-L1367,
+  ChatCompletionAudioResponse.__getitem__ L1369-L1371, ChatCompletionAudioResponse.__setitem__ L1373-L1375, add_provider_specific_fields
+  L1384-L1387, Message.__init__ L1403-L1485, Message.get L1487-L1489, Message.__getitem__ L1491-L1493, Message.__setitem__
+  L1495-L1497, Message.json L1499-L1504, Delta.__init__ L1526-L1625, Delta.__contains__ L1627-L1629, Delta.get L1631-L1633,
+  Delta.__getitem__ L1635-L1637, Delta.__setitem__ L1639-L1641, Choices.__init__ L1652-L1702, Choices.__contains__
+  L1704-L1706, Choices.get L1708-L1710, Choices.__getitem__ L1712-L1714, Choices.__setitem__ L1716-L1718, text_tokens_without_nested_reasoning
+  L1721-L1729, PromptTokensDetailsWrapper.__setattr__ L1796-L1801, PromptTokensDetailsWrapper.__init__ L1803-L1843,
+  ServerToolUse.__getitem__ L1851-L1854, Usage.__init__ L1874-L1987, Usage.__contains__ L1989-L1991, Usage.get L1993-L1995,
+  Usage.__getitem__ L1997-L1999, Usage.__setitem__ L2001-L2003, StreamingChoices.__init__ L2007-L2038, StreamingChoices.__contains__
+  L2040-L2042, StreamingChoices.get L2044-L2046, StreamingChoices.__getitem__ L2048-L2050, StreamingChoices.__setitem__
+  L2052-L2054, StreamingChatCompletionChunk.__init__ L2058-L2065, ModelResponseBase.set_provider_response_headers
+  L2092-L2094, ModelResponseBase.model_dump L2096-L2100, ModelResponseStream.__init__ L2107-L2159, ModelResponseStream.__contains__
+  L2161-L2163, ModelResponseStream.get L2165-L2167, ModelResponseStream.__getitem__ L2169-L2171, ModelResponseStream.json
+  L2173-L2178, ModelResponse.__init__ L2185-L2258, ModelResponse.__contains__ L2260-L2262, ModelResponse.get L2264-L2266,
+  ModelResponse.__getitem__ L2268-L2270, ModelResponse.json L2272-L2277, Embedding.get L2285-L2287, Embedding.__getitem__
+  L2289-L2291, Embedding.__setitem__ L2293-L2295, EmbeddingResponse.__init__ L2315-L2347, EmbeddingResponse.__contains__
+  L2349-L2351, EmbeddingResponse.get L2353-L2355, EmbeddingResponse.__getitem__ L2357-L2359, EmbeddingResponse.__setitem__
+  L2361-L2363, EmbeddingResponse.json L2365-L2370, TextChoices.__init__ L2381-L2398, TextChoices.__contains__ L2400-L2402,
+  TextChoices.get L2404-L2406, TextChoices.__getitem__ L2408-L2410, TextChoices.__setitem__ L2412-L2414, TextChoices.json
+  L2416-L2421, TextCompletionResponse.__init__ L2452-L2512, TextCompletionResponse.__contains__ L2514-L2516, TextCompletionResponse.get
+  L2518-L2520, TextCompletionResponse.__getitem__ L2522-L2524, TextCompletionResponse.__setitem__ L2526-L2528, ImageObject.__init__
+  L2552-L2562, ImageObject.__contains__ L2564-L2566, ImageObject.get L2568-L2570, ImageObject.__getitem__ L2572-L2574,
+  ImageObject.__setitem__ L2576-L2578, ImageObject.json L2580-L2585, ImageResponse._serialize_image_data L2625-L2653,
+  ImageResponse.__init__ L2655-L2700, ImageResponse.__contains__ L2702-L2704, ImageResponse.get L2706-L2708, ImageResponse.__getitem__
+  L2710-L2712, ImageResponse.__setitem__ L2714-L2716, ImageResponse.json L2718-L2723, TranscriptionResponse.__init__
+  L2751-L2752, TranscriptionResponse.__contains__ L2754-L2756, TranscriptionResponse.get L2758-L2760, TranscriptionResponse.__getitem__
+  L2762-L2764, TranscriptionResponse.__setitem__ L2766-L2768, TranscriptionResponse.json L2770-L2775, AdapterCompletionStreamWrapper.__init__
+  L2811-L2812, AdapterCompletionStreamWrapper.__iter__ L2814-L2815, AdapterCompletionStreamWrapper.__aiter__ L2817-L2818,
+  AdapterCompletionStreamWrapper.__next__ L2820-L2830, AdapterCompletionStreamWrapper.__anext__ L2832-L2840, CustomStreamingDecoder.aiter_bytes
+  L3622-L3625, CustomStreamingDecoder.iter_bytes L3627-L3630, CustomPricingLiteLLMParams.strip_custom_pricing_fields
+  L3846-L3854, shared_backend_model_info L3866-L3874, is_server_derived_pricing_key L3886-L3894, without_server_derived_pricing
+  L3901-L3912, echoed_cost_map_pricing_fields L3915-L3925, echoed_cost_map_fields L3928-L3943, pricing_override_fields
+  L3946-L3953, is_litellm_owned_kwarg L3971-L3972, BudgetConfig.__init__ L3998-L4007, LiteLLMLoggingBaseClass.pre_call
+  L4251-L4252, LiteLLMLoggingBaseClass.post_call L4254-L4255, LiteLLMFineTuningJob.__init__ L4311-L4317, LiteLLMRealtimeStreamLoggingObject._serialize_results
+  L4355-L4356, LiteLLMRealtimeStreamLoggingObject.__contains__ L4358-L4360, LiteLLMRealtimeStreamLoggingObject.get
+  L4362-L4364, LiteLLMRealtimeStreamLoggingObject.__getitem__ L4366-L4368, LiteLLMRealtimeStreamLoggingObject.json
+  L4370-L4375, DynamicPromptManagementParamLiteral.list_all_params L4478-L4479.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- common_utils.py:12 uses type='invalid_request_error', param='limit', code=400, openai_code=openai_code; preserve
+  this envelope rather than a family-wide error default.
+- Within parse_jsonl_with_embedded_newlines\'s buffer.strip() branch, preserve raise e and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 660
+  max_new_expects: 1

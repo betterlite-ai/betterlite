@@ -1,0 +1,195 @@
+id: B1078
+title: Responses create plan
+description: >-
+  Build the typed create-call plan before execution: snapshot optional arguments, merge forwarded headers/text format,
+  apply prompt-management and model resolution once, and produce native/chat/MCP/file-search dispatch inputs. Internal
+  skip/encrypted-task flags are trusted context fields, never public JSON fields. Complete execution is responses-create-call.
+
+
+  At the MCP/file-search decision points in responses(), return CreateDispatch::GatewayMcp / EmulatedFileSearch
+  / Native / Chat plus the prepared arguments. B080 composes B955 execution above this plan. The planner does not
+  invoke _responses_try_dispatch_mcp_gateway or _responses_try_dispatch_emulated_file_search as runtime calls; tests
+  assert the emitted variant and call-order trace.
+
+
+  Implement crates/betterlite-core/src/api/responses_create_plan.rs. Use ResponsesCreatePlanInput and ResponsesCreatePlanResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions forwarded_header_merge, text_format_precedence, prompt_hook_once, model_prefix_plan,
+  request_cannot_set_intern_94df, no_native_file_search under api::responses_create_plan::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ResponsesCreatePlan in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_create_plan: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/responses/main.py: _has_file_search_tool (L98-L102); litellm/responses/main.py: mock_responses_api_response
+  (L105-L154); litellm/responses/main.py: responses (L1128-L1367). Abstract/protocol declarations map to native
+  types and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
+  stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 253 owned nonblank/non-comment/non-docstring Python lines (258 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 273 implementation,
+  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 541 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B176 (Trusted controls, provider headers
+  and affinity), B198 (Injected call context and shared settings), B905 (Responses parameters), B931 (Responses
+  provider selection), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_create_plan.rs
+  - crates/betterlite-core/src/api/responses_create_plan/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_create_plan.rs
+  - tools/oracle/src/helpers/responses_create_plan/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_create_plan.py
+  - tools/oracle/helpers/responses_create_plan/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_create_plan-*
+  - tools/oracle/cases/helpers/responses-create-plan/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L98-L102
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L105-L154
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/main.py#L1128-L1367
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'forwarded header merge: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-forwarded-header-merge
+  - oracle
+- text: 'text format precedence: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-text-format-precedence
+  - oracle
+- text: 'prompt hook once: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-prompt-hook-once
+  - oracle
+- text: 'model prefix plan: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-model-prefix-plan
+  - oracle
+- text: 'request cannot set internal flags: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-request-cannot-set-internal-flags
+  - oracle
+- text: 'no native file search: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-no-native-file-search
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::/)
+      - test(/::replays_corpus$/)'
+  - id: case-forwarded-header-merge
+    why: the forwarded-header-merge behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::forwarded_header_merge($|::)/)'
+  - id: case-text-format-precedence
+    why: the text-format-precedence behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::text_format_precedence($|::)/)'
+  - id: case-prompt-hook-once
+    why: the prompt-hook-once behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::prompt_hook_once($|::)/)'
+  - id: case-model-prefix-plan
+    why: the model-prefix-plan behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::model_prefix_plan($|::)/)'
+  - id: case-request-cannot-set-internal-flags
+    why: the request-cannot-set-internal-flags behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::request_cannot_set_intern_94df($|::)/)'
+  - id: case-no-native-file-search
+    why: the no-native-file-search behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_plan::tests::no_native_file_search($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_create_plan.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_create_plan-*)"
+      && grep -qE "^[[:space:]]+responses_create_plan:" tools/oracle/fuzz/corpus/helper_case/responses_create_plan-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-create-plan)"
+oracle_cases:
+- tools/oracle/cases/helpers/responses-create-plan/forwarded-header-merge.yaml
+- tools/oracle/cases/helpers/responses-create-plan/text-format-precedence.yaml
+- tools/oracle/cases/helpers/responses-create-plan/prompt-hook-once.yaml
+- tools/oracle/cases/helpers/responses-create-plan/model-prefix-plan.yaml
+- tools/oracle/cases/helpers/responses-create-plan/request-cannot-set-internal-flags.yaml
+- tools/oracle/cases/helpers/responses-create-plan/no-native-file-search.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/main.py: B955 owns aresponses_api_with_mcp L157-L424, _responses_try_dispatch_mcp_gateway L967-L1035,
+  _responses_try_dispatch_emulated_file_search L1038-L1124.'
+- 'litellm/responses/main.py: B931 owns _bridges_to_chat_completions L427-L431, _bridge_kwargs L437-L455, _encrypted_task_support_failure
+  L461-L470, _raise_responses_compatibility_failure L473-L486, _deployment_passes_through_responses L489-L494, _deployment_model_info_after_prompt_swap
+  L497-L501, _resolve_responses_api_provider_config L510-L518, _api_base_kwarg L521-L523, _will_bridge_to_chat_completions
+  L526-L547, _prompt_management_sees_a_provisional_message_list L551-L572, _resolve_prompt_swapped_provider L764-L790,
+  _apply_prompt_management_to_responses_call L793-L874, _normalize_openai_chat_completions_responses_model L881-L891,
+  _pop_use_chat_completions_api_kw L894-L897, _strip_responses_routing_prefix L903-L906, _resolve_model_provider_for_responses
+  L909-L931, _apply_managed_file_id_mapping L934-L964.'
+- 'litellm/responses/main.py: B932 owns aresponses L576-L761, responses L1369-L1458 stage.'
+- 'litellm/responses/main.py: B1116 owns adelete_responses L1462-L1519, delete_responses L1523-L1610, acancel_responses
+  L1929-L1986, cancel_responses L1990-L2077.'
+- 'litellm/responses/main.py: B933 owns aget_responses L1614-L1685, get_responses L1689-L1790, alist_input_items
+  L1794-L1846, list_input_items L1850-L1925.'
+- 'litellm/responses/main.py: B934 owns acompact_responses L2081-L2155, compact_responses L2159-L2279.'
+- 'litellm/responses/main.py: B943 owns _build_litellm_metadata_for_ws L2287-L2292, _deployment_reasoning_default
+  L2298-L2306, _first_ws_frame_with_routed_input L2312-L2327, _build_responses_websocket_request_defaults L2330-L2340,
+  _aresponses_websocket L2344-L2445.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within responses\'s litellm_params.mock_response and isinstance(litellm_params.mock_response, str) branch, preserve
+  return mock_responses_api_response(mock_response=litellm_params.mock_response) and its nested guards.
+- Within responses\'s _mcp_dispatch is not None branch, preserve return _mcp_dispatch and its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 550
+  max_new_expects: 1

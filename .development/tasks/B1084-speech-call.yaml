@@ -1,0 +1,220 @@
+id: B1084
+title: Speech call
+description: >-
+  Execute SpeechPlan through the B010/B024 provider or speech-chat-bridge, preserving binary response metadata,
+  streaming response ownership and normalized errors. Provider-native execution uses B009; the native SDK operation
+  is shared by the later HTTP route and Python bindings. B047 consumes this family's base contract and adds its
+  provider-specific executable variants later; keep the generic prepared-call seam independent of those downstream
+  adapters.
+
+
+  Implement crates/betterlite-core/src/api/speech_call.rs. Use SpeechCallInput and SpeechCallResult with typed nested
+  records; inject only the clock, repositories, transports and resolved settings this slice uses through constructors.
+  Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential resolution.
+
+
+  Write adjacent tests.rs behavior functions native_speech_audio, speech_bridge_audio, speech_streaming_bytes, speech_provider_error,
+  speech_cancellation under api::speech_call::tests. Each named function drives production code and asserts its
+  case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::SpeechCall in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export) and
+  tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {speech_call: <typed input>}; operation is only
+  the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and Python invokes
+  the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered diagnostics/effects,
+  never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/main.py: speech (L8453-L8719). Abstract/protocol declarations map to native types
+  and synchronous/async wrappers share one implementation; a partial function span is the explicit preparation/transition
+  stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 225 owned nonblank/non-comment/non-docstring Python lines (225 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 245 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 495 total within the 500-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
+  (Provider framework, provider resolution and parameter mapping), B011 (Exception types and provider error mapping),
+  B171 (Direct helper oracle and URL path encoding), B1003 (Speech chat bridge), B1083 (Speech call plan), B1087
+  (Api boundaries), B514 (OpenAI binary speech generation). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/speech_call.rs
+  - crates/betterlite-core/src/api/speech_call/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/speech_call.rs
+  - tools/oracle/src/helpers/speech_call/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/speech_call.py
+  - tools/oracle/helpers/speech_call/**
+  - tools/oracle/fuzz/corpus/helper_case/speech_call-*
+  - tools/oracle/cases/helpers/speech-call/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8453-L8719
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+dod:
+- text: 'native speech audio: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-native-speech-audio
+  - oracle
+- text: 'speech bridge audio: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-bridge-audio
+  - oracle
+- text: 'speech streaming bytes: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-streaming-bytes
+  - oracle
+- text: 'speech provider error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-provider-error
+  - oracle
+- text: 'speech cancellation: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-cancellation
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call::/) - test(/::replays_corpus$/)'
+  - id: case-native-speech-audio
+    why: the native-speech-audio behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call::tests::native_speech_audio($|::)/)'
+  - id: case-speech-bridge-audio
+    why: the speech-bridge-audio behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call::tests::speech_bridge_audio($|::)/)'
+  - id: case-speech-streaming-bytes
+    why: the speech-streaming-bytes behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call::tests::speech_streaming_bytes($|::)/)'
+  - id: case-speech-provider-error
+    why: the speech-provider-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call::tests::speech_provider_error($|::)/)'
+  - id: case-speech-cancellation
+    why: the speech-cancellation behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call::tests::speech_cancellation($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/speech_call.py && uv run --locked --project tools/oracle/litellm ruff check
+      tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/speech_call-*)"
+      && grep -qE "^[[:space:]]+speech_call:" tools/oracle/fuzz/corpus/helper_case/speech_call-* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/speech-call)"
+oracle_cases:
+- tools/oracle/cases/helpers/speech-call/native-speech-audio.yaml
+- tools/oracle/cases/helpers/speech-call/speech-bridge-audio.yaml
+- tools/oracle/cases/helpers/speech-call/speech-streaming-bytes.yaml
+- tools/oracle/cases/helpers/speech-call/speech-provider-error.yaml
+- tools/oracle/cases/helpers/speech-call/speech-cancellation.yaml
+deviations: []
+out_of_scope:
+- 'litellm/main.py: B158 owns _resolve_control_options L347-L357, LiteLLM.__init__ L364-L375, Chat.__init__ L379-L385,
+  Completions.__init__ L389-L391, Completions.create L393-L401, AsyncCompletions.__init__ L405-L407, AsyncCompletions.create
+  L409-L417, acompletion L422-L740, _resolve_dispatched_chat_response L743-L746, _model_response_from_cached_dict
+  L749-L750, _transcription_response_from_cached_dict L753-L754, _async_streaming L757-L771, _handle_mock_potential_exceptions
+  L774-L814, _handle_mock_timeout L817-L828, _handle_mock_timeout_async L831-L842, _sleep_for_timeout L845-L851,
+  _sleep_for_timeout_async L854-L860, admission_input_tokens L871-L883, admitted_prompt_token_counter L886-L889,
+  mock_completion L892-L1057, _is_openai_backed_api_base L1064-L1066, _resolve_openai_api_base L1069-L1080, responses_api_bridge_check
+  L1083-L1194, _is_claude_tool_target L1200-L1208, _without_anthropic_only_tool_keys L1211-L1219, _drop_anthropic_only_tool_keys
+  L1222-L1225, _ProxyAuthHeadersProvider.get_auth_headers L1229-L1229, _proxy_auth_headers L1232-L1233, _provider_config_items
+  L1236-L1237, _locals_snapshot L1240-L1241, _build_custom_pricing_entry L1244-L1267, _get_router_deployment_id
+  L1270-L1281, _register_custom_pricing_for_request L1284-L1317, _dispatch_metadata L1320-L1321, _dispatch_client_http
+  L1324-L1325, _dispatch_client_azure L1328-L1331, _dispatch_client_openai L1334-L1335, _custom_api_first_output
+  L4909-L4910, completion L5145-L6084, completion_with_retries L6087-L6110, acompletion_with_retries L6113-L6136,
+  responses_with_retries L6139-L6164, aresponses_with_retries L6167-L6191, aembedding L6196-L6250, embedding L6257-L6278,
+  embedding L6283-L6304, embedding L6310-L7371, _resolve_dispatched_text_completion_response L7375-L7382, _resolve_pending_chat_response
+  L7385-L7386, atext_completion L7390-L7456, text_completion L7460-L7692, aadapter_completion L7698-L7726, aadapter_generate_content
+  L7729-L7738, adapter_completion L7741-L7761, moderation L7767-L7789, amoderation L7793-L7864, ahealth_check L8725-L8831,
+  print_verbose L8836-L8842, config_completion L8845-L8853, stream_chunk_builder_text_completion L8856-L8907, _reported_cost_is_priced_by_calculator
+  L8913-L8917, _stream_builder_response_cost L8920-L8932, _joined_streamed_citations L8935-L8938, _stream_builder_model_map_cost
+  L8941-L8950, _set_stream_builder_response_cost L8953-L8958, _stamp_streaming_usage_cost L8961-L8968, _stream_choice_delta
+  L8983-L8989, _delta_carries_more_than_text L8992-L8993, _simple_text_part L8996-L9001, stream_chunk_builder L9004-L9271,
+  acount_tokens L9277-L9372, _load_module_encoding L9379-L9382, _get_encoding L9385-L9391, _load_default_encoding
+  L9394-L9397, __getattr__ L9400-L9411.'
+- 'litellm/main.py: B025 owns _complete_azure L1338-L1469, _complete_azure_text L1472-L1563.'
+- 'litellm/main.py: B038 owns _complete_deepseek L1566-L1614, _complete_text_completion_inception L4045-L4106.'
+- 'litellm/main.py: B026 owns _complete_azure_ai L1617-L1768.'
+- 'litellm/main.py: B024 owns _complete_text_completion_openai L1771-L1850, _complete_custom_openai L2590-L2728.'
+- 'litellm/main.py: B041 owns _complete_fireworks_ai L1853-L1907, _complete_together_ai L1910-L1957, _complete_groq
+  L2111-L2170, _complete_cometapi L2451-L2497, _complete_replicate L2773-L2824, _complete_huggingface L3181-L3221,
+  _complete_openrouter L3444-L3518, _complete_vercel_ai_gateway L3548-L3623, _complete_edenai L3626-L3649, _complete_predibase
+  L3936-L3992, _complete_cloudflare L4576-L4612, _complete_bytez L4782-L4819.'
+- 'litellm/main.py: B042 owns _complete_heroku L1960-L2007, _complete_sap L2344-L2387, _complete_oci L3224-L3256,
+  _complete_databricks L3335-L3404, _complete_datarobot L3407-L3441, _complete_sagemaker_chat L4109-L4143, _complete_sagemaker
+  L4146-L4171, _complete_watsonx L4307-L4341, _complete_watsonx_text L4344-L4418, _complete_snowflake L4655-L4705,
+  _complete_gdc L4743-L4779, _complete_ovhcloud L4862-L4906.'
+- 'litellm/main.py: B049 owns _complete_ragflow L2010-L2057.'
+- 'litellm/main.py: B036 owns _complete_xai L2060-L2108, _complete_mistral L2731-L2770, _complete_text_completion_codestral
+  L3995-L4042.'
+- 'litellm/main.py: B028 owns _complete_bedrock_mantle L2173-L2216, _complete_amazon_nova L3145-L3178, _complete_bedrock
+  L4178-L4304.'
+- 'litellm/main.py: B050 owns _complete_a2a L2219-L2279, _complete_langgraph L5045-L5091, _complete_langflow L5094-L5140.'
+- 'litellm/main.py: B043 owns _complete_gigachat L2282-L2341, _complete_nlp_cloud L2948-L2995, _complete_aleph_alpha
+  L2998-L3044, _complete_maritalk L3112-L3142, _complete_compactifai L3259-L3298, _complete_nadir L3521-L3545, _complete_gradient_ai
+  L4708-L4740.'
+- 'litellm/main.py: B044 owns _complete_aiohttp_openai L2390-L2448, _complete_custom L4913-L4979, _complete_custom_providers
+  L4982-L5042.'
+- 'litellm/main.py: B039 owns _complete_minimax L2500-L2543.'
+- 'litellm/main.py: B040 owns _complete_hosted_vllm L2546-L2587, _complete_oobabooga L3301-L3332, _complete_vllm
+  L4421-L4455, _complete_ollama L4458-L4495, _complete_ollama_chat L4498-L4537, _complete_triton L4540-L4573, _complete_petals
+  L4615-L4652, _complete_lemonade L4822-L4859.'
+- 'litellm/main.py: B027 owns _complete_anthropic_text L2827-L2879, _complete_anthropic L2882-L2945.'
+- 'litellm/main.py: B037 owns _complete_cohere_chat L3047-L3109.'
+- 'litellm/main.py: B046 owns _complete_fal_ai L3652-L3680.'
+- 'litellm/main.py: B031 owns _complete_vertex_ai_beta L3683-L3748, _complete_vertex_ai L3751-L3933.'
+- 'litellm/main.py: B1082 owns atranscription L7871-L7929, transcription L7933-L8195.'
+- 'litellm/main.py: B1083 owns aspeech L8199-L8234, speech L8238-L8452 stage.'
+- 'litellm/llms/base_llm/text_to_speech/transformation.py: B1135 owns BaseTextToSpeechConfig.__init__ L38-L39, BaseTextToSpeechConfig.get_config
+  L42-L58, BaseTextToSpeechConfig.get_supported_openai_params L61-L64, BaseTextToSpeechConfig.map_openai_params
+  L67-L77, BaseTextToSpeechConfig.validate_environment L80-L90, BaseTextToSpeechConfig.get_complete_url L93-L104,
+  BaseTextToSpeechConfig.transform_text_to_speech_request L107-L123, BaseTextToSpeechConfig.transform_text_to_speech_response
+  L126-L134, BaseTextToSpeechConfig.get_error_class L136-L143.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within speech\'s response is None branch, preserve raise Exception(f'Unable to map the custom llm provider={custom_llm_provider}
+  to a known provider={litellm.provider_list}.') and its nested guards.
+- Within speech\'s custom_llm_provider == 'elevenlabs' branch, preserve raise litellm.BadRequestError(message="'voice'
+  must resolve to an ElevenLabs voice id for ElevenLabs TTS", model=model, llm_provider=custom_llm_provider) and
+  its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 500
+  max_new_expects: 1

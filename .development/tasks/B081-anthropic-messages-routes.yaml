@@ -1,0 +1,353 @@
+id: B081
+title: Anthropic messages routes
+description: >-
+  Finish POST /v1/messages and source aliases through B014, B052 auth and native/chat/Responses/MCP services. Restore
+  client-visible model names, remove total_tokens from Anthropic usage only where the source does, and preserve
+  native SSE errors. Export the service used by Claude gateway aliases and later B095/B100/B119 consumers; Python
+  sync/async wrappers bind to this same native operation.
+
+
+  Register POST /v1/messages and /claude_code_gateway/v1/messages; the gateway alias uses B1132 enable_claude_code_gateway
+  and is 404 when disabled. Default strip_anthropic_total_tokens=false retains total_tokens; the removal case explicitly
+  enables it. ModifyResponseException returns 200 synthetic msg_ content, end_turn and blocked-response usage, or
+  equivalent SSE. AnthropicContextManagementError uses its own status with no extra headers and invokes the failure
+  hook only for 5xx. include_call_id_in_error_body controls the error body call id.
+
+
+  Implement crates/betterlite-server/src/api/anthropic_messages_routes.rs, crates/betterlite-core/src/api/anthropic_messages_routes.rs.
+  Use AnthropicMessagesRouteInput and AnthropicMessagesRouteResult with typed nested records; inject only the clock,
+  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
+  do not introduce ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: POST /v1/messages; POST /claude_code_gateway/v1/messages. Each alias
+  is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts its child
+  factories without re-registering their methods/paths.
+
+
+  Route input projections: request.headers.x-request-id (absent None); data.litellm_metadata (absent {}); data.stream
+  (absent None).
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): endpoints.py:83 status_code=status_code; endpoints.py:243 status_code=e.status_code; endpoints.py:278
+  type=openai_error_type(e, error_status_code(e, 500)), param=openai_error_param(e), code=error_status_code(e, 500).
+  Compare the actual source status, error type, param and code; ignore only error wording except in message-extraction
+  tests.
+
+
+  Write adjacent tests.rs behavior functions native_message_route, chat_backed_message_route, responses_backed_message_route,
+  stream_model_restamp, anthropic_error_route, total_tokens_removed, default_total_tokens_kept, gateway_disabled_404,
+  blocked_message_200, blocked_message_stream, context_error_4xx, context_error_5xx, error_call_id_enabled, route_aliases,
+  auth_missing, auth_invalid under api::anthropic_messages_routes::tests. Each named function drives production
+  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
+  replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.strip_anthropic_total_tokens
+  defaults to false; general_settings.include_call_id_in_error_body defaults to false. No environment reads occur
+  outside betterlite-config. Test api::anthropic_messages_routes::tests::loads_settings uses the production Config
+  loader and an injected environment map, with a named rstest case for every key above, explicit override, unset/default
+  and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key report;
+  a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder rather
+  than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/anthropic_endpoints/endpoints.py: _with_provider_specific_fields (L46-L50);
+  litellm/proxy/anthropic_endpoints/endpoints.py: _anthropic_error_detail (L53-L62); litellm/proxy/anthropic_endpoints/endpoints.py:
+  _anthropic_error_json_response (L65-L83); litellm/proxy/anthropic_endpoints/endpoints.py: _strip_total_tokens_from_anthropic_response
+  (L86-L117); litellm/proxy/anthropic_endpoints/endpoints.py: anthropic_response (L125-L286). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 205 owned nonblank/non-comment/non-docstring Python lines (233 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 225 implementation,
+  136 behavior tests, 192 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 36 config tests/seeds
+  and 38 wiring; 627 total within the 630-line cap. The estimate includes tests and adapters, not just production
+  code.
+
+
+  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
+  (Direct helper oracle and URL path encoding), B958 (Messages errors), B960 (Anthropic beta filter), B977 (Messages
+  chat stream), B980 (Messages stream restamp), B981 (Messages agentic stream), B982 (Messages native call), B987
+  (Messages advisor), B988 (Messages mcp), B990 (Claude gateway settings), B992 (Claude plugin write), B993 (Claude
+  plugin read), B994 (Claude skill write), B995 (Claude skill read), B996 (Messages token route), B1087 (Api boundaries),
+  B1132 (Claude gateway enable and settings policy), B1100 (Shared request body decoding), B1134 (Messages public
+  dispatch), B732 (Typed authentication principals and grant resolution), B855 (Authenticated request admission
+  and budget handoff), B756 (Authentication header selection and mode dispatch), B003 (HTTP server, health routes
+  and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres
+  test fixture), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/anthropic_messages_routes.rs
+  - crates/betterlite-server/src/api/anthropic_messages_routes/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/anthropic_messages_routes.rs
+  - crates/betterlite-core/src/api/anthropic_messages_routes/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/anthropic_messages_routes.rs
+  - crates/betterlite-config/src/api/anthropic_messages_routes/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*
+  - tools/oracle/cases/api/anthropic-messages-routes/**
+  - tools/oracle/fixtures/anthropic-messages-routes/**
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/dispatch.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L262-L265
+  why: Setting litellm_settings.strip_anthropic_total_tokens and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/error_body_call_id.py#L11-L14
+  why: Setting general_settings.include_call_id_in_error_body and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/endpoints.py#L46-L286
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/__init__.py#L1-L7
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/anthropic_interface/readme.md#L1-L116
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/__init__.py#L1-L3
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/architecture.md#L1-L51
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/__init__.py#L1-L11
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/__init__.py#L1-L4
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/interceptors/README.md#L1-L62
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/responses_adapters/__init__.py#L1-L3
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/messages/__init__.py#L1-L3
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/__init__.py#L1-L11
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/gateway_endpoints.py#L144-L150
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'native message route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-native-message-route
+  - oracle
+- text: 'chat backed message route: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-chat-backed-message-route
+  - oracle
+- text: 'responses backed message route: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-responses-backed-message-route
+  - oracle
+- text: 'stream model restamp: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-stream-model-restamp
+  - oracle
+- text: 'anthropic error route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-anthropic-error-route
+  - oracle
+- text: 'total tokens removed: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-total-tokens-removed
+  - oracle
+- text: 'default total tokens kept: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-default-total-tokens-kept
+  - oracle
+- text: 'gateway disabled 404: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-gateway-disabled-404
+  - oracle
+- text: 'blocked message 200: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-blocked-message-200
+  - oracle
+- text: 'blocked message stream: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-blocked-message-stream
+  - oracle
+- text: 'context error 4xx: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-context-error-4xx
+  - oracle
+- text: 'context error 5xx: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-context-error-5xx
+  - oracle
+- text: 'error call id enabled: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-error-call-id-enabled
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
+      -E 'test(/^api::anthropic_messages_routes::/) - test(/::replays_corpus$/)'
+  - id: case-native-message-route
+    why: the native-message-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::native_message_route($|::)/)'
+  - id: case-chat-backed-message-route
+    why: the chat-backed-message-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::chat_backed_message_route($|::)/)'
+  - id: case-responses-backed-message-route
+    why: the responses-backed-message-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::responses_backed_message_route($|::)/)'
+  - id: case-stream-model-restamp
+    why: the stream-model-restamp behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::stream_model_restamp($|::)/)'
+  - id: case-anthropic-error-route
+    why: the anthropic-error-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::anthropic_error_route($|::)/)'
+  - id: case-total-tokens-removed
+    why: the total-tokens-removed behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::total_tokens_removed($|::)/)'
+  - id: case-default-total-tokens-kept
+    why: the default-total-tokens-kept behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::default_total_tokens_kept($|::)/)'
+  - id: case-gateway-disabled-404
+    why: the gateway-disabled-404 behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::gateway_disabled_404($|::)/)'
+  - id: case-blocked-message-200
+    why: the blocked-message-200 behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::blocked_message_200($|::)/)'
+  - id: case-blocked-message-stream
+    why: the blocked-message-stream behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::blocked_message_stream($|::)/)'
+  - id: case-context-error-4xx
+    why: the context-error-4xx behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::context_error_4xx($|::)/)'
+  - id: case-context-error-5xx
+    why: the context-error-5xx behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::context_error_5xx($|::)/)'
+  - id: case-error-call-id-enabled
+    why: the error-call-id-enabled behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::error_call_id_enabled($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::auth_invalid($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::anthropic_messages_routes::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/anthropic-messages-routes)"
+oracle_cases:
+- tools/oracle/cases/api/anthropic-messages-routes/native-message-route.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/chat-backed-message-route.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/responses-backed-message-route.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/stream-model-restamp.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/anthropic-error-route.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/total-tokens-removed.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/default-total-tokens-kept.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/gateway-disabled-404.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/blocked-message-200.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/blocked-message-stream.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/context-error-4xx.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/context-error-5xx.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/error-call-id-enabled.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/route-aliases.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/auth-missing.yaml
+- tools/oracle/cases/api/anthropic-messages-routes/auth-invalid.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/anthropic_endpoints/endpoints.py: B996 owns count_tokens L294-L373, event_logging_batch L380-L389.'
+- 'litellm/proxy/anthropic_endpoints/gateway_endpoints.py: B1132 owns _general_settings L101-L104, _is_gateway_enabled
+  L107-L108, ensure_gateway_enabled L111-L115, _managed_settings L118-L122.'
+- 'litellm/proxy/anthropic_endpoints/gateway_endpoints.py: B989 owns _oauth_error_response L132-L134, oauth_authorization_server
+  L161-L176, device_authorization L180-L230, _validate_login L233-L258, _mint_access_token L261-L271, _claim_device_code
+  L274-L284, _handle_device_code_grant L287-L324, oauth_token L328-L352.'
+- 'litellm/proxy/anthropic_endpoints/gateway_endpoints.py: B990 owns managed_settings L356-L370, _skip_otlp_body_parsing
+  L373-L374, _accept_otlp L380-L382, otlp_metrics L386-L387, otlp_logs L391-L392, otlp_traces L396-L397.'
+- 'litellm/messages/dispatch.py: B1134 owns _python_messages L33-L37, _python_amessages L40-L44, _public_request
+  L53-L73, _resolved_provider L76-L80, _context L83-L88, anthropic_messages_handler L105-L116, anthropic_messages
+  L119-L127.'
+- 'litellm/anthropic_interface/messages/__init__.py: B1134 owns acreate L27-L83, create L86-L146.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- request.headers reads 'x-request-id' with default None; omission and an explicit value must not collapse into
+  one case.
+- endpoints.py:83 uses status_code=status_code; preserve this envelope rather than a family-wide error default.
+review_level: security
+budget:
+  max_changed_lines: 630
+  max_new_expects: 0

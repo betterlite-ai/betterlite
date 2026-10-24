@@ -1,0 +1,195 @@
+id: B1064
+title: Vector store search
+description: >-
+  Implement typed vector store create/search calls with B010 configured adapters and vector-query-embedding. Preserve
+  optional search/create fields, mock results and native provider errors; keep query embedding authority independent
+  of caller-supplied parameters. B049 consumes this family's base contract and adds its provider-specific executable
+  variants later; keep the generic prepared-call seam independent of those downstream adapters.
+
+
+  Implement crates/betterlite-core/src/api/vector_store_search.rs. Use VectorStoreSearchInput and VectorStoreSearchResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions vector_create_call, vector_search_call, query_embedding_search, vector_search_mock,
+  provider_error under api::vector_store_search::tests. Each named function drives production code and asserts its
+  case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
+  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::vector_store_search::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::VectorStoreSearch in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_store_search: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/vector_stores/main.py: _direct_vector_store_embedding_executor (L46-L53); litellm/vector_stores/main.py:
+  mock_vector_store_search_response (L56-L77); litellm/vector_stores/main.py: mock_vector_store_create_response
+  (L80-L105); litellm/vector_stores/main.py: acreate (L109-L169); litellm/vector_stores/main.py: create (L173-L282);
+  litellm/vector_stores/main.py: asearch (L286-L355); litellm/vector_stores/main.py: search (L359-L491). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 337 owned nonblank/non-comment/non-docstring Python lines (368 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 357 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
+  30 wiring; 640 total within the 640-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
+  oracle and URL path encoding), B1058 (Vector store contracts), B1059 (Vector query embedding), B1087 (Api boundaries),
+  B527 (OpenAI vector stores and attached files), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_store_search.rs
+  - crates/betterlite-core/src/api/vector_store_search/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/vector_store_search.rs
+  - crates/betterlite-config/src/api/vector_store_search/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-search-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/vector_store_search.rs
+  - tools/oracle/src/helpers/vector_store_search/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_store_search.py
+  - tools/oracle/helpers/vector_store_search/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_store_search-*
+  - tools/oracle/cases/helpers/vector-store-search/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
+  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/main.py#L46-L491
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'vector create call: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-create-call
+  - oracle
+- text: 'vector search call: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-search-call
+  - oracle
+- text: 'query embedding search: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-query-embedding-search
+  - oracle
+- text: 'vector search mock: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-search-mock
+  - oracle
+- text: 'provider error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-provider-error
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_search::/)
+      - test(/::replays_corpus$/)'
+  - id: case-vector-create-call
+    why: the vector-create-call behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_search::tests::vector_create_call($|::)/)'
+  - id: case-vector-search-call
+    why: the vector-search-call behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_search::tests::vector_search_call($|::)/)'
+  - id: case-query-embedding-search
+    why: the query-embedding-search behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_search::tests::query_embedding_search($|::)/)'
+  - id: case-vector-search-mock
+    why: the vector-search-mock behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_search::tests::vector_search_mock($|::)/)'
+  - id: case-provider-error
+    why: the provider-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_search::tests::provider_error($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_search::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-search-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/vector_store_search.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_store_search-*)"
+      && grep -qE "^[[:space:]]+vector_store_search:" tools/oracle/fuzz/corpus/helper_case/vector_store_search-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-store-search)"
+oracle_cases:
+- tools/oracle/cases/helpers/vector-store-search/vector-create-call.yaml
+- tools/oracle/cases/helpers/vector-store-search/vector-search-call.yaml
+- tools/oracle/cases/helpers/vector-store-search/query-embedding-search.yaml
+- tools/oracle/cases/helpers/vector-store-search/vector-search-mock.yaml
+- tools/oracle/cases/helpers/vector-store-search/provider-error.yaml
+deviations: []
+out_of_scope:
+- 'litellm/vector_stores/main.py: B1065 owns aretrieve L495-L543, retrieve L547-L623, alist L627-L681, list L685-L775.'
+- 'litellm/vector_stores/main.py: B1066 owns aupdate L779-L833, update L837-L930, adelete L934-L982, delete L986-L1062.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within _direct_vector_store_embedding_executor\'s value is not None and (not isinstance(value, VectorStoreEmbeddingExecutor))
+  branch, preserve raise TypeError('Invalid direct vector store embedding executor') and its nested guards.
+- Within create\'s litellm_params.mock_response and isinstance(litellm_params.mock_response, dict) branch, preserve
+  return mock_vector_store_create_response(mock_response=VectorStoreCreateResponse(**litellm_params.mock_response))
+  and its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 640
+  max_new_expects: 1

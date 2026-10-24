@@ -1,0 +1,182 @@
+id: B084
+title: Realtime routes
+description: >-
+  Compose the separately owned realtime client-secret/session and WebSocket route factories once; register only
+  the three /realtime/calls HTTP aliases here. Calls decrypts its Bearer ephemeral token without virtual-key authentication
+  and does not compare a token team to a caller team.
+
+
+  Compose B1125 WebSocket and B1126 secret/session routes without registering them twice. Own /realtime/calls aliases
+  only: Bearer is the encrypted ephemeral token, not virtual-key auth. Decode failures are HTTP 401 with {error:
+  <string>}. The token team is never compared at this pin; do not add a cross-team denial.
+
+
+  Implement crates/betterlite-server/src/api/realtime_routes.rs, crates/betterlite-core/src/api/realtime_routes.rs.
+  Use RealtimeRoutesInput and RealtimeRoutesResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: POST /v1/realtime/calls; POST /realtime/calls; POST /openai/v1/realtime/calls.
+  Each alias is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts
+  its child factories without re-registering their methods/paths.
+
+
+  Route input projections: request.headers.Authorization (absent None); request.query_params.model (absent _DEFAULT_REALTIME_MODEL);
+  request.query_params.model (absent None).
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): endpoints.py:507 type=openai_error_type(e, error_status_code(e, 500)), param=openai_error_param(e),
+  code=error_status_code(e, 500); endpoints.py:501 type=openai_error_type(e, error_status_code(e, http_status.HTTP_400_BAD_REQUEST)),
+  param=openai_error_param(e), code=error_status_code(e, http_status.HTTP_400_BAD_REQUEST). Compare the actual source
+  status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions webrtc_sdp_route, invalid_ephemeral_token_401, route_aliases, unauthenticated_route_contract
+  under api::realtime_routes::tests. Each named function drives production code and asserts its case result; use
+  named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/realtime_endpoints/endpoints.py: proxy_realtime_calls (L374-L518). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 153 owned nonblank/non-comment/non-docstring Python lines (153 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 173 implementation,
+  64 behavior tests, 48 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 323 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B003 (HTTP server, health routes and master key auth), B171 (Direct helper oracle and
+  URL path encoding), B901 (Websocket oracle), B1010 (Realtime http calls), B1011 (Realtime connect), B1012 (Realtime
+  ephemeral ids), B1087 (Api boundaries), B1125 (Realtime WebSocket route), B1126 (Realtime client secrets and transcription
+  sessions), B1103 (Authenticated request preparation), B732 (Typed authentication principals and grant resolution),
+  B855 (Authenticated request admission and budget handoff), B756 (Authentication header selection and mode dispatch),
+  B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres test fixture). These are
+  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
+  provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/realtime_routes.rs
+  - crates/betterlite-server/src/api/realtime_routes/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/realtime_routes.rs
+  - crates/betterlite-core/src/api/realtime_routes/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/cases/api/realtime-routes/**
+  - tools/oracle/fixtures/realtime-routes/**
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/dispatch.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L360-L535
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'webrtc sdp route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-webrtc-sdp-route
+  - oracle
+- text: 'invalid ephemeral token 401: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-invalid-ephemeral-token-401
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'unauthenticated route contract: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-unauthenticated-route-contract
+  - oracle
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_routes::/)
+      - test(/::replays_corpus$/)'
+  - id: case-webrtc-sdp-route
+    why: the webrtc-sdp-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::realtime_routes::tests::webrtc_sdp_route($|::)/)'
+  - id: case-invalid-ephemeral-token-401
+    why: the invalid-ephemeral-token-401 behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::realtime_routes::tests::invalid_ephemeral_token_401($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::realtime_routes::tests::route_aliases($|::)/)'
+  - id: case-unauthenticated-route-contract
+    why: the unauthenticated-route-contract behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::realtime_routes::tests::unauthenticated_route_contract($|::)/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/realtime-routes)"
+oracle_cases:
+- tools/oracle/cases/api/realtime-routes/webrtc-sdp-route.yaml
+- tools/oracle/cases/api/realtime-routes/invalid-ephemeral-token-401.yaml
+- tools/oracle/cases/api/realtime-routes/route-aliases.yaml
+- tools/oracle/cases/api/realtime-routes/unauthenticated-route-contract.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/realtime_endpoints/endpoints.py: B1012 owns _coerce_realtime_session_type L43-L46, _append_model_candidate
+  L49-L51, _transcription_model_candidates_from_session L54-L72, _set_transcription_model_on_session L75-L120, _prepare_client_secret_session
+  L123-L167, _encode_realtime_token_payload L170-L191, _decode_realtime_token_payload L194-L213.'
+- 'litellm/proxy/realtime_endpoints/endpoints.py: B1126 owns create_realtime_client_secret L231-L359, create_realtime_transcription_session
+  L536-L658.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- 'endpoints.py:480 emits the diagnostic ''WebRTC: /v1/realtime/calls (model=%s)''; retain its level and fallback
+  instead of turning it into a hard error.'
+- request.headers reads 'Authorization' with default None; omission and an explicit value must not collapse into
+  one case.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

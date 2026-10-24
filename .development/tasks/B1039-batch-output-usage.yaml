@@ -1,0 +1,201 @@
+id: B1039
+title: Batch output usage
+description: >-
+  Parse batch output JSONL into typed success/error/token/cost aggregates using B068 pricing and B013 local token
+  counting. Cover chat, Responses, Anthropic, embedding, OCR and Vertex usage shapes, preserving malformed-line
+  diagnostics and exact Decimal totals.
+
+
+  Implement crates/betterlite-core/src/api/batch_output_usage.rs. Use BatchOutputUsageInput and BatchOutputUsageResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions chat_output_usage, responses_output_usage, anthropic_result_usage,
+  ocr_line_cost, vertex_native_usage, malformed_output_line_warning under api::batch_output_usage::tests. Each named
+  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
+  replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::batch_output_usage::decode_batch_output_usage(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input line at litellm/batches/batch_utils.py:595. Place its implementation
+  in crates/betterlite-core/src/api/batch_output_usage.rs and call it from the actual boundary. The cargo-fuzz target
+  crates/betterlite-core/fuzz/fuzz_targets/batch_output_usage.rs passes arbitrary bounded bytes to that exact decoder;
+  api::batch_output_usage::tests::replays_corpus replays newly committed seeds through the same function. Transform-only
+  helpers reuse the already decoded records.
+
+
+  Register HelperCall::BatchOutputUsage in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_output_usage: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/batches/batch_utils.py: _classify_output_line_stats (L184-L200); litellm/batches/batch_utils.py:
+  _safe_output_line_stats (L203-L222); litellm/batches/batch_utils.py: _compute_output_line_stats (L225-L255); litellm/batches/batch_utils.py:
+  _ocr_usage_info_from_response_body (L258-L263); litellm/batches/batch_utils.py: _output_line_cost (L266-L293);
+  litellm/batches/batch_utils.py: _aggregate_batch_cost_usage_models (L296-L345); litellm/batches/batch_utils.py:
+  calculate_vertex_ai_batch_cost_and_usage (L348-L406); litellm/batches/batch_utils.py: _iter_batch_input_lines
+  (L562-L577); litellm/batches/batch_utils.py: _iter_batch_output_entries (L580-L590); litellm/batches/batch_utils.py:
+  _parse_batch_output_line (L593-L602); litellm/batches/batch_utils.py: _estimate_batch_entry_tokens (L610-L614);
+  litellm/batches/batch_utils.py: _count_entry_tokens (L617-L637); litellm/batches/batch_utils.py: _count_prompt_or_input_tokens
+  (L640-L670); litellm/batches/batch_utils.py: _get_batch_job_usage_from_response_body (L673-L713); litellm/batches/batch_utils.py:
+  _get_anthropic_result_from_batch_results_line (L716-L723); litellm/batches/batch_utils.py: _get_response_from_batch_job_output_file
+  (L726-L738); litellm/batches/batch_utils.py: _batch_response_was_successful (L741-L756). Abstract/protocol declarations
+  map to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
+  preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 303 owned nonblank/non-comment/non-docstring Python lines (365 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 323 implementation,
+  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 651 total within the 660-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B013 (Model cost map, provider capability data and token counting), B068 (Cost calculation
+  for every call type), B171 (Direct helper oracle and URL path encoding), B1035 (Batch records), B1087 (Api boundaries),
+  B906 (Responses usage). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
+  ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_output_usage.rs
+  - crates/betterlite-core/src/api/batch_output_usage/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/batch_output_usage.rs
+  - crates/betterlite-core/fuzz/corpus/batch_output_usage/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_output_usage.rs
+  - tools/oracle/src/helpers/batch_output_usage/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_output_usage.py
+  - tools/oracle/helpers/batch_output_usage/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_output_usage-*
+  - tools/oracle/cases/helpers/batch-output-usage/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L184-L406
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L562-L756
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'chat output usage: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-chat-output-usage
+  - oracle
+- text: 'responses output usage: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-responses-output-usage
+  - oracle
+- text: 'anthropic result usage: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-anthropic-result-usage
+  - oracle
+- text: 'ocr line cost: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-ocr-line-cost
+  - oracle
+- text: 'vertex native usage: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vertex-native-usage
+  - oracle
+- text: 'malformed output line warning: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-malformed-output-line-warning
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_output_usage::/) -
+      test(/::replays_corpus$/)'
+  - id: case-chat-output-usage
+    why: the chat-output-usage behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_output_usage::tests::chat_output_usage($|::)/)'
+  - id: case-responses-output-usage
+    why: the responses-output-usage behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_output_usage::tests::responses_output_usage($|::)/)'
+  - id: case-anthropic-result-usage
+    why: the anthropic-result-usage behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_output_usage::tests::anthropic_result_usage($|::)/)'
+  - id: case-ocr-line-cost
+    why: the ocr-line-cost behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_output_usage::tests::ocr_line_cost($|::)/)'
+  - id: case-vertex-native-usage
+    why: the vertex-native-usage behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_output_usage::tests::vertex_native_usage($|::)/)'
+  - id: case-malformed-output-line-warning
+    why: the malformed-output-line-warning behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_output_usage::tests::malformed_output_line_warning($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/batch_output_usage)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/batch_output_usage.rs && grep -qF "decode_batch_output_usage"
+      crates/betterlite-core/fuzz/fuzz_targets/batch_output_usage.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::batch_output_usage::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_output_usage.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_output_usage-*)"
+      && grep -qE "^[[:space:]]+batch_output_usage:" tools/oracle/fuzz/corpus/helper_case/batch_output_usage-* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-output-usage)"
+oracle_cases:
+- tools/oracle/cases/helpers/batch-output-usage/chat-output-usage.yaml
+- tools/oracle/cases/helpers/batch-output-usage/responses-output-usage.yaml
+- tools/oracle/cases/helpers/batch-output-usage/anthropic-result-usage.yaml
+- tools/oracle/cases/helpers/batch-output-usage/ocr-line-cost.yaml
+- tools/oracle/cases/helpers/batch-output-usage/vertex-native-usage.yaml
+- tools/oracle/cases/helpers/batch-output-usage/malformed-output-line-warning.yaml
+deviations: []
+out_of_scope:
+- 'litellm/batches/batch_utils.py: B1040 owns _uses_native_vertex_output L39-L48, batch_cost_is_final L54-L68, _handle_completed_batch
+  L98-L161, _provider_output_file_id L409-L432, _fetch_batch_managed_file_content L435-L462, _fetch_batch_output_file_content
+  L465-L484, count_error_file_failed_requests L487-L508, _extract_file_access_credentials L511-L551.'
+- 'litellm/batches/batch_utils.py: calculate_batch_cost_and_usage L71-L95, _get_file_content_as_dictionary L554-L559
+  are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'batch_utils.py:329 emits the diagnostic ''batch output aggregate: cost=%s usage=%s models=%s successful=%d failed=%d'';
+  retain its level and fallback instead of turning it into a hard error.'
+- batch_utils.py:216 emits the diagnostic 'batch output line could not be costed, so it is billed at $0 and the
+  rest of the batch is still billed. custom_id=%s error=%s'; retain its level and fallback instead of turning it
+  into a hard error.
+review_level: security
+budget:
+  max_changed_lines: 660
+  max_new_expects: 1

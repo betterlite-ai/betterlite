@@ -1,0 +1,209 @@
+id: B1102
+title: Request model and destination policy
+description: >-
+  Implement the pure endpoint-specific model precedence and URL-valued destination rejection used by API routes.
+  Preserve the source error status/type/param/code before any provider request.
+
+
+  Implement crates/betterlite-core/src/api/request_destination.rs. Use RequestDestinationInput and RequestDestinationResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): litellm_pre_call_utils.py:423 status_code=400, exception_detail=FastAPI detail object. Compare
+  the actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions endpoint_model_precedence, deployment_url_rejected, missing_model_source_error
+  under api::request_destination::tests. Each named function drives production code and asserts its case result;
+  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::RequestDestination in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {request_destination: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/common_utils/http_parsing_utils.py: resolve_inference_model (L32-L63); litellm/proxy/common_utils/http_parsing_utils.py:
+  get_tags_from_request_body (L618-L651); litellm/proxy/common_utils/http_parsing_utils.py: populate_request_with_path_params
+  (L654-L699); litellm/proxy/common_utils/http_parsing_utils.py: _add_vector_store_id_from_path (L702-L734); litellm/proxy/litellm_pre_call_utils.py:
+  _reject_url_valued_destinations (L394-L408); litellm/proxy/litellm_pre_call_utils.py: reject_url_valued_destination
+  (L411-L435). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 124 owned nonblank/non-comment/non-docstring Python lines (162 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 144 implementation,
+  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 358 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B1100 (Shared
+  request body decoding). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
+  ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/request_destination.rs
+  - crates/betterlite-core/src/api/request_destination/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/request_destination.rs
+  - tools/oracle/src/helpers/request_destination/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/request_destination.py
+  - tools/oracle/helpers/request_destination/**
+  - tools/oracle/fuzz/corpus/helper_case/request_destination-*
+  - tools/oracle/cases/helpers/request-destination/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L32-L65
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L618-L734
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L394-L442
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'endpoint model precedence: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-endpoint-model-precedence
+  - oracle
+- text: 'deployment url rejected: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-deployment-url-rejected
+  - oracle
+- text: 'missing model source error: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-missing-model-source-error
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_destination::/) -
+      test(/::replays_corpus$/)'
+  - id: case-endpoint-model-precedence
+    why: the endpoint-model-precedence behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_destination::tests::endpoint_model_precedence($|::)/)'
+  - id: case-deployment-url-rejected
+    why: the deployment-url-rejected behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_destination::tests::deployment_url_rejected($|::)/)'
+  - id: case-missing-model-source-error
+    why: the missing-model-source-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::request_destination::tests::missing_model_source_error($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/request_destination.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/request_destination-*)"
+      && grep -qE "^[[:space:]]+request_destination:" tools/oracle/fuzz/corpus/helper_case/request_destination-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/request-destination)"
+oracle_cases:
+- tools/oracle/cases/helpers/request-destination/endpoint-model-precedence.yaml
+- tools/oracle/cases/helpers/request-destination/deployment-url-rejected.yaml
+- tools/oracle/cases/helpers/request-destination/missing-model-source-error.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/common_utils/http_parsing_utils.py: B1100 owns _normalize_media_type L66-L70, _is_form_content_type
+  L73-L81, is_json_content_type L84-L86, _parse_binary_body L160-L168, is_otlp_trace_request L171-L172, _read_request_body
+  L175-L280, is_opaque_audio_pass_through_request L283-L288, read_raw_json_body L291-L300, _safe_get_request_parsed_body
+  L303-L309, get_client_requested_model L312-L316, _safe_get_request_query_params L319-L328, _safe_set_request_parsed_body
+  L331-L340, rewrite_request_model L343-L358, _safe_get_request_headers L361-L387.'
+- 'litellm/proxy/common_utils/http_parsing_utils.py: B1101 owns _unqualified L89-L94, _union_members L97-L102, _numeric_form_type
+  L105-L115, numeric_form_fields L118-L131, _numeric_form_value L134-L140, coerce_numeric_form_fields L143-L157,
+  check_file_size_under_limit L390-L450, get_form_data L453-L467, convert_upload_files_to_file_data L470-L512, get_request_body
+  L515-L527, extract_nested_form_metadata L530-L615.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1104 owns _trace_id_from_traceparent L101-L110, _trace_id_from_otel_span
+  L113-L124, add_otel_trace_id_to_request L127-L141, _session_id_from_baggage L144-L151, parse_cache_control L225-L236,
+  clean_headers L1173-L1223, _is_credential_header L1226-L1228, redact_credential_headers L1231-L1247, LiteLLMProxyRequestSetup._get_timeout_from_request
+  L1252-L1274, LiteLLMProxyRequestSetup._get_stream_timeout_from_request L1277-L1284, LiteLLMProxyRequestSetup._get_keepalive_seconds_from_request
+  L1287-L1297, LiteLLMProxyRequestSetup._get_num_retries_from_request L1300-L1307, LiteLLMProxyRequestSetup._get_spend_logs_metadata_from_request_headers
+  L1310-L1319, LiteLLMProxyRequestSetup._get_forwardable_headers L1322-L1341, LiteLLMProxyRequestSetup._get_case_insensitive_header
+  L1344-L1351, LiteLLMProxyRequestSetup.add_internal_user_from_user_mapping L1354-L1371, LiteLLMProxyRequestSetup.get_user_from_headers
+  L1374-L1392, LiteLLMProxyRequestSetup.get_openai_org_id_from_headers L1395-L1405, LiteLLMProxyRequestSetup.add_headers_to_llm_call
+  L1408-L1435, LiteLLMProxyRequestSetup.add_headers_to_llm_call_by_model_group L1438-L1462, LiteLLMProxyRequestSetup.get_internal_user_header_from_mapping
+  L1465-L1478, LiteLLMProxyRequestSetup.add_litellm_data_for_backend_llm_call L1481-L1535, LiteLLMProxyRequestSetup.add_litellm_metadata_from_request_headers
+  L1538-L1612, add_provider_specific_headers_to_request L3489-L3513, _add_otel_traceparent_to_data L3516-L3536.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1105 owns _stampable_key_hash L154-L165, _sanitize_for_log L171-L184,
+  _invalid_metadata_type_error L443-L450, _normalized_metadata_object L453-L465, _normalized_metadata_slot L468-L482,
+  _strip_untrusted_request_header_controls L485-L497, _is_false_like L500-L505, _key_or_team_metadata_flag_is_true
+  L508-L515, _key_or_team_allows_client_mock_response L518-L524, _key_or_team_allows_client_message_redaction_opt_out
+  L527-L533, _key_or_team_allows_client_pricing_override L536-L542, _strip_client_message_redaction_opt_out L545-L560,
+  _strip_client_callback_credentials L563-L593, _strip_client_pricing_overrides L596-L624, _strip_router_reserved_metadata
+  L627-L638, _get_metadata_variable_name L641-L652, metadata_variable_name_for_route L655-L662, _promoted_trace_control_fields
+  L665-L674, _extract_generic_session_id_from_headers L677-L699, _extract_codex_session_id_from_headers L702-L728,
+  _extract_bare_session_id_from_headers L731-L743, get_chain_id_from_headers L746-L773, _get_anthropic_session_id_from_metadata
+  L776-L797, _is_llm_inference_route L800-L804, apply_missing_session_id_policy L807-L858, refresh_proxy_server_request_body_snapshot
+  L1951-L1990.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1109 owns apply_missing_session_id_policy L807-L858, should_auto_drop_params_for_agentic_cli
+  L861-L875, safe_add_api_version_from_query_params L878-L887, convert_key_logging_metadata_to_callback L890-L940,
+  _get_validated_callback_metadata L943-L952, KeyAndTeamLoggingSettings.get_key_dynamic_logging_settings L961-L964,
+  KeyAndTeamLoggingSettings.get_team_dynamic_logging_settings L967-L970, _get_dynamic_logging_metadata L973-L1031,
+  _tenant_otel_params L1037-L1041, _dynamically_disabled_backends L1047-L1072, resolve_tenant_otel_destinations
+  L1075-L1150, _tenant_service_name L1153-L1170, clean_headers L1173-L1223.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1106 owns LiteLLMProxyRequestSetup.get_logged_api_key L1615-L1618,
+  LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key L1621-L1650, LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata
+  L1653-L1703, LiteLLMProxyRequestSetup.add_management_endpoint_metadata_to_request_metadata L1706-L1732, LiteLLMProxyRequestSetup.add_key_level_controls
+  L1735-L1778, LiteLLMProxyRequestSetup._merge_tags L1781-L1802, LiteLLMProxyRequestSetup.add_team_based_callbacks_from_config
+  L1805-L1831, LiteLLMProxyRequestSetup.add_request_tag_to_metadata L1834-L1852, LiteLLMProxyRequestSetup.pre_seed_litellm_metadata_for_route
+  L1855-L1873, LiteLLMProxyRequestSetup.apply_key_tags_pre_auth L1876-L1896, LiteLLMProxyRequestSetup.apply_client_tag_policy_pre_auth
+  L1899-L1948.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1103 owns add_litellm_data_to_request L1993-L2580.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1137 owns add_litellm_data_to_request L1993-L2580.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1107 owns _warn_stale_team_alias_once L2583-L2589, _update_model_if_team_alias_exists
+  L2592-L2667, _update_model_if_key_alias_exists L2670-L2693, _apply_credential_overrides_from_model_config L2696-L2781,
+  _resolve_provider_from_deployment L2784-L2821, _resolve_credential_from_model_config L2824-L2876, _extract_credential_from_entry
+  L2879-L2905, _get_enforced_params L2908-L2925, check_if_token_is_service_account L2928-L2939, _enforced_params_check
+  L2942-L2978.'
+- 'litellm/proxy/litellm_pre_call_utils.py: B1108 owns _add_guardrails_from_key_or_team_metadata L2981-L3026, _add_guardrails_from_policies_in_metadata
+  L3029-L3134, add_guardrails_from_auth_metadata L3137-L3156, move_guardrails_to_metadata L3159-L3231, _is_policy_version_id
+  L3234-L3238, _extract_policy_id L3241-L3247, _match_and_track_policies L3250-L3311, _apply_resolved_guardrails_to_metadata
+  L3314-L3366, add_guardrails_from_policy_engine L3369-L3475.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'http_parsing_utils.py:690 emits the diagnostic ''populate_request_with_path_params: Found path_params, vector_store_ids=%s'';
+  retain its level and fallback instead of turning it into a hard error.'
+- 'http_parsing_utils.py:719 emits the diagnostic ''populate_request_with_path_params: Extracted vector_store_id=%s
+  from path=%s''; retain its level and fallback instead of turning it into a hard error.'
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1
