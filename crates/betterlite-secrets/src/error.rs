@@ -12,6 +12,11 @@ pub enum SecretError {
     TooLarge { length: usize, limit: usize },
     #[error("the encoded secret is not valid base64")]
     Base64,
+    #[error("the encoded secret is not valid base64")]
+    Decode {
+        #[source]
+        source: base64::DecodeError,
+    },
     #[error("the secret is too short to hold its nonce")]
     Truncated,
     #[error("the ciphertext failed authentication under this key")]

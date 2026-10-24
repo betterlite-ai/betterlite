@@ -88,7 +88,7 @@ fn finish(mut sextets: String, complete: bool) -> Result<Vec<u8>, SecretError> {
     clear_stray_bits(&mut sextets);
     STANDARD_NO_PAD
         .decode(sextets)
-        .map_err(|_decode| SecretError::Base64)
+        .map_err(|source| SecretError::Decode { source })
 }
 
 // Python's validating b64decode with altchars "-_": both alphabets pass, padding must be canonical
@@ -108,5 +108,5 @@ pub(crate) fn decode_strict(encoded: &str) -> Result<Vec<u8>, SecretError> {
     clear_stray_bits(&mut padded);
     STANDARD
         .decode(padded)
-        .map_err(|_decode| SecretError::Base64)
+        .map_err(|source| SecretError::Decode { source })
 }
