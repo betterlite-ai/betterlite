@@ -20,18 +20,17 @@ pub(crate) enum AuthenticationFailure {
     Invalid,
 }
 pub(crate) fn authentication_error(failure: &AuthenticationFailure) -> Response {
-    if matches!(
-        failure,
-        AuthenticationFailure::Missing | AuthenticationFailure::Malformed
-    ) {
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response();
+    match failure {
+        AuthenticationFailure::Missing | AuthenticationFailure::Malformed => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()
+        }
+        AuthenticationFailure::Invalid => error_response(
+            StatusCode::BAD_REQUEST,
+            "the API key is not valid".to_owned(),
+            "no_db_connection",
+            "400",
+        ),
     }
-    error_response(
-        StatusCode::BAD_REQUEST,
-        "the API key is not valid".to_owned(),
-        "no_db_connection",
-        "400",
-    )
 }
 pub(crate) async fn not_found_error() -> Response {
     let body = NotFoundBody {

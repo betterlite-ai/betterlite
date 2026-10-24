@@ -22,11 +22,11 @@ pub(crate) async fn authenticate(
     ) {
         return next.run(request).await;
     }
-    if state.master_key.is_none() {
+    let Some(master_key) = state.master_key.as_ref() else {
         return next.run(request).await;
-    }
+    };
     let presented_key = extract_key(request.headers());
-    if is_valid_key(presented_key.as_ref(), state.master_key.as_ref()) {
+    if is_valid_key(presented_key.as_ref(), master_key) {
         return next.run(request).await;
     }
     let failure = match presented_key.as_ref() {
@@ -69,8 +69,8 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
 }
 fn strip_prefix(value: &str) -> Option<String> {
     for prefix in ["Bearer ", "Basic ", "bearer "] {
-        if let Some(token) = value.strip_prefix(prefix) {
-            return Some(token.to_owned());
+        if value.starts_with(prefix) {
+            return Some(value.replace(prefix, ""));
         }
     }
     if value.starts_with("AWS4-HMAC-SHA256") {
@@ -80,22 +80,32 @@ fn strip_prefix(value: &str) -> Option<String> {
 }
 fn aws_credential(value: &str) -> Option<String> {
     let credential = value.split_once("Credential=")?.1;
-    let credential_without_prefix = credential
-        .strip_prefix("Bearer")
-        .map_or(credential, str::trim_start)
-        .split(|character: char| character == '/' || character == ',' || character.is_whitespace())
-        .next()
-        .filter(|token| !token.is_empty())?;
-    Some(credential_without_prefix.to_owned())
+    let bearer_token = credential.strip_prefix("Bearer").and_then(|remaining| {
+        if remaining.chars().next().is_some_and(char::is_whitespace) {
+            first_credential_part(str::trim_start(remaining))
+        } else {
+            None
+        }
+    });
+    bearer_token.or_else(|| first_credential_part(credential))
 }
-fn is_valid_key(presented_key: Option<&SecretString>, master_key: Option<&SecretString>) -> bool {
-    let (Some(presented), Some(configured)) = (presented_key, master_key) else {
+fn first_credential_part(value: &str) -> Option<String> {
+    let token = value
+        .split(|character: char| character == '/' || character == ',' || character.is_whitespace())
+        .next()?;
+    if token.is_empty() {
+        return None;
+    }
+    Some(token.to_owned())
+}
+fn is_valid_key(presented_key: Option<&SecretString>, master_key: &SecretString) -> bool {
+    let Some(presented) = presented_key else {
         return false;
     };
     bool::from(
         presented
             .expose_secret()
             .as_bytes()
-            .ct_eq(configured.expose_secret().as_bytes()),
+            .ct_eq(master_key.expose_secret().as_bytes()),
     )
 }

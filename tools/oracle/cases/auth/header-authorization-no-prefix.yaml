@@ -18,4 +18,4 @@ compare:
   upstream_headers: []
   ignore:
     - pointer: ""
-      why: betterlite writes its own message
+      why: LiteLLM returns an unstructured internal-server-error body for an Authorization value with no recognized prefix

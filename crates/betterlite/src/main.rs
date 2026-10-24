@@ -5,8 +5,9 @@ use clap::Parser;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use thiserror::Error;
 use tokio::runtime::Builder;
 #[derive(Parser)]
 #[command(version)]
@@ -26,8 +27,20 @@ fn main() -> ExitCode {
         .with_writer(io::stderr)
         .init();
     let cli = Cli::parse();
-    let Ok(config) = load_config(&cli.config) else {
-        return ExitCode::FAILURE;
+    let config = match load_config(&cli.config) {
+        Ok(config) => config,
+        Err(ConfigLoadError::Read { path, source }) => {
+            tracing::error!(path = %path.display(), error = ?source, "failed to read configuration");
+            return ExitCode::FAILURE;
+        }
+        Err(ConfigLoadError::Config { source }) => {
+            tracing::error!(
+                category = config_error_category(&source),
+                location = %cli.config.display(),
+                "failed to load configuration"
+            );
+            return ExitCode::FAILURE;
+        }
     };
     let runtime = match Builder::new_multi_thread().enable_all().build() {
         Ok(runtime) => runtime,
@@ -44,29 +57,34 @@ fn main() -> ExitCode {
         }
     }
 }
-fn load_config(path: &PathBuf) -> Result<Config, ()> {
-    let source = match fs::read_to_string(path) {
-        Ok(source) => source,
-        Err(error) => {
-            tracing::error!(path = %path.display(), error = ?error, "failed to read configuration");
-            return Err(());
-        }
-    };
+#[derive(Debug, Error)]
+enum ConfigLoadError {
+    #[error("failed to read configuration at {path}: {source}")]
+    Read {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
+    #[error("failed to load configuration")]
+    Config {
+        #[source]
+        source: ConfigError,
+    },
+}
+fn load_config(path: &Path) -> Result<Config, ConfigLoadError> {
+    let source = fs::read_to_string(path).map_err(|source| ConfigLoadError::Read {
+        path: path.to_owned(),
+        source,
+    })?;
     // The process environment needs a disallowed std::env call, so os.environ/ references fail until the binary may pass it.
     let loader = ConfigLoader {
         lookup: BTreeMap::new(),
     };
-    match loader.load(&source) {
-        Ok(config) => Ok(config),
-        Err(error) => {
-            tracing::error!(
-                category = config_error_category(&error),
-                location = %path.display(),
-                "failed to load configuration"
-            );
-            Err(())
-        }
-    }
+    loader
+        .load(&source)
+        .map_err(|config_error| ConfigLoadError::Config {
+            source: config_error,
+        })
 }
 const fn config_error_category(error: &ConfigError) -> &'static str {
     match error {
