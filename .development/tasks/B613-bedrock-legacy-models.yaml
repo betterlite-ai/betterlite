@@ -2,9 +2,9 @@ id: B613
 title: Bedrock classic model parameter maps
 description: >-
   Add compact typed configuration/mapping tables for AI21 Jurassic, Cohere command, Llama, Mistral, Titan and Claude2.
-  Reuse existing base request/reply transport and prompt services; constructors/get_config become explicit immutable
-  settings rather than Python class mutation. Preserve family token/stop/sampling parameter renames and legacy model
-  list.
+  Reuse existing base request/reply transport and prompt services; keep the persistent configured defaults that
+  later calls observe, represented as typed settings rather than mutable Python classes. Preserve family token/stop/sampling
+  parameter renames and legacy model list.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py:
@@ -19,16 +19,74 @@ description: >-
   AmazonTitanConfig.__init__ L29-L41; AmazonTitanConfig.get_config L44-L60; AmazonTitanConfig._map_and_modify_arg
   L62-L83; AmazonTitanConfig.get_supported_openai_params L85-L93; AmazonTitanConfig.map_openai_params L95-L114.
   litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py: AmazonAnthropicConfig.__init__
-  L30-L42; AmazonAnthropicConfig.get_config L45-L60; AmazonAnthropicConfig.get_legacy_anthropic_model_names L63-L68;
-  AmazonAnthropicConfig.get_supported_openai_params L70-L78; AmazonAnthropicConfig.map_openai_params L80-L98.
+  L30-L42; AmazonAnthropicConfig.get_config L45-L60; AmazonAnthropicConfig.get_supported_openai_params L70-L78;
+  AmazonAnthropicConfig.map_openai_params L80-L98.
 
 
   Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
   that prerequisite.
 
 
-  Reuse AmazonInvokeConfig.__init__ from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  Reuse AmazonInvokeConfig.__init__ from B2205 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
   its implementation remains with that prerequisite.
+
+
+  Named case contracts: ai21_penalties: AI21 supports exactly max_tokens,temperature,top_p,stream in that order.
+  Map max_tokens to maxTokens, top_p to topP and copy temperature/stream, including False/None. Ignore max_completion_tokens,stop
+  and penalties in the mapper; configured penalties still survive get_config and B611 default insertion. cohere_max_tokens:
+  Delegate both supported names and mapping to B037 CohereChatConfig. The ordered list is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
+  Map both token aliases to max_tokens, n to num_generations, top_p to p, stop to stop_sequences without wrapping
+  strings, and copy stream,temperature,frequency_penalty,presence_penalty,tools,seed. Ignore tool_choice/extra_headers
+  despite their presence in the supported list; preserve input order for alias collisions. llama_generation_length:
+  Llama supports max_tokens,temperature,top_p,stream in that order. Map max_tokens to max_gen_len, and copy temperature,top_p,stream.
+  Ignore max_completion_tokens and stop. Its configured maxTokenCount/topP keys are not these mapped wire keys;
+  preserve both rather than silently renaming the class defaults. mistral_max_tokens: Mistral supports max_tokens,temperature,top_p,stop,stream
+  in that order and copies those fields unchanged. top_k is a configured default but absent from this mapper and
+  supported list. Ignore unknown inputs and preserve existing optional_params. mistral_output_text: When choices
+  is present, take choices[0].message.content and its finish_reason verbatim, even if outputs also exists. Otherwise
+  outputs[0].text and stop_reason win. No finish-reason normalization occurs. If neither key exists, raise B682
+  BedrockError 400 with exact message Unexpected mistral completion response. Malformed selected lists/records propagate
+  their own errors from this helper; B612 may wrap them. legacy_config_defaults: All six constructors write only
+  arguments other than None, retaining explicit False/0/empty values and prior settings when a later constructor
+  omits them. AI21 fields are maxTokens,temperature,topP,stopSequences,frequencePenalty,presencePenalty,countPenalty
+  (preserve frequencePenalty spelling); Cohere max_tokens,temperature,return_likelihood; Llama maxTokenCount,temperature,topP;
+  Mistral max_tokens,temperature,top_p,top_k,stop; Titan maxTokenCount,stopSequences,temperature,topP. These declared
+  defaults are None. Claude2 max_tokens_to_sample initially uses litellm.max_tokens from B2202 (DEFAULT_MAX_TOKENS=4096),
+  with stop_sequences,temperature,top_k,top_p,anthropic_version None. Do not substitute the docstring example bedrock-2023-05-31
+  for None. legacy_config_projection: get_config reads only the concrete class dictionary, excluding dunder names,
+  functions,builtins,classmethod,staticmethod and None; the five non-Claude classes also exclude _abc names. Preserve
+  other single-underscore values and descriptors. All constructors except Claude2 call B2205 AmazonInvokeConfig.__init__;
+  Claude2 only sets its own defaults. Reset global class state between oracle rows and exercise persistence across
+  two calls within a row. titan_stop_filter: Titan supports max_tokens,max_completion_tokens,stop,temperature,top_p,stream.
+  Both token aliases write maxTokenCount in input order; top_p writes topP and stop writes stopSequences. Filtering
+  depends on global litellm.drop_params truthiness, not the method drop_params argument: only provider=bedrock plus
+  case-sensitive amazon in model filters. For list input retain elements matching ^(\|+|User:)$ in order, including
+  the regex dollar behavior before a final newline; other sequences and strings become []. Without the filter condition
+  preserve the stop value unchanged. No warning is emitted. claude2_parameters: Supported names are max_tokens,max_completion_tokens,temperature,stop,top_p,stream.
+  Both token aliases write max_tokens_to_sample; stop writes stop_sequences; temperature/top_p copy; stream writes
+  only for literal True, leaving an existing stream value untouched for False/None. Unknown inputs are ignored.
+
+
+  Load AmazonAI21Config.maxTokens, AmazonAI21Config.temperature, AmazonAI21Config.topP, AmazonAI21Config.stopSequences,
+  AmazonAI21Config.frequencePenalty, AmazonAI21Config.presencePenalty, AmazonAI21Config.countPenalty, AmazonCohereConfig.max_tokens,
+  AmazonCohereConfig.temperature, AmazonCohereConfig.return_likelihood, AmazonLlamaConfig.maxTokenCount, AmazonLlamaConfig.temperature,
+  AmazonLlamaConfig.topP, AmazonMistralConfig.max_tokens, AmazonMistralConfig.temperature, AmazonMistralConfig.top_p,
+  AmazonMistralConfig.top_k, AmazonMistralConfig.stop, AmazonTitanConfig.maxTokenCount, AmazonTitanConfig.stopSequences,
+  AmazonTitanConfig.temperature, AmazonTitanConfig.topP, AmazonAnthropicConfig.max_tokens_to_sample, AmazonAnthropicConfig.stop_sequences,
+  AmazonAnthropicConfig.temperature, AmazonAnthropicConfig.top_k, AmazonAnthropicConfig.top_p, AmazonAnthropicConfig.anthropic_version
+  through betterlite-config, with injected environment lookup and the defaults/precedence stated here. Deployment
+  inputs use litellm_params and global inputs use litellm_settings. Add config rstest bedrock_legacy_models_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Load litellm.drop_params through the existing B2201 loader (default False), and litellm.max_tokens through B2202.
+  The cases above exercise their consumers; no second parser or alternative defaults belong here. B037 owns the
+  native CohereChatConfig methods called by this task; add direct dependency by id even while its task file is absent.
+
+
+  AmazonAnthropicConfig.get_legacy_anthropic_model_names belong to B2231; delegate those calls directly and retain
+  only the remaining owned bodies.
 
 
   Implement crates/betterlite-bedrock/src/legacy_models.rs with adjacent tests under legacy_models/. Keep each Rust
@@ -45,10 +103,10 @@ description: >-
 
 
   Write rstest function legacy_models_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  ai21_penalties, cohere_max_tokens, llama_generation_length, mistral_max_tokens, titan_text_generation_config,
-  claude2_legacy_names, mistral_output_text. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  ai21_penalties, cohere_max_tokens, llama_generation_length, mistral_max_tokens, mistral_output_text, legacy_config_defaults,
+  legacy_config_projection, titan_stop_filter, claude2_parameters. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models* using HelperCase: kind:
@@ -63,10 +121,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 364 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 380 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 596 planned, 600 maximum changed lines.
+  Budget from 358 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 280 production lines, 290 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 90 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 800 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -82,74 +140,76 @@ scope:
   - tools/oracle/helpers/bedrock_legacy_models.py
   - tools/oracle/cases/helpers/providers/bedrock-legacy-models/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_legacy_models.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_legacy_models/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_legacy_models_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_legacy_models*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py#L39-L99
-  why: >-
-    Own AmazonAI21Config.__init__, AmazonAI21Config.get_config, AmazonAI21Config.get_supported_openai_params, AmazonAI21Config.map_openai_params.
-    Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_cohere_transformation.py#L24-L73
-  why: >-
-    Own AmazonCohereConfig.__init__, AmazonCohereConfig.get_config, AmazonCohereConfig.get_supported_openai_params,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py#L39-L99
+  why: Own AmazonAI21Config.__init__, AmazonAI21Config.get_config, AmazonAI21Config.get_supported_openai_params,
+    AmazonAI21Config.map_openai_params. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_cohere_transformation.py#L24-L73
+  why: Own AmazonCohereConfig.__init__, AmazonCohereConfig.get_config, AmazonCohereConfig.get_supported_openai_params,
     AmazonCohereConfig.map_openai_params. Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_llama_transformation.py#L25-L80
-  why: >-
-    Own AmazonLlamaConfig.__init__, AmazonLlamaConfig.get_config, AmazonLlamaConfig.get_supported_openai_params,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_llama_transformation.py#L25-L80
+  why: Own AmazonLlamaConfig.__init__, AmazonLlamaConfig.get_config, AmazonLlamaConfig.get_supported_openai_params,
     AmazonLlamaConfig.map_openai_params. Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_mistral_transformation.py#L32-L111
-  why: >-
-    Own AmazonMistralConfig.__init__, AmazonMistralConfig.get_config, AmazonMistralConfig.get_supported_openai_params,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_mistral_transformation.py#L32-L111
+  why: Own AmazonMistralConfig.__init__, AmazonMistralConfig.get_config, AmazonMistralConfig.get_supported_openai_params,
     AmazonMistralConfig.map_openai_params, AmazonMistralConfig.get_outputText. Other functions in this file remain
     with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_titan_transformation.py#L29-L114
-  why: >-
-    Own AmazonTitanConfig.__init__, AmazonTitanConfig.get_config, AmazonTitanConfig._map_and_modify_arg, AmazonTitanConfig.get_supported_openai_params,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_titan_transformation.py#L29-L114
+  why: Own AmazonTitanConfig.__init__, AmazonTitanConfig.get_config, AmazonTitanConfig._map_and_modify_arg, AmazonTitanConfig.get_supported_openai_params,
     AmazonTitanConfig.map_openai_params. Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py#L30-L98
-  why: >-
-    Own AmazonAnthropicConfig.__init__, AmazonAnthropicConfig.get_config, AmazonAnthropicConfig.get_legacy_anthropic_model_names,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py#L30-L98
+  why: Own AmazonAnthropicConfig.__init__, AmazonAnthropicConfig.get_config, AmazonAnthropicConfig.get_legacy_anthropic_model_names,
     AmazonAnthropicConfig.get_supported_openai_params, AmazonAnthropicConfig.map_openai_params. Other functions
     in this file remain with the owners listed below.
 dod:
-- text: 'ai21 penalties: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/ai21-penalties.yaml.'
+- text: 'ai21_penalties: AI21 supports exactly max_tokens,temperature,top_p,stream in that order. Map max_tokens
+    to maxTokens, top_p to topP and copy temperature/stream, including False/None. Ignore max_completion_tokens,stop
+    and penalties in the mapper; configured penalties still survive get_config and B611 default insertion.'
   proof:
   - case-ai21-penalties
   - oracle
   - helper-python
-- text: 'cohere max tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/cohere-max-tokens.yaml.'
+- text: 'cohere_max_tokens: Delegate both supported names and mapping to B037 CohereChatConfig. The ordered list
+    is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
+    Map both token aliases to max_tokens, n to num_generations, top_p to p, stop to stop_sequences without wrapping
+    strings, and copy stream,temperature,frequency_penalty,presence_penalty,tools,seed. Ignore tool_choice/extra_headers
+    despite their presence in the supported list; preserve input order for alias collisions.'
   proof:
   - case-cohere-max-tokens
   - oracle
   - helper-python
-- text: >-
-    llama generation length: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/llama-generation-length.yaml.
+- text: 'llama_generation_length: Llama supports max_tokens,temperature,top_p,stream in that order. Map max_tokens
+    to max_gen_len, and copy temperature,top_p,stream. Ignore max_completion_tokens and stop. Its configured maxTokenCount/topP
+    keys are not these mapped wire keys; preserve both rather than silently renaming the class defaults.'
   proof:
   - case-llama-generation-length
   - oracle
   - helper-python
-- text: 'mistral max tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-max-tokens.yaml.'
+- text: 'mistral_max_tokens: Mistral supports max_tokens,temperature,top_p,stop,stream in that order and copies
+    those fields unchanged. top_k is a configured default but absent from this mapper and supported list. Ignore
+    unknown inputs and preserve existing optional_params.'
   proof:
   - case-mistral-max-tokens
   - oracle
   - helper-python
-- text: >-
-    titan text generation config: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/titan-text-generation-config.yaml.
-  proof:
-  - case-titan-text-generation-config
-  - oracle
-  - helper-python
-- text: 'claude2 legacy names: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/claude2-legacy-names.yaml.'
-  proof:
-  - case-claude2-legacy-names
-  - oracle
-  - helper-python
-- text: 'mistral output text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-output-text.yaml.'
+- text: 'mistral_output_text: When choices is present, take choices[0].message.content and its finish_reason verbatim,
+    even if outputs also exists. Otherwise outputs[0].text and stop_reason win. No finish-reason normalization occurs.
+    If neither key exists, raise B682 BedrockError 400 with exact message Unexpected mistral completion response.
+    Malformed selected lists/records propagate their own errors from this helper; B612 may wrap them.'
   proof:
   - case-mistral-output-text
   - oracle
@@ -158,61 +218,304 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'legacy_config_defaults: All six constructors write only arguments other than None, retaining explicit False/0/empty
+    values and prior settings when a later constructor omits them. AI21 fields are maxTokens,temperature,topP,stopSequences,frequencePenalty,presencePenalty,countPenalty
+    (preserve frequencePenalty spelling); Cohere max_tokens,temperature,return_likelihood; Llama maxTokenCount,temperature,topP;
+    Mistral max_tokens,temperature,top_p,top_k,stop; Titan maxTokenCount,stopSequences,temperature,topP. These declared
+    defaults are None. Claude2 max_tokens_to_sample initially uses litellm.max_tokens from B2202 (DEFAULT_MAX_TOKENS=4096),
+    with stop_sequences,temperature,top_k,top_p,anthropic_version None. Do not substitute the docstring example
+    bedrock-2023-05-31 for None.'
+  proof:
+  - case-legacy-config-defaults
+  - oracle
+  - helper-python
+- text: 'legacy_config_projection: get_config reads only the concrete class dictionary, excluding dunder names,
+    functions,builtins,classmethod,staticmethod and None; the five non-Claude classes also exclude _abc names. Preserve
+    other single-underscore values and descriptors. All constructors except Claude2 call B2205 AmazonInvokeConfig.__init__;
+    Claude2 only sets its own defaults. Reset global class state between oracle rows and exercise persistence across
+    two calls within a row.'
+  proof:
+  - case-legacy-config-projection
+  - oracle
+  - helper-python
+- text: 'titan_stop_filter: Titan supports max_tokens,max_completion_tokens,stop,temperature,top_p,stream. Both
+    token aliases write maxTokenCount in input order; top_p writes topP and stop writes stopSequences. Filtering
+    depends on global litellm.drop_params truthiness, not the method drop_params argument: only provider=bedrock
+    plus case-sensitive amazon in model filters. For list input retain elements matching ^(\|+|User:)$ in order,
+    including the regex dollar behavior before a final newline; other sequences and strings become []. Without the
+    filter condition preserve the stop value unchanged. No warning is emitted.'
+  proof:
+  - case-titan-stop-filter
+  - oracle
+  - helper-python
+- text: The real config loader resolves AmazonAI21Config.maxTokens, including its default and precedence.
+  proof:
+  - config-amazonai21config-maxtokens
+- text: The real config loader resolves AmazonAI21Config.temperature, including its default and precedence.
+  proof:
+  - config-amazonai21config-temperature
+- text: The real config loader resolves AmazonAI21Config.topP, including its default and precedence.
+  proof:
+  - config-amazonai21config-topp
+- text: The real config loader resolves AmazonAI21Config.stopSequences, including its default and precedence.
+  proof:
+  - config-amazonai21config-stopsequences
+- text: The real config loader resolves AmazonAI21Config.frequencePenalty, including its default and precedence.
+  proof:
+  - config-amazonai21config-frequencepenalty
+- text: The real config loader resolves AmazonAI21Config.presencePenalty, including its default and precedence.
+  proof:
+  - config-amazonai21config-presencepenalty
+- text: The real config loader resolves AmazonAI21Config.countPenalty, including its default and precedence.
+  proof:
+  - config-amazonai21config-countpenalty
+- text: The real config loader resolves AmazonCohereConfig.max_tokens, including its default and precedence.
+  proof:
+  - config-amazoncohereconfig-max-tokens
+- text: The real config loader resolves AmazonCohereConfig.temperature, including its default and precedence.
+  proof:
+  - config-amazoncohereconfig-temperature
+- text: The real config loader resolves AmazonCohereConfig.return_likelihood, including its default and precedence.
+  proof:
+  - config-amazoncohereconfig-return-likelihood
+- text: The real config loader resolves AmazonLlamaConfig.maxTokenCount, including its default and precedence.
+  proof:
+  - config-amazonllamaconfig-maxtokencount
+- text: The real config loader resolves AmazonLlamaConfig.temperature, including its default and precedence.
+  proof:
+  - config-amazonllamaconfig-temperature
+- text: The real config loader resolves AmazonLlamaConfig.topP, including its default and precedence.
+  proof:
+  - config-amazonllamaconfig-topp
+- text: The real config loader resolves AmazonMistralConfig.max_tokens, including its default and precedence.
+  proof:
+  - config-amazonmistralconfig-max-tokens
+- text: The real config loader resolves AmazonMistralConfig.temperature, including its default and precedence.
+  proof:
+  - config-amazonmistralconfig-temperature
+- text: The real config loader resolves AmazonMistralConfig.top_p, including its default and precedence.
+  proof:
+  - config-amazonmistralconfig-top-p
+- text: The real config loader resolves AmazonMistralConfig.top_k, including its default and precedence.
+  proof:
+  - config-amazonmistralconfig-top-k
+- text: The real config loader resolves AmazonMistralConfig.stop, including its default and precedence.
+  proof:
+  - config-amazonmistralconfig-stop
+- text: The real config loader resolves AmazonTitanConfig.maxTokenCount, including its default and precedence.
+  proof:
+  - config-amazontitanconfig-maxtokencount
+- text: The real config loader resolves AmazonTitanConfig.stopSequences, including its default and precedence.
+  proof:
+  - config-amazontitanconfig-stopsequences
+- text: The real config loader resolves AmazonTitanConfig.temperature, including its default and precedence.
+  proof:
+  - config-amazontitanconfig-temperature
+- text: The real config loader resolves AmazonTitanConfig.topP, including its default and precedence.
+  proof:
+  - config-amazontitanconfig-topp
+- text: The real config loader resolves AmazonAnthropicConfig.max_tokens_to_sample, including its default and precedence.
+  proof:
+  - config-amazonanthropicconfig-max-tokens-to-sample
+- text: The real config loader resolves AmazonAnthropicConfig.stop_sequences, including its default and precedence.
+  proof:
+  - config-amazonanthropicconfig-stop-sequences
+- text: The real config loader resolves AmazonAnthropicConfig.temperature, including its default and precedence.
+  proof:
+  - config-amazonanthropicconfig-temperature
+- text: The real config loader resolves AmazonAnthropicConfig.top_k, including its default and precedence.
+  proof:
+  - config-amazonanthropicconfig-top-k
+- text: The real config loader resolves AmazonAnthropicConfig.top_p, including its default and precedence.
+  proof:
+  - config-amazonanthropicconfig-top-p
+- text: The real config loader resolves AmazonAnthropicConfig.anthropic_version, including its default and precedence.
+  proof:
+  - config-amazonanthropicconfig-anthropic-version
+- text: 'claude2_parameters: Supported names are max_tokens,max_completion_tokens,temperature,stop,top_p,stream.
+    Both token aliases write max_tokens_to_sample; stop writes stop_sequences; temperature/top_p copy; stream writes
+    only for literal True, leaving an existing stream value untouched for False/None. Unknown inputs are ignored.'
+  proof:
+  - case-claude2-parameters
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-ai21-penalties
-    why: The ai21-penalties behavior is missing or differs from its pinned fixture.
+    why: AI21 supports exactly max_tokens,temperature,top_p,stream in that order. Map max_tokens to maxTokens, top_p
+      to topP and copy temperature/stream, including False/None. Ignore max_completion_tokens,stop and penalties
+      in the mapper; configured penalties still survive get_config and B611 default insertion.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_ai21_penalties$/)'
   - id: case-cohere-max-tokens
-    why: The cohere-max-tokens behavior is missing or differs from its pinned fixture.
+    why: Delegate both supported names and mapping to B037 CohereChatConfig. The ordered list is stream,temperature,max_tokens,max_completion_tokens,top_p,frequency_penalty,presence_penalty,stop,n,tools,tool_choice,seed,extra_headers.
+      Map both token aliases to max_tokens, n to num_generations, top_p to p, stop to stop_sequences without wrapping
+      strings, and copy stream,temperature,frequency_penalty,presence_penalty,tools,seed. Ignore tool_choice/extra_headers
+      despite their presence in the supported list; preserve input order for alias collisions.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_cohere_max_tokens$/)'
   - id: case-llama-generation-length
-    why: The llama-generation-length behavior is missing or differs from its pinned fixture.
+    why: Llama supports max_tokens,temperature,top_p,stream in that order. Map max_tokens to max_gen_len, and copy
+      temperature,top_p,stream. Ignore max_completion_tokens and stop. Its configured maxTokenCount/topP keys are
+      not these mapped wire keys; preserve both rather than silently renaming the class defaults.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_llama_generation_length$/)'
   - id: case-mistral-max-tokens
-    why: The mistral-max-tokens behavior is missing or differs from its pinned fixture.
+    why: Mistral supports max_tokens,temperature,top_p,stop,stream in that order and copies those fields unchanged.
+      top_k is a configured default but absent from this mapper and supported list. Ignore unknown inputs and preserve
+      existing optional_params.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_mistral_max_tokens$/)'
-  - id: case-titan-text-generation-config
-    why: The titan-text-generation-config behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_titan_text_generation_config$/)'
-  - id: case-claude2-legacy-names
-    why: The claude2-legacy-names behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_claude2_legacy_names$/)'
   - id: case-mistral-output-text
-    why: The mistral-output-text behavior is missing or differs from its pinned fixture.
+    why: When choices is present, take choices[0].message.content and its finish_reason verbatim, even if outputs
+      also exists. Otherwise outputs[0].text and stop_reason win. No finish-reason normalization occurs. If neither
+      key exists, raise B682 BedrockError 400 with exact message Unexpected mistral completion response. Malformed
+      selected lists/records propagate their own errors from this helper; B612 may wrap them.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_mistral_output_text$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_legacy_models.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_legacy_models.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models*")"
       && grep -lq 'bedrock_legacy_models' tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_legacy_models$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-legacy-config-defaults
+    why: All six constructors write only arguments other than None, retaining explicit False/0/empty values and
+      prior settings when a later constructor omits them. AI21 fields are maxTokens,temperature,topP,stopSequences,frequencePenalty,presencePenalty,countPenalty
+      (preserve frequencePenalty spelling); Cohere max_tokens,temperature,return_likelihood; Llama maxTokenCount,temperature,topP;
+      Mistral max_tokens,temperature,top_p,top_k,stop; Titan maxTokenCount,stopSequences,temperature,topP. These
+      declared defaults are None. Claude2 max_tokens_to_sample initially uses litellm.max_tokens from B2202 (DEFAULT_MAX_TOKENS=4096),
+      with stop_sequences,temperature,top_k,top_p,anthropic_version None. Do not substitute the docstring example
+      bedrock-2023-05-31 for None.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_legacy_config_defaults$/)'
+  - id: case-legacy-config-projection
+    why: get_config reads only the concrete class dictionary, excluding dunder names, functions,builtins,classmethod,staticmethod
+      and None; the five non-Claude classes also exclude _abc names. Preserve other single-underscore values and
+      descriptors. All constructors except Claude2 call B2205 AmazonInvokeConfig.__init__; Claude2 only sets its
+      own defaults. Reset global class state between oracle rows and exercise persistence across two calls within
+      a row.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_legacy_config_projection$/)'
+  - id: case-titan-stop-filter
+    why: 'Titan supports max_tokens,max_completion_tokens,stop,temperature,top_p,stream. Both token aliases write
+      maxTokenCount in input order; top_p writes topP and stop writes stopSequences. Filtering depends on global
+      litellm.drop_params truthiness, not the method drop_params argument: only provider=bedrock plus case-sensitive
+      amazon in model filters. For list input retain elements matching ^(\|+|User:)$ in order, including the regex
+      dollar behavior before a final newline; other sequences and strings become []. Without the filter condition
+      preserve the stop value unchanged. No warning is emitted.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_titan_stop_filter$/)'
+  - id: config-amazonai21config-maxtokens
+    why: AmazonAI21Config.maxTokens lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonai21config_maxtokens$/)'
+  - id: config-amazonai21config-temperature
+    why: AmazonAI21Config.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonai21config_temperature$/)'
+  - id: config-amazonai21config-topp
+    why: AmazonAI21Config.topP lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonai21config_topp$/)'
+  - id: config-amazonai21config-stopsequences
+    why: AmazonAI21Config.stopSequences lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonai21config_stopsequences$/)'
+  - id: config-amazonai21config-frequencepenalty
+    why: AmazonAI21Config.frequencePenalty lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonai21config_frequencepenalty$/)'
+  - id: config-amazonai21config-presencepenalty
+    why: AmazonAI21Config.presencePenalty lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonai21config_presencepenalty$/)'
+  - id: config-amazonai21config-countpenalty
+    why: AmazonAI21Config.countPenalty lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonai21config_countpenalty$/)'
+  - id: config-amazoncohereconfig-max-tokens
+    why: AmazonCohereConfig.max_tokens lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazoncohereconfig_max_tokens$/)'
+  - id: config-amazoncohereconfig-temperature
+    why: AmazonCohereConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazoncohereconfig_temperature$/)'
+  - id: config-amazoncohereconfig-return-likelihood
+    why: AmazonCohereConfig.return_likelihood lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazoncohereconfig_return_likelihood$/)'
+  - id: config-amazonllamaconfig-maxtokencount
+    why: AmazonLlamaConfig.maxTokenCount lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonllamaconfig_maxtokencount$/)'
+  - id: config-amazonllamaconfig-temperature
+    why: AmazonLlamaConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonllamaconfig_temperature$/)'
+  - id: config-amazonllamaconfig-topp
+    why: AmazonLlamaConfig.topP lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonllamaconfig_topp$/)'
+  - id: config-amazonmistralconfig-max-tokens
+    why: AmazonMistralConfig.max_tokens lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonmistralconfig_max_tokens$/)'
+  - id: config-amazonmistralconfig-temperature
+    why: AmazonMistralConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonmistralconfig_temperature$/)'
+  - id: config-amazonmistralconfig-top-p
+    why: AmazonMistralConfig.top_p lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonmistralconfig_top_p$/)'
+  - id: config-amazonmistralconfig-top-k
+    why: AmazonMistralConfig.top_k lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonmistralconfig_top_k$/)'
+  - id: config-amazonmistralconfig-stop
+    why: AmazonMistralConfig.stop lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonmistralconfig_stop$/)'
+  - id: config-amazontitanconfig-maxtokencount
+    why: AmazonTitanConfig.maxTokenCount lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazontitanconfig_maxtokencount$/)'
+  - id: config-amazontitanconfig-stopsequences
+    why: AmazonTitanConfig.stopSequences lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazontitanconfig_stopsequences$/)'
+  - id: config-amazontitanconfig-temperature
+    why: AmazonTitanConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazontitanconfig_temperature$/)'
+  - id: config-amazontitanconfig-topp
+    why: AmazonTitanConfig.topP lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazontitanconfig_topp$/)'
+  - id: config-amazonanthropicconfig-max-tokens-to-sample
+    why: AmazonAnthropicConfig.max_tokens_to_sample lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonanthropicconfig_max_tokens_to_sample$/)'
+  - id: config-amazonanthropicconfig-stop-sequences
+    why: AmazonAnthropicConfig.stop_sequences lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonanthropicconfig_stop_sequences$/)'
+  - id: config-amazonanthropicconfig-temperature
+    why: AmazonAnthropicConfig.temperature lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonanthropicconfig_temperature$/)'
+  - id: config-amazonanthropicconfig-top-k
+    why: AmazonAnthropicConfig.top_k lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonanthropicconfig_top_k$/)'
+  - id: config-amazonanthropicconfig-top-p
+    why: AmazonAnthropicConfig.top_p lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonanthropicconfig_top_p$/)'
+  - id: config-amazonanthropicconfig-anthropic-version
+    why: AmazonAnthropicConfig.anthropic_version lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_legacy_models_config_cases::case_[0-9]+_loads_amazonanthropicconfig_anthropic_version$/)'
+  - id: case-claude2-parameters
+    why: Supported names are max_tokens,max_completion_tokens,temperature,stop,top_p,stream. Both token aliases
+      write max_tokens_to_sample; stop writes stop_sequences; temperature/top_p copy; stream writes only for literal
+      True, leaving an existing stream value untouched for False/None. Unknown inputs are ignored.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_claude2_parameters$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-legacy-models/ai21-penalties.yaml
 - tools/oracle/cases/helpers/providers/bedrock-legacy-models/cohere-max-tokens.yaml
 - tools/oracle/cases/helpers/providers/bedrock-legacy-models/llama-generation-length.yaml
 - tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-max-tokens.yaml
-- tools/oracle/cases/helpers/providers/bedrock-legacy-models/titan-text-generation-config.yaml
-- tools/oracle/cases/helpers/providers/bedrock-legacy-models/claude2-legacy-names.yaml
 - tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-output-text.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/legacy-config-defaults.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/legacy-config-projection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/titan-stop-filter.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/claude2-parameters.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py:
+  AmazonAnthropicConfig.get_legacy_anthropic_model_names L62-L68 belong to B2231.'
 pitfalls:
-- Preserve family token/stop/sampling parameter renames and legacy model list.
+- The AI21 constructor spells frequencePenalty differently from the usual frequency spelling.
+- The Titan filter reads global litellm.drop_params even when its mapper receives a different drop_params argument.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

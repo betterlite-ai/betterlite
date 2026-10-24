@@ -19,6 +19,40 @@ description: >-
   that prerequisite.
 
 
+  Named case contracts: marengo3_model_detection: Recognize the exact case-sensitive substring marengo-embed-3-
+  in model or empty string; no prefix constraint. Marengo3Params is frozen with extra=ignore and all supported fields
+  default None: inputType,input_type,media_source,media_sources,bucketOwner,startSec,endSec,segmentation,embeddingOption,embeddingType,embeddingScope,inferenceId,textTruncate,lengthSec,useFixedLengthSec,minClipSec.
+  Resolve truthy inputType then input_type then text. Validate types before dropping unsupported parameters: input
+  type must be text,image,video,audio,text_image,multi_input; media sources map strings to strings; numeric times
+  follow source float coercion. Unknown fields are silently ignored. named_media_sources: Build nested records named
+  by inputType: text.inputText, image.mediaSource, video/audio.mediaSource plus timed options, text_image.inputText
+  and mediaSource, multi_input.mediaSources. Each named media source preserves mapping iteration order and contains
+  name,mediaType=image and the source fields. Include multi_input.inputText only for truthy input; text and text_image
+  retain an empty inputText. Include inferenceId whenever not None, including empty string. No extra top-level inference
+  fields survive. required_bucket_owner: Only exact s3:// strings use s3Location with uri and bucketOwner; missing/None
+  owner raises BedrockError 400 with s3:// media requires the 'bucketOwner' parameter, the account id that owns
+  the bucket. An empty owner is accepted. Other strings call B183 get_base64_str and emit base64String without validation
+  or fetching. text_versus_timed_options: Timed fields are startSec,endSec,segmentation,embeddingOption,embeddingType,embeddingScope,
+  emitted only when not None for video/audio. Valid option enums are visual/audio/transcription, separate_embedding/fused_embedding,
+  and clip/asset respectively. Segmentation requires method=fixed with fixed.durationSec integer or method=dynamic
+  with dynamic.minDurationSec integer; retain source coercion and extra-ignore behavior. For other input types,
+  non-None timed fields fail with BedrockError 400 Input type '{input_type}' does not accept {comma_space_joined_fields};
+  set drop_params to drop them, unless drop_params is truthy. Preserve source declaration order in field lists.
+  reject_27_only_options: After parameter validation, reject non-None textTruncate,lengthSec,useFixedLengthSec,minClipSec
+  before checking timed fields. BedrockError 400 message is Marengo 3.0 does not accept the Marengo 2.7 parameters
+  {comma_space_joined_fields}; set drop_params to drop them. False, zero and empty strings count as supplied; None
+  does not. A truthy drop_params silently omits these fields, with no warning. drop_policy: Invalid parameter validation
+  is never bypassed by drop_params. Wrap Pydantic ValidationError as BedrockError 400 Invalid Marengo 3.0 parameters:
+  {details}, where details joins each dotted error location and source message as location: message separated by
+  semicolon-space. Preserve error order, including union validation errors, and B682 error fields; do not invent
+  an error param. For valid records, drop_params defaults False and truthiness controls unsupported-field rejection
+  only. require_input_media: text_image requires media_source not None, otherwise BedrockError 400 Input type 'text_image'
+  requires the 'media_source' parameter; an empty string is allowed. multi_input requires a truthy media_sources
+  mapping, otherwise BedrockError 400 Input type 'multi_input' requires a non-empty 'media_sources' mapping of name
+  to media. Validate all fields and reject unsupported options before these missing-media checks. Neither helper
+  requires nonempty media strings or downloads URLs.
+
+
   Implement crates/betterlite-bedrock/src/marengo_three.rs with adjacent tests under marengo_three/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -35,8 +69,8 @@ description: >-
   Write rstest function marengo_three_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   marengo3_model_detection, named_media_sources, required_bucket_owner, text_versus_timed_options, reject_27_only_options,
   drop_policy, require_input_media. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three* using HelperCase:
@@ -52,9 +86,9 @@ description: >-
 
 
   Budget from 136 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 165 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 381 planned, 400 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 230 production lines, 275 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 645 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -75,49 +109,74 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py#L56-L57
   why: Own is_marengo_3_model. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py#L81-L239
-  why: >-
-    Own Marengo3Params.resolved_input_type, Marengo3Params.timed_media_options, Marengo3Params.given_timed_media_options,
+  why: Own Marengo3Params.resolved_input_type, Marengo3Params.timed_media_options, Marengo3Params.given_timed_media_options,
     Marengo3Params.given_2_7_only_params, _require_bucket_owner, _media_source, _named_media_source, _timed_media_input,
     _describe, _validated_params, _reject_unless_dropped, _require, _require_media_sources, _request_base, build_marengo_3_request.
     Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py#L38-L78
+  why: Exact option fields, enum-backed defaults and validation records.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L594-L697
+  why: Marengo 3 nested variants and timed-media literals.
 dod:
-- text: >-
-    marengo3 model detection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/marengo3-model-detection.yaml.
+- text: 'marengo3_model_detection: Recognize the exact case-sensitive substring marengo-embed-3- in model or empty
+    string; no prefix constraint. Marengo3Params is frozen with extra=ignore and all supported fields default None:
+    inputType,input_type,media_source,media_sources,bucketOwner,startSec,endSec,segmentation,embeddingOption,embeddingType,embeddingScope,inferenceId,textTruncate,lengthSec,useFixedLengthSec,minClipSec.
+    Resolve truthy inputType then input_type then text. Validate types before dropping unsupported parameters: input
+    type must be text,image,video,audio,text_image,multi_input; media sources map strings to strings; numeric times
+    follow source float coercion. Unknown fields are silently ignored.'
   proof:
   - case-marengo3-model-detection
   - oracle
   - helper-python
-- text: >-
-    named media sources: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/named-media-sources.yaml.
+- text: 'named_media_sources: Build nested records named by inputType: text.inputText, image.mediaSource, video/audio.mediaSource
+    plus timed options, text_image.inputText and mediaSource, multi_input.mediaSources. Each named media source
+    preserves mapping iteration order and contains name,mediaType=image and the source fields. Include multi_input.inputText
+    only for truthy input; text and text_image retain an empty inputText. Include inferenceId whenever not None,
+    including empty string. No extra top-level inference fields survive.'
   proof:
   - case-named-media-sources
   - oracle
   - helper-python
-- text: >-
-    required bucket owner: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/required-bucket-owner.yaml.
+- text: 'required_bucket_owner: Only exact s3:// strings use s3Location with uri and bucketOwner; missing/None owner
+    raises BedrockError 400 with s3:// media requires the ''bucketOwner'' parameter, the account id that owns the
+    bucket. An empty owner is accepted. Other strings call B183 get_base64_str and emit base64String without validation
+    or fetching.'
   proof:
   - case-required-bucket-owner
   - oracle
   - helper-python
-- text: >-
-    text versus timed options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/text-versus-timed-options.yaml.
+- text: 'text_versus_timed_options: Timed fields are startSec,endSec,segmentation,embeddingOption,embeddingType,embeddingScope,
+    emitted only when not None for video/audio. Valid option enums are visual/audio/transcription, separate_embedding/fused_embedding,
+    and clip/asset respectively. Segmentation requires method=fixed with fixed.durationSec integer or method=dynamic
+    with dynamic.minDurationSec integer; retain source coercion and extra-ignore behavior. For other input types,
+    non-None timed fields fail with BedrockError 400 Input type ''{input_type}'' does not accept {comma_space_joined_fields};
+    set drop_params to drop them, unless drop_params is truthy. Preserve source declaration order in field lists.'
   proof:
   - case-text-versus-timed-options
   - oracle
   - helper-python
-- text: >-
-    reject 27 only options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/reject-27-only-options.yaml.
+- text: 'reject_27_only_options: After parameter validation, reject non-None textTruncate,lengthSec,useFixedLengthSec,minClipSec
+    before checking timed fields. BedrockError 400 message is Marengo 3.0 does not accept the Marengo 2.7 parameters
+    {comma_space_joined_fields}; set drop_params to drop them. False, zero and empty strings count as supplied;
+    None does not. A truthy drop_params silently omits these fields, with no warning.'
   proof:
   - case-reject-27-only-options
   - oracle
   - helper-python
-- text: 'drop policy: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/drop-policy.yaml.'
+- text: 'drop_policy: Invalid parameter validation is never bypassed by drop_params. Wrap Pydantic ValidationError
+    as BedrockError 400 Invalid Marengo 3.0 parameters: {details}, where details joins each dotted error location
+    and source message as location: message separated by semicolon-space. Preserve error order, including union
+    validation errors, and B682 error fields; do not invent an error param. For valid records, drop_params defaults
+    False and truthiness controls unsupported-field rejection only.'
   proof:
   - case-drop-policy
   - oracle
   - helper-python
-- text: >-
-    require input media: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-marengo-three/require-input-media.yaml.
+- text: 'require_input_media: text_image requires media_source not None, otherwise BedrockError 400 Input type ''text_image''
+    requires the ''media_source'' parameter; an empty string is allowed. multi_input requires a truthy media_sources
+    mapping, otherwise BedrockError 400 Input type ''multi_input'' requires a non-empty ''media_sources'' mapping
+    of name to media. Validate all fields and reject unsupported options before these missing-media checks. Neither
+    helper requires nonempty media strings or downloads URLs.'
   proof:
   - case-require-input-media
   - oracle
@@ -131,36 +190,60 @@ checks:
   - mutants
   commands:
   - id: case-marengo3-model-detection
-    why: The marengo3-model-detection behavior is missing or differs from its pinned fixture.
+    why: 'Recognize the exact case-sensitive substring marengo-embed-3- in model or empty string; no prefix constraint.
+      Marengo3Params is frozen with extra=ignore and all supported fields default None: inputType,input_type,media_source,media_sources,bucketOwner,startSec,endSec,segmentation,embeddingOption,embeddingType,embeddingScope,inferenceId,textTruncate,lengthSec,useFixedLengthSec,minClipSec.
+      Resolve truthy inputType then input_type then text. Validate types before dropping unsupported parameters:
+      input type must be text,image,video,audio,text_image,multi_input; media sources map strings to strings; numeric
+      times follow source float coercion. Unknown fields are silently ignored.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_marengo3_model_detection$/)'
   - id: case-named-media-sources
-    why: The named-media-sources behavior is missing or differs from its pinned fixture.
+    why: 'Build nested records named by inputType: text.inputText, image.mediaSource, video/audio.mediaSource plus
+      timed options, text_image.inputText and mediaSource, multi_input.mediaSources. Each named media source preserves
+      mapping iteration order and contains name,mediaType=image and the source fields. Include multi_input.inputText
+      only for truthy input; text and text_image retain an empty inputText. Include inferenceId whenever not None,
+      including empty string. No extra top-level inference fields survive.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_named_media_sources$/)'
   - id: case-required-bucket-owner
-    why: The required-bucket-owner behavior is missing or differs from its pinned fixture.
+    why: Only exact s3:// strings use s3Location with uri and bucketOwner; missing/None owner raises BedrockError
+      400 with s3:// media requires the 'bucketOwner' parameter, the account id that owns the bucket. An empty owner
+      is accepted. Other strings call B183 get_base64_str and emit base64String without validation or fetching.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_required_bucket_owner$/)'
   - id: case-text-versus-timed-options
-    why: The text-versus-timed-options behavior is missing or differs from its pinned fixture.
+    why: Timed fields are startSec,endSec,segmentation,embeddingOption,embeddingType,embeddingScope, emitted only
+      when not None for video/audio. Valid option enums are visual/audio/transcription, separate_embedding/fused_embedding,
+      and clip/asset respectively. Segmentation requires method=fixed with fixed.durationSec integer or method=dynamic
+      with dynamic.minDurationSec integer; retain source coercion and extra-ignore behavior. For other input types,
+      non-None timed fields fail with BedrockError 400 Input type '{input_type}' does not accept {comma_space_joined_fields};
+      set drop_params to drop them, unless drop_params is truthy. Preserve source declaration order in field lists.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_text_versus_timed_options$/)'
   - id: case-reject-27-only-options
-    why: The reject-27-only-options behavior is missing or differs from its pinned fixture.
+    why: After parameter validation, reject non-None textTruncate,lengthSec,useFixedLengthSec,minClipSec before
+      checking timed fields. BedrockError 400 message is Marengo 3.0 does not accept the Marengo 2.7 parameters
+      {comma_space_joined_fields}; set drop_params to drop them. False, zero and empty strings count as supplied;
+      None does not. A truthy drop_params silently omits these fields, with no warning.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_reject_27_only_options$/)'
   - id: case-drop-policy
-    why: The drop-policy behavior is missing or differs from its pinned fixture.
+    why: 'Invalid parameter validation is never bypassed by drop_params. Wrap Pydantic ValidationError as BedrockError
+      400 Invalid Marengo 3.0 parameters: {details}, where details joins each dotted error location and source message
+      as location: message separated by semicolon-space. Preserve error order, including union validation errors,
+      and B682 error fields; do not invent an error param. For valid records, drop_params defaults False and truthiness
+      controls unsupported-field rejection only.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_drop_policy$/)'
   - id: case-require-input-media
-    why: The require-input-media behavior is missing or differs from its pinned fixture.
+    why: text_image requires media_source not None, otherwise BedrockError 400 Input type 'text_image' requires
+      the 'media_source' parameter; an empty string is allowed. multi_input requires a truthy media_sources mapping,
+      otherwise BedrockError 400 Input type 'multi_input' requires a non-empty 'media_sources' mapping of name to
+      media. Validate all fields and reject unsupported options before these missing-media checks. Neither helper
+      requires nonempty media strings or downloads URLs.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::marengo_three_cases::case_[0-9]+_require_input_media$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_marengo_three.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_marengo_three.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three*")"
       && grep -lq 'bedrock_other_marengo_three' tools/oracle/fuzz/corpus/helper_case/bedrock_other_marengo_three*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_marengo_three$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -179,9 +262,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve multiple named media sources, bucketOwner requirements, text versus timed media shape, 2.7-only option
-  rejection/drop and task selection.
+- drop_params suppresses supported-field rejection only after Pydantic has validated the complete input record.
+- The Marengo 3 bucket-owner check rejects None but accepts an empty account string.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: standard

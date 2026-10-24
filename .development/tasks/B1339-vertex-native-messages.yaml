@@ -1,0 +1,76 @@
+id: B1339
+title: Vertex Claude native Messages adaptation
+description: >-
+  Implement the 122 nonblank noncomment lines of experimental_pass_through/transformation.py
+  as vertex_messages policy in betterlite-vertex and a small betterlite-core api adapter over
+  B961/B962 native Messages normalization. Keep the leaf independent of core: it receives
+  normalized records; the core adapter calls the parent stages and then Vertex overrides.
+  B1301 safe getters resolve project/location/credentials, B1302 supplies the token and B1304
+  forms the Claude rawPredict/streamRawPredict URL. Work on a copy of headers, overwrite
+  Authorization with Bearer and content-type with application/json. Merge existing comma-separated
+  beta values with compact/context-management edits, web-search-2025-03-05 for hosted web-search
+  tools, B568's Vertex tool-search beta, dangerous-tool-use-2026-09-03 when safeguards is present,
+  and per-turn-control-2026-07-01 when messages carry output_config. Preserve the source's
+  empty stripped entries from existing beta headers. The body normalizes system-role messages,
+  removes cache_control.scope, sets anthropic_version=vertex-2023-10-16, removes model and
+  applies B1333's output sanitizer. Strip billing metadata through the parent policy. get_complete_url
+  returns the already prepared base or fails when absent. Register pure helper vertex_messages
+  with deployment_headers_unchanged, compact_and_clear, safeguards_empty, per_turn_output,
+  cache_scope_removed and version_in_body. Core tests native_vertex_adapter assert the parent
+  normalization and leaf override both run. No route is registered here; B081 keeps its route
+  ownership and B032 installs this provider's operation. Budget 180 leaf code, 100 composition,
+  160 tests and 120 oracle lines, cap 625.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,vertex_messages}.rs
+    - crates/betterlite-vertex/src/vertex_messages/**
+    - crates/betterlite-core/src/api/{mod,vertex_messages}.rs
+    - crates/betterlite-core/src/api/vertex_messages/**
+    - crates/betterlite-core/Cargo.toml
+    - tools/oracle/src/helpers/{mod,vertex_messages}.rs
+    - tools/oracle/helpers/{dispatch,vertex_messages}.py
+    - tools/oracle/cases/helpers/vertex-messages/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_messages*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py#L20-L162
+    why: Native Messages auth, beta membership and body normalization overrides.
+dod:
+  - text: Vertex native Messages preserves copied deployment headers, beta membership and body-only versioning.
+    proof: [messages-policy, messages-python, oracle]
+  - text: Core adaptation composes native normalization with Vertex policy without a leaf-to-core dependency.
+    proof: [messages-composition]
+  - text: New native-Messages helper fixtures decode into the correct policy operation.
+    proof: [messages-seeds]
+checks:
+  optional: []
+  commands:
+    - id: messages-policy
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_messages::/) - test(replays_)'
+      why: The leaf tests must detect shared-header mutation and missing Vertex betas.
+    - id: messages-composition
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vertex_messages::tests::native_vertex_adapter/)'
+      why: Parent system/cache normalization must be called by the actual native adapter.
+    - id: messages-python
+      run: test -f tools/oracle/helpers/vertex_messages.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The helper invokes provider transformations with fixed credentials rather than a FastAPI handler.
+    - id: messages-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_messages*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_messages::/)'
+      why: Native provider fixture tags must be exercised by the shared parser.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-messages/deployment-headers-unchanged.yaml
+  - tools/oracle/cases/helpers/vertex-messages/compact-and-clear.yaml
+  - tools/oracle/cases/helpers/vertex-messages/safeguards-empty.yaml
+  - tools/oracle/cases/helpers/vertex-messages/per-turn-output.yaml
+  - tools/oracle/cases/helpers/vertex-messages/cache-scope-removed.yaml
+  - tools/oracle/cases/helpers/vertex-messages/version-in-body.yaml
+deviations: []
+out_of_scope:
+  - B961/B962 own inherited native Messages parsing and normalization; B1333 owns output parameter sanitization and chat-specific media behavior.
+  - Public Messages paths and authentication remain B081; this adapter cannot register duplicate routes.
+pitfalls:
+  - safeguards={} still adds the dangerous-tool-use beta because the condition is not None.
+  - Existing anthropic-beta values are stripped but empty entries are not filtered in this native path.
+  - get_complete_url must not append a second endpoint suffix after validation built rawPredict.
+budget: {max_changed_lines: 625, max_new_expects: 0}
+review_level: security

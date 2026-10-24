@@ -4,8 +4,10 @@ description: >-
   Implement inference and closed credential selection: explicit azure_credential then AZURE_CREDENTIAL then source
   inference. DefaultAzureCredential tries configured environment credentials, workload identity and managed identity;
   DeploymentIdentityCredential tries complete workload identity, user-assigned identity when a client id exists,
-  then system-assigned identity. Preserve inference ordering, including the client-id branch before certificate
-  inference. Reuse the individual grant implementations; credential settings and token cache are B529.
+  then system-assigned identity after an unavailable result. An actual authentication error stops the chain. Preserve
+  inference ordering, including the client-id branch before certificate inference. Reuse the individual grant implementations;
+  Shared resolved credential inputs live in betterlite-config; B529 is the upper selector and must not be a prerequisite.
+  The individual grant owners supply token caching.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/common_utils.py:
@@ -19,6 +21,62 @@ description: >-
 
   Add the Rust-only unsupported_credential_name case for startup rejection of an AZURE_CREDENTIAL value outside
   the listed enum.
+
+
+  Named case contracts: explicit_credential: Truthy explicit azure_credential.value wins, then truthy AZURE_CREDENTIAL,
+  then inference; an empty env string falls through. Resolve azure_scope only when None: truthy AZURE_SCOPE else
+  https://cognitiveservices.azure.com/.default; explicit empty scope is forwarded. Log For Azure AD Token Provider,
+  choosing credential type: {cred}. client_secret_inference: Only a truthy AZURE_CLIENT_ID+AZURE_CLIENT_SECRET+AZURE_TENANT_ID
+  triplet selects ClientSecretCredential. Next any truthy AZURE_FEDERATED_TOKEN_FILE selects DefaultAzureCredential,
+  even with incomplete tenant/client configuration. client_id_before_certificate: After the secret/token-file checks,
+  any truthy AZURE_CLIENT_ID selects ManagedIdentityCredential before certificate. Otherwise either AZURE_CERTIFICATE_PASSWORD
+  or AZURE_CERTIFICATE_PATH selects CertificateCredential, even when required client/tenant/path is missing; do
+  not silently fall back when construction fails. deployment_chain_order: Construct workload only with truthy client_id,
+  tenant_id and federated_token_file; add user-assigned identity only for truthy client_id; always append ManagedIdentityCredential()
+  with NO client_id. Constructors are eager, tokens lazy. Return first token; fall through only CredentialUnavailableError,
+  stop on other authentication/constructor failures. Do not say every failing user identity triggers system fallback.
+  default_chain_fallback: DefaultAzureCredential tries environment, workload and managed identity in source order.
+  Environment selection uses env value is-not-None (empty values count present), unlike LiteLLM inference: complete
+  client-secret variables win, then AZURE_CLIENT_CERTIFICATE_PATH+client/tenant, then client/username/password with
+  optional tenant. Incomplete environment yields its named unavailable error. Preserve actual authentication-error
+  short circuit; the declared native developer-credential deviation applies after these links. credential_constructor_arguments:
+  ClientSecretCredential receives required env client_id/client_secret/tenant_id; ManagedIdentityCredential receives
+  required AZURE_CLIENT_ID (missing key fails even though SDK alone could do system identity). CertificateCredential
+  receives required client_id/tenant_id/certificate_path; include password only when truthy. Missing env keys remain
+  the corresponding KeyError before token acquisition; never substitute empty strings. default_environment_certificate:
+  The default-chain certificate inputs are AZURE_CLIENT_CERTIFICATE_PATH/PASSWORD, distinct from LiteLLM AZURE_CERTIFICATE_PATH/PASSWORD.
+  AZURE_CLIENT_SEND_CERTIFICATE_CHAIN uses Python bool on the env string (nonempty false is true), default False;
+  pass the flag to B674. Environment username/password passes AZURE_TENANT_ID (unlike B675 direct wrapper) and emits
+  Environment is configured to use username and password authentication. This authentication method is deprecated,
+  as it doesn't support multifactor authentication (MFA). For more details, see https://aka.ms/azsdk/identity/mfa.
+  default_credential_filter: AZURE_TOKEN_CREDENTIALS defaults empty, strips whitespace and lowercases. prod selects
+  environment/workload/managed; named environmentcredential/workloadidentitycredential/managedidentitycredential
+  selects only that link. dev or a named developer/interactive credential is handled by the declared native unsupported-credential
+  deviation. Invalid names raise the SDK Invalid value for AZURE_TOKEN_CREDENTIALS: {value}. Valid values are: dev,
+  prod, azureclicredential, azuredeveloperclicredential, azurepowershellcredential, environmentcredential, interactivebrowsercredential,
+  managedidentitycredential, visualstudiocodecredential, workloadidentitycredential. No token request precedes rejection.
+  default_provider_try_boundary: _try_get_default_azure_credential_provider forces DefaultAzureCredential with supplied
+  scope and returns its callable. Log attempt/success; catch any construction exception, debug DefaultAzureCredential
+  failed: {e}, return None. Do not catch later invocation errors or acquire a token during construction. chain_exhaustion:
+  Exhaustion emits a warning and ClientAuthenticationError starting {chain class} failed to retrieve a token from
+  the included credentials., followed by Attempted credentials: and ordered credential/error lines, then https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot.
+  Preserve visited-prefix history on an authentication short circuit; use B187 to redact secret values. generic_credential_constructor:
+  A supported WorkloadIdentityCredential env name invokes the SDK no-argument constructor and reads its required
+  environment. UsernamePasswordCredential through AZURE_CREDENTIAL reaches a no-argument constructor and fails for
+  missing required client_id/username/password; it must not silently reuse the B675 explicit-argument wrapper.
+
+
+  Load AZURE_TOKEN_CREDENTIALS, AZURE_CLIENT_CERTIFICATE_PATH, AZURE_CLIENT_CERTIFICATE_PASSWORD, AZURE_CLIENT_SEND_CERTIFICATE_CHAIN
+  through betterlite-config, with injected environment lookup and the defaults/precedence stated here. Deployment
+  inputs use litellm_params and global inputs use litellm_settings. Add config rstest azure_default_chain_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  The newly loaded certificate env strings default absent; AZURE_TOKEN_CREDENTIALS defaults empty and certificate-chain
+  flag defaults false with source Python string truthiness. Existing AZURE_SCOPE/client/tenant/secret/username/password
+  and authority loader records are reused from betterlite-config without depending on upper B529. This task reads
+  no deployment azure_credential key beyond the existing resolved selector input.
 
 
   Implement crates/betterlite-azure/src/azure_default_chain.rs with adjacent tests under azure_default_chain/. Keep
@@ -35,10 +93,11 @@ description: >-
 
 
   Write rstest function azure_default_chain_cases in betterlite-azure with these exact named cases (one per oracle
-  file): explicit_credential, client_secret_inference, client_id_before_certificate, deployment_chain_order, default_chain_fallback.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file): explicit_credential, client_secret_inference, client_id_before_certificate, deployment_chain_order, default_chain_fallback,
+  credential_constructor_arguments, default_environment_certificate, default_credential_filter, default_provider_try_boundary,
+  chain_exhaustion, generic_credential_constructor. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_default_chain* using HelperCase: kind:
@@ -83,9 +142,9 @@ description: >-
 
 
   Budget from 135 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 165 production lines, 163 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 37 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 480 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 235 production lines, 285 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 100 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 775 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -118,39 +177,56 @@ scope:
   - crates/betterlite-config/fuzz/corpus/config_yaml/azure_default_chain*
   lint_tables: false
 references:
-- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.26.0/sdk/identity/azure-identity/azure/identity/_credentials/default.py#L147-L316
-  why: Credential behavior in the installed oracle azure-identity 1.26.0; capture its transport seam instead of
-    copying its Python SDK internals.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/default.py#L147-L316
+  why: Credential behavior in the locked azure-identity 1.25.2; capture its transport seam instead of copying its
+    Python SDK internals.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L451-L478
   why: Own BaseAzureLLM._try_get_default_azure_credential_provider. Other functions in this file remain with the
     owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L11-L135
   why: Own infer_credential_type_from_environment, get_azure_ad_token_provider. Other functions in this file remain
     with the owners listed below.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/chained.py#L107-L174
+  why: Continue only unavailable credentials; exact history and warning.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_credentials/environment.py#L60-L113
+  why: Presence-based environment selection and certificate-chain flag.
+- url: https://github.com/Azure/azure-sdk-for-python/blob/azure-identity_1.25.2/sdk/identity/azure-identity/azure/identity/_internal/utils.py#L145-L205
+  why: AZURE_TOKEN_CREDENTIALS filter and exact invalid-name message.
 dod:
-- text: 'explicit credential: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-default-chain/explicit-credential.yaml.'
+- text: 'explicit_credential: Truthy explicit azure_credential.value wins, then truthy AZURE_CREDENTIAL, then inference;
+    an empty env string falls through. Resolve azure_scope only when None: truthy AZURE_SCOPE else https://cognitiveservices.azure.com/.default;
+    explicit empty scope is forwarded. Log For Azure AD Token Provider, choosing credential type: {cred}.'
   proof:
   - case-explicit-credential
   - oracle
   - helper-python
-- text: >-
-    client secret inference: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-default-chain/client-secret-inference.yaml.
+- text: 'client_secret_inference: Only a truthy AZURE_CLIENT_ID+AZURE_CLIENT_SECRET+AZURE_TENANT_ID triplet selects
+    ClientSecretCredential. Next any truthy AZURE_FEDERATED_TOKEN_FILE selects DefaultAzureCredential, even with
+    incomplete tenant/client configuration.'
   proof:
   - case-client-secret-inference
   - oracle
   - helper-python
-- text: >-
-    client id before certificate: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-default-chain/client-id-before-certificate.yaml.
+- text: 'client_id_before_certificate: After the secret/token-file checks, any truthy AZURE_CLIENT_ID selects ManagedIdentityCredential
+    before certificate. Otherwise either AZURE_CERTIFICATE_PASSWORD or AZURE_CERTIFICATE_PATH selects CertificateCredential,
+    even when required client/tenant/path is missing; do not silently fall back when construction fails.'
   proof:
   - case-client-id-before-certificate
   - oracle
   - helper-python
-- text: 'deployment chain order: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-default-chain/deployment-chain-order.yaml.'
+- text: 'deployment_chain_order: Construct workload only with truthy client_id, tenant_id and federated_token_file;
+    add user-assigned identity only for truthy client_id; always append ManagedIdentityCredential() with NO client_id.
+    Constructors are eager, tokens lazy. Return first token; fall through only CredentialUnavailableError, stop
+    on other authentication/constructor failures. Do not say every failing user identity triggers system fallback.'
   proof:
   - case-deployment-chain-order
   - oracle
   - helper-python
-- text: 'default chain fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-default-chain/default-chain-fallback.yaml.'
+- text: 'default_chain_fallback: DefaultAzureCredential tries environment, workload and managed identity in source
+    order. Environment selection uses env value is-not-None (empty values count present), unlike LiteLLM inference:
+    complete client-secret variables win, then AZURE_CLIENT_CERTIFICATE_PATH+client/tenant, then client/username/password
+    with optional tenant. Incomplete environment yields its named unavailable error. Preserve actual authentication-error
+    short circuit; the declared native developer-credential deviation applies after these links.'
   proof:
   - case-default-chain-fallback
   - oracle
@@ -187,65 +263,136 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'credential_constructor_arguments: ClientSecretCredential receives required env client_id/client_secret/tenant_id;
+    ManagedIdentityCredential receives required AZURE_CLIENT_ID (missing key fails even though SDK alone could do
+    system identity). CertificateCredential receives required client_id/tenant_id/certificate_path; include password
+    only when truthy. Missing env keys remain the corresponding KeyError before token acquisition; never substitute
+    empty strings.'
+  proof:
+  - case-credential-constructor-arguments
+  - oracle
+  - helper-python
+- text: 'default_environment_certificate: The default-chain certificate inputs are AZURE_CLIENT_CERTIFICATE_PATH/PASSWORD,
+    distinct from LiteLLM AZURE_CERTIFICATE_PATH/PASSWORD. AZURE_CLIENT_SEND_CERTIFICATE_CHAIN uses Python bool
+    on the env string (nonempty false is true), default False; pass the flag to B674. Environment username/password
+    passes AZURE_TENANT_ID (unlike B675 direct wrapper) and emits Environment is configured to use username and
+    password authentication. This authentication method is deprecated, as it doesn''t support multifactor authentication
+    (MFA). For more details, see https://aka.ms/azsdk/identity/mfa.'
+  proof:
+  - case-default-environment-certificate
+  - oracle
+  - helper-python
+- text: 'default_credential_filter: AZURE_TOKEN_CREDENTIALS defaults empty, strips whitespace and lowercases. prod
+    selects environment/workload/managed; named environmentcredential/workloadidentitycredential/managedidentitycredential
+    selects only that link. dev or a named developer/interactive credential is handled by the declared native unsupported-credential
+    deviation. Invalid names raise the SDK Invalid value for AZURE_TOKEN_CREDENTIALS: {value}. Valid values are:
+    dev, prod, azureclicredential, azuredeveloperclicredential, azurepowershellcredential, environmentcredential,
+    interactivebrowsercredential, managedidentitycredential, visualstudiocodecredential, workloadidentitycredential.
+    No token request precedes rejection.'
+  proof:
+  - case-default-credential-filter
+  - oracle
+  - helper-python
+- text: 'default_provider_try_boundary: _try_get_default_azure_credential_provider forces DefaultAzureCredential
+    with supplied scope and returns its callable. Log attempt/success; catch any construction exception, debug DefaultAzureCredential
+    failed: {e}, return None. Do not catch later invocation errors or acquire a token during construction.'
+  proof:
+  - case-default-provider-try-boundary
+  - oracle
+  - helper-python
+- text: 'chain_exhaustion: Exhaustion emits a warning and ClientAuthenticationError starting {chain class} failed
+    to retrieve a token from the included credentials., followed by Attempted credentials: and ordered credential/error
+    lines, then https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot. Preserve visited-prefix
+    history on an authentication short circuit; use B187 to redact secret values.'
+  proof:
+  - case-chain-exhaustion
+  - oracle
+  - helper-python
+- text: 'generic_credential_constructor: A supported WorkloadIdentityCredential env name invokes the SDK no-argument
+    constructor and reads its required environment. UsernamePasswordCredential through AZURE_CREDENTIAL reaches
+    a no-argument constructor and fails for missing required client_id/username/password; it must not silently reuse
+    the B675 explicit-argument wrapper.'
+  proof:
+  - case-generic-credential-constructor
+  - oracle
+  - helper-python
+- text: The real config loader resolves AZURE_TOKEN_CREDENTIALS, including its default and precedence.
+  proof:
+  - config-azure-token-credentials
+- text: The real config loader resolves AZURE_CLIENT_CERTIFICATE_PATH, including its default and precedence.
+  proof:
+  - config-azure-client-certificate-path
+- text: The real config loader resolves AZURE_CLIENT_CERTIFICATE_PASSWORD, including its default and precedence.
+  proof:
+  - config-azure-client-certificate-password
+- text: The real config loader resolves AZURE_CLIENT_SEND_CERTIFICATE_CHAIN, including its default and precedence.
+  proof:
+  - config-azure-client-send-certificate-chain
 checks:
   optional:
   - mutants
   commands:
   - id: case-explicit-credential
-    why: The explicit-credential behavior is missing or differs from its pinned fixture.
+    why: 'Truthy explicit azure_credential.value wins, then truthy AZURE_CREDENTIAL, then inference; an empty env
+      string falls through. Resolve azure_scope only when None: truthy AZURE_SCOPE else https://cognitiveservices.azure.com/.default;
+      explicit empty scope is forwarded. Log For Azure AD Token Provider, choosing credential type: {cred}.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_explicit_credential$/)'
   - id: case-client-secret-inference
-    why: The client-secret-inference behavior is missing or differs from its pinned fixture.
+    why: Only a truthy AZURE_CLIENT_ID+AZURE_CLIENT_SECRET+AZURE_TENANT_ID triplet selects ClientSecretCredential.
+      Next any truthy AZURE_FEDERATED_TOKEN_FILE selects DefaultAzureCredential, even with incomplete tenant/client
+      configuration.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_client_secret_inference$/)'
   - id: case-client-id-before-certificate
-    why: The client-id-before-certificate behavior is missing or differs from its pinned fixture.
+    why: After the secret/token-file checks, any truthy AZURE_CLIENT_ID selects ManagedIdentityCredential before
+      certificate. Otherwise either AZURE_CERTIFICATE_PASSWORD or AZURE_CERTIFICATE_PATH selects CertificateCredential,
+      even when required client/tenant/path is missing; do not silently fall back when construction fails.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_client_id_before_certificate$/)'
   - id: case-deployment-chain-order
-    why: The deployment-chain-order behavior is missing or differs from its pinned fixture.
+    why: Construct workload only with truthy client_id, tenant_id and federated_token_file; add user-assigned identity
+      only for truthy client_id; always append ManagedIdentityCredential() with NO client_id. Constructors are eager,
+      tokens lazy. Return first token; fall through only CredentialUnavailableError, stop on other authentication/constructor
+      failures. Do not say every failing user identity triggers system fallback.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_deployment_chain_order$/)'
   - id: case-default-chain-fallback
-    why: The default-chain-fallback behavior is missing or differs from its pinned fixture.
+    why: 'DefaultAzureCredential tries environment, workload and managed identity in source order. Environment selection
+      uses env value is-not-None (empty values count present), unlike LiteLLM inference: complete client-secret
+      variables win, then AZURE_CLIENT_CERTIFICATE_PATH+client/tenant, then client/username/password with optional
+      tenant. Incomplete environment yields its named unavailable error. Preserve actual authentication-error short
+      circuit; the declared native developer-credential deviation applies after these links.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_default_chain_fallback$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_default_chain.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_default_chain.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_default_chain*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_default_chain*")"
       && grep -lq 'azure_default_chain' tools/oracle/fuzz/corpus/helper_case/azure_default_chain* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_default_chain$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-azure-credential
     why: The AZURE_CREDENTIAL setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_credential$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_credential$/)'
       && grep -lq 'AZURE_CREDENTIAL' crates/betterlite-config/fuzz/corpus/config_yaml/azure_default_chain*
   - id: config-azure-federated-token-file
     why: The AZURE_FEDERATED_TOKEN_FILE setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_federated_token_file$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_federated_token_file$/)'
       && grep -lq 'AZURE_FEDERATED_TOKEN_FILE' crates/betterlite-config/fuzz/corpus/config_yaml/azure_default_chain*
   - id: config-azure-certificate-path
     why: The AZURE_CERTIFICATE_PATH setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_certificate_path$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_certificate_path$/)'
       && grep -lq 'AZURE_CERTIFICATE_PATH' crates/betterlite-config/fuzz/corpus/config_yaml/azure_default_chain*
   - id: config-azure-certificate-password
     why: The AZURE_CERTIFICATE_PASSWORD setting is not loaded with its required defaults and precedence.
-    run: >-
-      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_certificate_password$/)'
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_certificate_password$/)'
       && grep -lq 'AZURE_CERTIFICATE_PASSWORD' crates/betterlite-config/fuzz/corpus/config_yaml/azure_default_chain*
   - id: config-unknown-key
     why: The extension silently accepts unrelated unsupported configuration.
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
   - id: config-corpus
     why: New operation-specific config seeds are absent or do not replay through B002.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_default_chain*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_default_chain*")"
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: unsupported-credential-name
     why: The unsupported credential name invariant has no passing production test.
@@ -256,47 +403,102 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_secret_safe_failure$/)'
+  - id: case-credential-constructor-arguments
+    why: ClientSecretCredential receives required env client_id/client_secret/tenant_id; ManagedIdentityCredential
+      receives required AZURE_CLIENT_ID (missing key fails even though SDK alone could do system identity). CertificateCredential
+      receives required client_id/tenant_id/certificate_path; include password only when truthy. Missing env keys
+      remain the corresponding KeyError before token acquisition; never substitute empty strings.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_credential_constructor_arguments$/)'
+  - id: case-default-environment-certificate
+    why: The default-chain certificate inputs are AZURE_CLIENT_CERTIFICATE_PATH/PASSWORD, distinct from LiteLLM
+      AZURE_CERTIFICATE_PATH/PASSWORD. AZURE_CLIENT_SEND_CERTIFICATE_CHAIN uses Python bool on the env string (nonempty
+      false is true), default False; pass the flag to B674. Environment username/password passes AZURE_TENANT_ID
+      (unlike B675 direct wrapper) and emits Environment is configured to use username and password authentication.
+      This authentication method is deprecated, as it doesn't support multifactor authentication (MFA). For more
+      details, see https://aka.ms/azsdk/identity/mfa.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_default_environment_certificate$/)'
+  - id: case-default-credential-filter
+    why: 'AZURE_TOKEN_CREDENTIALS defaults empty, strips whitespace and lowercases. prod selects environment/workload/managed;
+      named environmentcredential/workloadidentitycredential/managedidentitycredential selects only that link. dev
+      or a named developer/interactive credential is handled by the declared native unsupported-credential deviation.
+      Invalid names raise the SDK Invalid value for AZURE_TOKEN_CREDENTIALS: {value}. Valid values are: dev, prod,
+      azureclicredential, azuredeveloperclicredential, azurepowershellcredential, environmentcredential, interactivebrowsercredential,
+      managedidentitycredential, visualstudiocodecredential, workloadidentitycredential. No token request precedes
+      rejection.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_default_credential_filter$/)'
+  - id: case-default-provider-try-boundary
+    why: '_try_get_default_azure_credential_provider forces DefaultAzureCredential with supplied scope and returns
+      its callable. Log attempt/success; catch any construction exception, debug DefaultAzureCredential failed:
+      {e}, return None. Do not catch later invocation errors or acquire a token during construction.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_default_provider_try_boundary$/)'
+  - id: case-chain-exhaustion
+    why: 'Exhaustion emits a warning and ClientAuthenticationError starting {chain class} failed to retrieve a token
+      from the included credentials., followed by Attempted credentials: and ordered credential/error lines, then
+      https://aka.ms/azsdk/python/identity/defaultazurecredential/troubleshoot. Preserve visited-prefix history
+      on an authentication short circuit; use B187 to redact secret values.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_chain_exhaustion$/)'
+  - id: case-generic-credential-constructor
+    why: A supported WorkloadIdentityCredential env name invokes the SDK no-argument constructor and reads its required
+      environment. UsernamePasswordCredential through AZURE_CREDENTIAL reaches a no-argument constructor and fails
+      for missing required client_id/username/password; it must not silently reuse the B675 explicit-argument wrapper.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_default_chain_cases::case_[0-9]+_generic_credential_constructor$/)'
+  - id: config-azure-token-credentials
+    why: AZURE_TOKEN_CREDENTIALS lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_token_credentials$/)'
+  - id: config-azure-client-certificate-path
+    why: AZURE_CLIENT_CERTIFICATE_PATH lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_client_certificate_path$/)'
+  - id: config-azure-client-certificate-password
+    why: AZURE_CLIENT_CERTIFICATE_PASSWORD lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_client_certificate_password$/)'
+  - id: config-azure-client-send-certificate-chain
+    why: AZURE_CLIENT_SEND_CERTIFICATE_CHAIN lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_default_chain_config_cases::case_[0-9]+_loads_azure_client_send_certificate_chain$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-default-chain/explicit-credential.yaml
 - tools/oracle/cases/helpers/providers/azure-default-chain/client-secret-inference.yaml
 - tools/oracle/cases/helpers/providers/azure-default-chain/client-id-before-certificate.yaml
 - tools/oracle/cases/helpers/providers/azure-default-chain/deployment-chain-order.yaml
 - tools/oracle/cases/helpers/providers/azure-default-chain/default-chain-fallback.yaml
+- tools/oracle/cases/helpers/providers/azure-default-chain/credential-constructor-arguments.yaml
+- tools/oracle/cases/helpers/providers/azure-default-chain/default-environment-certificate.yaml
+- tools/oracle/cases/helpers/providers/azure-default-chain/default-credential-filter.yaml
+- tools/oracle/cases/helpers/providers/azure-default-chain/default-provider-try-boundary.yaml
+- tools/oracle/cases/helpers/providers/azure-default-chain/chain-exhaustion.yaml
+- tools/oracle/cases/helpers/providers/azure-default-chain/generic-credential-constructor.yaml
 deviations:
-- what: >-
-    AZURE_CREDENTIAL is a closed enum supporting ClientSecretCredential, CertificateCredential, UsernamePasswordCredential,
+- what: AZURE_CREDENTIAL is a closed enum supporting ClientSecretCredential, CertificateCredential, UsernamePasswordCredential,
     ManagedIdentityCredential, WorkloadIdentityCredential, DefaultAzureCredential and DeploymentIdentityCredential;
     arbitrary azure.identity class names fail configuration validation.
-  why: 'Architect decision: Python getattr permits classes without native equivalents; no subprocess or interactive
-    credentials are available.'
+  why: Native credential implementations are a closed set; the repository forbids subprocess credential acquisition.
+    Preserve constructor errors for supported SDK names instead of inventing arguments.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L72-L130
-- what: >-
-    DefaultAzureCredential omits developer CLI, PowerShell, broker and interactive credentials and reports exhaustion
-    when native environment, workload and managed identity sources fail.
+- what: DefaultAzureCredential omits developer CLI, PowerShell, VS Code, shared developer token caches, broker and
+    interactive credentials. Native environment/workload/managed exhaustion returns ClientAuthenticationError; AZURE_TOKEN_CREDENTIALS
+    selecting only dev or a developer/interactive name fails startup with that unsupported setting named.
   why: The repository forbids subprocess credential acquisition; B673-B676 implement the native grants.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/get_azure_ad_token_provider.py#L103-L127
 out_of_scope:
-- 'litellm/llms/azure/common_utils.py: get_azure_ad_token_from_oidc L199-L284 belong to B530; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/azure/common_utils.py: select_azure_base_url_or_endpoint L287-L296; BaseAzureLLM.get_azure_openai_client
-  L480-L600; BaseAzureLLM.initialize_azure_sdk_client L602-L696; BaseAzureLLM._init_azure_client_for_cloudflare_ai_gateway
-  L698-L750; BaseAzureLLM._base_validate_azure_environment L753-L778; BaseAzureLLM._get_base_azure_url L781-L830;
-  BaseAzureLLM.get_azure_v1_image_url L833-L856; BaseAzureLLM._is_azure_v1_api_version L859-L862; BaseAzureLLM._resolve_env_var
-  L864-L876; get_azure_credentials L885-L904 belong to B531; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/common_utils.py: process_azure_headers L66-L78; _cached_entra_id_token_provider L82-L96; _cached_azure_ad_token_refresh_provider
-  L100-L101; get_azure_ad_token L299-L411; _resolve_azure_ad_token L418-L424; get_azure_request_auth_headers L427-L439;
-  redact_azure_auth_headers L442-L446 belong to B529; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/common_utils.py: AzureOpenAIError.__init__ L47-L63; get_azure_ad_token_from_entra_id L104-L157
-  belong to B673; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/common_utils.py: get_azure_ad_token_from_username_password L160-L196 belong to B675; reuse
-  that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: select_azure_base_url_or_endpoint L287-L296;
+  BaseAzureLLM._base_validate_azure_environment L752-L778; BaseAzureLLM._get_base_azure_url L780-L830; BaseAzureLLM.get_azure_v1_image_url
+  L832-L856; BaseAzureLLM._is_azure_v1_api_version L858-L862; BaseAzureLLM._resolve_env_var L864-L876; get_azure_credentials
+  L885-L904 belong to B2200.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: process_azure_headers L66-L78; _cached_azure_ad_token_refresh_provider
+  L99-L101; get_azure_ad_token L299-L411; _resolve_azure_ad_token L418-L424; get_azure_request_auth_headers L427-L439;
+  redact_azure_auth_headers L442-L446 belong to B529.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: get_azure_ad_token_from_oidc L199-L284 belong
+  to B530.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: BaseAzureLLM.get_azure_openai_client L480-L600;
+  BaseAzureLLM.initialize_azure_sdk_client L602-L696; BaseAzureLLM._init_azure_client_for_cloudflare_ai_gateway
+  L698-L750 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: AzureOpenAIError.__init__ L47-L63; _cached_entra_id_token_provider
+  L81-L96; get_azure_ad_token_from_entra_id L104-L157 belong to B673.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: get_azure_ad_token_from_username_password L160-L196
+  belong to B675.'
 pitfalls:
-- DeploymentIdentityCredential must try system-assigned identity after a failing user-assigned identity.
+- AZURE_CERTIFICATE_PATH drives explicit LiteLLM inference; DefaultAzureCredential reads the different AZURE_CLIENT_CERTIFICATE_PATH.
+- DeploymentIdentityCredential is a ChainedTokenCredential, whose authentication failure stops before later identities.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: security

@@ -1,15 +1,41 @@
 id: B583
 title: Anthropic SSE decoding and cancellation
 description: >-
-  Connect the existing SSE framing parser to bounded native event decoding and owned async iteration. Preserve split
-  UTF-8/events, comments and multi-line data, and separate parser errors from valid native error events. Synchronous
-  Python iteration remains B158 over the same Rust stream; no duplicate parser is allowed.
+  Connect the existing SSE framing parser to bounded native event decoding and owned async iteration. Preserve the
+  source iterator line handling and JSON-fragment accumulation, including its different bytes/string and passthrough
+  behavior; do not invent standard SSE dispatch semantics at this boundary. Synchronous Python iteration remains
+  B158 over the same Rust stream; no duplicate parser is allowed.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/chat/handler.py:
   _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data L1151-L1174; ModelResponseIterator.__iter__
   L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__ L1222-L1224; ModelResponseIterator.__anext__
   L1226-L1265; ModelResponseIterator.convert_str_chunk_to_generic_chunk L1267-L1290.
+
+
+  Named case contracts: split_event_data: A line must start exact data:; strip first5 characters without trimming.
+  Try JSON directly while chunk_type=valid_json; first JSONDecodeError switches permanently to accumulated_json
+  and B582 accumulation. Already parsed nondict JSON reaches chunk_parser and can fail by source attribute/key errors;
+  only accumulation skips nondict values. split_unicode: Native sync/async iterator bytes are UTF-8 decoded per
+  yielded chunk, then scanned to first data: substring; a split UTF-8 sequence at this boundary raises decode ValueError
+  wrapped as RuntimeError Error parsing chunk: <error>,\nReceived chunk: <chunk>. B005 transport line decoding may
+  reassemble network UTF-8 before this boundary; test that separately without changing the direct helper oracle.
+  multi_line_sse: String iterator chunks are not scanned for an embedded data: prefix; byte chunks are. Non-data/comment/event/blank
+  chunks emit GenericStreamingChunk text empty,is_finished=false,finish_reason empty,usage=None,index0,tool_use=None.
+  Multiple data lines in one string are not normalized/concatenated as standard SSE here. done_marker: There is
+  no [DONE] special case. data:[DONE] fails JSON and remains an incomplete accumulator; EOF drains complete dict
+  values then ends without a terminal marker. A valid message_stop chunk itself does not end iteration. invalid_json_event:
+  Malformed/incomplete JSON switches to accumulation and may be silently left at EOF. Receiving ValueError wraps
+  as RuntimeError Error receiving chunk from stream: <error>; parsing ValueError wraps as Error parsing chunk: <error>,\nReceived
+  chunk: <chunk>; other exceptions retain their class. Native AnthropicError500 is not swallowed by either ValueError
+  handler. native_error_event: Replay B582 type=error statuses/messages through sync and async iteration; rate-limit
+  error event is still AnthropicError500, distinct from the byte/JSON parser failures. truncated_final_event: On
+  each StopIteration/StopAsyncIteration, drain B582 with empty fragment and is_final=True if buffer truthy; return
+  one remaining dict chunk per invocation, then stop when no complete dict remains. Truncated trailing bytes produce
+  no invented error or finish chunk. passthrough_chunk_conversion: convert_str_chunk_to_generic_chunk scans first
+  data: for both bytes and strings, JSON-decodes the entire remaining string once (no accumulation), then dispatches
+  B582. Invalid JSON propagates JSONDecodeError directly; no data yields a default ModelResponseStream with state
+  id. Preserve this asymmetry with native iteration.
 
 
   Implement crates/betterlite-anthropic/src/stream_decode.rs with adjacent tests under stream_decode/. Keep each
@@ -26,10 +52,10 @@ description: >-
 
 
   Write rstest function stream_decode_cases in betterlite-anthropic with these exact named cases (one per oracle
-  file): split_event_data, split_unicode, multi_line_sse, done_marker, invalid_json_event, native_error_event, truncated_final_event.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file): split_event_data, split_unicode, multi_line_sse, done_marker, invalid_json_event, native_error_event, truncated_final_event,
+  passthrough_chunk_conversion. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_stream_decode* using HelperCase: kind:
@@ -48,9 +74,9 @@ description: >-
 
 
   Budget from 114 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 145 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 416 planned, 425 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 175 production lines, 235 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 600 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -74,43 +100,57 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L68-L69
   why: Own _loads_stream_chunk. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L1151-L1290
-  why: >-
-    Own ModelResponseIterator._parse_sse_data, ModelResponseIterator.__iter__, ModelResponseIterator.__next__, ModelResponseIterator.__aiter__,
-    ModelResponseIterator.__anext__, ModelResponseIterator.convert_str_chunk_to_generic_chunk. Other functions in
-    this file remain with the owners listed below.
+  why: Own ModelResponseIterator._parse_sse_data, ModelResponseIterator.__iter__, ModelResponseIterator.__next__,
+    ModelResponseIterator.__aiter__, ModelResponseIterator.__anext__, ModelResponseIterator.convert_str_chunk_to_generic_chunk.
+    Other functions in this file remain with the owners listed below.
 dod:
-- text: 'split event data: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-decode/split-event-data.yaml.'
+- text: 'split_event_data: A line must start exact data:; strip first5 characters without trimming. Try JSON directly
+    while chunk_type=valid_json; first JSONDecodeError switches permanently to accumulated_json and B582 accumulation.
+    Already parsed nondict JSON reaches chunk_parser and can fail by source attribute/key errors; only accumulation
+    skips nondict values.'
   proof:
   - case-split-event-data
   - oracle
   - helper-python
-- text: 'split unicode: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-decode/split-unicode.yaml.'
+- text: 'split_unicode: Native sync/async iterator bytes are UTF-8 decoded per yielded chunk, then scanned to first
+    data: substring; a split UTF-8 sequence at this boundary raises decode ValueError wrapped as RuntimeError Error
+    parsing chunk: <error>,\nReceived chunk: <chunk>. B005 transport line decoding may reassemble network UTF-8
+    before this boundary; test that separately without changing the direct helper oracle.'
   proof:
   - case-split-unicode
   - oracle
   - helper-python
-- text: 'multi line sse: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-decode/multi-line-sse.yaml.'
+- text: 'multi_line_sse: String iterator chunks are not scanned for an embedded data: prefix; byte chunks are. Non-data/comment/event/blank
+    chunks emit GenericStreamingChunk text empty,is_finished=false,finish_reason empty,usage=None,index0,tool_use=None.
+    Multiple data lines in one string are not normalized/concatenated as standard SSE here.'
   proof:
   - case-multi-line-sse
   - oracle
   - helper-python
-- text: 'done marker: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-decode/done-marker.yaml.'
+- text: 'done_marker: There is no [DONE] special case. data:[DONE] fails JSON and remains an incomplete accumulator;
+    EOF drains complete dict values then ends without a terminal marker. A valid message_stop chunk itself does
+    not end iteration.'
   proof:
   - case-done-marker
   - oracle
   - helper-python
-- text: 'invalid json event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-decode/invalid-json-event.yaml.'
+- text: 'invalid_json_event: Malformed/incomplete JSON switches to accumulation and may be silently left at EOF.
+    Receiving ValueError wraps as RuntimeError Error receiving chunk from stream: <error>; parsing ValueError wraps
+    as Error parsing chunk: <error>,\nReceived chunk: <chunk>; other exceptions retain their class. Native AnthropicError500
+    is not swallowed by either ValueError handler.'
   proof:
   - case-invalid-json-event
   - oracle
   - helper-python
-- text: 'native error event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-decode/native-error-event.yaml.'
+- text: 'native_error_event: Replay B582 type=error statuses/messages through sync and async iteration; rate-limit
+    error event is still AnthropicError500, distinct from the byte/JSON parser failures.'
   proof:
   - case-native-error-event
   - oracle
   - helper-python
-- text: >-
-    truncated final event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-decode/truncated-final-event.yaml.
+- text: 'truncated_final_event: On each StopIteration/StopAsyncIteration, drain B582 with empty fragment and is_final=True
+    if buffer truthy; return one remaining dict chunk per invocation, then stop when no complete dict remains. Truncated
+    trailing bytes produce no invented error or finish chunk.'
   proof:
   - case-truncated-final-event
   - oracle
@@ -122,50 +162,74 @@ dod:
 - text: decode_anthropic_event has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'passthrough_chunk_conversion: convert_str_chunk_to_generic_chunk scans first data: for both bytes and strings,
+    JSON-decodes the entire remaining string once (no accumulation), then dispatches B582. Invalid JSON propagates
+    JSONDecodeError directly; no data yields a default ModelResponseStream with state id. Preserve this asymmetry
+    with native iteration.'
+  proof:
+  - case-passthrough-chunk-conversion
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-split-event-data
-    why: The split-event-data behavior is missing or differs from its pinned fixture.
+    why: A line must start exact data:; strip first5 characters without trimming. Try JSON directly while chunk_type=valid_json;
+      first JSONDecodeError switches permanently to accumulated_json and B582 accumulation. Already parsed nondict
+      JSON reaches chunk_parser and can fail by source attribute/key errors; only accumulation skips nondict values.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_split_event_data$/)'
   - id: case-split-unicode
-    why: The split-unicode behavior is missing or differs from its pinned fixture.
+    why: 'Native sync/async iterator bytes are UTF-8 decoded per yielded chunk, then scanned to first data: substring;
+      a split UTF-8 sequence at this boundary raises decode ValueError wrapped as RuntimeError Error parsing chunk:
+      <error>,\nReceived chunk: <chunk>. B005 transport line decoding may reassemble network UTF-8 before this boundary;
+      test that separately without changing the direct helper oracle.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_split_unicode$/)'
   - id: case-multi-line-sse
-    why: The multi-line-sse behavior is missing or differs from its pinned fixture.
+    why: 'String iterator chunks are not scanned for an embedded data: prefix; byte chunks are. Non-data/comment/event/blank
+      chunks emit GenericStreamingChunk text empty,is_finished=false,finish_reason empty,usage=None,index0,tool_use=None.
+      Multiple data lines in one string are not normalized/concatenated as standard SSE here.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_multi_line_sse$/)'
   - id: case-done-marker
-    why: The done-marker behavior is missing or differs from its pinned fixture.
+    why: There is no [DONE] special case. data:[DONE] fails JSON and remains an incomplete accumulator; EOF drains
+      complete dict values then ends without a terminal marker. A valid message_stop chunk itself does not end iteration.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_done_marker$/)'
   - id: case-invalid-json-event
-    why: The invalid-json-event behavior is missing or differs from its pinned fixture.
+    why: 'Malformed/incomplete JSON switches to accumulation and may be silently left at EOF. Receiving ValueError
+      wraps as RuntimeError Error receiving chunk from stream: <error>; parsing ValueError wraps as Error parsing
+      chunk: <error>,\nReceived chunk: <chunk>; other exceptions retain their class. Native AnthropicError500 is
+      not swallowed by either ValueError handler.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_invalid_json_event$/)'
   - id: case-native-error-event
-    why: The native-error-event behavior is missing or differs from its pinned fixture.
+    why: Replay B582 type=error statuses/messages through sync and async iteration; rate-limit error event is still
+      AnthropicError500, distinct from the byte/JSON parser failures.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_native_error_event$/)'
   - id: case-truncated-final-event
-    why: The truncated-final-event behavior is missing or differs from its pinned fixture.
+    why: On each StopIteration/StopAsyncIteration, drain B582 with empty fragment and is_final=True if buffer truthy;
+      return one remaining dict chunk per invocation, then stop when no complete dict remains. Truncated trailing
+      bytes produce no invented error or finish chunk.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_truncated_final_event$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_decode.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_decode.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_stream_decode*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_stream_decode*")"
       && grep -lq 'anthropic_stream_decode' tools/oracle/fuzz/corpus/helper_case/anthropic_stream_decode* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_stream_decode$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_stream_decode)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_stream_decode)"
       && grep -q 'decode_anthropic_event' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_stream_decode.rs
       && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_stream_decode_corpus$/)'
+  - id: case-passthrough-chunk-conversion
+    why: 'convert_str_chunk_to_generic_chunk scans first data: for both bytes and strings, JSON-decodes the entire
+      remaining string once (no accumulation), then dispatches B582. Invalid JSON propagates JSONDecodeError directly;
+      no data yields a default ModelResponseStream with state id. Preserve this asymmetry with native iteration.'
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_decode_cases::case_[0-9]+_passthrough_chunk_conversion$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-stream-decode/split-event-data.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-decode/split-unicode.yaml
@@ -174,35 +238,35 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-stream-decode/invalid-json-event.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-decode/native-error-event.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-decode/truncated-final-event.yaml
+- tools/oracle/cases/helpers/providers/anthropic-stream-decode/passthrough-chunk-conversion.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197; AnthropicChatCompletion.acompletion_stream_function
-  L204-L252 belong to B689; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.__init__ L201-L202; AnthropicChatCompletion.acompletion_function
-  L254-L321; AnthropicChatCompletion.completion L323-L538; AnthropicChatCompletion.embedding L540-L542 belong to
-  B584; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.chunk_parser L811-L1048; ModelResponseIterator._handle_json_mode_chunk
-  L1050-L1094; ModelResponseIterator._handle_accumulated_json_chunk L1118-L1149 belong to B582; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602; ModelResponseIterator.accumulated_json
-  L605-L606; ModelResponseIterator.accumulated_json L609-L610; ModelResponseIterator.check_empty_tool_call_args
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.completion (L363-L368)
+  belong to B027.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602;
+  ModelResponseIterator.accumulated_json L604-L606; ModelResponseIterator.accumulated_json L608-L610; ModelResponseIterator.check_empty_tool_call_args
   L612-L633; ModelResponseIterator._handle_usage L635-L646; ModelResponseIterator._content_block_delta_helper L648-L732;
   ModelResponseIterator._handle_redacted_thinking_content L734-L750; ModelResponseIterator.get_content_block_start
   L752-L763; ModelResponseIterator._web_search_call_snapshot L765-L766; ModelResponseIterator._complete_web_search_call
   L768-L776; ModelResponseIterator._build_code_interpreter_results L778-L809; ModelResponseIterator._handle_message_delta
-  L1096-L1116 belong to B581; reuse that implementation or its injected typed boundary.
+  L1096-L1116 belong to B581.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.chunk_parser L811-L1048;
+  ModelResponseIterator._handle_json_mode_chunk L1050-L1094; ModelResponseIterator._handle_accumulated_json_chunk
+  L1118-L1149 belong to B582.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.__init__ L201-L202;
+  AnthropicChatCompletion.acompletion_function L254-L321; AnthropicChatCompletion.completion (L323-L362, L370-L538);
+  AnthropicChatCompletion.embedding L540-L542 belong to B584.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
+  AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
-- Preserve split UTF-8/events, comments and multi-line data, and separate parser errors from valid native error
-  events.
+- 'Only byte iterator chunks search for an embedded data: prefix; the passthrough converter searches both strings
+  and bytes.'
+- '[DONE] has no special branch and malformed JSON can remain silently buffered at EOF.'
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: standard

@@ -1,0 +1,107 @@
+id: B031
+title: Wire Vertex completion dispatch, caching and token counters
+description: >-
+  Implement vertex_completion_dispatch in betterlite-core and install its closed operations
+  in betterlite-provider. Own _complete_vertex_ai_beta and _complete_vertex_ai, main.py
+  L3683-L3933, 234 nonblank noncomment lines. Resolve and pop vertex_project before
+  vertex_ai_project, then litellm_settings.vertex_project and VERTEXAI_PROJECT; location uses
+  the analogous names ending in VERTEXAI_LOCATION, without VERTEX_LOCATION at this boundary.
+  Credentials use vertex_credentials, vertex_ai_credentials and VERTEXAI_CREDENTIALS, with no
+  module credential fallback. Preserve short-circuit pops: a truthy primary alias leaves the
+  secondary alias in the options copied for the provider. Normal api_base precedence is explicit,
+  litellm_settings.api_base, VERTEXAI_API_BASE; beta uses GEMINI_API_BASE instead. Beta key order
+  is explicit, GOOGLE_API_KEY, GEMINI_API_KEY, PALM_API_KEY, litellm_settings.api_key. All absent
+  values remain None here; B1304 supplies endpoint defaults later. Reuse B1301/B1331 settings
+  fields and load the additional base/PALM settings through vertex_dispatch_settings tests in
+  betterlite-config, exercising unset, empty and competing values through the real loader.
+  Dispatch B1306 routes to B032 partner/Gemma/Garden operations, B1327 GeminiCall, B1386/B1387
+  Agent Engine and B1320 legacy selection. Agent Engine receives resolved project/location/
+  credentials written into litellm_params before execution. Legacy synchronous streaming wraps
+  only optional_params.stream is True and acompletion is False. The beta entry bypasses model
+  classification and remains callable by B035 for gemini. Bind B206 finish/header callbacks,
+  B196 counting and B125 cache-key callbacks into the leaf constructors; expose B1330 counters
+  and B1319 pricing as provider capabilities. Pricing accepts the existing injected generic
+  calculator contract and does not implement B068. Leaves never import this core composition.
+  Exercise B004/B005's already mounted POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions
+  through both booted proxies. Use vertex_ai/gemini-2.5-flash and vertex_ai_beta/gemini-2.5-flash
+  fixtures with deterministic Google auth endpoints, not ambient credentials. auth-reuse sends
+  two requests through one deployment and asserts a single successful token exchange plus two
+  inference calls; a different credential identity must exchange separately. Cache traces cover
+  explicit cached_content including empty, below minimum, a second-page hit, a 403 list followed
+  by creation, absent cachedContents, 100 repeated pages, a non-403 list failure and create timeout
+  408. Compare stripped tools, tools:null on creation, untouched skipped options and final
+  cachedContent. Include ordinary completion, streamed tools/usage, Agent Engine and a provider
+  error. Assert upstream order/auth/body and client status, error type/param/code and x-litellm-*
+  headers; ignore only dynamic IDs/times and error wording with reasons. Native tests cover
+  legacy wrapper selection, unsupported_operation and counter installation. Allocate 280
+  composition, 190 native/config tests and 290 HTTP fixtures/wiring, maximum 800; existing
+  request, SSE and cache decoders retain their own fuzz targets.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/{lib,dispatch,operation,vertex_completion_dispatch}.rs
+    - crates/betterlite-core/src/vertex_completion_dispatch/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_dispatch/**
+    - crates/betterlite-config/src/{env,settings}.rs
+    - crates/betterlite-config/src/providers/{vertex,gemini}.rs
+    - crates/betterlite-config/src/providers/vertex/dispatch/**
+    - tools/oracle/cases/chat/vertex-gemini/**
+    - tools/oracle/fixtures/vertex-gemini/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3683-L3933
+    why: Owned provider dispatch functions and their distinct alias and base precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5999-L6008
+    why: Gemini and vertex_ai_beta share the beta completion entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12008
+    why: Four existing authenticated chat aliases used by the integration cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L109-L591
+    why: B1318/B1324 cache effects observed through actual chat requests.
+dod:
+  - text: The normal and beta entry points reach the installed operations with their original option mutation and alias rules.
+    proof: [vertex-core-dispatch, vertex-provider-dispatch, oracle]
+  - text: Every newly accepted dispatch setting is resolved by production configuration loading.
+    proof: [vertex-dispatch-config]
+  - text: Booted proxy cases observe cache bypass, pagination, creation, streaming and provider failures on Vertex deployments.
+    proof: [vertex-http-cases, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: vertex-core-dispatch
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^vertex_completion_dispatch::/)'
+      why: Alias pops and Agent Engine credential injection must run through the real dispatch boundary.
+    - id: vertex-provider-dispatch
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^vertex_dispatch::/)'
+      why: Executable capabilities, legacy streaming and explicit unsupported operations require provider tests.
+    - id: vertex-dispatch-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_dispatch_settings::/)'
+      why: PALM_API_KEY and dispatch base settings must be applied, not merely recognized in fixtures.
+    - id: vertex-http-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/chat/vertex-gemini)" && test -f tools/oracle/cases/chat/vertex-gemini/cache-pagination.yaml && test -f tools/oracle/cases/chat/vertex-gemini/cache-failures.yaml
+      why: New booted-proxy traces must cover the effectful cache branches excluded from pure helper adapters.
+oracle_cases:
+  - tools/oracle/cases/chat/vertex-gemini/routes.yaml
+  - tools/oracle/cases/chat/vertex-gemini/beta-precedence.yaml
+  - tools/oracle/cases/chat/vertex-gemini/auth-reuse.yaml
+  - tools/oracle/cases/chat/vertex-gemini/stream-tools-usage.yaml
+  - tools/oracle/cases/chat/vertex-gemini/cache-bypass.yaml
+  - tools/oracle/cases/chat/vertex-gemini/cache-pagination.yaml
+  - tools/oracle/cases/chat/vertex-gemini/cache-create.yaml
+  - tools/oracle/cases/chat/vertex-gemini/cache-failures.yaml
+  - tools/oracle/cases/chat/vertex-gemini/agent-engine.yaml
+  - tools/oracle/cases/chat/vertex-gemini/upstream-error.yaml
+deviations: []
+out_of_scope:
+  - Other main.py dispatch functions stay with their providers or API-family owners; this task owns only the two cited completion functions.
+  - B1300-B1318 and B1321-B1328 retain credential, schema, content, cache and transport implementations; this composition adds no parser or second route registration.
+  - B032 installs partner adapters, B033 other Vertex modalities, B034 native services and B035 Studio-specific capabilities; their source files are not reimplemented here.
+  - B068 binds generic pricing later; B157 supplies Python object bindings. The composition exports native capabilities without inventing either interface.
+pitfalls:
+  - Main dispatch intentionally omits the VERTEX_LOCATION fallback that VertexBase's safe location getter accepts.
+  - A truthy vertex_project leaves vertex_ai_project in the provider's copied options because Python or short-circuits the second pop.
+  - An Agent Engine request must receive resolved credentials in litellm_params before its base HTTP handler runs.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

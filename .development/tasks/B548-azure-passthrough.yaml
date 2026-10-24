@@ -22,16 +22,47 @@ description: >-
   its implementation remains with that prerequisite.
 
 
-  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  Reuse BaseAzureLLM._base_validate_azure_environment from B2200 (litellm/llms/azure/common_utils.py); its implementation
   remains with that prerequisite.
 
 
-  Reuse BaseAzureLLM._get_base_azure_url from B531 (litellm/llms/azure/common_utils.py); its implementation remains
+  Reuse BaseAzureLLM._get_base_azure_url from B2200 (litellm/llms/azure/common_utils.py); its implementation remains
   with that prerequisite.
 
 
   Reuse OpenAIGPTConfig.__init__ from B668 (litellm/llms/openai/chat/gpt_transformation.py); its implementation
   remains with that prerequisite.
+
+
+  Named case contracts: body_model_inference_endpoint: Reject any endpoint containing a path-segment openai/deployments/<nonempty
+  segment>; otherwise strip slashes and accept exact or slash-suffixed responses,chat/completions,completions,embeddings,images/generations,audio/speech.
+  is_streaming_request uses bool(request_data.stream), not a strict boolean check. router_model_in_path: Split endpoint
+  on / and return the first part exactly matching router_models only when at least two parts exist; no case folding
+  for router matching. foreign_deployment: Extract the first deployment path segment; exact model_group match is
+  local, otherwise compare served_models case-insensitively using Python casefold. Return an unknown deployment
+  verbatim; no callback is needed when no deployment or exact group match. api_version_removal: Resolve base from
+  explicit or AZURE_API_BASE only, else Exception Azure api base not found. Use B101 replacement of model_group
+  path segments and strip leading actual model. A truthy request-query api-version removes every exact api-version
+  from configured base, then overrides params version; empty caller version leaves existing base version. B2200
+  builds the final URL; return it plus original resolved base. responses_stream_log: For slash-normalized endpoint
+  ending the Responses relay suffix, B508 parses terminal events; only a found terminal changes logging.call_type
+  to the Responses relay call type and returns the whole terminal event. Other non-chat streams return None. messages_relay_log:
+  Chat stream logging delegates B103 _build_complete_streaming_response; supply relayed request messages only when
+  RelayedCallDetails validation succeeds and request_data exists, otherwise None. nonstream_usage: For endpoint
+  containing chat/completions use B668 chat response projection with user content no-message-pass-through-endpoint,
+  blank api_key and empty optional/litellm params; otherwise call B101 logged_relay_shape(OPENAI_RELAY_SHAPES).
+  passthrough_auth_inputs: get_api_key is explicit or AZURE_API_KEY only; get_base_model is identity and get_models
+  delegates to the inherited model-info owner. Validation overwrites params.api_key with the positional value even
+  when None, then delegates B2200, so its global fallback may apply.
+
+
+  Write standalone Rust test azure_passthrough_credential_identity_isolation in betterlite-azure: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test azure_passthrough_secret_safe_failure in betterlite-azure: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-azure/src/passthrough.rs with adjacent tests under passthrough/. Keep each Rust module
@@ -49,9 +80,9 @@ description: >-
 
   Write rstest function passthrough_cases in betterlite-azure with these exact named cases (one per oracle file):
   body_model_inference_endpoint, router_model_in_path, foreign_deployment, api_version_removal, responses_stream_log,
-  messages_relay_log, nonstream_usage. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  messages_relay_log, nonstream_usage, passthrough_auth_inputs. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_passthrough* using HelperCase: kind: helper
@@ -66,9 +97,9 @@ description: >-
 
 
   Budget from 145 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 175 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 391 planned, 400 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 180 production lines, 220 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 590 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -87,46 +118,56 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L38-L231
-  why: >-
-    Own _relayed_messages, logged_responses_stream, is_azure_body_model_inference_endpoint, azure_router_model_in_endpoint,
+  why: Own _relayed_messages, logged_responses_stream, is_azure_body_model_inference_endpoint, azure_router_model_in_endpoint,
     foreign_azure_deployment, without_api_version, AzurePassthroughConfig.is_streaming_request, AzurePassthroughConfig.get_complete_url,
     AzurePassthroughConfig.validate_environment, AzurePassthroughConfig.get_api_base, AzurePassthroughConfig.get_api_key,
     AzurePassthroughConfig.get_base_model, AzurePassthroughConfig.get_models, AzurePassthroughConfig.logging_non_streaming_response,
     AzurePassthroughConfig.handle_logging_collected_chunks. Other functions in this file remain with the owners
     listed below.
 dod:
-- text: >-
-    body model inference endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/body-model-inference-endpoint.yaml.
+- text: 'body_model_inference_endpoint: Reject any endpoint containing a path-segment openai/deployments/<nonempty
+    segment>; otherwise strip slashes and accept exact or slash-suffixed responses,chat/completions,completions,embeddings,images/generations,audio/speech.
+    is_streaming_request uses bool(request_data.stream), not a strict boolean check.'
   proof:
   - case-body-model-inference-endpoint
   - oracle
   - helper-python
-- text: 'router model in path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/router-model-in-path.yaml.'
+- text: 'router_model_in_path: Split endpoint on / and return the first part exactly matching router_models only
+    when at least two parts exist; no case folding for router matching.'
   proof:
   - case-router-model-in-path
   - oracle
   - helper-python
-- text: 'foreign deployment: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/foreign-deployment.yaml.'
+- text: 'foreign_deployment: Extract the first deployment path segment; exact model_group match is local, otherwise
+    compare served_models case-insensitively using Python casefold. Return an unknown deployment verbatim; no callback
+    is needed when no deployment or exact group match.'
   proof:
   - case-foreign-deployment
   - oracle
   - helper-python
-- text: 'api version removal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/api-version-removal.yaml.'
+- text: 'api_version_removal: Resolve base from explicit or AZURE_API_BASE only, else Exception Azure api base not
+    found. Use B101 replacement of model_group path segments and strip leading actual model. A truthy request-query
+    api-version removes every exact api-version from configured base, then overrides params version; empty caller
+    version leaves existing base version. B2200 builds the final URL; return it plus original resolved base.'
   proof:
   - case-api-version-removal
   - oracle
   - helper-python
-- text: 'responses stream log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/responses-stream-log.yaml.'
+- text: 'responses_stream_log: For slash-normalized endpoint ending the Responses relay suffix, B508 parses terminal
+    events; only a found terminal changes logging.call_type to the Responses relay call type and returns the whole
+    terminal event. Other non-chat streams return None.'
   proof:
   - case-responses-stream-log
   - oracle
   - helper-python
-- text: 'messages relay log: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/messages-relay-log.yaml.'
+- text: 'messages_relay_log: Chat stream logging delegates B103 _build_complete_streaming_response; supply relayed
+    request messages only when RelayedCallDetails validation succeeds and request_data exists, otherwise None.'
   proof:
   - case-messages-relay-log
   - oracle
   - helper-python
-- text: 'nonstream usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-passthrough/nonstream-usage.yaml.'
+- text: 'nonstream_usage: For endpoint containing chat/completions use B668 chat response projection with user content
+    no-message-pass-through-endpoint, blank api_key and empty optional/litellm params; otherwise call B101 logged_relay_shape(OPENAI_RELAY_SHAPES).'
   proof:
   - case-nonstream-usage
   - oracle
@@ -135,44 +176,78 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'passthrough_auth_inputs: get_api_key is explicit or AZURE_API_KEY only; get_base_model is identity and
+    get_models delegates to the inherited model-info owner. Validation overwrites params.api_key with the positional
+    value even when None, then delegates B2200, so its global fallback may apply.'
+  proof:
+  - case-passthrough-auth-inputs
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-body-model-inference-endpoint
-    why: The body-model-inference-endpoint behavior is missing or differs from its pinned fixture.
+    why: Reject any endpoint containing a path-segment openai/deployments/<nonempty segment>; otherwise strip slashes
+      and accept exact or slash-suffixed responses,chat/completions,completions,embeddings,images/generations,audio/speech.
+      is_streaming_request uses bool(request_data.stream), not a strict boolean check.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_body_model_inference_endpoint$/)'
   - id: case-router-model-in-path
-    why: The router-model-in-path behavior is missing or differs from its pinned fixture.
+    why: Split endpoint on / and return the first part exactly matching router_models only when at least two parts
+      exist; no case folding for router matching.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_router_model_in_path$/)'
   - id: case-foreign-deployment
-    why: The foreign-deployment behavior is missing or differs from its pinned fixture.
+    why: Extract the first deployment path segment; exact model_group match is local, otherwise compare served_models
+      case-insensitively using Python casefold. Return an unknown deployment verbatim; no callback is needed when
+      no deployment or exact group match.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_foreign_deployment$/)'
   - id: case-api-version-removal
-    why: The api-version-removal behavior is missing or differs from its pinned fixture.
+    why: Resolve base from explicit or AZURE_API_BASE only, else Exception Azure api base not found. Use B101 replacement
+      of model_group path segments and strip leading actual model. A truthy request-query api-version removes every
+      exact api-version from configured base, then overrides params version; empty caller version leaves existing
+      base version. B2200 builds the final URL; return it plus original resolved base.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_api_version_removal$/)'
   - id: case-responses-stream-log
-    why: The responses-stream-log behavior is missing or differs from its pinned fixture.
+    why: For slash-normalized endpoint ending the Responses relay suffix, B508 parses terminal events; only a found
+      terminal changes logging.call_type to the Responses relay call type and returns the whole terminal event.
+      Other non-chat streams return None.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_responses_stream_log$/)'
   - id: case-messages-relay-log
-    why: The messages-relay-log behavior is missing or differs from its pinned fixture.
+    why: Chat stream logging delegates B103 _build_complete_streaming_response; supply relayed request messages
+      only when RelayedCallDetails validation succeeds and request_data exists, otherwise None.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_messages_relay_log$/)'
   - id: case-nonstream-usage
-    why: The nonstream-usage behavior is missing or differs from its pinned fixture.
+    why: For endpoint containing chat/completions use B668 chat response projection with user content no-message-pass-through-endpoint,
+      blank api_key and empty optional/litellm params; otherwise call B101 logged_relay_shape(OPENAI_RELAY_SHAPES).
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_nonstream_usage$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_passthrough.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_passthrough.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_passthrough*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_passthrough*")"
       && grep -lq 'azure_passthrough' tools/oracle/fuzz/corpus/helper_case/azure_passthrough* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_passthrough$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-passthrough-auth-inputs
+    why: get_api_key is explicit or AZURE_API_KEY only; get_base_model is identity and get_models delegates to the
+      inherited model-info owner. Validation overwrites params.api_key with the positional value even when None,
+      then delegates B2200, so its global fallback may apply.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_passthrough_auth_inputs$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_passthrough_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_passthrough_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-passthrough/body-model-inference-endpoint.yaml
 - tools/oracle/cases/helpers/providers/azure-passthrough/router-model-in-path.yaml
@@ -181,6 +256,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-passthrough/responses-stream-log.yaml
 - tools/oracle/cases/helpers/providers/azure-passthrough/messages-relay-log.yaml
 - tools/oracle/cases/helpers/providers/azure-passthrough/nonstream-usage.yaml
+- tools/oracle/cases/helpers/providers/azure-passthrough/passthrough-auth-inputs.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -188,10 +264,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve model-router body-model inference, foreign deployment handling and api-version removal rules.
-- The deployment lookbehind regex cannot be copied into Rust regex; parse the deployment path segment instead.
-- Removing api-version must reproduce httpx.URL query reserialization, not byte-splice the original query.
+- The foreign-deployment comparison case-folds served model names, while router path matching remains exact-case.
+- Caller api-version wins only when truthy; preserving an empty override as active changes which base query is removed.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 600
   max_new_expects: 0
-review_level: standard
+review_level: security

@@ -2,24 +2,90 @@ id: B688
 title: Anthropic catalog capability and thinking selection
 description: >-
   Port AnthropicModelInfo catalog lookup, alias/provider normalization and forced-tool/sampling/adaptive-thinking
-  capability projections. Inject the catalog and B591 pure Bedrock model normalization; B569 composes these with
-  AnthropicConfig effort/speed parameter gates.
+  capability projections. Inject the catalog and B2216 raw catalog lookup; B569 composes these with AnthropicConfig
+  effort/speed parameter gates.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/common_utils.py:
   AnthropicModelInfo._supports_sampling_params L478-L503; AnthropicModelInfo._apply_sampling_param L506-L528; AnthropicModelInfo.forced_tool_use_unsupported
   L531-L532; AnthropicModelInfo.forced_tool_use_downgraded L535-L552; AnthropicModelInfo._apply_forced_tool_choice
-  L555-L567; AnthropicModelInfo._strip_version_suffix L570-L574; AnthropicModelInfo._model_map_lookup_candidates
-  L577-L614; AnthropicModelInfo._get_model_capability L617-L631; AnthropicModelInfo._get_exact_model_capability
-  L634-L641; AnthropicModelInfo.supports_fast_mode L644-L648; AnthropicModelInfo._get_provider_resolved_capability
-  L651-L668; AnthropicModelInfo._supports_model_capability L671-L693; AnthropicModelInfo._is_adaptive_thinking_model
-  L696-L705; AnthropicModelInfo._is_always_on_thinking_model L708-L714; AnthropicModelInfo._supports_legacy_thinking
-  L717-L724; AnthropicModelInfo.maybe_drop_disabled_thinking L727-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model
-  L747-L781; AnthropicModelInfo._legacy_budget_to_effort L784-L793; AnthropicModelInfo.is_effort_used L795-L829.
+  L555-L567; AnthropicModelInfo._get_provider_resolved_capability L651-L668; AnthropicModelInfo._supports_model_capability
+  L671-L693; AnthropicModelInfo._is_adaptive_thinking_model L696-L705; AnthropicModelInfo._is_always_on_thinking_model
+  L708-L714; AnthropicModelInfo._supports_legacy_thinking L717-L724; AnthropicModelInfo.maybe_drop_disabled_thinking
+  L727-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L747-L781; AnthropicModelInfo._legacy_budget_to_effort
+  L784-L793; AnthropicModelInfo.is_effort_used L795-L829.
 
 
-  Reuse BedrockModelInfo.get_base_model from B591 (litellm/llms/bedrock/common_utils.py); its implementation remains
-  with that prerequisite.
+  Reuse B2216 for candidate normalization, raw/exact capability lookup and fast-mode selection.
+
+
+  Named case contracts: provider_qualified_catalog: Resolve model/provider with B174 before provider-aware model
+  metadata. A resolved bool, including False, is authoritative; exceptions or non-bools yield None. With no resolved
+  bool, try _supports_factory; only True stops fallback, and exceptions are swallowed. Finally require raw B2216
+  capability is True. supports_adaptive_thinking, thinking_always_on and supports_legacy_thinking use this sequence;
+  model-version gates belong to catalog generalization rules, not hardcoded branches. adaptive_thinking: Translate
+  only adaptive models without supports_legacy_thinking and a thinking dict whose type is enabled. Convert budget_tokens
+  via int(value or 0), propagating invalid conversion before mutation. Replace thinking with type=adaptive, keeping
+  display only for summarized or omitted (updates is discarded). Set output_config effort from the budget then overlay
+  an existing dict, so even caller effort=None wins and other keys survive; a non-dict output_config is discarded.
+  forced_tool_downgrade: Only raw supports_forced_tool_use is False disables forcing. Missing type raises; types
+  other than any/tool pass unchanged. Disabled forcing without a truthy global/per-call drop_params raises UnsupportedParamsError
+  400: {model} does not support forced tool use (tool_choice='required' or a named tool). Use tool_choice='auto'
+  and tell the model in the prompt when to call the tool, or set `litellm.drop_params = True` to downgrade to 'auto'
+  automatically. With drop enabled emit DROP_FORCED_TOOL_CHOICE_WARNING and replace with type=auto, retaining disable_parallel_tool_use
+  only when non-None (False included); drop name and other fields. sampling_capability: An explicit supports_sampling_params
+  bool wins. Otherwise lower-case name is unsupported if it contains fable or opus-4-7, opus_4_7, opus-4.7, opus_4.7,
+  opus-4-8, opus_4_8, opus-4.8 or opus_4.8; all other names allow sampling. Forward to the caller output_key when
+  supported or when temperature equals 1 (including Python True). Otherwise either global or per-call truthy drop_params
+  silently omits the field without warning; with neither raise UnsupportedParamsError 400, message {model} does
+  not support {param}={value}. followed for temperature by Only temperature=1 is supported. and then To drop unsupported
+  params, set `litellm.drop_params = True`. legacy_budget_effort: Budget >= the loaded xhigh threshold yields xhigh
+  only with supports_xhigh_reasoning_effort. Otherwise >=high yields high, >=medium yields medium, else low, including
+  negative/zero budgets. There is no max result even at the configured max threshold. disabled_thinking_warning:
+  Only a dict with type=disabled on a thinking_always_on model is removed. This ignores drop_params and always warns
+  with DROP_DISABLED_THINKING_WARNING; other thinking values/maps remain unchanged. effort_beta_gate: Absent/empty
+  options return False; an adaptive model suppresses the effort beta regardless of values. For other models a nonempty
+  string reasoning_effort enables it only when the lower-case name contains opus-4-5 or opus_4_5. Otherwise a truthy
+  dict output_config with a nonempty string effort enables it; nonstrings and empty strings do not.
+
+
+  Shared thinking budgets resolve integer environment variables DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET=128,
+  DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET=1024, DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET=2048, DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET=4096,
+  DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET=8192 and DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET=16384. B569
+  consumes the same loaded values; the Anthropic minimum floor is the literal 1024, not an environment setting.
+
+
+  Load DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET, DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET, DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET,
+  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET, DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET, DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET
+  through betterlite-config, with injected environment lookup and the defaults/precedence stated here. Deployment
+  inputs use litellm_params and global inputs use litellm_settings. Add config rstest anthropic_thinking_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Load BEDROCK_MIN_THINKING_BUDGET_TOKENS through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest anthropic_capability_catalog_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  BEDROCK_MIN_THINKING_BUDGET_TOKENS is parsed as an integer from the identically named environment variable, default
+  1024 (constants.py L540); B600 and B621 consume this same loaded value. Invalid integer strings fail configuration
+  loading rather than silently restoring the default.
+
+
+  Warning literals: DROP_FORCED_TOOL_CHOICE_WARNING is "Downgrading forced tool_choice to 'auto' for model=%s (drop_params=True):
+  this model rejects tool_choice type 'any'/'tool' with a 400 because thinking is always on and a forced call would
+  skip it." DROP_DISABLED_THINKING_WARNING is "Dropping `thinking={'type': 'disabled'}` for model=%s: thinking is
+  always on for this model and cannot be disabled (the alternative is a provider 400). The model will still think
+  adaptively, its response can contain thinking blocks, and those thinking tokens are billed as output tokens."
+  Use B184 error envelope mapping and ignore only rewritten error message text in oracle comparisons. Global drop_params
+  is the existing B002/B176 setting, default False; do not add a second loader.
+
+
+  Shared metadata calls are B2219 _get_model_info_helper and B2221 _supports_factory/declared_value_factory/is_explicitly_disabled_factory;
+  reuse those implementations directly. B157 is only the public Python facade and is not a dependency of these provider
+  predicates.
 
 
   Implement crates/betterlite-anthropic/src/anthropic_capability_catalog.rs with adjacent tests under anthropic_capability_catalog/.
@@ -36,10 +102,10 @@ description: >-
 
 
   Write rstest function anthropic_capability_catalog_cases in betterlite-anthropic with these exact named cases
-  (one per oracle file): provider_qualified_catalog, exact_capability, adaptive_thinking, forced_tool_downgrade,
-  sampling_capability, legacy_budget_effort. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  (one per oracle file): provider_qualified_catalog, adaptive_thinking, forced_tool_downgrade, sampling_capability,
+  legacy_budget_effort, disabled_thinking_warning, effort_beta_gate. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog* using HelperCase:
@@ -54,10 +120,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 299 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 320 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 538 planned, 550 maximum changed lines.
+  Budget from 231 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 230 production lines, 285 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 95 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 765 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -73,11 +139,27 @@ scope:
   - tools/oracle/helpers/anthropic_capability_catalog.py
   - tools/oracle/cases/helpers/providers/anthropic-capability-catalog/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/anthropic.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_thinking.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_thinking/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/anthropic_thinking_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_thinking*
+  - crates/betterlite-config/src/providers/anthropic/anthropic_capability_catalog.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_capability_catalog/**
+  - crates/betterlite-config/src/tests/anthropic_capability_catalog_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_capability_catalog*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L478-L829
-  why: >-
-    Own AnthropicModelInfo._supports_sampling_params, AnthropicModelInfo._apply_sampling_param, AnthropicModelInfo.forced_tool_use_unsupported,
+  why: Own AnthropicModelInfo._supports_sampling_params, AnthropicModelInfo._apply_sampling_param, AnthropicModelInfo.forced_tool_use_unsupported,
     AnthropicModelInfo.forced_tool_use_downgraded, AnthropicModelInfo._apply_forced_tool_choice, AnthropicModelInfo._strip_version_suffix,
     AnthropicModelInfo._model_map_lookup_candidates, AnthropicModelInfo._get_model_capability, AnthropicModelInfo._get_exact_model_capability,
     AnthropicModelInfo.supports_fast_mode, AnthropicModelInfo._get_provider_resolved_capability, AnthropicModelInfo._supports_model_capability,
@@ -85,37 +167,56 @@ references:
     AnthropicModelInfo.maybe_drop_disabled_thinking, AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model,
     AnthropicModelInfo._legacy_budget_to_effort, AnthropicModelInfo.is_effort_used. Other functions in this file
     remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L213-L222
+  why: Own the helper at the layer its callers can depend on without a cycle.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L540-L540
+  why: Shared Bedrock minimum-thinking budget configuration.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L51-L59
+  why: Exact warning literals.
 dod:
-- text: >-
-    provider qualified catalog: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-capability-catalog/provider-qualified-catalog.yaml.
+- text: 'provider_qualified_catalog: Resolve model/provider with B174 before provider-aware model metadata. A resolved
+    bool, including False, is authoritative; exceptions or non-bools yield None. With no resolved bool, try _supports_factory;
+    only True stops fallback, and exceptions are swallowed. Finally require raw B2216 capability is True. supports_adaptive_thinking,
+    thinking_always_on and supports_legacy_thinking use this sequence; model-version gates belong to catalog generalization
+    rules, not hardcoded branches.'
   proof:
   - case-provider-qualified-catalog
   - oracle
   - helper-python
-- text: 'exact capability: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-capability-catalog/exact-capability.yaml.'
-  proof:
-  - case-exact-capability
-  - oracle
-  - helper-python
-- text: 'adaptive thinking: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-capability-catalog/adaptive-thinking.yaml.'
+- text: 'adaptive_thinking: Translate only adaptive models without supports_legacy_thinking and a thinking dict
+    whose type is enabled. Convert budget_tokens via int(value or 0), propagating invalid conversion before mutation.
+    Replace thinking with type=adaptive, keeping display only for summarized or omitted (updates is discarded).
+    Set output_config effort from the budget then overlay an existing dict, so even caller effort=None wins and
+    other keys survive; a non-dict output_config is discarded.'
   proof:
   - case-adaptive-thinking
   - oracle
   - helper-python
-- text: >-
-    forced tool downgrade: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-capability-catalog/forced-tool-downgrade.yaml.
+- text: 'forced_tool_downgrade: Only raw supports_forced_tool_use is False disables forcing. Missing type raises;
+    types other than any/tool pass unchanged. Disabled forcing without a truthy global/per-call drop_params raises
+    UnsupportedParamsError 400: {model} does not support forced tool use (tool_choice=''required'' or a named tool).
+    Use tool_choice=''auto'' and tell the model in the prompt when to call the tool, or set `litellm.drop_params
+    = True` to downgrade to ''auto'' automatically. With drop enabled emit DROP_FORCED_TOOL_CHOICE_WARNING and replace
+    with type=auto, retaining disable_parallel_tool_use only when non-None (False included); drop name and other
+    fields.'
   proof:
   - case-forced-tool-downgrade
   - oracle
   - helper-python
-- text: >-
-    sampling capability: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-capability-catalog/sampling-capability.yaml.
+- text: 'sampling_capability: An explicit supports_sampling_params bool wins. Otherwise lower-case name is unsupported
+    if it contains fable or opus-4-7, opus_4_7, opus-4.7, opus_4.7, opus-4-8, opus_4_8, opus-4.8 or opus_4.8; all
+    other names allow sampling. Forward to the caller output_key when supported or when temperature equals 1 (including
+    Python True). Otherwise either global or per-call truthy drop_params silently omits the field without warning;
+    with neither raise UnsupportedParamsError 400, message {model} does not support {param}={value}. followed for
+    temperature by Only temperature=1 is supported. and then To drop unsupported params, set `litellm.drop_params
+    = True`.'
   proof:
   - case-sampling-capability
   - oracle
   - helper-python
-- text: >-
-    legacy budget effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-capability-catalog/legacy-budget-effort.yaml.
+- text: 'legacy_budget_effort: Budget >= the loaded xhigh threshold yields xhigh only with supports_xhigh_reasoning_effort.
+    Otherwise >=high yields high, >=medium yields medium, else low, including negative/zero budgets. There is no
+    max result even at the configured max threshold.'
   proof:
   - case-legacy-budget-effort
   - oracle
@@ -124,98 +225,189 @@ dod:
     production parser.
   proof:
   - helper-case-corpus
+- text: The real config loader resolves DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET, including its default
+    and precedence.
+  proof:
+  - config-default-reasoning-effort-minimal-thinking-budget
+- text: The real config loader resolves DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET, including its default and
+    precedence.
+  proof:
+  - config-default-reasoning-effort-low-thinking-budget
+- text: The real config loader resolves DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET, including its default and
+    precedence.
+  proof:
+  - config-default-reasoning-effort-medium-thinking-budget
+- text: The real config loader resolves DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET, including its default and
+    precedence.
+  proof:
+  - config-default-reasoning-effort-high-thinking-budget
+- text: The real config loader resolves DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET, including its default and
+    precedence.
+  proof:
+  - config-default-reasoning-effort-xhigh-thinking-budget
+- text: The real config loader resolves DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET, including its default and
+    precedence.
+  proof:
+  - config-default-reasoning-effort-max-thinking-budget
+- text: The real config loader resolves BEDROCK_MIN_THINKING_BUDGET_TOKENS, including its default and precedence.
+  proof:
+  - config-bedrock-min-thinking-budget-tokens
+- text: 'disabled_thinking_warning: Only a dict with type=disabled on a thinking_always_on model is removed. This
+    ignores drop_params and always warns with DROP_DISABLED_THINKING_WARNING; other thinking values/maps remain
+    unchanged.'
+  proof:
+  - case-disabled-thinking-warning
+  - oracle
+  - helper-python
+- text: 'effort_beta_gate: Absent/empty options return False; an adaptive model suppresses the effort beta regardless
+    of values. For other models a nonempty string reasoning_effort enables it only when the lower-case name contains
+    opus-4-5 or opus_4_5. Otherwise a truthy dict output_config with a nonempty string effort enables it; nonstrings
+    and empty strings do not.'
+  proof:
+  - case-effort-beta-gate
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-provider-qualified-catalog
-    why: The provider-qualified-catalog behavior is missing or differs from its pinned fixture.
+    why: Resolve model/provider with B174 before provider-aware model metadata. A resolved bool, including False,
+      is authoritative; exceptions or non-bools yield None. With no resolved bool, try _supports_factory; only True
+      stops fallback, and exceptions are swallowed. Finally require raw B2216 capability is True. supports_adaptive_thinking,
+      thinking_always_on and supports_legacy_thinking use this sequence; model-version gates belong to catalog generalization
+      rules, not hardcoded branches.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_provider_qualified_catalog$/)'
-  - id: case-exact-capability
-    why: The exact-capability behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_exact_capability$/)'
   - id: case-adaptive-thinking
-    why: The adaptive-thinking behavior is missing or differs from its pinned fixture.
+    why: Translate only adaptive models without supports_legacy_thinking and a thinking dict whose type is enabled.
+      Convert budget_tokens via int(value or 0), propagating invalid conversion before mutation. Replace thinking
+      with type=adaptive, keeping display only for summarized or omitted (updates is discarded). Set output_config
+      effort from the budget then overlay an existing dict, so even caller effort=None wins and other keys survive;
+      a non-dict output_config is discarded.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_adaptive_thinking$/)'
   - id: case-forced-tool-downgrade
-    why: The forced-tool-downgrade behavior is missing or differs from its pinned fixture.
+    why: 'Only raw supports_forced_tool_use is False disables forcing. Missing type raises; types other than any/tool
+      pass unchanged. Disabled forcing without a truthy global/per-call drop_params raises UnsupportedParamsError
+      400: {model} does not support forced tool use (tool_choice=''required'' or a named tool). Use tool_choice=''auto''
+      and tell the model in the prompt when to call the tool, or set `litellm.drop_params = True` to downgrade to
+      ''auto'' automatically. With drop enabled emit DROP_FORCED_TOOL_CHOICE_WARNING and replace with type=auto,
+      retaining disable_parallel_tool_use only when non-None (False included); drop name and other fields.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_forced_tool_downgrade$/)'
   - id: case-sampling-capability
-    why: The sampling-capability behavior is missing or differs from its pinned fixture.
+    why: An explicit supports_sampling_params bool wins. Otherwise lower-case name is unsupported if it contains
+      fable or opus-4-7, opus_4_7, opus-4.7, opus_4.7, opus-4-8, opus_4_8, opus-4.8 or opus_4.8; all other names
+      allow sampling. Forward to the caller output_key when supported or when temperature equals 1 (including Python
+      True). Otherwise either global or per-call truthy drop_params silently omits the field without warning; with
+      neither raise UnsupportedParamsError 400, message {model} does not support {param}={value}. followed for temperature
+      by Only temperature=1 is supported. and then To drop unsupported params, set `litellm.drop_params = True`.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_sampling_capability$/)'
   - id: case-legacy-budget-effort
-    why: The legacy-budget-effort behavior is missing or differs from its pinned fixture.
+    why: Budget >= the loaded xhigh threshold yields xhigh only with supports_xhigh_reasoning_effort. Otherwise
+      >=high yields high, >=medium yields medium, else low, including negative/zero budgets. There is no max result
+      even at the configured max threshold.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_legacy_budget_effort$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_capability_catalog.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_capability_catalog.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog*")"
       && grep -lq 'anthropic_capability_catalog' tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_capability_catalog$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-default-reasoning-effort-minimal-thinking-budget
+    why: DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_thinking_config_cases::case_[0-9]+_loads_default_reasoning_effort_minimal_thinking_budget$/)'
+  - id: config-default-reasoning-effort-low-thinking-budget
+    why: DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_thinking_config_cases::case_[0-9]+_loads_default_reasoning_effort_low_thinking_budget$/)'
+  - id: config-default-reasoning-effort-medium-thinking-budget
+    why: DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_thinking_config_cases::case_[0-9]+_loads_default_reasoning_effort_medium_thinking_budget$/)'
+  - id: config-default-reasoning-effort-high-thinking-budget
+    why: DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_thinking_config_cases::case_[0-9]+_loads_default_reasoning_effort_high_thinking_budget$/)'
+  - id: config-default-reasoning-effort-xhigh-thinking-budget
+    why: DEFAULT_REASONING_EFFORT_XHIGH_THINKING_BUDGET lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_thinking_config_cases::case_[0-9]+_loads_default_reasoning_effort_xhigh_thinking_budget$/)'
+  - id: config-default-reasoning-effort-max-thinking-budget
+    why: DEFAULT_REASONING_EFFORT_MAX_THINKING_BUDGET lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_thinking_config_cases::case_[0-9]+_loads_default_reasoning_effort_max_thinking_budget$/)'
+  - id: config-bedrock-min-thinking-budget-tokens
+    why: BEDROCK_MIN_THINKING_BUDGET_TOKENS lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_capability_catalog_config_cases::case_[0-9]+_loads_bedrock_min_thinking_budget_tokens$/)'
+  - id: case-disabled-thinking-warning
+    why: Only a dict with type=disabled on a thinking_always_on model is removed. This ignores drop_params and always
+      warns with DROP_DISABLED_THINKING_WARNING; other thinking values/maps remain unchanged.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_disabled_thinking_warning$/)'
+  - id: case-effort-beta-gate
+    why: Absent/empty options return False; an adaptive model suppresses the effort beta regardless of values. For
+      other models a nonempty string reasoning_effort enables it only when the lower-case name contains opus-4-5
+      or opus_4_5. Otherwise a truthy dict output_config with a nonempty string effort enables it; nonstrings and
+      empty strings do not.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_capability_catalog_cases::case_[0-9]+_effort_beta_gate$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-capability-catalog/provider-qualified-catalog.yaml
-- tools/oracle/cases/helpers/providers/anthropic-capability-catalog/exact-capability.yaml
 - tools/oracle/cases/helpers/providers/anthropic-capability-catalog/adaptive-thinking.yaml
 - tools/oracle/cases/helpers/providers/anthropic-capability-catalog/forced-tool-downgrade.yaml
 - tools/oracle/cases/helpers/providers/anthropic-capability-catalog/sampling-capability.yaml
 - tools/oracle/cases/helpers/providers/anthropic-capability-catalog/legacy-budget-effort.yaml
+- tools/oracle/cases/helpers/providers/anthropic-capability-catalog/disabled-thinking-warning.yaml
+- tools/oracle/cases/helpers/providers/anthropic-capability-catalog/effort-beta-gate.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106; supports_anthropic_cache_control
-  L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping L130-L134; _validated_claude_code_list
-  L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts L163-L178; _is_claude_code_subagent_billing_system
-  L181-L193; is_claude_code_one_shot_subagent_request L196-L210; eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set
-  L320-L335; AnthropicModelInfo.is_file_id_used L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347;
-  AnthropicModelInfo.is_mid_conversation_tool_change_used L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used
-  L361-L365; AnthropicModelInfo.is_mcp_server_used L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381;
-  AnthropicModelInfo.is_web_search_tool_used L383-L390; AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used
-  L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used L420-L444; AnthropicModelInfo.is_input_examples_used
-  L446-L472; AnthropicModelInfo.is_eager_input_streaming_used L474-L475; AnthropicModelInfo.is_code_execution_tool_used
-  L831-L844; AnthropicModelInfo.is_container_with_skills_used L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers
-  L862-L865; AnthropicModelInfo.get_computer_tool_beta_header L867-L884; AnthropicModelInfo.get_anthropic_beta_list
-  L886-L940 belong to B568; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers L951-L1046; AnthropicModelInfo.validate_environment
-  L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry L1800-L1815; create_anthropic_model_list_response
-  L1818-L1844 belong to B570; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299; is_anthropic_invalid_thinking_block_error
-  L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346; _without_encrypted_reasoning_blocks L1349-L1360;
-  strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372; strip_thinking_blocks_from_anthropic_messages_request_dict
-  L1375-L1385; strip_empty_content_blocks_from_anthropic_messages L1388-L1428; _is_empty_text_block L1431-L1435;
-  is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block L1453-L1469; normalize_anthropic_tool_use_id
-  L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages L1504-L1526;
-  _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691; strip_provider_specific_fields_from_anthropic_messages
-  L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control L1707-L1712; _with_portable_cache_control_in_blocks
-  L1715-L1718; _with_portable_cache_control_in_content_block L1721-L1730; _with_portable_cache_control_in_message
-  L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748; _with_portable_cache_control_in_scoped_value
-  L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780 belong to B571; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _ReplayedSearchQuery L1529-L1532; _ReplayedWebSearchResult L1535-L1542;
-  _ReplayedWebSearchToolResultError L1545-L1549; _ReplayedWebSearchToolResult L1552-L1557; _ReplayedServerToolUse
-  L1560-L1565; _TextBlock L1568-L1570; _flattenable_web_search_tool_result L1577-L1588; _replayed_server_tool_use
-  L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block L1621-L1634; _flatten_web_search_results_in_message
-  L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages L1663-L1678 belong to B572; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; is_anthropic_oauth_key L225-L231;
-  resolve_used_client_oauth_token L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285;
-  AnthropicError.__init__ L310-L316; AnthropicModelInfo._make_api_key_auth_header L943-L949; AnthropicModelInfo.get_api_base
-  L1123-L1131; AnthropicModelInfo.get_api_key L1134-L1137; AnthropicModelInfo.get_auth_token L1140-L1148; AnthropicModelInfo.get_auth_header
-  L1151-L1170; AnthropicModelInfo.get_base_model L1173-L1174; AnthropicModelInfo.get_models L1176-L1200; AnthropicModelInfo.get_token_counter
-  L1202-L1213 belong to B567; reuse that implementation or its injected typed boundary.
+- B2216 now owns common_utils.py L213-L222 and L570-L648, including supports_fast_mode. Provider model metadata
+  and support factories are shared lower tasks, not the public SDK B157 umbrella.
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; AnthropicModelInfo._strip_version_suffix
+  L569-L574; AnthropicModelInfo._model_map_lookup_candidates L576-L614; AnthropicModelInfo._get_model_capability
+  L616-L631; AnthropicModelInfo._get_exact_model_capability L633-L641; AnthropicModelInfo.supports_fast_mode L643-L648
+  belong to B2216.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: is_anthropic_oauth_key L225-L231; resolve_used_client_oauth_token
+  L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285; AnthropicError.__init__
+  L310-L316; AnthropicModelInfo._make_api_key_auth_header L942-L949; AnthropicModelInfo.get_api_base L1122-L1131;
+  AnthropicModelInfo.get_api_key L1133-L1137; AnthropicModelInfo.get_auth_token L1139-L1148; AnthropicModelInfo.get_auth_header
+  L1150-L1170; AnthropicModelInfo.get_base_model L1172-L1174; AnthropicModelInfo.get_models L1176-L1200 belong to
+  B567.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106;
+  supports_anthropic_cache_control L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping
+  L130-L134; _validated_claude_code_list L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts
+  L163-L178; _is_claude_code_subagent_billing_system L181-L193; is_claude_code_one_shot_subagent_request L196-L210;
+  eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set L320-L335; AnthropicModelInfo.is_file_id_used
+  L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347; AnthropicModelInfo.is_mid_conversation_tool_change_used
+  L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used L361-L365; AnthropicModelInfo.is_mcp_server_used
+  L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381; AnthropicModelInfo.is_web_search_tool_used L383-L390;
+  AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used
+  L420-L444; AnthropicModelInfo.is_input_examples_used L446-L472; AnthropicModelInfo.is_eager_input_streaming_used
+  L474-L475; AnthropicModelInfo.is_code_execution_tool_used L831-L844; AnthropicModelInfo.is_container_with_skills_used
+  L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers L862-L865; AnthropicModelInfo.get_computer_tool_beta_header
+  L867-L884; AnthropicModelInfo.get_anthropic_beta_list L886-L940 belong to B568.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers
+  L951-L1046; AnthropicModelInfo.validate_environment L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry
+  L1800-L1815; create_anthropic_model_list_response L1818-L1844 belong to B570.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299;
+  is_anthropic_invalid_thinking_block_error L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346;
+  _without_encrypted_reasoning_blocks L1349-L1360; strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372;
+  strip_thinking_blocks_from_anthropic_messages_request_dict L1375-L1385; strip_empty_content_blocks_from_anthropic_messages
+  L1388-L1428; _is_empty_text_block L1431-L1435; is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block
+  L1453-L1469; normalize_anthropic_tool_use_id L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages
+  L1504-L1526; _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691;
+  strip_provider_specific_fields_from_anthropic_messages L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control
+  L1707-L1712; _with_portable_cache_control_in_blocks L1715-L1718; _with_portable_cache_control_in_content_block
+  L1721-L1730; _with_portable_cache_control_in_message L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748;
+  _with_portable_cache_control_in_scoped_value L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780
+  belong to B571.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _flattenable_web_search_tool_result L1577-L1588;
+  _replayed_server_tool_use L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block
+  L1621-L1634; _flatten_web_search_results_in_message L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages
+  L1663-L1678 belong to B572.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_token_counter L1202-L1213
+  belong to B585.'
 pitfalls:
-- Explicit capability values override model-name heuristics, including explicit false.
+- An existing output_config.effort=None overrides the effort inferred from a legacy budget.
+- The sampling drop is silent; forced-tool and disabled-thinking drops each log their own warning.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

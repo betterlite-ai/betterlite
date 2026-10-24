@@ -1,0 +1,374 @@
+id: B2227
+title: Shared streamed-response assembly
+description: >-
+  Own the shared main.py stream-to-response assembly orchestration below passthrough collectors and callback consumers.
+  Reuse B2232/B2233/B2234/B2235 ChunkProcessor for sorting, base response, content/tool/thinking/audio joins and
+  usage estimation; this task owns choosing those operations and merging their results. Reuse B068 cost calculators
+  and B068 logging cost projection without moving transport or SSE decoding into the assembler.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/main.py: stream_chunk_builder_text_completion
+  L8856-L8907; _reported_cost_is_priced_by_calculator L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations
+  L8935-L8938; _stream_builder_model_map_cost L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost
+  L8961-L8968; _stream_choice_delta L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001;
+  stream_chunk_builder L9004-L9271.
+
+
+  Named case contracts: empty_and_error_boundary: None chunks raises APIError 500, provider/model empty, source
+  message Error building chunks for logging/streaming usage calculation. Empty input or empty B005 normalized chunks
+  returns None. Any error in chat assembly, delegated text assembly, token estimation or metadata/cost application
+  logs litellm.main.py::stream_chunk_builder() - Exception occurred - {error} with exception context and becomes
+  that same APIError 500 through B184. start_time/end_time are accepted but unused. text_completion_assembly: After
+  B005 normalization, the first chunk with choices selects the text branch only when its first choice is TextChoices.
+  Use id/object/created/model and optional system_fingerprint from the first chunk, finish_reason/logprobs from
+  the last first choice. Join all non-None choice.text values across all chunks/choices that expose the text attribute;
+  emit one choice index=0. Prompt token-counter failure logs token_counter failed, assuming prompt tokens is 0 and
+  uses zero; completion count errors escape to the outer builder boundary. Compute total as prompt+completion via
+  B196. simple_text_path: Choice deltas may be mappings or Pydantic records; unsupported shapes become {}. Any non-None
+  tool_calls/function_call/reasoning_content/thinking_blocks/annotations/audio/images/provider_specific_fields in
+  any choice disables the fast path, including empty lists/maps. Otherwise use the first delta content when string,
+  else empty string; skip chunks with no choices, join nonempty parts and leave the base response content unchanged
+  when no parts exist. Use reasoning_tokens=0 in B005 usage calculation. complex_content_order: For a non-simple
+  stream collect tool-call chunks when any choice has non-None tool_calls, then function_call from the first choice;
+  either sets content=None and delegates its join to B005. Later non-None content chunks overwrite that None via
+  B005 combined content. Independently join thinking_blocks, reasoning_content and audio. Annotations and images
+  concatenate every first-choice list in stream order; do not deduplicate or keep only the last one. provider_fields_citations:
+  Consider first-choice provider_specific_fields values that are dicts. Collect non-None citation values; if all
+  are lists, generated citations is the list of those lists, otherwise it is one outer list containing all collected
+  values. Merge generated citations then the original maps in stream order, skipping singular citation keys. Later
+  fields overwrite earlier ones, including an explicit citations value overriding the generated value. Assign only
+  a truthy combined map. usage_hidden_metadata: Compute completion content through B218 get_content_from_model_response
+  and reasoning tokens through B005 on the complex path, then calculate and assign usage with messages/model/count_prompt_tokens
+  callback. In reverse chunk order, take the first hidden-params dict containing provider_specific_fields, update
+  the response hidden map and stop, even if that chosen map is empty. Finally stamp usage cost, set hidden response_cost,
+  then apply B005 provider-assembled streaming metadata in that order. reported_cost_precedence: A numeric usage.cost
+  (including Python bool) becomes hidden response_cost via float conversion unless logging says provider xai. With
+  logging present and no eligible reported cost return None rather than calling completion_cost here. Without logging
+  call B068 completion_cost using hidden custom_llm_provider; any failure falls back to cost_per_token only when
+  response.model is truthy and usage is Usage, summing prompt+completion prices, and catches that failure to None.
+  Preserve existing hidden response_cost when the computed result is None. usage_cost_stamping: With no logging
+  do nothing. Any existing numeric usage.cost, including zero/negative/bool, prevents recomputation. Otherwise call
+  the B190 logging response-cost calculator; stamp only a numeric value greater than zero. XAI is excluded only
+  from direct reported-cost pricing, not from the existing-cost guard. Use exact Decimal for native monetary arithmetic
+  under the existing project policy; preserve source branch decisions.
+
+
+  Call B2232 for base metadata, B2233 for tools/functions, B2234 for text/thinking/audio and B2235 for usage. B005
+  is a caller of this builder, never a prerequisite.
+
+
+  Use B2239 for main/utils print_verbose at the owned call sites; these are verbose hooks, not pre_call/post_call.
+
+
+  Implement crates/betterlite-streaming/src/streamed_response_assembly.rs with adjacent tests under streamed_response_assembly/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation streamed_response_assembly in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function streamed_response_assembly_cases in betterlite-streaming with these exact named cases (one
+  per oracle file): empty_and_error_boundary, text_completion_assembly, simple_text_path, complex_content_order,
+  provider_fields_citations, usage_hidden_metadata, reported_cost_precedence, usage_cost_stamping. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/streamed_response_assembly* using HelperCase:
+  kind: helper and the externally tagged streamed_response_assembly variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_streamed_response_assembly that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 325 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 310 production lines, 285 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 755 planned, 775 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-streaming/Cargo.toml
+  - crates/betterlite-streaming/src/lib.rs
+  - crates/betterlite-streaming/src/error.rs
+  - crates/betterlite-streaming/src/streamed_response_assembly.rs
+  - crates/betterlite-streaming/src/streamed_response_assembly/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/streamed_response_assembly.rs
+  - tools/oracle/src/helpers/streamed_response_assembly/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/streamed_response_assembly.py
+  - tools/oracle/cases/helpers/providers/streamed-response-assembly/**
+  - tools/oracle/fuzz/corpus/helper_case/streamed_response_assembly*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8856-L8907
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8913-L8917
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8920-L8932
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8935-L8938
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8941-L8950
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8953-L8958
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8961-L8968
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8983-L8989
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8992-L8993
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8996-L9001
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9004-L9271
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L305-L326
+  why: B218 response-content projection, reused by usage calculation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L1798-L1830
+  why: Logging response-cost calculator is the B068 cost owner, not callback dispatch.
+dod:
+- text: New streamed_response_assembly seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'empty_and_error_boundary: None chunks raises APIError 500, provider/model empty, source message Error building
+    chunks for logging/streaming usage calculation. Empty input or empty B005 normalized chunks returns None. Any
+    error in chat assembly, delegated text assembly, token estimation or metadata/cost application logs litellm.main.py::stream_chunk_builder()
+    - Exception occurred - {error} with exception context and becomes that same APIError 500 through B184. start_time/end_time
+    are accepted but unused.'
+  proof:
+  - case-empty-and-error-boundary
+  - oracle
+  - helper-python
+- text: 'text_completion_assembly: After B005 normalization, the first chunk with choices selects the text branch
+    only when its first choice is TextChoices. Use id/object/created/model and optional system_fingerprint from
+    the first chunk, finish_reason/logprobs from the last first choice. Join all non-None choice.text values across
+    all chunks/choices that expose the text attribute; emit one choice index=0. Prompt token-counter failure logs
+    token_counter failed, assuming prompt tokens is 0 and uses zero; completion count errors escape to the outer
+    builder boundary. Compute total as prompt+completion via B196.'
+  proof:
+  - case-text-completion-assembly
+  - oracle
+  - helper-python
+- text: 'simple_text_path: Choice deltas may be mappings or Pydantic records; unsupported shapes become {}. Any
+    non-None tool_calls/function_call/reasoning_content/thinking_blocks/annotations/audio/images/provider_specific_fields
+    in any choice disables the fast path, including empty lists/maps. Otherwise use the first delta content when
+    string, else empty string; skip chunks with no choices, join nonempty parts and leave the base response content
+    unchanged when no parts exist. Use reasoning_tokens=0 in B005 usage calculation.'
+  proof:
+  - case-simple-text-path
+  - oracle
+  - helper-python
+- text: 'complex_content_order: For a non-simple stream collect tool-call chunks when any choice has non-None tool_calls,
+    then function_call from the first choice; either sets content=None and delegates its join to B005. Later non-None
+    content chunks overwrite that None via B005 combined content. Independently join thinking_blocks, reasoning_content
+    and audio. Annotations and images concatenate every first-choice list in stream order; do not deduplicate or
+    keep only the last one.'
+  proof:
+  - case-complex-content-order
+  - oracle
+  - helper-python
+- text: 'provider_fields_citations: Consider first-choice provider_specific_fields values that are dicts. Collect
+    non-None citation values; if all are lists, generated citations is the list of those lists, otherwise it is
+    one outer list containing all collected values. Merge generated citations then the original maps in stream order,
+    skipping singular citation keys. Later fields overwrite earlier ones, including an explicit citations value
+    overriding the generated value. Assign only a truthy combined map.'
+  proof:
+  - case-provider-fields-citations
+  - oracle
+  - helper-python
+- text: 'usage_hidden_metadata: Compute completion content through B218 get_content_from_model_response and reasoning
+    tokens through B005 on the complex path, then calculate and assign usage with messages/model/count_prompt_tokens
+    callback. In reverse chunk order, take the first hidden-params dict containing provider_specific_fields, update
+    the response hidden map and stop, even if that chosen map is empty. Finally stamp usage cost, set hidden response_cost,
+    then apply B005 provider-assembled streaming metadata in that order.'
+  proof:
+  - case-usage-hidden-metadata
+  - oracle
+  - helper-python
+- text: 'reported_cost_precedence: A numeric usage.cost (including Python bool) becomes hidden response_cost via
+    float conversion unless logging says provider xai. With logging present and no eligible reported cost return
+    None rather than calling completion_cost here. Without logging call B068 completion_cost using hidden custom_llm_provider;
+    any failure falls back to cost_per_token only when response.model is truthy and usage is Usage, summing prompt+completion
+    prices, and catches that failure to None. Preserve existing hidden response_cost when the computed result is
+    None.'
+  proof:
+  - case-reported-cost-precedence
+  - oracle
+  - helper-python
+- text: 'usage_cost_stamping: With no logging do nothing. Any existing numeric usage.cost, including zero/negative/bool,
+    prevents recomputation. Otherwise call the B190 logging response-cost calculator; stamp only a numeric value
+    greater than zero. XAI is excluded only from direct reported-cost pricing, not from the existing-cost guard.
+    Use exact Decimal for native monetary arithmetic under the existing project policy; preserve source branch decisions.'
+  proof:
+  - case-usage-cost-stamping
+  - oracle
+  - helper-python
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/streamed_response_assembly.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/streamed_response_assembly*")"
+      && grep -lq 'streamed_response_assembly' tools/oracle/fuzz/corpus/helper_case/streamed_response_assembly*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_streamed_response_assembly$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-empty-and-error-boundary
+    why: None chunks raises APIError 500, provider/model empty, source message Error building chunks for logging/streaming
+      usage calculation. Empty input or empty B005 normalized chunks returns None. Any error in chat assembly, delegated
+      text assembly, token estimation or metadata/cost application logs litellm.main.py::stream_chunk_builder()
+      - Exception occurred - {error} with exception context and becomes that same APIError 500 through B184. start_time/end_time
+      are accepted but unused.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_empty_and_error_boundary$/)'
+  - id: case-text-completion-assembly
+    why: After B005 normalization, the first chunk with choices selects the text branch only when its first choice
+      is TextChoices. Use id/object/created/model and optional system_fingerprint from the first chunk, finish_reason/logprobs
+      from the last first choice. Join all non-None choice.text values across all chunks/choices that expose the
+      text attribute; emit one choice index=0. Prompt token-counter failure logs token_counter failed, assuming
+      prompt tokens is 0 and uses zero; completion count errors escape to the outer builder boundary. Compute total
+      as prompt+completion via B196.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_text_completion_assembly$/)'
+  - id: case-simple-text-path
+    why: Choice deltas may be mappings or Pydantic records; unsupported shapes become {}. Any non-None tool_calls/function_call/reasoning_content/thinking_blocks/annotations/audio/images/provider_specific_fields
+      in any choice disables the fast path, including empty lists/maps. Otherwise use the first delta content when
+      string, else empty string; skip chunks with no choices, join nonempty parts and leave the base response content
+      unchanged when no parts exist. Use reasoning_tokens=0 in B005 usage calculation.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_simple_text_path$/)'
+  - id: case-complex-content-order
+    why: For a non-simple stream collect tool-call chunks when any choice has non-None tool_calls, then function_call
+      from the first choice; either sets content=None and delegates its join to B005. Later non-None content chunks
+      overwrite that None via B005 combined content. Independently join thinking_blocks, reasoning_content and audio.
+      Annotations and images concatenate every first-choice list in stream order; do not deduplicate or keep only
+      the last one.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_complex_content_order$/)'
+  - id: case-provider-fields-citations
+    why: Consider first-choice provider_specific_fields values that are dicts. Collect non-None citation values;
+      if all are lists, generated citations is the list of those lists, otherwise it is one outer list containing
+      all collected values. Merge generated citations then the original maps in stream order, skipping singular
+      citation keys. Later fields overwrite earlier ones, including an explicit citations value overriding the generated
+      value. Assign only a truthy combined map.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_provider_fields_citations$/)'
+  - id: case-usage-hidden-metadata
+    why: Compute completion content through B218 get_content_from_model_response and reasoning tokens through B005
+      on the complex path, then calculate and assign usage with messages/model/count_prompt_tokens callback. In
+      reverse chunk order, take the first hidden-params dict containing provider_specific_fields, update the response
+      hidden map and stop, even if that chosen map is empty. Finally stamp usage cost, set hidden response_cost,
+      then apply B005 provider-assembled streaming metadata in that order.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_usage_hidden_metadata$/)'
+  - id: case-reported-cost-precedence
+    why: A numeric usage.cost (including Python bool) becomes hidden response_cost via float conversion unless logging
+      says provider xai. With logging present and no eligible reported cost return None rather than calling completion_cost
+      here. Without logging call B068 completion_cost using hidden custom_llm_provider; any failure falls back to
+      cost_per_token only when response.model is truthy and usage is Usage, summing prompt+completion prices, and
+      catches that failure to None. Preserve existing hidden response_cost when the computed result is None.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_reported_cost_precedence$/)'
+  - id: case-usage-cost-stamping
+    why: With no logging do nothing. Any existing numeric usage.cost, including zero/negative/bool, prevents recomputation.
+      Otherwise call the B190 logging response-cost calculator; stamp only a numeric value greater than zero. XAI
+      is excluded only from direct reported-cost pricing, not from the existing-cost guard. Use exact Decimal for
+      native monetary arithmetic under the existing project policy; preserve source branch decisions.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::streamed_response_assembly_cases::case_[0-9]+_usage_cost_stamping$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/empty-and-error-boundary.yaml
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/text-completion-assembly.yaml
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/simple-text-path.yaml
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/complex-content-order.yaml
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/provider-fields-citations.yaml
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/usage-hidden-metadata.yaml
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/reported-cost-precedence.yaml
+- tools/oracle/cases/helpers/providers/streamed-response-assembly/usage-cost-stamping.yaml
+deviations: []
+out_of_scope:
+- ChunkProcessor and its streaming_chunk_builder_utils.py methods belong to B2232/B2233/B2234/B2235; provider stream
+  decoders remain their existing tasks. main.py tokenizers are B196 and verbose output B249. The response-content
+  helper is B218; cost implementation B068 and logging calculator B068. Other main.py functions remain their existing
+  provider/API/core owners.
+- 'Function ownership inventory litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai
+  L2590-L2728 belong to B024.'
+- 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
+  to B025.'
+- 'Function ownership inventory litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026.'
+- 'Function ownership inventory litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945
+  belong to B027.'
+- 'Function ownership inventory litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178;
+  _complete_bedrock L4178-L4304 belong to B028.'
+- 'Function ownership inventory litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933
+  belong to B031.'
+- 'Function ownership inventory litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
+  L3995-L4042 belong to B036.'
+- 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
+- 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
+  L4045-L4106 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
+  _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+- 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
+  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
+  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
+  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
+- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
+  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
+  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
+  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
+  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
+  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+- 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
+  _complete_custom_providers L4982-L5042 belong to B044.'
+- 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'
+- 'Function ownership inventory litellm/main.py: _complete_ragflow L2010-L2057 belong to B049.'
+- 'Function ownership inventory litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow
+  L5094-L5140 belong to B050.'
+- 'Function ownership inventory litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375;
+  Chat.__init__ L379-L385; Completions.__init__ L389-L391; Completions.create L393-L401; AsyncCompletions.__init__
+  L405-L407; AsyncCompletions.create L409-L417; acompletion L420-L740; _resolve_dispatched_chat_response L743-L746;
+  _model_response_from_cached_dict L749-L750; _transcription_response_from_cached_dict L753-L754; _async_streaming
+  L757-L771; _handle_mock_potential_exceptions L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async
+  L831-L842; _sleep_for_timeout L845-L851; _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883;
+  admitted_prompt_token_counter L886-L889; mock_completion L892-L1057; responses_api_bridge_check L1083-L1194; _is_claude_tool_target
+  L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers
+  L1229-L1229; _proxy_auth_headers L1232-L1233; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
+  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _custom_api_first_output L4909-L4910; completion
+  L5143-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136; responses_with_retries
+  L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6195-L6250; embedding L6256-L6278; embedding L6282-L6304;
+  embedding L6309-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
+  L7385-L7386; atext_completion L7389-L7456; text_completion L7459-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
+  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7792-L7864; atranscription L7870-L7929;
+  transcription L7932-L8195; aspeech L8198-L8234; speech L8237-L8719; ahealth_check L8725-L8831; config_completion
+  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158.'
+- 'Function ownership inventory litellm/main.py: _load_default_encoding L9394-L9397 belong to B195.'
+- 'Function ownership inventory litellm/main.py: _load_module_encoding L9379-L9382; _get_encoding L9385-L9391 belong
+  to B196.'
+- 'Function ownership inventory litellm/main.py: _provider_config_items L1236-L1237; _locals_snapshot L1240-L1241;
+  _dispatch_metadata L1320-L1321; _dispatch_client_http L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai
+  L1334-L1335 belong to B198.'
+- 'Function ownership inventory litellm/main.py: print_verbose L8836-L8842 belong to B2239.'
+- 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
+  L1069-L1080 belong to B500.'
+pitfalls:
+- An empty nontext delta field disables the fast path because the check is non-None.
+- The generated citations list can be overwritten by a later explicit citations field.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: standard

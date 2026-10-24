@@ -2,13 +2,14 @@ id: B584
 title: Anthropic chat HTTP execution
 description: >-
   Execute Anthropic prepared chat calls using one async HTTP path and the existing provider deadlines. Preserve
-  provider error handling, streaming versus buffered response selection and the explicit unsupported embedding method.
-  Avoid SDK retry behavior here; router policies own retry decisions.
+  provider error handling, streaming versus buffered response selection and the no-op embedding stub. Avoid SDK
+  retry behavior here; router policies own retry decisions.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/chat/handler.py:
   AnthropicChatCompletion.__init__ L201-L202; AnthropicChatCompletion.acompletion_function L254-L321; AnthropicChatCompletion.completion
-  L323-L538; AnthropicChatCompletion.embedding L540-L542.
+  preparation L323-L362; AnthropicChatCompletion.completion send/projection branches L370-L538; AnthropicChatCompletion.embedding
+  L540-L542.
 
 
   API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
@@ -17,6 +18,52 @@ description: >-
 
 
   B689 owns HTTP send/stream helpers; this task composes those helpers with the buffered response projection.
+
+
+  Named case contracts: messages_post_request: Deep-copy messages/options; pop stream=None,json_mode=False,is_vertex_request=False
+  and vertex_count_tokens_location. Validate headers via B570 before selecting the prepared config supplied by B027
+  composition; pass is_vertex_request back only to config transformation. Sync transform_request vs async async_transform_request
+  runs before B960 update_request_with_filtered_beta, then B190 pre_call sees filtered headers/body. buffered_success:
+  Async uses supplied truthy client or B173 anthropic client, POST json=data with timeout/logging; sync keeps only
+  HTTPHandler client else creates B173 with timeout, POST data=json.dumps(data) with timeout/logging. Delegate selected
+  config response mapper with unmodified extracted json_mode and original optional_params (distinct from transform_params).
+  stream_request: Only literal True acompletion/stream select their branches. Set data.stream=True after beta filtering;
+  async stream accepts only AsyncHTTPHandler supplied client and awaits B689; sync B689 sends JSON string with speed
+  and request reverse-name map then wraps provider=anthropic plus B570 headers. No retry loop in this task. pre_stream_error:
+  Config preparation, beta filtering and validation failures propagate before transport. Provider lookup/None error
+  belongs to B027 composition and must be tested there, not recreated in the transport leaf. native_error_body:
+  Successful transport response delegates B580 parsed/native-error projection, including an error body at HTTP200;
+  do not preclassify by JSON error.type. unsupported_embedding: embedding() is an empty pass body and returns None
+  without sending a request; it does not raise an unsupported-operation exception. chat_failure_projection: Both
+  buffered paths wrap transport exception as B567 AnthropicError: status attribute or500, message exception.text-or-str
+  then truthy response.text overrides, headers exception.headers if non-None else truthy response.headers. Async
+  alone emits post_call with str(exception) before wrapping. Plain timeout without status becomes500, not an invented408.
+
+
+  The provider-config lookup in completion L363-L368 is owned by B027 and supplied to this lower send/prepare stage;
+  do not call a factory above this leaf. BaseLLM no-op initialization is supplied by B010 framework interfaces without
+  provider selection.
+
+
+  Write standalone Rust test chat_call_credential_identity_isolation in betterlite-anthropic: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test chat_call_secret_safe_failure in betterlite-anthropic: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct shared helper ownership: B2230. Reuse these named lower helpers at the source call sites rather than reproducing
+  them.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2201. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-anthropic/src/chat_call.rs with adjacent tests under chat_call/. Keep each Rust module
@@ -34,9 +81,9 @@ description: >-
 
   Write rstest function chat_call_cases in betterlite-anthropic with these exact named cases (one per oracle file):
   messages_post_request, buffered_success, stream_request, pre_stream_error, native_error_body, unsupported_embedding,
-  transport_timeout. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
-  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
-  API tasks retain route registration; this task must not register a duplicate axum route.
+  chat_failure_projection. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_chat_call* using HelperCase: kind:
@@ -51,10 +98,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 274 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 295 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 511 planned, 525 maximum changed lines.
+  Budget from 268 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 290 production lines, 225 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 655 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -75,87 +122,128 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L201-L202
   why: Own AnthropicChatCompletion.__init__. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L254-L542
-  why: >-
-    Own AnthropicChatCompletion.acompletion_function, AnthropicChatCompletion.completion, AnthropicChatCompletion.embedding.
+  why: Own AnthropicChatCompletion.acompletion_function, AnthropicChatCompletion.completion, AnthropicChatCompletion.embedding.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: 'messages post request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-chat-call/messages-post-request.yaml.'
+- text: 'messages_post_request: Deep-copy messages/options; pop stream=None,json_mode=False,is_vertex_request=False
+    and vertex_count_tokens_location. Validate headers via B570 before selecting the prepared config supplied by
+    B027 composition; pass is_vertex_request back only to config transformation. Sync transform_request vs async
+    async_transform_request runs before B960 update_request_with_filtered_beta, then B190 pre_call sees filtered
+    headers/body.'
   proof:
   - case-messages-post-request
   - oracle
   - helper-python
-- text: 'buffered success: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-chat-call/buffered-success.yaml.'
+- text: 'buffered_success: Async uses supplied truthy client or B173 anthropic client, POST json=data with timeout/logging;
+    sync keeps only HTTPHandler client else creates B173 with timeout, POST data=json.dumps(data) with timeout/logging.
+    Delegate selected config response mapper with unmodified extracted json_mode and original optional_params (distinct
+    from transform_params).'
   proof:
   - case-buffered-success
   - oracle
   - helper-python
-- text: 'stream request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-chat-call/stream-request.yaml.'
+- text: 'stream_request: Only literal True acompletion/stream select their branches. Set data.stream=True after
+    beta filtering; async stream accepts only AsyncHTTPHandler supplied client and awaits B689; sync B689 sends
+    JSON string with speed and request reverse-name map then wraps provider=anthropic plus B570 headers. No retry
+    loop in this task.'
   proof:
   - case-stream-request
   - oracle
   - helper-python
-- text: 'pre stream error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-chat-call/pre-stream-error.yaml.'
+- text: 'pre_stream_error: Config preparation, beta filtering and validation failures propagate before transport.
+    Provider lookup/None error belongs to B027 composition and must be tested there, not recreated in the transport
+    leaf.'
   proof:
   - case-pre-stream-error
   - oracle
   - helper-python
-- text: 'native error body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-chat-call/native-error-body.yaml.'
+- text: 'native_error_body: Successful transport response delegates B580 parsed/native-error projection, including
+    an error body at HTTP200; do not preclassify by JSON error.type.'
   proof:
   - case-native-error-body
   - oracle
   - helper-python
-- text: 'unsupported embedding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-chat-call/unsupported-embedding.yaml.'
+- text: 'unsupported_embedding: embedding() is an empty pass body and returns None without sending a request; it
+    does not raise an unsupported-operation exception.'
   proof:
   - case-unsupported-embedding
-  - oracle
-  - helper-python
-- text: 'transport timeout: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-chat-call/transport-timeout.yaml.'
-  proof:
-  - case-transport-timeout
   - oracle
   - helper-python
 - text: New anthropic_chat_call seeds parse as the intended call variant and replay through the shared production
     parser.
   proof:
   - helper-case-corpus
+- text: 'chat_failure_projection: Both buffered paths wrap transport exception as B567 AnthropicError: status attribute
+    or500, message exception.text-or-str then truthy response.text overrides, headers exception.headers if non-None
+    else truthy response.headers. Async alone emits post_call with str(exception) before wrapping. Plain timeout
+    without status becomes500, not an invented408.'
+  proof:
+  - case-chat-failure-projection
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-messages-post-request
-    why: The messages-post-request behavior is missing or differs from its pinned fixture.
+    why: Deep-copy messages/options; pop stream=None,json_mode=False,is_vertex_request=False and vertex_count_tokens_location.
+      Validate headers via B570 before selecting the prepared config supplied by B027 composition; pass is_vertex_request
+      back only to config transformation. Sync transform_request vs async async_transform_request runs before B960
+      update_request_with_filtered_beta, then B190 pre_call sees filtered headers/body.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_messages_post_request$/)'
   - id: case-buffered-success
-    why: The buffered-success behavior is missing or differs from its pinned fixture.
+    why: Async uses supplied truthy client or B173 anthropic client, POST json=data with timeout/logging; sync keeps
+      only HTTPHandler client else creates B173 with timeout, POST data=json.dumps(data) with timeout/logging. Delegate
+      selected config response mapper with unmodified extracted json_mode and original optional_params (distinct
+      from transform_params).
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_buffered_success$/)'
   - id: case-stream-request
-    why: The stream-request behavior is missing or differs from its pinned fixture.
+    why: Only literal True acompletion/stream select their branches. Set data.stream=True after beta filtering;
+      async stream accepts only AsyncHTTPHandler supplied client and awaits B689; sync B689 sends JSON string with
+      speed and request reverse-name map then wraps provider=anthropic plus B570 headers. No retry loop in this
+      task.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_stream_request$/)'
   - id: case-pre-stream-error
-    why: The pre-stream-error behavior is missing or differs from its pinned fixture.
+    why: Config preparation, beta filtering and validation failures propagate before transport. Provider lookup/None
+      error belongs to B027 composition and must be tested there, not recreated in the transport leaf.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_pre_stream_error$/)'
   - id: case-native-error-body
-    why: The native-error-body behavior is missing or differs from its pinned fixture.
+    why: Successful transport response delegates B580 parsed/native-error projection, including an error body at
+      HTTP200; do not preclassify by JSON error.type.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_native_error_body$/)'
   - id: case-unsupported-embedding
-    why: The unsupported-embedding behavior is missing or differs from its pinned fixture.
+    why: embedding() is an empty pass body and returns None without sending a request; it does not raise an unsupported-operation
+      exception.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_unsupported_embedding$/)'
-  - id: case-transport-timeout
-    why: The transport-timeout behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_transport_timeout$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_chat_call.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_chat_call.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_chat_call*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_chat_call*")"
       && grep -lq 'anthropic_chat_call' tools/oracle/fuzz/corpus/helper_case/anthropic_chat_call* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_chat_call$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-chat-failure-projection
+    why: 'Both buffered paths wrap transport exception as B567 AnthropicError: status attribute or500, message exception.text-or-str
+      then truthy response.text overrides, headers exception.headers if non-None else truthy response.headers. Async
+      alone emits post_call with str(exception) before wrapping. Plain timeout without status becomes500, not an
+      invented408.'
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_cases::case_[0-9]+_chat_failure_projection$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::chat_call_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-chat-call/messages-post-request.yaml
 - tools/oracle/cases/helpers/providers/anthropic-chat-call/buffered-success.yaml
@@ -163,36 +251,36 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-chat-call/pre-stream-error.yaml
 - tools/oracle/cases/helpers/providers/anthropic-chat-call/native-error-body.yaml
 - tools/oracle/cases/helpers/providers/anthropic-chat-call/unsupported-embedding.yaml
-- tools/oracle/cases/helpers/providers/anthropic-chat-call/transport-timeout.yaml
+- tools/oracle/cases/helpers/providers/anthropic-chat-call/chat-failure-projection.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/chat/handler.py: _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data L1151-L1174;
-  ModelResponseIterator.__iter__ L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__
-  L1222-L1224; ModelResponseIterator.__anext__ L1226-L1265; ModelResponseIterator.convert_str_chunk_to_generic_chunk
-  L1267-L1290 belong to B583; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197; AnthropicChatCompletion.acompletion_stream_function
-  L204-L252 belong to B689; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.chunk_parser L811-L1048; ModelResponseIterator._handle_json_mode_chunk
-  L1050-L1094; ModelResponseIterator._handle_accumulated_json_chunk L1118-L1149 belong to B582; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602; ModelResponseIterator.accumulated_json
-  L605-L606; ModelResponseIterator.accumulated_json L609-L610; ModelResponseIterator.check_empty_tool_call_args
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.completion (L363-L368)
+  belong to B027.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602;
+  ModelResponseIterator.accumulated_json L604-L606; ModelResponseIterator.accumulated_json L608-L610; ModelResponseIterator.check_empty_tool_call_args
   L612-L633; ModelResponseIterator._handle_usage L635-L646; ModelResponseIterator._content_block_delta_helper L648-L732;
   ModelResponseIterator._handle_redacted_thinking_content L734-L750; ModelResponseIterator.get_content_block_start
   L752-L763; ModelResponseIterator._web_search_call_snapshot L765-L766; ModelResponseIterator._complete_web_search_call
   L768-L776; ModelResponseIterator._build_code_interpreter_results L778-L809; ModelResponseIterator._handle_message_delta
-  L1096-L1116 belong to B581; reuse that implementation or its injected typed boundary.
+  L1096-L1116 belong to B581.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.chunk_parser L811-L1048;
+  ModelResponseIterator._handle_json_mode_chunk L1050-L1094; ModelResponseIterator._handle_accumulated_json_chunk
+  L1118-L1149 belong to B582.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data
+  L1151-L1174; ModelResponseIterator.__iter__ L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__
+  L1222-L1224; ModelResponseIterator.__anext__ L1226-L1265; ModelResponseIterator.convert_str_chunk_to_generic_chunk
+  L1267-L1290 belong to B583.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
+  AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
-- A valid native error body is different from a transport failure and retains its Anthropic status classification.
+- Only literal True selects async/stream execution, and transform_params is a separate mapping from optional_params
+  passed to reply projection.
+- The embedding stub returns None; it is not a provider error.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

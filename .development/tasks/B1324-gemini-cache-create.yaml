@@ -1,0 +1,77 @@
+id: B1324
+title: Automatic Gemini cached-content creation
+description: >-
+  Implement cache_create around B1317's prefix transformer and B1318's lookup. Both pinned
+  check_and_create_cache entry points share one native asynchronous execution. Explicit
+  cached_content, even an empty string, returns immediately. No marked block, an unsupported
+  terminal turn or a below-threshold prefix leaves messages and options unchanged. Eligibility
+  counts messages plus tools with B196, default image-token counting and the provider prefix;
+  counting errors log and skip caching. Resolve MINIMUM_PROMPT_CACHE_TOKEN_COUNT when set,
+  otherwise the model's prompt_cache_min_tokens, otherwise 1024 from B193. Test the override
+  through cache_create_settings in betterlite-config, including the pinned malformed-env fallback.
+  Once eligible, remove tools and tool_choice before lookup. Call B125's Cache.get_cache_key
+  boundary with precisely messages, tools, tool_choice, model in that order; do not use a JSON
+  hash or introduce a second cache-key format. A hit returns uncached messages and stripped
+  options. A miss POSTs B1317's cache body, including tools:null when absent and toolConfig only
+  when present. Header extras merge last. Return the name from the response, preserve upstream
+  statuses and map transport timeout to 408. Missing name is not repaired with displayName.
+  decode_created_cache handles the bounded provider JSON; add its cache_created fuzz target.
+  Native cache_create transport tests record the ordered requests and option mutations.
+  Cases are explicit_name_bypass, too_short_unchanged,
+  model_threshold_override, lookup_hit_strips_tools, miss_posts_null_tools and timeout_408.
+  Include Rust tests for transport cancellation and error-source preservation. B031's booted
+  cache-bypass, cache-create and cache-failures cases provide differential HTTP coverage of
+  these effects; no helper calls either effectful creation method. Source creation methods
+  have 268 nonblank noncomment lines; allow 280 IO/eligibility, 220 tests and 170
+  config/decoder/fuzz/wiring lines, maximum 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,cache_create}.rs
+    - crates/betterlite-vertex/src/cache_create/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/cache_created.rs
+    - crates/betterlite-vertex/fuzz/corpus/cache_created/**
+    - crates/betterlite-config/src/env.rs
+    - crates/betterlite-config/src/providers/vertex/cache.rs
+    - crates/betterlite-config/src/providers/vertex/cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L277-L591
+    why: Owned cache orchestration, option mutation, create request and failure outcomes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10108-L10165
+    why: Eligibility threshold and counting behavior at the called utility boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L358-L407
+    why: Cache-key implementation is consumed from B125, not reimplemented in Vertex.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L420-L427
+    why: Environment override is distinct from the 1024 fallback.
+dod:
+  - text: Cache bypass, eligibility, lookup and creation preserve source state changes and request bodies.
+    proof: [create-tests]
+  - text: The configured token minimum overrides model metadata through the production loader.
+    proof: [minimum-config]
+  - text: Created-cache JSON decoding replays newly added valid and malformed provider payloads.
+    proof: [create-corpora]
+checks:
+  optional: [mutants]
+  commands:
+    - id: create-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^cache_create::/) - test(replays_the_cache_created_corpus)'
+      why: Cache creation must prove request effects independently of decoder replay.
+    - id: minimum-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/cache_create_settings::/)'
+      why: MINIMUM_PROMPT_CACHE_TOKEN_COUNT must be resolved from the injected environment.
+    - id: create-corpora
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/cache_created)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/cache_created.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_cache_created_corpus)'
+      why: The created-cache decoder must process new response corpus inputs through production code.
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1318 owns the class constructor, target method and list methods before L277; get_cache and async_get_cache after L591 have no caller at the pin.
+  - B125 supplies the cache-key algorithm; this task neither installs a response-cache backend nor changes namespace policy.
+pitfalls:
+  - Replacing a provider cache name with its displayName produces an invalid cachedContent reference.
+  - Skipped caching must not consume tools or tool_choice from the generation request.
+  - The minimum is model-specific unless the environment explicitly overrides it; the source comment saying 1024 is not the policy.
+budget: {max_changed_lines: 700, max_new_expects: 0}
+review_level: security

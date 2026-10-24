@@ -1,0 +1,68 @@
+id: B1347
+title: Vertex Gemini image edit JSON and local image records
+description: >-
+  Implement vertex_gemini_edit from the 186 nonblank noncomment lines remaining in
+  vertex_gemini_transformation.py after B1345's three credential fallback methods. Use
+  B1345's five-size aspect map and B1128's typed file records. Receive B1120's MIME selection
+  as an injected function from B033; this leaf cannot depend on betterlite-core.
+  Only size is advertised. Accept bytes and seekable BytesIO/BufferedReader equivalents,
+  read from position zero and restore position; reject other file record variants. A list
+  skips None entries and must produce at least one image part. Put images before a nonempty
+  optional prompt, with contents an object containing role USER and parts. Serialize the
+  request as JSON and return no multipart files. generationConfig uses response_modalities
+  and image_config, with IMAGE only. A truthy custom base is a complete URL with trailing
+  slashes trimmed; otherwise require resolved project/location and build v1 generateContent,
+  removing vertex_ai/ from prefixed model names. Custom-base presence skips token validation;
+  the normal path uses B1302 and image fallback settings. Reuse B1345's bounded Google image
+  decoder and select only truthy inlineData.data, replacing response data without usage or
+  thought signatures. Decode failures retain upstream status and headers. Add the pure helper
+  vertex_gemini_edit and cases user_object_contents, images_before_prompt, restored_cursor,
+  empty_image_list, unsupported_file_record, complete_custom_base and empty_inline_data.
+  Budget 210 implementation, 170 tests and 110 oracle lines, capped at 550.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_gemini_edit}.rs
+    - crates/betterlite-vertex/src/vertex_gemini_edit/**
+    - tools/oracle/src/helpers/{mod,vertex_gemini_edit}.rs
+    - tools/oracle/helpers/{dispatch,vertex_gemini_edit}.py
+    - tools/oracle/cases/helpers/vertex-gemini-edit/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_gemini_edit*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py#L34-L264
+    why: Gemini edit input restrictions, uppercase user role, snake-case generation fields and response filtering.
+dod:
+  - text: Vertex Gemini edits retain their local-file restrictions and exact generateContent dialect.
+    proof: [gemini-edit-records, gemini-edit-python, oracle]
+  - text: New helper seeds reach the edit transformer through the shared fixture enum.
+    proof: [gemini-edit-fixtures]
+checks:
+  optional: []
+  commands:
+    - id: gemini-edit-records
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_gemini_edit::/)'
+      why: File position, URL and truthy image selection each have separate assertions.
+    - id: gemini-edit-python
+      run: test -f tools/oracle/helpers/vertex_gemini_edit.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference adapter exercises methods on in-memory file records only.
+    - id: gemini-edit-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_edit*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_gemini_edit::/)'
+      why: Added fixture bytes must deserialize the vertex_gemini_edit call variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-gemini-edit/user-object-contents.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-edit/images-before-prompt.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-edit/restored-cursor.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-edit/empty-image-list.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-edit/unsupported-file-record.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-edit/complete-custom-base.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-edit/empty-inline-data.yaml
+deviations: []
+out_of_scope:
+  - B1345 implements the fallback resolver trio at L72-L97 and decode_google_image; remaining methods and the JSON response protocol declaration belong here.
+  - B1349 chooses the edit configuration, while B999 executes the generic image-edit operation.
+pitfalls:
+  - contents is a single object with role USER in this Vertex adapter.
+  - An empty inlineData.data value is omitted even though the generation adapter includes it.
+  - Image edit does not advertise n or copy usageMetadata into its response.
+budget: {max_changed_lines: 550, max_new_expects: 1}
+review_level: security

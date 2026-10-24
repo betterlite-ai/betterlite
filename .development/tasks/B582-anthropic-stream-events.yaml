@@ -1,10 +1,10 @@
 id: B582
 title: Anthropic event-to-chat chunk conversion
 description: >-
-  Implement event dispatch for message_start/content_block_start/delta/stop/message_delta/message_stop, ping and
-  error events, producing existing typed chat chunks. Preserve tool indices, signed thinking, JSON-mode tool content
-  and reverse names; distinguish native stream completion from a gateway error so downstream fallback code can classify
-  it.
+  Implement event dispatch for message_start/content_block_start/delta/stop/message_delta/message_stop, ping/unknown
+  empty chunks and error events, producing existing typed chat chunks. Preserve tool indices, signed thinking, JSON-mode
+  tool content and reverse names; distinguish native stream completion from a gateway error so downstream fallback
+  code can classify it.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/chat/handler.py:
@@ -14,6 +14,37 @@ description: >-
 
   Every native stream error event raises AnthropicError status 500, independent of error.type; message comes from
   error.message or str(chunk).
+
+
+  Named case contracts: message_start_role: message_start copies model only when its key exists and merges usage
+  by key presence; does not copy provider message id or role. All returned chunks use one state response id, served_model,
+  choice index=0, content defaultempty, finish_reason defaultempty and omitted optional provider/thinking fields
+  when empty. tool_use_and_argument_delta: Delegate deltas B581. At stop only tool/server_tool checks empty arguments;
+  B581 no recorded deltas returns false so it does not emit {} for an entirely delta-free block, while recorded
+  empty input_json deltas do. Server stop concatenates string partial_json, JSON-decodes truthy text into stored
+  input; JSONDecodeError/TypeError keeps initial input. Clear current server id, response-format tracking and current
+  block type at stop. json_mode_chunks: Truthy json_mode converts only current tool named json_tool_call after reversal;
+  a new non-None id resets recognition by full name. Pass each argument fragment independently through B578 conversion,
+  replacing text and suppressing tool when message exists, setting converted flag. This includes empty initial argument
+  string. Reset recognition at block stop before final JSON-mode handling; converted flag remains and forces later
+  finish_reason=stop even with real tools. ping_no_content: ping, tool_result, message_stop and any unknown/missing/falsey
+  type return an empty-content chunk with finish_reason empty; they neither stop iteration nor synthesize stop.
+  There is no unknown-event500 branch. error_event: Only type=error raises AnthropicError500 independent of nested
+  error.type. Use truthy error.message else str(chunk); absent/falsey error becomes{}. Include rate_limit_error/authentication_error/unknown-type
+  rows in the same case outcome, with source headers absent. content_start_reset: Every content_block_start resets
+  current content_blocks and current block type. text emits required initial text; tool/server_tool increments dense
+  tool_index, reverse-maps name and emits id/type=function/arguments empty regardless of initial input. caller emitted
+  only when truthy (unlike B578 nonstream presence rule). web_search_stream_lifecycle: Server start stores id/input
+  and, after name reversal, exact web_search creates B902 in_progress call plus snapshot. web_search_tool_result
+  start appends raw cumulative results, completes tracked call and emits both; web_fetch_tool_result appends results
+  only. Other *_tool_result starts append cumulative tool_results and B581 interpreter calls except tool_search_tool_result,
+  which is ignored. compaction_and_container_events: Compaction start appends raw block and emits cumulative compaction_blocks
+  plus compaction_start {type:compaction,content:<defaultempty>}. Message delta emits truthy container; only truthy
+  dict container.id plus existing tool_results stores _container_id and re-emits interpreter calls. A container
+  arriving before results does not update _container_id. accumulated_json_values: Append via B005 JSONFragmentAccumulator;
+  before final drain parse only when last nonwhitespace byte could close }/]. Repeatedly pop complete values, skip
+  nondict JSON values and return first dict chunk, retaining tail for later invocation. Final drain ignores the
+  close-byte heuristic; incomplete tail returns None, never an invented truncated error.
 
 
   Implement crates/betterlite-anthropic/src/stream_events.rs with adjacent tests under stream_events/. Keep each
@@ -31,10 +62,10 @@ description: >-
 
   Write rstest function stream_events_cases in betterlite-anthropic with these exact named cases (one per oracle
   file): message_start_role, text_delta, tool_use_and_argument_delta, thinking_and_signature_events, citation_event,
-  json_mode_chunks, ping_no_content, error_event, message_stop_finish, rate_limit_event_still_500, unknown_event_error_500.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  json_mode_chunks, ping_no_content, error_event, content_start_reset, web_search_stream_lifecycle, compaction_and_container_events,
+  accumulated_json_values. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_stream_events* using HelperCase: kind:
@@ -53,9 +84,9 @@ description: >-
 
 
   Budget from 250 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 270 production lines, 144 behavior/config-test lines,
-  99 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 593 planned, 600 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 305 production lines, 245 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 745 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -83,7 +114,10 @@ references:
   why: Own ModelResponseIterator._handle_accumulated_json_chunk. Other functions in this file remain with the owners
     listed below.
 dod:
-- text: 'message start role: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/message-start-role.yaml.'
+- text: 'message_start_role: message_start copies model only when its key exists and merges usage by key presence;
+    does not copy provider message id or role. All returned chunks use one state response id, served_model, choice
+    index=0, content defaultempty, finish_reason defaultempty and omitted optional provider/thinking fields when
+    empty.'
   proof:
   - case-message-start-role
   - oracle
@@ -93,14 +127,16 @@ dod:
   - case-text-delta
   - oracle
   - helper-python
-- text: >-
-    tool use and argument delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/tool-use-and-argument-delta.yaml.
+- text: 'tool_use_and_argument_delta: Delegate deltas B581. At stop only tool/server_tool checks empty arguments;
+    B581 no recorded deltas returns false so it does not emit {} for an entirely delta-free block, while recorded
+    empty input_json deltas do. Server stop concatenates string partial_json, JSON-decodes truthy text into stored
+    input; JSONDecodeError/TypeError keeps initial input. Clear current server id, response-format tracking and
+    current block type at stop.'
   proof:
   - case-tool-use-and-argument-delta
   - oracle
   - helper-python
-- text: >-
-    thinking and signature events: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/thinking-and-signature-events.yaml.
+- text: 'thinking and signature events: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/thinking-and-signature-events.yaml.'
   proof:
   - case-thinking-and-signature-events
   - oracle
@@ -110,36 +146,27 @@ dod:
   - case-citation-event
   - oracle
   - helper-python
-- text: 'json mode chunks: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/json-mode-chunks.yaml.'
+- text: 'json_mode_chunks: Truthy json_mode converts only current tool named json_tool_call after reversal; a new
+    non-None id resets recognition by full name. Pass each argument fragment independently through B578 conversion,
+    replacing text and suppressing tool when message exists, setting converted flag. This includes empty initial
+    argument string. Reset recognition at block stop before final JSON-mode handling; converted flag remains and
+    forces later finish_reason=stop even with real tools.'
   proof:
   - case-json-mode-chunks
   - oracle
   - helper-python
-- text: 'ping no content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/ping-no-content.yaml.'
+- text: 'ping_no_content: ping, tool_result, message_stop and any unknown/missing/falsey type return an empty-content
+    chunk with finish_reason empty; they neither stop iteration nor synthesize stop. There is no unknown-event500
+    branch.'
   proof:
   - case-ping-no-content
   - oracle
   - helper-python
-- text: 'error event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/error-event.yaml.'
+- text: 'error_event: Only type=error raises AnthropicError500 independent of nested error.type. Use truthy error.message
+    else str(chunk); absent/falsey error becomes{}. Include rate_limit_error/authentication_error/unknown-type rows
+    in the same case outcome, with source headers absent.'
   proof:
   - case-error-event
-  - oracle
-  - helper-python
-- text: 'message stop finish: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/message-stop-finish.yaml.'
-  proof:
-  - case-message-stop-finish
-  - oracle
-  - helper-python
-- text: >-
-    rate limit event still 500: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/rate-limit-event-still-500.yaml.
-  proof:
-  - case-rate-limit-event-still-500
-  - oracle
-  - helper-python
-- text: >-
-    unknown event error 500: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/unknown-event-error-500.yaml.
-  proof:
-  - case-unknown-event-error-500
   - oracle
   - helper-python
 - text: New anthropic_stream_events seeds parse as the intended call variant and replay through the shared production
@@ -150,62 +177,115 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'content_start_reset: Every content_block_start resets current content_blocks and current block type. text
+    emits required initial text; tool/server_tool increments dense tool_index, reverse-maps name and emits id/type=function/arguments
+    empty regardless of initial input. caller emitted only when truthy (unlike B578 nonstream presence rule).'
+  proof:
+  - case-content-start-reset
+  - oracle
+  - helper-python
+- text: 'web_search_stream_lifecycle: Server start stores id/input and, after name reversal, exact web_search creates
+    B902 in_progress call plus snapshot. web_search_tool_result start appends raw cumulative results, completes
+    tracked call and emits both; web_fetch_tool_result appends results only. Other *_tool_result starts append cumulative
+    tool_results and B581 interpreter calls except tool_search_tool_result, which is ignored.'
+  proof:
+  - case-web-search-stream-lifecycle
+  - oracle
+  - helper-python
+- text: 'compaction_and_container_events: Compaction start appends raw block and emits cumulative compaction_blocks
+    plus compaction_start {type:compaction,content:<defaultempty>}. Message delta emits truthy container; only truthy
+    dict container.id plus existing tool_results stores _container_id and re-emits interpreter calls. A container
+    arriving before results does not update _container_id.'
+  proof:
+  - case-compaction-and-container-events
+  - oracle
+  - helper-python
+- text: 'accumulated_json_values: Append via B005 JSONFragmentAccumulator; before final drain parse only when last
+    nonwhitespace byte could close }/]. Repeatedly pop complete values, skip nondict JSON values and return first
+    dict chunk, retaining tail for later invocation. Final drain ignores the close-byte heuristic; incomplete tail
+    returns None, never an invented truncated error.'
+  proof:
+  - case-accumulated-json-values
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-message-start-role
-    why: The message-start-role behavior is missing or differs from its pinned fixture.
+    why: message_start copies model only when its key exists and merges usage by key presence; does not copy provider
+      message id or role. All returned chunks use one state response id, served_model, choice index=0, content defaultempty,
+      finish_reason defaultempty and omitted optional provider/thinking fields when empty.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_message_start_role$/)'
   - id: case-text-delta
-    why: The text-delta behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/text-delta.yaml.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_text_delta$/)'
   - id: case-tool-use-and-argument-delta
-    why: The tool-use-and-argument-delta behavior is missing or differs from its pinned fixture.
+    why: Delegate deltas B581. At stop only tool/server_tool checks empty arguments; B581 no recorded deltas returns
+      false so it does not emit {} for an entirely delta-free block, while recorded empty input_json deltas do.
+      Server stop concatenates string partial_json, JSON-decodes truthy text into stored input; JSONDecodeError/TypeError
+      keeps initial input. Clear current server id, response-format tracking and current block type at stop.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_tool_use_and_argument_delta$/)'
   - id: case-thinking-and-signature-events
-    why: The thinking-and-signature-events behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/thinking-and-signature-events.yaml.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_thinking_and_signature_events$/)'
   - id: case-citation-event
-    why: The citation-event behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-events/citation-event.yaml.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_citation_event$/)'
   - id: case-json-mode-chunks
-    why: The json-mode-chunks behavior is missing or differs from its pinned fixture.
+    why: Truthy json_mode converts only current tool named json_tool_call after reversal; a new non-None id resets
+      recognition by full name. Pass each argument fragment independently through B578 conversion, replacing text
+      and suppressing tool when message exists, setting converted flag. This includes empty initial argument string.
+      Reset recognition at block stop before final JSON-mode handling; converted flag remains and forces later finish_reason=stop
+      even with real tools.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_json_mode_chunks$/)'
   - id: case-ping-no-content
-    why: The ping-no-content behavior is missing or differs from its pinned fixture.
+    why: ping, tool_result, message_stop and any unknown/missing/falsey type return an empty-content chunk with
+      finish_reason empty; they neither stop iteration nor synthesize stop. There is no unknown-event500 branch.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_ping_no_content$/)'
   - id: case-error-event
-    why: The error-event behavior is missing or differs from its pinned fixture.
+    why: Only type=error raises AnthropicError500 independent of nested error.type. Use truthy error.message else
+      str(chunk); absent/falsey error becomes{}. Include rate_limit_error/authentication_error/unknown-type rows
+      in the same case outcome, with source headers absent.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_error_event$/)'
-  - id: case-message-stop-finish
-    why: The message-stop-finish behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_message_stop_finish$/)'
-  - id: case-rate-limit-event-still-500
-    why: The rate-limit-event-still-500 behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_rate_limit_event_still_500$/)'
-  - id: case-unknown-event-error-500
-    why: The unknown-event-error-500 behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_unknown_event_error_500$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_events.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_events.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_stream_events*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_stream_events*")"
       && grep -lq 'anthropic_stream_events' tools/oracle/fuzz/corpus/helper_case/anthropic_stream_events* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_stream_events$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_stream_events)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-anthropic/fuzz/corpus/anthropic_stream_events)"
       && grep -q 'decode_stream_tool_arguments' crates/betterlite-anthropic/fuzz/fuzz_targets/anthropic_stream_events.rs
       && cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::replays_the_anthropic_stream_events_corpus$/)'
+  - id: case-content-start-reset
+    why: Every content_block_start resets current content_blocks and current block type. text emits required initial
+      text; tool/server_tool increments dense tool_index, reverse-maps name and emits id/type=function/arguments
+      empty regardless of initial input. caller emitted only when truthy (unlike B578 nonstream presence rule).
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_content_start_reset$/)'
+  - id: case-web-search-stream-lifecycle
+    why: Server start stores id/input and, after name reversal, exact web_search creates B902 in_progress call plus
+      snapshot. web_search_tool_result start appends raw cumulative results, completes tracked call and emits both;
+      web_fetch_tool_result appends results only. Other *_tool_result starts append cumulative tool_results and
+      B581 interpreter calls except tool_search_tool_result, which is ignored.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_web_search_stream_lifecycle$/)'
+  - id: case-compaction-and-container-events
+    why: Compaction start appends raw block and emits cumulative compaction_blocks plus compaction_start {type:compaction,content:<defaultempty>}.
+      Message delta emits truthy container; only truthy dict container.id plus existing tool_results stores _container_id
+      and re-emits interpreter calls. A container arriving before results does not update _container_id.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_compaction_and_container_events$/)'
+  - id: case-accumulated-json-values
+    why: Append via B005 JSONFragmentAccumulator; before final drain parse only when last nonwhitespace byte could
+      close }/]. Repeatedly pop complete values, skip nondict JSON values and return first dict chunk, retaining
+      tail for later invocation. Final drain ignores the close-byte heuristic; incomplete tail returns None, never
+      an invented truncated error.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_events_cases::case_[0-9]+_accumulated_json_values$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-stream-events/message-start-role.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-events/text-delta.yaml
@@ -215,40 +295,40 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-stream-events/json-mode-chunks.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-events/ping-no-content.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-events/error-event.yaml
-- tools/oracle/cases/helpers/providers/anthropic-stream-events/message-stop-finish.yaml
-- tools/oracle/cases/helpers/providers/anthropic-stream-events/rate-limit-event-still-500.yaml
-- tools/oracle/cases/helpers/providers/anthropic-stream-events/unknown-event-error-500.yaml
+- tools/oracle/cases/helpers/providers/anthropic-stream-events/content-start-reset.yaml
+- tools/oracle/cases/helpers/providers/anthropic-stream-events/web-search-stream-lifecycle.yaml
+- tools/oracle/cases/helpers/providers/anthropic-stream-events/compaction-and-container-events.yaml
+- tools/oracle/cases/helpers/providers/anthropic-stream-events/accumulated-json-values.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/chat/handler.py: _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data L1151-L1174;
-  ModelResponseIterator.__iter__ L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__
-  L1222-L1224; ModelResponseIterator.__anext__ L1226-L1265; ModelResponseIterator.convert_str_chunk_to_generic_chunk
-  L1267-L1290 belong to B583; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197; AnthropicChatCompletion.acompletion_stream_function
-  L204-L252 belong to B689; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.__init__ L201-L202; AnthropicChatCompletion.acompletion_function
-  L254-L321; AnthropicChatCompletion.completion L323-L538; AnthropicChatCompletion.embedding L540-L542 belong to
-  B584; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602; ModelResponseIterator.accumulated_json
-  L605-L606; ModelResponseIterator.accumulated_json L609-L610; ModelResponseIterator.check_empty_tool_call_args
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.completion (L363-L368)
+  belong to B027.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.__init__ L546-L602;
+  ModelResponseIterator.accumulated_json L604-L606; ModelResponseIterator.accumulated_json L608-L610; ModelResponseIterator.check_empty_tool_call_args
   L612-L633; ModelResponseIterator._handle_usage L635-L646; ModelResponseIterator._content_block_delta_helper L648-L732;
   ModelResponseIterator._handle_redacted_thinking_content L734-L750; ModelResponseIterator.get_content_block_start
   L752-L763; ModelResponseIterator._web_search_call_snapshot L765-L766; ModelResponseIterator._complete_web_search_call
   L768-L776; ModelResponseIterator._build_code_interpreter_results L778-L809; ModelResponseIterator._handle_message_delta
-  L1096-L1116 belong to B581; reuse that implementation or its injected typed boundary.
+  L1096-L1116 belong to B581.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data
+  L1151-L1174; ModelResponseIterator.__iter__ L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__
+  L1222-L1224; ModelResponseIterator.__anext__ L1226-L1265; ModelResponseIterator.convert_str_chunk_to_generic_chunk
+  L1267-L1290 belong to B583.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.__init__ L201-L202;
+  AnthropicChatCompletion.acompletion_function L254-L321; AnthropicChatCompletion.completion (L323-L362, L370-L538);
+  AnthropicChatCompletion.embedding L540-L542 belong to B584.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
+  AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
-- >-
-  Preserve tool indices, signed thinking, JSON-mode tool content and reverse names; distinguish native stream completion
-  from a gateway error so downstream fallback code can classify it.
+- A tool block with no deltas emits no {} stop fragment because the empty-args predicate returns false for an empty
+  buffer.
+- message_stop is an empty chunk; message_delta supplies finish_reason and EOF ends iteration.
+- Container id is stored only when tool results already exist.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: standard

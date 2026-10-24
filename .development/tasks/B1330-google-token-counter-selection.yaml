@@ -1,0 +1,81 @@
+id: B1330
+title: Select Google token counters and preserve wrapper differences
+description: >-
+  Implement google_token_counter for VertexAIModelInfo/VertexAITokenCounter at Vertex common_utils.py
+  L1170-L1317 and GoogleAIStudioTokenCounter at Studio common_utils.py L475-L519, plus
+  GeminiModelInfo.get_token_counter at L420-L429: 165 nonblank noncomment lines in total.
+  The Studio factory is installed here after B1331 identity, avoiding a reverse factory
+  dependency from identity to the counter. Vertex accepts only provider=vertex_ai, Studio only gemini;
+  vertex_ai_beta is not silently accepted. Copy deployment.litellm_params before replacing model
+  and contents. Vertex partner selection uses B1306 predicates and B1332, resolving explicit
+  project/location/credential aliases with vertex_count_tokens_location taking precedence.
+  Nonpartner Vertex uses supplied contents even when empty, otherwise converts messages with
+  B1312; Studio forwards contents unchanged and never synthesizes it from messages. tools/system
+  parameters are accepted but unused by these wrappers. Invoke B1329 for ordinary Google counts.
+  Vertex wraps only replies containing totalTokens; Studio wraps every non-None reply with a zero
+  fallback. Partner input_tokens maps to total_tokens and preserves tokenizer_used and the original
+  response. Set request_model/model_used exactly from caller arguments. VertexAIModelInfo's
+  validate_environment/get_models/get_api_key/get_api_base/get_base_model remain explicit
+  unsupported operations; its factory returns the Vertex counter. Restrict pure helper
+  google_counter_selection to should_use_token_counting_api and both model-info factories,
+  covering beta_not_selected, vertex_selected, studio_selected and counter_factory_kinds.
+  Native selection tests use injected endpoint counters for empty_contents_wins,
+  vertex_message_fallback, studio_none_contents, vertex_missing_total, studio_missing_total
+  and partner_aliases; those async wrappers are not helper entry points. Also prove copied
+  deployment maps remain intact. Budget 210 selection and
+  facade code, 170 tests and 120 adapter lines, capped at 550.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,google_token_counter}.rs
+    - crates/betterlite-vertex/src/google_token_counter/**
+    - tools/oracle/src/helpers/{mod,google_counter_selection}.rs
+    - tools/oracle/helpers/{dispatch,google_counter_selection}.py
+    - tools/oracle/cases/helpers/google-counter-selection/**
+    - tools/oracle/fuzz/corpus/helper_case/google_counter_selection*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L420-L429
+    why: Studio's counter factory is installed here rather than creating a reverse identity dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1170-L1317
+    why: Vertex model-info stubs, partner selection and message fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L475-L519
+    why: Studio forwards contents and defaults a missing totalTokens to zero.
+dod:
+  - text: Provider predicates and model-info factories select the pinned counter kinds.
+    proof: [counter-selection, counter-python, oracle]
+  - text: Native wrapper tests preserve explicit content precedence and missing-total response differences.
+    proof: [counter-selection]
+  - text: Deployment options remain unchanged across repeated counter invocations.
+    proof: [counter-isolation]
+  - text: Shared fixture parsing selects the new counter-selection operation.
+    proof: [counter-seeds]
+checks:
+  optional: []
+  commands:
+    - id: counter-selection
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_token_counter::tests::selection/)'
+      why: Wrapper tests distinguish missing totals, empty contents and provider aliases.
+    - id: counter-isolation
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_token_counter::tests::deployment_isolation$/)'
+      why: A second call must observe the original deployment's model and credential options.
+    - id: counter-python
+      run: test -f tools/oracle/helpers/google_counter_selection.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Only synchronous provider predicates and factories are called by the Python helper.
+    - id: counter-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_counter_selection*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_counter_selection::/)'
+      why: Newly added counter records must deserialize into the intended helper variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/google-counter-selection/beta-not-selected.yaml
+  - tools/oracle/cases/helpers/google-counter-selection/vertex-selected.yaml
+  - tools/oracle/cases/helpers/google-counter-selection/studio-selected.yaml
+  - tools/oracle/cases/helpers/google-counter-selection/counter-factory-kinds.yaml
+deviations: []
+out_of_scope:
+  - Earlier Vertex common_utils.py methods belong to B1304-B1307/B1312; Studio model identity is B1331, image policy B1334 and SDK value encoding B1379.
+  - B1329/B1332 own network execution and count-reply parsing; this wrapper adds no decoder.
+pitfalls:
+  - contents=[] is supplied content and must not trigger message conversion on Vertex.
+  - Studio count_tokens ignores messages even when contents is None.
+  - A successful Vertex JSON reply without totalTokens produces None instead of a zero-count response.
+budget: {max_changed_lines: 550, max_new_expects: 0}
+review_level: standard

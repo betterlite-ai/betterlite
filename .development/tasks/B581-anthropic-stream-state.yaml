@@ -1,9 +1,10 @@
 id: B581
 title: Anthropic streaming block and usage state
 description: >-
-  Add AnthropicStreamState with per-content-block tool buffers, thinking signatures, citation state, usage and web/code
-  tool snapshots. Bound accumulators by existing transport body/event limits and keep JSON tool state distinct from
-  normal text. This state machine consumes decoded native events; framing and event dispatch are separate tasks.
+  Add AnthropicStreamState with a current-content-block delta buffer (reset on each block start), thinking signatures,
+  citation state, usage and web/code tool snapshots. Bound accumulators by existing transport body/event limits
+  and keep JSON tool state distinct from normal text. This state machine consumes decoded native events; framing
+  and event dispatch are separate tasks.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/chat/handler.py:
@@ -13,6 +14,44 @@ description: >-
   L734-L750; ModelResponseIterator.get_content_block_start L752-L763; ModelResponseIterator._web_search_call_snapshot
   L765-L766; ModelResponseIterator._complete_web_search_call L768-L776; ModelResponseIterator._build_code_interpreter_results
   L778-L809; ModelResponseIterator._handle_message_delta L1096-L1116.
+
+
+  Named case contracts: empty_tool_arguments: No content_blocks returns false. First delta type text_delta/thinking_delta
+  returns false regardless of later blocks; otherwise concatenate only input_json_delta.partial_json default empty
+  and return whether length zero. This does not treat whitespace as empty. partial_input_json: A delta containing
+  text key returns its value immediately and is not buffered, regardless of type/other keys. Other deltas append
+  to content_blocks. partial_json emits function argument chunk with id/name=None and current tool_index only when
+  current block is tool_use/server_tool_use; suppress it on result/other blocks. Branch precedence is text,partial_json,citation,thinking/signature,compaction.
+  thinking_signature: Nonempty string thinking appends to stream-wide reasoning text and emits a thinking block
+  plus reasoning_content. Nonempty signature emits one signed thinking block containing concatenated string thinking
+  from the current block buffer (including same event), replaces the emitted thinking list and sets reasoning_content
+  empty only if none was emitted. Empty/nonstring thinking/signature adds no thinking fields. redacted_thinking:
+  Start projection preserves required opaque data as {type:redacted_thinking,data:...} in both thinking list/provider
+  fields. get_content_block_start uses tool-use TypedDict shape only for exact tool_use, text shape for all other
+  types; these Python TypedDict constructors do not independently validate payload schemas. usage_start_and_delta:
+  Shallow-merge each usage mapping over cumulative prior values, including explicit None replacing earlier count;
+  nested output_tokens_details is replaced, not deep-merged. B579 receives concatenated reasoning text or None plus
+  current speed, but no completion_response; returned non-None speed updates state. web_search_snapshot: Snapshot
+  copies current id->call mapping. Completion ignores nonstring/untracked tool_use_id, otherwise rebuilds its B902
+  call with stored server input default{} and result; no phantom start entry is created. code_output_buffer: Rebuild
+  full cumulative list on every emission, only bash_code_execution_tool_result, required normalized type=code_interpreter_call/status=completed/id
+  defaultempty, code from dict server input.command defaultempty (not B578 string-filtered), current container id,
+  B902 log outputs. Do not emit a delta-only list. stop_reason_state: Message delta maps stop_reason default stop
+  and falsey fallback stop through B206, then overrides stop if converted_response_format_tool. Usage is processed
+  by key presence; container is returned from delta without storing it here. citation delta passes its value under
+  citation; compaction_delta requires type=compaction_delta and content key, retained verbatim. initial_state: Create
+  one injected response id, served_model=None, tool_index=-1, json_mode=False unless passed, speed from input, reverse-map=passed
+  truthy map or empty; cumulative usage/map/list buffers empty, both JSON-tool flags false, chunk_type=valid_json,
+  current block/server-tool/container ids None. sync_stream is accepted but unused. accumulated_json property delegates
+  B005 snapshot/set, not a separate string accumulator.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2201. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
+  The _generate_id helper called during iterator initialization belongs to B2214; inject its UUID source and preserve
+  chatcmpl- formatting.
 
 
   Implement crates/betterlite-anthropic/src/stream_state.rs with adjacent tests under stream_state/. Keep each Rust
@@ -30,10 +69,9 @@ description: >-
 
   Write rstest function stream_state_cases in betterlite-anthropic with these exact named cases (one per oracle
   file): empty_tool_arguments, partial_input_json, thinking_signature, redacted_thinking, usage_start_and_delta,
-  web_search_snapshot, code_output_buffer, stop_reason_state. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  web_search_snapshot, code_output_buffer, stop_reason_state, initial_state. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_stream_state* using HelperCase: kind:
@@ -49,9 +87,9 @@ description: >-
 
 
   Budget from 226 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 250 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 479 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 260 production lines, 225 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 620 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -74,8 +112,7 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L593-L641
   why: Reuse or declare the typed records and aliases consumed by this slice.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L546-L809
-  why: >-
-    Own ModelResponseIterator.__init__, ModelResponseIterator.accumulated_json, ModelResponseIterator.accumulated_json,
+  why: Own ModelResponseIterator.__init__, ModelResponseIterator.accumulated_json, ModelResponseIterator.accumulated_json,
     ModelResponseIterator.check_empty_tool_call_args, ModelResponseIterator._handle_usage, ModelResponseIterator._content_block_delta_helper,
     ModelResponseIterator._handle_redacted_thinking_content, ModelResponseIterator.get_content_block_start, ModelResponseIterator._web_search_call_snapshot,
     ModelResponseIterator._complete_web_search_call, ModelResponseIterator._build_code_interpreter_results. Other
@@ -84,43 +121,61 @@ references:
   why: Own ModelResponseIterator._handle_message_delta. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: 'empty tool arguments: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/empty-tool-arguments.yaml.'
+- text: 'empty_tool_arguments: No content_blocks returns false. First delta type text_delta/thinking_delta returns
+    false regardless of later blocks; otherwise concatenate only input_json_delta.partial_json default empty and
+    return whether length zero. This does not treat whitespace as empty.'
   proof:
   - case-empty-tool-arguments
   - oracle
   - helper-python
-- text: 'partial input json: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/partial-input-json.yaml.'
+- text: 'partial_input_json: A delta containing text key returns its value immediately and is not buffered, regardless
+    of type/other keys. Other deltas append to content_blocks. partial_json emits function argument chunk with id/name=None
+    and current tool_index only when current block is tool_use/server_tool_use; suppress it on result/other blocks.
+    Branch precedence is text,partial_json,citation,thinking/signature,compaction.'
   proof:
   - case-partial-input-json
   - oracle
   - helper-python
-- text: 'thinking signature: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/thinking-signature.yaml.'
+- text: 'thinking_signature: Nonempty string thinking appends to stream-wide reasoning text and emits a thinking
+    block plus reasoning_content. Nonempty signature emits one signed thinking block containing concatenated string
+    thinking from the current block buffer (including same event), replaces the emitted thinking list and sets reasoning_content
+    empty only if none was emitted. Empty/nonstring thinking/signature adds no thinking fields.'
   proof:
   - case-thinking-signature
   - oracle
   - helper-python
-- text: 'redacted thinking: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/redacted-thinking.yaml.'
+- text: 'redacted_thinking: Start projection preserves required opaque data as {type:redacted_thinking,data:...}
+    in both thinking list/provider fields. get_content_block_start uses tool-use TypedDict shape only for exact
+    tool_use, text shape for all other types; these Python TypedDict constructors do not independently validate
+    payload schemas.'
   proof:
   - case-redacted-thinking
   - oracle
   - helper-python
-- text: >-
-    usage start and delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/usage-start-and-delta.yaml.
+- text: 'usage_start_and_delta: Shallow-merge each usage mapping over cumulative prior values, including explicit
+    None replacing earlier count; nested output_tokens_details is replaced, not deep-merged. B579 receives concatenated
+    reasoning text or None plus current speed, but no completion_response; returned non-None speed updates state.'
   proof:
   - case-usage-start-and-delta
   - oracle
   - helper-python
-- text: 'web search snapshot: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/web-search-snapshot.yaml.'
+- text: 'web_search_snapshot: Snapshot copies current id->call mapping. Completion ignores nonstring/untracked tool_use_id,
+    otherwise rebuilds its B902 call with stored server input default{} and result; no phantom start entry is created.'
   proof:
   - case-web-search-snapshot
   - oracle
   - helper-python
-- text: 'code output buffer: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/code-output-buffer.yaml.'
+- text: 'code_output_buffer: Rebuild full cumulative list on every emission, only bash_code_execution_tool_result,
+    required normalized type=code_interpreter_call/status=completed/id defaultempty, code from dict server input.command
+    defaultempty (not B578 string-filtered), current container id, B902 log outputs. Do not emit a delta-only list.'
   proof:
   - case-code-output-buffer
   - oracle
   - helper-python
-- text: 'stop reason state: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-stream-state/stop-reason-state.yaml.'
+- text: 'stop_reason_state: Message delta maps stop_reason default stop and falsey fallback stop through B206, then
+    overrides stop if converted_response_format_tool. Usage is processed by key presence; container is returned
+    from delta without storing it here. citation delta passes its value under citation; compaction_delta requires
+    type=compaction_delta and content key, retained verbatim.'
   proof:
   - case-stop-reason-state
   - oracle
@@ -129,47 +184,77 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'initial_state: Create one injected response id, served_model=None, tool_index=-1, json_mode=False unless
+    passed, speed from input, reverse-map=passed truthy map or empty; cumulative usage/map/list buffers empty, both
+    JSON-tool flags false, chunk_type=valid_json, current block/server-tool/container ids None. sync_stream is accepted
+    but unused. accumulated_json property delegates B005 snapshot/set, not a separate string accumulator.'
+  proof:
+  - case-initial-state
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-empty-tool-arguments
-    why: The empty-tool-arguments behavior is missing or differs from its pinned fixture.
+    why: No content_blocks returns false. First delta type text_delta/thinking_delta returns false regardless of
+      later blocks; otherwise concatenate only input_json_delta.partial_json default empty and return whether length
+      zero. This does not treat whitespace as empty.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_empty_tool_arguments$/)'
   - id: case-partial-input-json
-    why: The partial-input-json behavior is missing or differs from its pinned fixture.
+    why: A delta containing text key returns its value immediately and is not buffered, regardless of type/other
+      keys. Other deltas append to content_blocks. partial_json emits function argument chunk with id/name=None
+      and current tool_index only when current block is tool_use/server_tool_use; suppress it on result/other blocks.
+      Branch precedence is text,partial_json,citation,thinking/signature,compaction.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_partial_input_json$/)'
   - id: case-thinking-signature
-    why: The thinking-signature behavior is missing or differs from its pinned fixture.
+    why: Nonempty string thinking appends to stream-wide reasoning text and emits a thinking block plus reasoning_content.
+      Nonempty signature emits one signed thinking block containing concatenated string thinking from the current
+      block buffer (including same event), replaces the emitted thinking list and sets reasoning_content empty only
+      if none was emitted. Empty/nonstring thinking/signature adds no thinking fields.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_thinking_signature$/)'
   - id: case-redacted-thinking
-    why: The redacted-thinking behavior is missing or differs from its pinned fixture.
+    why: Start projection preserves required opaque data as {type:redacted_thinking,data:...} in both thinking list/provider
+      fields. get_content_block_start uses tool-use TypedDict shape only for exact tool_use, text shape for all
+      other types; these Python TypedDict constructors do not independently validate payload schemas.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_redacted_thinking$/)'
   - id: case-usage-start-and-delta
-    why: The usage-start-and-delta behavior is missing or differs from its pinned fixture.
+    why: Shallow-merge each usage mapping over cumulative prior values, including explicit None replacing earlier
+      count; nested output_tokens_details is replaced, not deep-merged. B579 receives concatenated reasoning text
+      or None plus current speed, but no completion_response; returned non-None speed updates state.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_usage_start_and_delta$/)'
   - id: case-web-search-snapshot
-    why: The web-search-snapshot behavior is missing or differs from its pinned fixture.
+    why: Snapshot copies current id->call mapping. Completion ignores nonstring/untracked tool_use_id, otherwise
+      rebuilds its B902 call with stored server input default{} and result; no phantom start entry is created.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_web_search_snapshot$/)'
   - id: case-code-output-buffer
-    why: The code-output-buffer behavior is missing or differs from its pinned fixture.
+    why: Rebuild full cumulative list on every emission, only bash_code_execution_tool_result, required normalized
+      type=code_interpreter_call/status=completed/id defaultempty, code from dict server input.command defaultempty
+      (not B578 string-filtered), current container id, B902 log outputs. Do not emit a delta-only list.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_code_output_buffer$/)'
   - id: case-stop-reason-state
-    why: The stop-reason-state behavior is missing or differs from its pinned fixture.
+    why: Message delta maps stop_reason default stop and falsey fallback stop through B206, then overrides stop
+      if converted_response_format_tool. Usage is processed by key presence; container is returned from delta without
+      storing it here. citation delta passes its value under citation; compaction_delta requires type=compaction_delta
+      and content key, retained verbatim.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_stop_reason_state$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_state.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_stream_state.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_stream_state*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_stream_state*")"
       && grep -lq 'anthropic_stream_state' tools/oracle/fuzz/corpus/helper_case/anthropic_stream_state* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_stream_state$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-initial-state
+    why: Create one injected response id, served_model=None, tool_index=-1, json_mode=False unless passed, speed
+      from input, reverse-map=passed truthy map or empty; cumulative usage/map/list buffers empty, both JSON-tool
+      flags false, chunk_type=valid_json, current block/server-tool/container ids None. sync_stream is accepted
+      but unused. accumulated_json property delegates B005 snapshot/set, not a separate string accumulator.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::stream_state_cases::case_[0-9]+_initial_state$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-stream-state/empty-tool-arguments.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-state/partial-input-json.yaml
@@ -179,31 +264,31 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-stream-state/web-search-snapshot.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-state/code-output-buffer.yaml
 - tools/oracle/cases/helpers/providers/anthropic-stream-state/stop-reason-state.yaml
+- tools/oracle/cases/helpers/providers/anthropic-stream-state/initial-state.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/chat/handler.py: _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data L1151-L1174;
-  ModelResponseIterator.__iter__ L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.completion (L363-L368)
+  belong to B027.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.chunk_parser L811-L1048;
+  ModelResponseIterator._handle_json_mode_chunk L1050-L1094; ModelResponseIterator._handle_accumulated_json_chunk
+  L1118-L1149 belong to B582.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: _loads_stream_chunk L68-L69; ModelResponseIterator._parse_sse_data
+  L1151-L1174; ModelResponseIterator.__iter__ L1177-L1178; ModelResponseIterator.__next__ L1180-L1219; ModelResponseIterator.__aiter__
   L1222-L1224; ModelResponseIterator.__anext__ L1226-L1265; ModelResponseIterator.convert_str_chunk_to_generic_chunk
-  L1267-L1290 belong to B583; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197; AnthropicChatCompletion.acompletion_stream_function
-  L204-L252 belong to B689; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.__init__ L201-L202; AnthropicChatCompletion.acompletion_function
-  L254-L321; AnthropicChatCompletion.completion L323-L538; AnthropicChatCompletion.embedding L540-L542 belong to
-  B584; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/handler.py: ModelResponseIterator.chunk_parser L811-L1048; ModelResponseIterator._handle_json_mode_chunk
-  L1050-L1094; ModelResponseIterator._handle_accumulated_json_chunk L1118-L1149 belong to B582; reuse that implementation
-  or its injected typed boundary.
+  L1267-L1290 belong to B583.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: AnthropicChatCompletion.__init__ L201-L202;
+  AnthropicChatCompletion.acompletion_function L254-L321; AnthropicChatCompletion.completion (L323-L362, L370-L538);
+  AnthropicChatCompletion.embedding L540-L542 belong to B584.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/handler.py: make_call L72-L129; make_sync_call L132-L197;
+  AnthropicChatCompletion.acompletion_stream_function L204-L252 belong to B689.'
 pitfalls:
-- Thinking signatures and partial tool JSON have separate per-block state and must not share a text buffer.
+- Text-key deltas return before entering the block buffer, regardless of their declared type.
+- Cumulative usage merging is shallow, so new nested usage detail replaces the previous nested mapping.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: standard

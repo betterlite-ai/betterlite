@@ -1,0 +1,94 @@
+id: B1375
+title: Stream OpenAI batch rows into Vertex request JSONL
+description: >-
+  Add vertex_batch_upload for files/transformation.py L530-L775, L783-L848 and
+  L1032-L1051, 274 nonblank noncomment lines. Decode each nonempty UTF-8 JSONL line with
+  decode_openai_batch_line into B517 batch request records. Route by url with query and
+  trailing slashes removed; bare embeddings/responses and matching suffixes count. Embedding
+  bodies must be objects with non-None, nonempty input. B1340 builds one request per outer
+  input element, including one combined request for an inner array; retain content and
+  output_dimensionality/task_type/title, omitting model. Percent-encode non-None custom_id
+  before adding #index/total only for fan-out. For responses rows accept an injected
+  B1025 responses-to-chat mapper and B010's developer-role mapper, run B1310 with
+  drop_params=false and B1321 with empty litellm_params and no cached_content, then attach
+  B1374 correlation labels. The developer mapper emits its debug diagnostic and replaces a
+  developer message with only role=system and content, discarding its other fields.
+  The upper B034 binder supplies both mappers; the Vertex
+  crate must not import core. Preserve Python json.dumps default ASCII escapes and comma/
+  colon spaces in the emitted bytes, inserting LF between rows without a final LF.
+  Represent local file sources using B1128 FileTypes: tuple payload, bytes, literal string
+  contents, authorized SDK PathLike or seekable handle. HTTP request strings never become
+  local paths. Probe and upload both start at offset zero; reject absent or failed seeks
+  before losing the probed row. Raw passthrough is enabled only by purpose=batch and
+  passthrough literally true, reads byte/handle sources in 1 MiB chunks and sends string
+  contents as one chunk. Backpressure controls row production and dropping the upload closes
+  owned file handles. Pure helper vertex_batch_upload cases cover embeddings_fanout,
+  combined_inner_input, empty_embeddings, responses_route, developer_role, label_attachment,
+  query_route, ascii_json_bytes and literal_passthrough_flag. Native tests separately cover
+  first_row_rewind, failed_seek, lazy_next_row, local_path_close and raw_chunk_boundaries.
+  Fit 285 implementation, 185 tests, 105 adapters and 100 fuzz/seed lines within 725.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,vertex_batch_upload}.rs
+    - crates/betterlite-vertex/src/vertex_batch_upload/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_upload.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_batch_upload/**
+    - tools/oracle/src/helpers/{mod,vertex_batch_upload}.rs
+    - tools/oracle/helpers/{dispatch,vertex_batch_upload}.py
+    - tools/oracle/cases/helpers/vertex-batch-upload/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_batch_upload*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L215-L230
+    why: B010's existing developer-role projection is injected, including its field dropping and diagnostic.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L530-L848
+    why: Per-route translation and lazy transformed/raw upload iterators, excluding B1374's output-row parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1032-L1051
+    why: Batch parameter mapping deliberately disables drop_params.
+dod:
+  - text: Batch entry conversion preserves fan-out keys, role mapping and the exact JSONL separators.
+    proof: [upload-row-tests, upload-row-python, oracle]
+  - text: Upload iterators rewind probes, stop at backpressure and close local handles on cancellation.
+    proof: [upload-io-tests]
+  - text: Incoming JSONL and the shared helper envelope both have new decoder replay inputs.
+    proof: [upload-row-corpus, upload-row-seeds]
+checks:
+  optional: []
+  commands:
+    - id: upload-row-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_upload::rows::/) - test(replays_the_vertex_batch_upload_corpus)'
+      why: Parsed-row fixtures compare byte output and failure categories.
+    - id: upload-io-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_upload::sources::/)'
+      why: Instrumented local readers detect double reads, skipped rows and leaked handles.
+    - id: upload-row-python
+      run: test -f tools/oracle/helpers/vertex_batch_upload.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python fixtures invoke in-memory row transforms and byte iterators rather than file-opening methods.
+    - id: upload-row-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_upload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_upload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_upload_corpus)'
+      why: Invalid UTF-8, split lines and malformed bodies reach decode_openai_batch_line.
+    - id: upload-row-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_upload*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_upload::/)'
+      why: Seed assertions select call.vertex_batch_upload and reject an empty fixture set.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-batch-upload/embeddings-fanout.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/combined-inner-input.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/empty-embeddings.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/responses-route.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/developer-role.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/label-attachment.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/query-route.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/ascii-json-bytes.yaml
+  - tools/oracle/cases/helpers/vertex-batch-upload/literal-passthrough-flag.yaml
+deviations: []
+out_of_scope:
+  - File metadata, media-upload selection and GCS naming at L851-L1237 belong to B1376, with authorization delegated to B1393.
+  - Output classification and embedding regrouping are B1374; content response iteration and conversion are B1377.
+pitfalls:
+  - A string upload value is JSONL content even when it resembles a filesystem path.
+  - Passing passthrough=1 must not activate the source's is True branch.
+  - 'A custom_id already ending in #0/2 must be escaped before a real fan-out suffix is appended.'
+budget: {max_changed_lines: 725, max_new_expects: 1}
+review_level: security

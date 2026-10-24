@@ -1,0 +1,186 @@
+id: B2215
+title: Azure content-policy error payloads
+description: >-
+  Extract Azure content-policy error details from already parsed SDK exception bodies and raise the shared B184
+  ContentPolicyViolationError. This belongs below both stream handlers and the generic Azure classifier, so classifying
+  an error never depends on a completed provider stream.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/exception_mapping.py:
+  AzureOpenAIExceptionMapping.create_content_policy_violation_error L11-L52; AzureOpenAIExceptionMapping._extract_azure_error
+  L54-L83.
+
+
+  Named case contracts: azure_error_body_shape: Use exception.body or {}; non-dict returns {},None. A dict-valued
+  body.error wins even when empty; otherwise use the whole body. No response JSON parsing or message-text guessing
+  occurs here. azure_inner_error_precedence: Choose first truthy azure_error.inner_error, azure_error.innererror,
+  body.innererror, body.inner_error, preserving the chosen value even when not a dict. If all are falsey, retain
+  the final lookup result (including empty dict), not an invented None normalization. azure_policy_provider_fields:
+  Truthy provider message wins else caller message; provider type/code each fall back on falsey values to invalid_request_error/content_policy_violation.
+  Body is exactly message/type/code/param=None. Raise B184 status400 ContentPolicyViolationError with llm_provider=azure,
+  supplied model/debug info and original response; preserve its litellm.ContentPolicyViolationError: message prefix.
+  azure_policy_extensions: provider_specific_fields contains innererror and inner_error pointing to the chosen inner
+  value plus azure_error equal to the full selected object or None when empty. Do not drop the legacy key or forward
+  a provider param field into the OpenAI body. azure_policy_not_returned: create_content_policy_violation_error
+  raises rather than returns; a caller raise around it does not produce a second exception. Test empty/None provider
+  fields, nested body.error and flattened payloads using the same production extraction.
+
+
+  Implement crates/betterlite-azure/src/azure_content_policy.rs with adjacent tests under azure_content_policy/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation azure_content_policy in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function azure_content_policy_cases in betterlite-azure with these exact named cases (one per oracle
+  file): azure_error_body_shape, azure_inner_error_precedence, azure_policy_provider_fields, azure_policy_extensions,
+  azure_policy_not_returned. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_content_policy* using HelperCase: kind:
+  helper and the externally tagged azure_content_policy variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_azure_content_policy that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 58 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 90 production lines, 190 behavior/config-test lines, 100 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 415 planned, 425 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/azure_content_policy.rs
+  - crates/betterlite-azure/src/azure_content_policy/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_content_policy.rs
+  - tools/oracle/src/helpers/azure_content_policy/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_content_policy.py
+  - tools/oracle/cases/helpers/providers/azure-content-policy/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_content_policy*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L12-L83
+  why: Complete owned error extraction and projection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L619-L651
+  why: B184 inherited status/message prefix.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L11-L52
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/exception_mapping.py#L54-L83
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New azure_content_policy seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: 'azure_error_body_shape: Use exception.body or {}; non-dict returns {},None. A dict-valued body.error wins
+    even when empty; otherwise use the whole body. No response JSON parsing or message-text guessing occurs here.'
+  proof:
+  - case-azure-error-body-shape
+  - oracle
+  - helper-python
+- text: 'azure_inner_error_precedence: Choose first truthy azure_error.inner_error, azure_error.innererror, body.innererror,
+    body.inner_error, preserving the chosen value even when not a dict. If all are falsey, retain the final lookup
+    result (including empty dict), not an invented None normalization.'
+  proof:
+  - case-azure-inner-error-precedence
+  - oracle
+  - helper-python
+- text: 'azure_policy_provider_fields: Truthy provider message wins else caller message; provider type/code each
+    fall back on falsey values to invalid_request_error/content_policy_violation. Body is exactly message/type/code/param=None.
+    Raise B184 status400 ContentPolicyViolationError with llm_provider=azure, supplied model/debug info and original
+    response; preserve its litellm.ContentPolicyViolationError: message prefix.'
+  proof:
+  - case-azure-policy-provider-fields
+  - oracle
+  - helper-python
+- text: 'azure_policy_extensions: provider_specific_fields contains innererror and inner_error pointing to the chosen
+    inner value plus azure_error equal to the full selected object or None when empty. Do not drop the legacy key
+    or forward a provider param field into the OpenAI body.'
+  proof:
+  - case-azure-policy-extensions
+  - oracle
+  - helper-python
+- text: 'azure_policy_not_returned: create_content_policy_violation_error raises rather than returns; a caller raise
+    around it does not produce a second exception. Test empty/None provider fields, nested body.error and flattened
+    payloads using the same production extraction.'
+  proof:
+  - case-azure-policy-not-returned
+  - oracle
+  - helper-python
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_content_policy.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_content_policy*")"
+      && grep -lq 'azure_content_policy' tools/oracle/fuzz/corpus/helper_case/azure_content_policy* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_content_policy$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-azure-error-body-shape
+    why: Use exception.body or {}; non-dict returns {},None. A dict-valued body.error wins even when empty; otherwise
+      use the whole body. No response JSON parsing or message-text guessing occurs here.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_content_policy_cases::case_[0-9]+_azure_error_body_shape$/)'
+  - id: case-azure-inner-error-precedence
+    why: Choose first truthy azure_error.inner_error, azure_error.innererror, body.innererror, body.inner_error,
+      preserving the chosen value even when not a dict. If all are falsey, retain the final lookup result (including
+      empty dict), not an invented None normalization.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_content_policy_cases::case_[0-9]+_azure_inner_error_precedence$/)'
+  - id: case-azure-policy-provider-fields
+    why: 'Truthy provider message wins else caller message; provider type/code each fall back on falsey values to
+      invalid_request_error/content_policy_violation. Body is exactly message/type/code/param=None. Raise B184 status400
+      ContentPolicyViolationError with llm_provider=azure, supplied model/debug info and original response; preserve
+      its litellm.ContentPolicyViolationError: message prefix.'
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_content_policy_cases::case_[0-9]+_azure_policy_provider_fields$/)'
+  - id: case-azure-policy-extensions
+    why: provider_specific_fields contains innererror and inner_error pointing to the chosen inner value plus azure_error
+      equal to the full selected object or None when empty. Do not drop the legacy key or forward a provider param
+      field into the OpenAI body.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_content_policy_cases::case_[0-9]+_azure_policy_extensions$/)'
+  - id: case-azure-policy-not-returned
+    why: create_content_policy_violation_error raises rather than returns; a caller raise around it does not produce
+      a second exception. Test empty/None provider fields, nested body.error and flattened payloads using the same
+      production extraction.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_content_policy_cases::case_[0-9]+_azure_policy_not_returned$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-content-policy/azure-error-body-shape.yaml
+- tools/oracle/cases/helpers/providers/azure-content-policy/azure-inner-error-precedence.yaml
+- tools/oracle/cases/helpers/providers/azure-content-policy/azure-policy-provider-fields.yaml
+- tools/oracle/cases/helpers/providers/azure-content-policy/azure-policy-extensions.yaml
+- tools/oracle/cases/helpers/providers/azure-content-policy/azure-policy-not-returned.yaml
+deviations: []
+out_of_scope:
+- Exception classes are B184; generic Azure classifier call sites in exception_mapping_utils.py are B237. Stream
+  send/wrapper behavior is B685. This module parses no bytes, assigns no routes and does not inspect choices/finish_reason.
+pitfalls:
+- An empty nested error object wins over a populated outer body.
+- Only truthiness controls inner-error selection; the extracted value is not validated as a dictionary.
+budget:
+  max_changed_lines: 425
+  max_new_expects: 0
+review_level: standard

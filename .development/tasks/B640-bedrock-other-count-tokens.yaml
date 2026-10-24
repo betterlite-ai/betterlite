@@ -3,7 +3,7 @@ title: Bedrock native count-token shapes
 description: >-
   Build the Bedrock CountTokens envelope and convert the reply to Anthropic-shaped input_tokens. Detect converse
   only when messages is a list containing no block with a type field; all other input is invokeModel. Reuse BaseAWSLLM
-  inputs from B590 and get_bedrock_base_model from B591; B641 owns signing, execution and any fallback.
+  inputs from B590 and get_bedrock_base_model from B2203; B641 owns signing, execution and any fallback.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/count_tokens/transformation.py:
@@ -15,8 +15,34 @@ description: >-
   L240-L258; BedrockCountTokensConfig.validate_count_tokens_request L260-L298.
 
 
-  Reuse get_bedrock_base_model from B591 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  Reuse get_bedrock_base_model from B2203 (litellm/llms/bedrock/common_utils.py); its implementation remains with
   that prerequisite.
+
+
+  Named case contracts: untyped_messages_converse: Any messages list without a typed content block selects converse,
+  including empty lists and malformed elements; nonlist messages selects invokeModel. tool_name_schema: Replace
+  characters outside [A-Za-z0-9_] with _, prefix a nonempty name whose first character is not a letter with t_,
+  then cut at 64 characters; empty/nonstring names stay empty. Description falls back to that name and missing input_schema
+  becomes {type: object, properties: {}} inside inputSchema.json. count_endpoint_path: B591 strips routing/region
+  and bedrock/ prefixes, encodes the model id, and chooses api_base before aws_bedrock_runtime_endpoint before the
+  regional runtime; append /model/{encoded_model_id}/count-tokens. count_to_anthropic_result: Map inputTokens to
+  input_tokens, defaulting to 0 only when absent, preserving explicit None. invoke_body_defaults: When messages
+  is a body key, set missing anthropic_version to bedrock-2023-05-31 and max_tokens to 1024; preserve explicit values
+  including None, remove model, and leave prompt-only bodies without these defaults. converse_content_system: String
+  content becomes [{text: value}], lists stay unchanged and other content becomes []; missing content defaults to
+  empty text. System strings become text blocks; list entries retain text only with an empty-string default and
+  skip nondictionaries. count_model_missing: Missing or false model raises ValueError (model parameter is required).
+  count_messages_empty: An empty messages list selects converse and raises ValueError (messages parameter is required
+  for Converse input). count_message_not_object: A nondictionary message in a converse list raises ValueError naming
+  its index and requiring a dictionary. count_message_role_missing: A converse dictionary without role raises ValueError
+  naming its index and missing role field. count_message_content_missing: A converse dictionary with role but no
+  content raises ValueError naming its index and missing content field. count_invoke_model_only: An invokeModel
+  request containing only model raises ValueError (Request must contain content to count tokens). empty_tools_omission:
+  False tools omits toolConfig; a truthy nonlist tools value yields toolConfig with an empty tools list.
+
+
+  Direct shared helper ownership: B2203. Reuse these named lower helpers at the source call sites rather than reproducing
+  them.
 
 
   Implement crates/betterlite-bedrock/src/count_tokens.rs with adjacent tests under count_tokens/. Keep each Rust
@@ -33,11 +59,12 @@ description: >-
 
 
   Write rstest function count_tokens_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  typed_block_invoke_model, untyped_messages_converse, detect_converse_input, detect_invoke_input, tool_name_schema,
-  count_endpoint_path, count_request_validation, count_to_anthropic_result, invoke_body_python_json_spacing. Each
-  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
-  use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  typed_block_invoke_model, untyped_messages_converse, tool_name_schema, count_endpoint_path, count_to_anthropic_result,
+  invoke_body_python_json_spacing, invoke_body_defaults, converse_content_system, count_model_missing, count_messages_empty,
+  count_message_not_object, count_message_role_missing, count_message_content_missing, count_invoke_model_only,
+  empty_tools_omission. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens* using HelperCase:
@@ -53,9 +80,9 @@ description: >-
 
 
   Budget from 193 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 220 production lines, 126 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 462 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 225 production lines, 225 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 595 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -74,63 +101,44 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/count_tokens/transformation.py#L23-L298
-  why: >-
-    Own _json_dict, _json_list, _to_converse_content, _to_converse_message, _sanitized_bedrock_tool_name, _to_bedrock_tool_spec,
+  why: Own _json_dict, _json_list, _to_converse_content, _to_converse_message, _sanitized_bedrock_tool_name, _to_bedrock_tool_spec,
     BedrockCountTokensConfig._detect_input_type, BedrockCountTokensConfig.transform_anthropic_to_bedrock_count_tokens,
     BedrockCountTokensConfig._transform_to_converse_format, BedrockCountTokensConfig._transform_system, BedrockCountTokensConfig._transform_tools,
     BedrockCountTokensConfig._transform_to_invoke_model_format, BedrockCountTokensConfig.get_bedrock_count_tokens_endpoint,
     BedrockCountTokensConfig.transform_bedrock_response_to_anthropic, BedrockCountTokensConfig.validate_count_tokens_request.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    typed block invoke model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/typed-block-invoke-model.yaml.
+- text: 'typed block invoke model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/typed-block-invoke-model.yaml.'
   proof:
   - case-typed-block-invoke-model
   - oracle
   - helper-python
-- text: >-
-    untyped messages converse: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/untyped-messages-converse.yaml.
+- text: 'untyped_messages_converse: Any messages list without a typed content block selects converse, including
+    empty lists and malformed elements; nonlist messages selects invokeModel.'
   proof:
   - case-untyped-messages-converse
   - oracle
   - helper-python
-- text: >-
-    detect converse input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-converse-input.yaml.
-  proof:
-  - case-detect-converse-input
-  - oracle
-  - helper-python
-- text: >-
-    detect invoke input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-invoke-input.yaml.
-  proof:
-  - case-detect-invoke-input
-  - oracle
-  - helper-python
-- text: 'tool name schema: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/tool-name-schema.yaml.'
+- text: 'tool_name_schema: Replace characters outside [A-Za-z0-9_] with _, prefix a nonempty name whose first character
+    is not a letter with t_, then cut at 64 characters; empty/nonstring names stay empty. Description falls back
+    to that name and missing input_schema becomes {type: object, properties: {}} inside inputSchema.json.'
   proof:
   - case-tool-name-schema
   - oracle
   - helper-python
-- text: >-
-    count endpoint path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-endpoint-path.yaml.
+- text: 'count_endpoint_path: B591 strips routing/region and bedrock/ prefixes, encodes the model id, and chooses
+    api_base before aws_bedrock_runtime_endpoint before the regional runtime; append /model/{encoded_model_id}/count-tokens.'
   proof:
   - case-count-endpoint-path
   - oracle
   - helper-python
-- text: >-
-    count request validation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-request-validation.yaml.
-  proof:
-  - case-count-request-validation
-  - oracle
-  - helper-python
-- text: >-
-    count to anthropic result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-to-anthropic-result.yaml.
+- text: 'count_to_anthropic_result: Map inputTokens to input_tokens, defaulting to 0 only when absent, preserving
+    explicit None.'
   proof:
   - case-count-to-anthropic-result
   - oracle
   - helper-python
-- text: >-
-    invoke body python json spacing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/invoke-body-python-json-spacing.yaml.
+- text: 'invoke body python json spacing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/invoke-body-python-json-spacing.yaml.'
   proof:
   - case-invoke-body-python-json-spacing
   - oracle
@@ -139,72 +147,161 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'invoke_body_defaults: When messages is a body key, set missing anthropic_version to bedrock-2023-05-31
+    and max_tokens to 1024; preserve explicit values including None, remove model, and leave prompt-only bodies
+    without these defaults.'
+  proof:
+  - case-invoke-body-defaults
+  - oracle
+  - helper-python
+- text: 'converse_content_system: String content becomes [{text: value}], lists stay unchanged and other content
+    becomes []; missing content defaults to empty text. System strings become text blocks; list entries retain text
+    only with an empty-string default and skip nondictionaries.'
+  proof:
+  - case-converse-content-system
+  - oracle
+  - helper-python
+- text: 'count_model_missing: Missing or false model raises ValueError (model parameter is required).'
+  proof:
+  - case-count-model-missing
+  - oracle
+  - helper-python
+- text: 'count_messages_empty: An empty messages list selects converse and raises ValueError (messages parameter
+    is required for Converse input).'
+  proof:
+  - case-count-messages-empty
+  - oracle
+  - helper-python
+- text: 'count_message_not_object: A nondictionary message in a converse list raises ValueError naming its index
+    and requiring a dictionary.'
+  proof:
+  - case-count-message-not-object
+  - oracle
+  - helper-python
+- text: 'count_message_role_missing: A converse dictionary without role raises ValueError naming its index and missing
+    role field.'
+  proof:
+  - case-count-message-role-missing
+  - oracle
+  - helper-python
+- text: 'count_message_content_missing: A converse dictionary with role but no content raises ValueError naming
+    its index and missing content field.'
+  proof:
+  - case-count-message-content-missing
+  - oracle
+  - helper-python
+- text: 'count_invoke_model_only: An invokeModel request containing only model raises ValueError (Request must contain
+    content to count tokens).'
+  proof:
+  - case-count-invoke-model-only
+  - oracle
+  - helper-python
+- text: 'empty_tools_omission: False tools omits toolConfig; a truthy nonlist tools value yields toolConfig with
+    an empty tools list.'
+  proof:
+  - case-empty-tools-omission
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-typed-block-invoke-model
-    why: The typed-block-invoke-model behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/typed-block-invoke-model.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_typed_block_invoke_model$/)'
   - id: case-untyped-messages-converse
-    why: The untyped-messages-converse behavior is missing or differs from its pinned fixture.
+    why: Any messages list without a typed content block selects converse, including empty lists and malformed elements;
+      nonlist messages selects invokeModel.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_untyped_messages_converse$/)'
-  - id: case-detect-converse-input
-    why: The detect-converse-input behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_detect_converse_input$/)'
-  - id: case-detect-invoke-input
-    why: The detect-invoke-input behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_detect_invoke_input$/)'
   - id: case-tool-name-schema
-    why: The tool-name-schema behavior is missing or differs from its pinned fixture.
+    why: 'Replace characters outside [A-Za-z0-9_] with _, prefix a nonempty name whose first character is not a
+      letter with t_, then cut at 64 characters; empty/nonstring names stay empty. Description falls back to that
+      name and missing input_schema becomes {type: object, properties: {}} inside inputSchema.json.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_tool_name_schema$/)'
   - id: case-count-endpoint-path
-    why: The count-endpoint-path behavior is missing or differs from its pinned fixture.
+    why: B591 strips routing/region and bedrock/ prefixes, encodes the model id, and chooses api_base before aws_bedrock_runtime_endpoint
+      before the regional runtime; append /model/{encoded_model_id}/count-tokens.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_endpoint_path$/)'
-  - id: case-count-request-validation
-    why: The count-request-validation behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_request_validation$/)'
   - id: case-count-to-anthropic-result
-    why: The count-to-anthropic-result behavior is missing or differs from its pinned fixture.
+    why: Map inputTokens to input_tokens, defaulting to 0 only when absent, preserving explicit None.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_to_anthropic_result$/)'
   - id: case-invoke-body-python-json-spacing
-    why: The invoke-body-python-json-spacing behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/invoke-body-python-json-spacing.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_invoke_body_python_json_spacing$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_count_tokens.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_count_tokens.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*")"
       && grep -lq 'bedrock_other_count_tokens' tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_count_tokens$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-invoke-body-defaults
+    why: When messages is a body key, set missing anthropic_version to bedrock-2023-05-31 and max_tokens to 1024;
+      preserve explicit values including None, remove model, and leave prompt-only bodies without these defaults.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_invoke_body_defaults$/)'
+  - id: case-converse-content-system
+    why: 'String content becomes [{text: value}], lists stay unchanged and other content becomes []; missing content
+      defaults to empty text. System strings become text blocks; list entries retain text only with an empty-string
+      default and skip nondictionaries.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_converse_content_system$/)'
+  - id: case-count-model-missing
+    why: Missing or false model raises ValueError (model parameter is required).
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_model_missing$/)'
+  - id: case-count-messages-empty
+    why: An empty messages list selects converse and raises ValueError (messages parameter is required for Converse
+      input).
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_messages_empty$/)'
+  - id: case-count-message-not-object
+    why: A nondictionary message in a converse list raises ValueError naming its index and requiring a dictionary.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_message_not_object$/)'
+  - id: case-count-message-role-missing
+    why: A converse dictionary without role raises ValueError naming its index and missing role field.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_message_role_missing$/)'
+  - id: case-count-message-content-missing
+    why: A converse dictionary with role but no content raises ValueError naming its index and missing content field.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_message_content_missing$/)'
+  - id: case-count-invoke-model-only
+    why: An invokeModel request containing only model raises ValueError (Request must contain content to count tokens).
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_invoke_model_only$/)'
+  - id: case-empty-tools-omission
+    why: False tools omits toolConfig; a truthy nonlist tools value yields toolConfig with an empty tools list.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_empty_tools_omission$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/typed-block-invoke-model.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/untyped-messages-converse.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-converse-input.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-invoke-input.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/tool-name-schema.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-endpoint-path.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-request-validation.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-to-anthropic-result.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/invoke-body-python-json-spacing.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/invoke-body-defaults.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/converse-content-system.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-model-missing.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-messages-empty.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-message-not-object.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-message-role-missing.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-message-content-missing.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-invoke-model-only.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/empty-tools-omission.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
+- 'validate_count_tokens_request L281-L282 (messages must be a list) is unreachable through the real detector: only
+  a list can select converse; do not stub the detector to invent an oracle case.'
 pitfalls:
-- Preserve system/tool schema conversion and validation, then return Anthropic-shaped input token count.
-- >-
-  invokeModel.body is base64 of Python json.dumps with comma-space and colon-space separators and ensure_ascii;
+- invokeModel.body is base64 of Python json.dumps with comma-space and colon-space separators and ensure_ascii;
   compare decoded JSON or preserve those bytes explicitly.
+- A content block with a type key selects invokeModel even when type is null; a role/content validation failure
+  is observable only after converse selection.
+- setdefault does not replace explicit null max_tokens or anthropic_version, and the sanitizer does not prefix an
+  empty name.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: standard

@@ -15,6 +15,27 @@ description: >-
   with that prerequisite.
 
 
+  Named case contracts: rerank_url_api_version: None base raises ValueError Azure AI API Base is required. api_base=None.
+  Set in call or via `AZURE_AI_API_BASE` env var.; non-absolute URL raises the absolute-URL diagnostic with repr(base).
+  Trim path trailing slashes; keep paths ending /v1/rerank or /v2/rerank, append /rerank for paths ending /v1 or
+  /v2, otherwise B668 appends /v1/rerank. Preserve query/fragment; never inject api-version here. model_group_normalization:
+  After B037 Cohere response conversion read hidden llm_provider-azureml-model-group: offer-cohere-rerank-mul-paygo
+  maps azure_ai/cohere-rerank-v3-multilingual, offer-cohere-rerank-eng-paygo maps azure_ai/cohere-rerank-v3-english,
+  unknown strings stay and None stays. Always set hidden model, even None. foundry_rerank_auth: Only None api_key
+  consults AZURE_AI_API_KEY then litellm.azure_key; explicit empty suppresses that fallback and enters B549 Entra
+  auth. Construct lowercase accept/content-type=application/json, then merge caller headers last, including caller
+  Authorization. Auth resolution runs before caller override and can still fail.
+
+
+  Write standalone Rust test foundry_rerank_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test foundry_rerank_secret_safe_failure in betterlite-foundry: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-foundry/src/rerank.rs with adjacent tests under rerank/. Keep each Rust module at
   most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
   betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
@@ -29,10 +50,9 @@ description: >-
 
 
   Write rstest function rerank_cases in betterlite-foundry with these exact named cases (one per oracle file): rerank_url_api_version,
-  query_documents_top_n, model_group_normalization, relevance_scores, return_documents, rerank_error. Each case
-  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use
-  the booted proxy and assert both client response and captured upstream request. Existing API tasks retain route
-  registration; this task must not register a duplicate axum route.
+  query_documents_top_n, model_group_normalization, relevance_scores, return_documents, rerank_error, foundry_rerank_auth.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_rerank* using HelperCase: kind: helper
@@ -47,9 +67,9 @@ description: >-
 
 
   Budget from 80 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 115 production lines, 99 behavior/config-test lines, 79 combined
+  SDK overloads share an async implementation): 100 production lines, 160 behavior/config-test lines, 90 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 318 planned, 400 maximum changed lines.
+  wiring lines; 375 planned, 400 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -68,11 +88,13 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/rerank/transformation.py#L24-L119
-  why: >-
-    Own AzureAIRerankConfig.get_complete_url, AzureAIRerankConfig.validate_environment, AzureAIRerankConfig.transform_rerank_response,
+  why: Own AzureAIRerankConfig.get_complete_url, AzureAIRerankConfig.validate_environment, AzureAIRerankConfig.transform_rerank_response,
     AzureAIRerankConfig._get_base_model. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'rerank url api version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/rerank-url-api-version.yaml.'
+- text: 'rerank_url_api_version: None base raises ValueError Azure AI API Base is required. api_base=None. Set in
+    call or via `AZURE_AI_API_BASE` env var.; non-absolute URL raises the absolute-URL diagnostic with repr(base).
+    Trim path trailing slashes; keep paths ending /v1/rerank or /v2/rerank, append /rerank for paths ending /v1
+    or /v2, otherwise B668 appends /v1/rerank. Preserve query/fragment; never inject api-version here.'
   proof:
   - case-rerank-url-api-version
   - oracle
@@ -82,8 +104,9 @@ dod:
   - case-query-documents-top-n
   - oracle
   - helper-python
-- text: >-
-    model group normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/model-group-normalization.yaml.
+- text: 'model_group_normalization: After B037 Cohere response conversion read hidden llm_provider-azureml-model-group:
+    offer-cohere-rerank-mul-paygo maps azure_ai/cohere-rerank-v3-multilingual, offer-cohere-rerank-eng-paygo maps
+    azure_ai/cohere-rerank-v3-english, unknown strings stay and None stays. Always set hidden model, even None.'
   proof:
   - case-model-group-normalization
   - oracle
@@ -106,41 +129,69 @@ dod:
 - text: New foundry_rerank seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
+- text: 'foundry_rerank_auth: Only None api_key consults AZURE_AI_API_KEY then litellm.azure_key; explicit empty
+    suppresses that fallback and enters B549 Entra auth. Construct lowercase accept/content-type=application/json,
+    then merge caller headers last, including caller Authorization. Auth resolution runs before caller override
+    and can still fail.'
+  proof:
+  - case-foundry-rerank-auth
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-rerank-url-api-version
-    why: The rerank-url-api-version behavior is missing or differs from its pinned fixture.
+    why: None base raises ValueError Azure AI API Base is required. api_base=None. Set in call or via `AZURE_AI_API_BASE`
+      env var.; non-absolute URL raises the absolute-URL diagnostic with repr(base). Trim path trailing slashes;
+      keep paths ending /v1/rerank or /v2/rerank, append /rerank for paths ending /v1 or /v2, otherwise B668 appends
+      /v1/rerank. Preserve query/fragment; never inject api-version here.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_url_api_version$/)'
   - id: case-query-documents-top-n
-    why: The query-documents-top-n behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/query-documents-top-n.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_query_documents_top_n$/)'
   - id: case-model-group-normalization
-    why: The model-group-normalization behavior is missing or differs from its pinned fixture.
+    why: 'After B037 Cohere response conversion read hidden llm_provider-azureml-model-group: offer-cohere-rerank-mul-paygo
+      maps azure_ai/cohere-rerank-v3-multilingual, offer-cohere-rerank-eng-paygo maps azure_ai/cohere-rerank-v3-english,
+      unknown strings stay and None stays. Always set hidden model, even None.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_model_group_normalization$/)'
   - id: case-relevance-scores
-    why: The relevance-scores behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/relevance-scores.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_relevance_scores$/)'
   - id: case-return-documents
-    why: The return-documents behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/return-documents.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_return_documents$/)'
   - id: case-rerank-error
-    why: The rerank-error behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-rerank/rerank-error.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_rerank.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_rerank.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_rerank*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_rerank*")"
       && grep -lq 'foundry_rerank' tools/oracle/fuzz/corpus/helper_case/foundry_rerank* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_rerank$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-foundry-rerank-auth
+    why: Only None api_key consults AZURE_AI_API_KEY then litellm.azure_key; explicit empty suppresses that fallback
+      and enters B549 Entra auth. Construct lowercase accept/content-type=application/json, then merge caller headers
+      last, including caller Authorization. Auth resolution runs before caller override and can still fail.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_foundry_rerank_auth$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_rerank_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_rerank_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-rerank/rerank-url-api-version.yaml
 - tools/oracle/cases/helpers/providers/foundry-rerank/query-documents-top-n.yaml
@@ -148,6 +199,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-rerank/relevance-scores.yaml
 - tools/oracle/cases/helpers/providers/foundry-rerank/return-documents.yaml
 - tools/oracle/cases/helpers/providers/foundry-rerank/rerank-error.yaml
+- tools/oracle/cases/helpers/providers/foundry-rerank/foundry-rerank-auth.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -155,8 +207,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve Foundry provider endpoint paths, native auth policy and model/usage normalization.
+- A caller Authorization header does not bypass credential resolution, which runs before header merging.
+- The inferred base model is written to hidden model, not the public response model field.
 budget:
   max_changed_lines: 400
   max_new_expects: 0
-review_level: standard
+review_level: security

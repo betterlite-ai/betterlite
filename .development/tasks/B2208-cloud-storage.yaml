@@ -1,0 +1,390 @@
+budget:
+  max_changed_lines: 725
+  max_new_expects: 0
+checks:
+  commands:
+  - id: helper-python
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/cloud_storage.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+  - id: helper-case-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/cloud_storage*")"
+      && grep -lq 'cloud_storage' tools/oracle/fuzz/corpus/helper_case/cloud_storage* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_cloud_storage$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+  - id: case-cloud-uri-detection
+    why: is_managed_cloud_storage_uri returns True only for a string starting exact s3:// or gs://, including a
+      bare scheme; it does no bucket/key validation and rejects uppercase schemes. This identifies internal provider
+      artifacts for the proxy owner check; it does not establish ownership.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_cloud_uri_detection$/)'
+  - id: case-object-component-sanitization
+    why: For a nonstring return fallback (default file) unchanged. Replace backslashes with slashes, take POSIX
+      basename, trim surrounding whitespace, and return fallback for empty, dot or dot-dot. Replace each codepoint
+      below32 or equal127 with underscore, then each run outside ASCII A-Z,a-z,0-9,dot,underscore,hyphen with one
+      underscore. Strip leading/trailing dots and underscores; if empty use fallback, otherwise truncate to 255
+      characters. Do not sanitize or truncate fallback, normalize Unicode, or percent-decode filenames.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_object_component_sanitization$/)'
+  - id: case-object-path-sanitization
+    why: For nonstrings return fallback (default file). Replace backslashes with slashes, split on slash, sanitize
+      every segment with empty fallback, discard empty results and join with slash; if none survive use fallback.
+      Dot/traversal segments are removed by sanitization, whereas authorization rejects them. build_managed_cloud_object_name
+      uses the component sanitizer with fallback_filename default file and emits prefix plus UUID4 lowercase hex
+      plus hyphen plus safe filename; preserve prefix verbatim and inject UUID for the oracle.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_object_path_sanitization$/)'
+  - id: case-configured-bucket-split
+    why: 'Require a string with nonempty stripped form or ValueError Cloud storage bucket name is required. Trim
+      it; reject any ://, ? or # with Cloud storage bucket name must not include a URI scheme or query; reject control
+      characters with Cloud storage bucket name contains control characters. Split first slash into bucket and prefix,
+      reject an empty bucket with the required message and any backslash in bucket with Cloud storage bucket name
+      contains an invalid separator. Strip prefix outer slashes, validate it only when nonempty, and return bucket,prefix.
+      Do not invent DNS/bucket-name or @/colon validation.'
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_configured_bucket_split$/)'
+  - id: case-object-path-validation
+    why: 'Validate object strings in this order: empty -> Cloud storage object name is required; leading slash ->
+      Cloud storage object name must be relative; codepoint below32 or equal127 -> Cloud storage object name contains
+      control characters; any slash-delimited dot/dot-dot segment or empty segment before the last -> Cloud storage
+      object name contains an invalid path segment. A trailing slash, literal backslash, ?, # or still-percent-encoded
+      component is accepted by this function.'
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_object_path_validation$/)'
+  - id: case-cloud-object-encoding
+    why: encode_gcs_object_name_for_url percent-decodes once then quotes with safe empty; encode_s3_object_key_for_url
+      does the same with slash safe. Retain URI unreserved characters and Python unquote UTF-8 replacement behavior;
+      double-encoded percent signs are not recursively decoded. Thus the GCS path encodes slashes while S3 preserves
+      them.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_cloud_object_encoding$/)'
+  - id: case-legacy-trusted-policy
+    why: should_allow_legacy_cloud_file_ids reads only a MappingProxyType snapshot under _litellm_internal_model_credentials
+      when outer params is a Mapping. Missing/untrusted snapshots and missing values yield False. A bool returns
+      itself; a string is stripped/lowercased and true only for 1,true,yes,on; numbers including integer1 and every
+      other value are False. Request JSON cannot manufacture the trusted snapshot and a top-level allow_legacy_cloud_file_ids
+      value is ignored.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_legacy_trusted_policy$/)'
+  - id: case-managed-id-authorization
+    why: validate_managed_cloud_file_id percent-decodes file_id once. Require startswith the supplied scheme or
+      ValueError file_id must be a {scheme} URI; require a slash in the remaining path or file_id must include a
+      cloud storage object name. Split first slash, resolve configured bucket/prefix, and require exact bucket equality
+      or file_id bucket does not match the configured storage bucket. Validate the object path next. Prefix each
+      allowed object prefix with configured prefix plus slash when configured; any literal startswith match succeeds.
+      Constants are VERTEX_AI_MANAGED_GCS_PREFIX=litellm-vertex-files/, and Bedrock ordered prefixes litellm-bedrock-files-,litellm-bedrock-files/,litellm-batch-outputs/.
+      Preserve all these literals.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_managed_id_authorization$/)'
+  - id: case-legacy-prefix-boundary
+    why: If managed-prefix matching fails and allow_legacy_cloud_file_ids is truthy, accept the validated object
+      when no configured prefix exists; otherwise require configured_prefix plus slash as a boundary or ValueError
+      file_id object does not match the configured storage prefix. Without legacy opt-in raise file_id must reference
+      a LiteLLM-managed storage object. Legacy mode never bypasses bucket, scheme or relative-path validation. An
+      empty allowed-prefix sequence can succeed only through legacy behavior.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_legacy_prefix_boundary$/)'
+  - id: case-encoded-traversal-order
+    why: 'Decode only once before scheme/bucket/path checks: encoded slashes, dot segments and control characters
+      are checked after that decoding, while %252e remains literal %2e and is not treated as dot. Errors from configured
+      bucket validation precede object validation after URI splitting. Preserve source error order and no additional
+      URL authority/query stripping.'
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_cases::case_[0-9]+_encoded_traversal_order$/)'
+  - id: config-allow-legacy-cloud-file-ids
+    why: allow_legacy_cloud_file_ids lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::cloud_storage_config_cases::case_[0-9]+_loads_allow_legacy_cloud_file_ids$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-context/fuzz/corpus/cloud_object_path)"
+      && grep -q 'decode_cloud_object_reference' crates/betterlite-context/fuzz/fuzz_targets/cloud_object_path.rs
+      && cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::replays_the_cloud_object_path_corpus$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::cloud_storage_secret_safe_failure$/)'
+  optional:
+  - mutants
+description: >-
+  Implement the shared cloud-object naming and authorization helpers below S3/GCS providers and storage loggers.
+  These helpers authorize provider-native object paths; they do not install the enterprise managed-files hook or
+  fetch any object. Preserve the pinned string algorithms rather than applying an unrelated URL normalizer.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/litellm_core_utils/cloud_storage_security.py:
+  constants L11-L21; is_managed_cloud_storage_uri L23-L31; sanitize_cloud_object_component L37-L50; sanitize_cloud_object_path
+  L53-L65; build_managed_cloud_object_name L68-L70; _validate_cloud_object_path L73-L84; split_configured_cloud_bucket_name
+  L87-L107; encode_gcs_object_name_for_url L110-L111; encode_s3_object_key_for_url L114-L115; should_allow_legacy_cloud_file_ids
+  L118-L131; validate_managed_cloud_file_id L134-L167.
+
+
+  Named case contracts: cloud_uri_detection: is_managed_cloud_storage_uri returns True only for a string starting
+  exact s3:// or gs://, including a bare scheme; it does no bucket/key validation and rejects uppercase schemes.
+  This identifies internal provider artifacts for the proxy owner check; it does not establish ownership. object_component_sanitization:
+  For a nonstring return fallback (default file) unchanged. Replace backslashes with slashes, take POSIX basename,
+  trim surrounding whitespace, and return fallback for empty, dot or dot-dot. Replace each codepoint below32 or
+  equal127 with underscore, then each run outside ASCII A-Z,a-z,0-9,dot,underscore,hyphen with one underscore. Strip
+  leading/trailing dots and underscores; if empty use fallback, otherwise truncate to 255 characters. Do not sanitize
+  or truncate fallback, normalize Unicode, or percent-decode filenames. object_path_sanitization: For nonstrings
+  return fallback (default file). Replace backslashes with slashes, split on slash, sanitize every segment with
+  empty fallback, discard empty results and join with slash; if none survive use fallback. Dot/traversal segments
+  are removed by sanitization, whereas authorization rejects them. build_managed_cloud_object_name uses the component
+  sanitizer with fallback_filename default file and emits prefix plus UUID4 lowercase hex plus hyphen plus safe
+  filename; preserve prefix verbatim and inject UUID for the oracle. configured_bucket_split: Require a string with
+  nonempty stripped form or ValueError Cloud storage bucket name is required. Trim it; reject any ://, ? or # with
+  Cloud storage bucket name must not include a URI scheme or query; reject control characters with Cloud storage
+  bucket name contains control characters. Split first slash into bucket and prefix, reject an empty bucket with
+  the required message and any backslash in bucket with Cloud storage bucket name contains an invalid separator.
+  Strip prefix outer slashes, validate it only when nonempty, and return bucket,prefix. Do not invent DNS/bucket-name
+  or @/colon validation. object_path_validation: Validate object strings in this order: empty -> Cloud storage object
+  name is required; leading slash -> Cloud storage object name must be relative; codepoint below32 or equal127 ->
+  Cloud storage object name contains control characters; any slash-delimited dot/dot-dot segment or empty segment
+  before the last -> Cloud storage object name contains an invalid path segment. A trailing slash, literal backslash,
+  ?, # or still-percent-encoded component is accepted by this function. cloud_object_encoding: encode_gcs_object_name_for_url
+  percent-decodes once then quotes with safe empty; encode_s3_object_key_for_url does the same with slash safe.
+  Retain URI unreserved characters and Python unquote UTF-8 replacement behavior; double-encoded percent signs are
+  not recursively decoded. Thus the GCS path encodes slashes while S3 preserves them. legacy_trusted_policy: should_allow_legacy_cloud_file_ids
+  reads only a MappingProxyType snapshot under _litellm_internal_model_credentials when outer params is a Mapping.
+  Missing/untrusted snapshots and missing values yield False. A bool returns itself; a string is stripped/lowercased
+  and true only for 1,true,yes,on; numbers including integer1 and every other value are False. Request JSON cannot
+  manufacture the trusted snapshot and a top-level allow_legacy_cloud_file_ids value is ignored. managed_id_authorization:
+  validate_managed_cloud_file_id percent-decodes file_id once. Require startswith the supplied scheme or ValueError
+  file_id must be a {scheme} URI; require a slash in the remaining path or file_id must include a cloud storage
+  object name. Split first slash, resolve configured bucket/prefix, and require exact bucket equality or file_id
+  bucket does not match the configured storage bucket. Validate the object path next. Prefix each allowed object
+  prefix with configured prefix plus slash when configured; any literal startswith match succeeds. Constants are
+  VERTEX_AI_MANAGED_GCS_PREFIX=litellm-vertex-files/, and Bedrock ordered prefixes litellm-bedrock-files-,litellm-bedrock-files/,litellm-batch-outputs/.
+  Preserve all these literals. legacy_prefix_boundary: If managed-prefix matching fails and allow_legacy_cloud_file_ids
+  is truthy, accept the validated object when no configured prefix exists; otherwise require configured_prefix plus
+  slash as a boundary or ValueError file_id object does not match the configured storage prefix. Without legacy
+  opt-in raise file_id must reference a LiteLLM-managed storage object. Legacy mode never bypasses bucket, scheme
+  or relative-path validation. An empty allowed-prefix sequence can succeed only through legacy behavior. encoded_traversal_order:
+  Decode only once before scheme/bucket/path checks: encoded slashes, dot segments and control characters are checked
+  after that decoding, while %252e remains literal %2e and is not treated as dot. Errors from configured bucket
+  validation precede object validation after URI splitting. Preserve source error order and no additional URL authority/query
+  stripping.
+
+
+  Load allow_legacy_cloud_file_ids through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest cloud_storage_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  allow_legacy_cloud_file_ids defaults False in trusted deployment settings; the loader preserves bool/string input
+  for the source policy above, and B1021 snapshots it into the immutable deployment credential settings. Request
+  values never acquire that trust. Add actual B002 loader cases for missing, bool, accepted/rejected strings and
+  integer input; there is no environment variable for this flag.
+
+
+  Outside-byte boundary: decode_cloud_object_reference consumes untrusted cloud-object URI text for the shared one-pass
+  percent decoding and bucket/path authorization; dispatch the GCS/S3 encoder variants through the same production
+  string routines in crates/betterlite-context/src/cloud_storage.rs or its scoped child module. Use that production
+  decoder from the request path, Rust oracle adapter and cargo-fuzz target crates/betterlite-context/fuzz/fuzz_targets/cloud_object_path.rs.
+  Add valid, malformed, truncated and boundary corpus inputs and adjacent test replays_the_cloud_object_path_corpus
+  that checks outcome categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Write standalone Rust test cloud_storage_credential_identity_isolation in betterlite-context: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test cloud_storage_secret_safe_failure in betterlite-context: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Implement crates/betterlite-context/src/cloud_storage.rs with adjacent tests under cloud_storage/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation cloud_storage in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function cloud_storage_cases in betterlite-context with these exact named cases (one per oracle file):
+  cloud_uri_detection, object_component_sanitization, object_path_sanitization, configured_bucket_split, object_path_validation,
+  cloud_object_encoding, legacy_trusted_policy, managed_id_authorization, legacy_prefix_boundary, encoded_traversal_order.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/cloud_storage* using HelperCase: kind: helper
+  and the externally tagged cloud_storage variant inside call. Do not put the Python stdin operation field in a
+  HelperCase. Add oracle test helper_seeds_select_cloud_storage that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
+
+
+  Budget from 118 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 180 production lines, 280 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 55 parser target/replay lines, 50 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 710 planned, 725 maximum changed lines.
+deviations: []
+dod:
+- proof:
+  - helper-case-corpus
+  text: New cloud_storage seeds parse as the intended call variant and replay through the shared production parser.
+- text: 'cloud_uri_detection: is_managed_cloud_storage_uri returns True only for a string starting exact s3:// or
+    gs://, including a bare scheme; it does no bucket/key validation and rejects uppercase schemes. This identifies
+    internal provider artifacts for the proxy owner check; it does not establish ownership.'
+  proof:
+  - case-cloud-uri-detection
+  - oracle
+  - helper-python
+- text: 'object_component_sanitization: For a nonstring return fallback (default file) unchanged. Replace backslashes
+    with slashes, take POSIX basename, trim surrounding whitespace, and return fallback for empty, dot or dot-dot.
+    Replace each codepoint below32 or equal127 with underscore, then each run outside ASCII A-Z,a-z,0-9,dot,underscore,hyphen
+    with one underscore. Strip leading/trailing dots and underscores; if empty use fallback, otherwise truncate
+    to 255 characters. Do not sanitize or truncate fallback, normalize Unicode, or percent-decode filenames.'
+  proof:
+  - case-object-component-sanitization
+  - oracle
+  - helper-python
+- text: 'object_path_sanitization: For nonstrings return fallback (default file). Replace backslashes with slashes,
+    split on slash, sanitize every segment with empty fallback, discard empty results and join with slash; if none
+    survive use fallback. Dot/traversal segments are removed by sanitization, whereas authorization rejects them.
+    build_managed_cloud_object_name uses the component sanitizer with fallback_filename default file and emits prefix
+    plus UUID4 lowercase hex plus hyphen plus safe filename; preserve prefix verbatim and inject UUID for the oracle.'
+  proof:
+  - case-object-path-sanitization
+  - oracle
+  - helper-python
+- text: 'configured_bucket_split: Require a string with nonempty stripped form or ValueError Cloud storage bucket
+    name is required. Trim it; reject any ://, ? or # with Cloud storage bucket name must not include a URI scheme
+    or query; reject control characters with Cloud storage bucket name contains control characters. Split first
+    slash into bucket and prefix, reject an empty bucket with the required message and any backslash in bucket with
+    Cloud storage bucket name contains an invalid separator. Strip prefix outer slashes, validate it only when nonempty,
+    and return bucket,prefix. Do not invent DNS/bucket-name or @/colon validation.'
+  proof:
+  - case-configured-bucket-split
+  - oracle
+  - helper-python
+- text: 'object_path_validation: Validate object strings in this order: empty -> Cloud storage object name is required;
+    leading slash -> Cloud storage object name must be relative; codepoint below32 or equal127 -> Cloud storage
+    object name contains control characters; any slash-delimited dot/dot-dot segment or empty segment before the
+    last -> Cloud storage object name contains an invalid path segment. A trailing slash, literal backslash, ?,
+    # or still-percent-encoded component is accepted by this function.'
+  proof:
+  - case-object-path-validation
+  - oracle
+  - helper-python
+- text: 'cloud_object_encoding: encode_gcs_object_name_for_url percent-decodes once then quotes with safe empty;
+    encode_s3_object_key_for_url does the same with slash safe. Retain URI unreserved characters and Python unquote
+    UTF-8 replacement behavior; double-encoded percent signs are not recursively decoded. Thus the GCS path encodes
+    slashes while S3 preserves them.'
+  proof:
+  - case-cloud-object-encoding
+  - oracle
+  - helper-python
+- text: 'legacy_trusted_policy: should_allow_legacy_cloud_file_ids reads only a MappingProxyType snapshot under
+    _litellm_internal_model_credentials when outer params is a Mapping. Missing/untrusted snapshots and missing
+    values yield False. A bool returns itself; a string is stripped/lowercased and true only for 1,true,yes,on;
+    numbers including integer1 and every other value are False. Request JSON cannot manufacture the trusted snapshot
+    and a top-level allow_legacy_cloud_file_ids value is ignored.'
+  proof:
+  - case-legacy-trusted-policy
+  - oracle
+  - helper-python
+- text: 'managed_id_authorization: validate_managed_cloud_file_id percent-decodes file_id once. Require startswith
+    the supplied scheme or ValueError file_id must be a {scheme} URI; require a slash in the remaining path or file_id
+    must include a cloud storage object name. Split first slash, resolve configured bucket/prefix, and require exact
+    bucket equality or file_id bucket does not match the configured storage bucket. Validate the object path next.
+    Prefix each allowed object prefix with configured prefix plus slash when configured; any literal startswith
+    match succeeds. Constants are VERTEX_AI_MANAGED_GCS_PREFIX=litellm-vertex-files/, and Bedrock ordered prefixes
+    litellm-bedrock-files-,litellm-bedrock-files/,litellm-batch-outputs/. Preserve all these literals.'
+  proof:
+  - case-managed-id-authorization
+  - oracle
+  - helper-python
+- text: 'legacy_prefix_boundary: If managed-prefix matching fails and allow_legacy_cloud_file_ids is truthy, accept
+    the validated object when no configured prefix exists; otherwise require configured_prefix plus slash as a boundary
+    or ValueError file_id object does not match the configured storage prefix. Without legacy opt-in raise file_id
+    must reference a LiteLLM-managed storage object. Legacy mode never bypasses bucket, scheme or relative-path
+    validation. An empty allowed-prefix sequence can succeed only through legacy behavior.'
+  proof:
+  - case-legacy-prefix-boundary
+  - oracle
+  - helper-python
+- text: 'encoded_traversal_order: Decode only once before scheme/bucket/path checks: encoded slashes, dot segments
+    and control characters are checked after that decoding, while %252e remains literal %2e and is not treated as
+    dot. Errors from configured bucket validation precede object validation after URI splitting. Preserve source
+    error order and no additional URL authority/query stripping.'
+  proof:
+  - case-encoded-traversal-order
+  - oracle
+  - helper-python
+- text: The real config loader resolves allow_legacy_cloud_file_ids, including its default and precedence.
+  proof:
+  - config-allow-legacy-cloud-file-ids
+- text: decode_cloud_object_reference has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+id: B2208
+oracle_cases:
+- tools/oracle/cases/helpers/providers/cloud-storage/cloud-uri-detection.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/object-component-sanitization.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/object-path-sanitization.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/configured-bucket-split.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/object-path-validation.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/cloud-object-encoding.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/legacy-trusted-policy.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/managed-id-authorization.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/legacy-prefix-boundary.yaml
+- tools/oracle/cases/helpers/providers/cloud-storage/encoded-traversal-order.yaml
+out_of_scope:
+- Provider-specific unified file-ID decoding and trusted S3 bucket selection are B643; S3 signing, upload/list/download
+  are B644-B646.
+- Enterprise-managed unified file ownership and endpoint rejection are B087/API-family parts. This helper does not
+  register a hook or perform storage IO.
+- B115 retains storage logging integration behavior and calls these shared naming helpers; it no longer owns this
+  helper file.
+pitfalls:
+- Authorization percent-decodes once, while filename sanitization never percent-decodes.
+- The source object-path validator accepts a trailing slash and literal backslash, so generic filesystem canonicalization
+  changes its behavior.
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L11-L167
+  why: All shared cloud-storage naming, trusted legacy policy and authorization helpers.
+review_level: security
+scope:
+  lint_tables: false
+  paths:
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/lib.rs
+  - crates/betterlite-context/src/error.rs
+  - crates/betterlite-context/src/cloud_storage.rs
+  - crates/betterlite-context/src/cloud_storage/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/cloud_storage.rs
+  - tools/oracle/src/helpers/cloud_storage/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/cloud_storage.py
+  - tools/oracle/cases/helpers/providers/cloud-storage/**
+  - tools/oracle/fuzz/corpus/helper_case/cloud_storage*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/cloud.rs
+  - crates/betterlite-config/src/providers/cloud/cloud_storage.rs
+  - crates/betterlite-config/src/providers/cloud/cloud_storage/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/cloud_storage_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/cloud_storage*
+  - crates/betterlite-context/fuzz/Cargo.toml
+  - crates/betterlite-context/fuzz/fuzz_targets/cloud_object_path.rs
+  - crates/betterlite-context/fuzz/corpus/cloud_object_path/**
+title: Shared cloud object names and authorization

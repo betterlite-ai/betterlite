@@ -22,6 +22,41 @@ description: >-
   prerequisite.
 
 
+  Named case contracts: text_and_content_array: Bare strings and type=text blocks become input_text; nonstring text
+  becomes empty. Text-only lists join with newline, while any retained media keeps typed parts. System/developer
+  text joins into instructions in input order; unknown roles are ignored. image_and_file_parts: User images require
+  a nonempty string URL and default detail to auto unless a nonempty string is provided; inline files require nonempty
+  filename and file_data strings. Assistant media, malformed files/images and unknown blocks are dropped. tool_definitions_and_results:
+  Flatten type=function/function into type/function name/description/parameters, defaulting to empty strings and
+  {}, copying strict only when present; other tools pass through. Assistant tool calls become function_call with
+  call_id/name/arguments default empty, following nonempty assistant content; tool messages become function_call_output.
+  missing_model: validate_request rejects false model with ValueError (model parameter is required), then false
+  input with ValueError (input parameter is required); handler wraps either as OpenAIError 500, while the high-level
+  counter returns its error record. native_count_success: Select native API only for provider openai; return total_tokens=result.input_tokens
+  default 0, tokenizer_type=openai_api, request_model/model_used and original_response, retaining absent versus
+  explicit None input_tokens. count_failure_zero_status: A non-200 response or HTTPStatusError retains upstream
+  status; request/JSON/ValueError failures become OpenAIError 500. Counter logs a warning and returns error=true,total_tokens=0,status_code
+  plus error_message; other exceptions use 500. missing_input_returns_none: Missing/empty messages, no resolved
+  key (with a warning), or system-only/no input items returns None before HTTP. contents is unused. Extracted instructions
+  take precedence over system, even when empty; otherwise stringify nonstring system using Python str. credentials_ignore_module_overrides:
+  Use deployment.litellm_params.api_key then OPENAI_API_KEY, and only deployment.litellm_params.api_base; ignore
+  litellm.api_key/openai_key/api_base and OPENAI_BASE_URL/OPENAI_API_BASE. count_http_headers_timeout: POST {trimmed
+  base}/responses/input_tokens, default base https://api.openai.com/v1, with Content-Type: application/json and
+  Authorization: Bearer {api_key}; timeout is explicit unless None, then injected litellm.request_timeout (default
+  6000 seconds through B004 config). request_optional_presence: Include instructions and transformed tools whenever
+  not None, including empty values; preserve model/input directly and keep empty assistant messages when no tool
+  calls exist.
+
+
+  Write standalone Rust test openai_count_tokens_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_count_tokens_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-openai/src/count_tokens.rs with adjacent tests under count_tokens/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -38,9 +73,9 @@ description: >-
   Write rstest function count_tokens_cases in betterlite-openai with these exact named cases (one per oracle file):
   text_and_content_array, image_and_file_parts, tool_definitions_and_results, missing_model, native_api_selected,
   native_count_success, count_failure_zero_status, missing_input_returns_none, credentials_ignore_module_overrides,
-  python_string_tool_output. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  python_string_tool_output, count_http_headers_timeout, request_optional_presence. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_count_tokens* using HelperCase: kind:
@@ -58,9 +93,9 @@ description: >-
 
 
   Budget from 311 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 330 production lines, 135 behavior/config-test lines,
-  95 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 640 planned, 650 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 340 production lines, 235 behavior/config-test lines,
+  135 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 790 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -88,30 +123,37 @@ references:
   why: Own OpenAITokenCounter.should_use_token_counting_api, OpenAITokenCounter.count_tokens. Other functions in
     this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/count_tokens/transformation.py#L35-L248
-  why: >-
-    Own _chat_image_block_to_responses_part, _chat_file_block_to_responses_part, _chat_block_to_responses_part,
+  why: Own _chat_image_block_to_responses_part, _chat_file_block_to_responses_part, _chat_block_to_responses_part,
     chat_content_blocks_to_responses_content, OpenAICountTokensConfig.get_openai_count_tokens_endpoint, OpenAICountTokensConfig.transform_request_to_count_tokens,
     OpenAICountTokensConfig.get_required_headers, OpenAICountTokensConfig.validate_request, OpenAICountTokensConfig._transform_tools_for_responses_api,
     OpenAICountTokensConfig.messages_to_responses_input. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: 'text and content array: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/text-and-content-array.yaml.'
+- text: 'text_and_content_array: Bare strings and type=text blocks become input_text; nonstring text becomes empty.
+    Text-only lists join with newline, while any retained media keeps typed parts. System/developer text joins into
+    instructions in input order; unknown roles are ignored.'
   proof:
   - case-text-and-content-array
   - oracle
   - helper-python
-- text: 'image and file parts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/image-and-file-parts.yaml.'
+- text: 'image_and_file_parts: User images require a nonempty string URL and default detail to auto unless a nonempty
+    string is provided; inline files require nonempty filename and file_data strings. Assistant media, malformed
+    files/images and unknown blocks are dropped.'
   proof:
   - case-image-and-file-parts
   - oracle
   - helper-python
-- text: >-
-    tool definitions and results: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/tool-definitions-and-results.yaml.
+- text: 'tool_definitions_and_results: Flatten type=function/function into type/function name/description/parameters,
+    defaulting to empty strings and {}, copying strict only when present; other tools pass through. Assistant tool
+    calls become function_call with call_id/name/arguments default empty, following nonempty assistant content;
+    tool messages become function_call_output.'
   proof:
   - case-tool-definitions-and-results
   - oracle
   - helper-python
-- text: 'missing model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/missing-model.yaml.'
+- text: 'missing_model: validate_request rejects false model with ValueError (model parameter is required), then
+    false input with ValueError (input parameter is required); handler wraps either as OpenAIError 500, while the
+    high-level counter returns its error record.'
   proof:
   - case-missing-model
   - oracle
@@ -121,31 +163,34 @@ dod:
   - case-native-api-selected
   - oracle
   - helper-python
-- text: 'native count success: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/native-count-success.yaml.'
+- text: 'native_count_success: Select native API only for provider openai; return total_tokens=result.input_tokens
+    default 0, tokenizer_type=openai_api, request_model/model_used and original_response, retaining absent versus
+    explicit None input_tokens.'
   proof:
   - case-native-count-success
   - oracle
   - helper-python
-- text: >-
-    count failure zero status: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/count-failure-zero-status.yaml.
+- text: 'count_failure_zero_status: A non-200 response or HTTPStatusError retains upstream status; request/JSON/ValueError
+    failures become OpenAIError 500. Counter logs a warning and returns error=true,total_tokens=0,status_code plus
+    error_message; other exceptions use 500.'
   proof:
   - case-count-failure-zero-status
   - oracle
   - helper-python
-- text: >-
-    missing input returns none: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/missing-input-returns-none.yaml.
+- text: 'missing_input_returns_none: Missing/empty messages, no resolved key (with a warning), or system-only/no
+    input items returns None before HTTP. contents is unused. Extracted instructions take precedence over system,
+    even when empty; otherwise stringify nonstring system using Python str.'
   proof:
   - case-missing-input-returns-none
   - oracle
   - helper-python
-- text: >-
-    credentials ignore module overrides: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/credentials-ignore-module-overrides.yaml.
+- text: 'credentials_ignore_module_overrides: Use deployment.litellm_params.api_key then OPENAI_API_KEY, and only
+    deployment.litellm_params.api_base; ignore litellm.api_key/openai_key/api_base and OPENAI_BASE_URL/OPENAI_API_BASE.'
   proof:
   - case-credentials-ignore-module-overrides
   - oracle
   - helper-python
-- text: >-
-    python string tool output: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/python-string-tool-output.yaml.
+- text: 'python string tool output: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/python-string-tool-output.yaml.'
   proof:
   - case-python-string-tool-output
   - oracle
@@ -157,59 +202,104 @@ dod:
 - text: decode_input_token_count has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'count_http_headers_timeout: POST {trimmed base}/responses/input_tokens, default base https://api.openai.com/v1,
+    with Content-Type: application/json and Authorization: Bearer {api_key}; timeout is explicit unless None, then
+    injected litellm.request_timeout (default 6000 seconds through B004 config).'
+  proof:
+  - case-count-http-headers-timeout
+  - oracle
+  - helper-python
+- text: 'request_optional_presence: Include instructions and transformed tools whenever not None, including empty
+    values; preserve model/input directly and keep empty assistant messages when no tool calls exist.'
+  proof:
+  - case-request-optional-presence
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-text-and-content-array
-    why: The text-and-content-array behavior is missing or differs from its pinned fixture.
+    why: Bare strings and type=text blocks become input_text; nonstring text becomes empty. Text-only lists join
+      with newline, while any retained media keeps typed parts. System/developer text joins into instructions in
+      input order; unknown roles are ignored.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_text_and_content_array$/)'
   - id: case-image-and-file-parts
-    why: The image-and-file-parts behavior is missing or differs from its pinned fixture.
+    why: User images require a nonempty string URL and default detail to auto unless a nonempty string is provided;
+      inline files require nonempty filename and file_data strings. Assistant media, malformed files/images and
+      unknown blocks are dropped.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_image_and_file_parts$/)'
   - id: case-tool-definitions-and-results
-    why: The tool-definitions-and-results behavior is missing or differs from its pinned fixture.
+    why: Flatten type=function/function into type/function name/description/parameters, defaulting to empty strings
+      and {}, copying strict only when present; other tools pass through. Assistant tool calls become function_call
+      with call_id/name/arguments default empty, following nonempty assistant content; tool messages become function_call_output.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_tool_definitions_and_results$/)'
   - id: case-missing-model
-    why: The missing-model behavior is missing or differs from its pinned fixture.
+    why: validate_request rejects false model with ValueError (model parameter is required), then false input with
+      ValueError (input parameter is required); handler wraps either as OpenAIError 500, while the high-level counter
+      returns its error record.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_missing_model$/)'
   - id: case-native-api-selected
-    why: The native-api-selected behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/native-api-selected.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_native_api_selected$/)'
   - id: case-native-count-success
-    why: The native-count-success behavior is missing or differs from its pinned fixture.
+    why: Select native API only for provider openai; return total_tokens=result.input_tokens default 0, tokenizer_type=openai_api,
+      request_model/model_used and original_response, retaining absent versus explicit None input_tokens.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_native_count_success$/)'
   - id: case-count-failure-zero-status
-    why: The count-failure-zero-status behavior is missing or differs from its pinned fixture.
+    why: A non-200 response or HTTPStatusError retains upstream status; request/JSON/ValueError failures become
+      OpenAIError 500. Counter logs a warning and returns error=true,total_tokens=0,status_code plus error_message;
+      other exceptions use 500.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_failure_zero_status$/)'
   - id: case-missing-input-returns-none
-    why: The missing-input-returns-none behavior is missing or differs from its pinned fixture.
+    why: Missing/empty messages, no resolved key (with a warning), or system-only/no input items returns None before
+      HTTP. contents is unused. Extracted instructions take precedence over system, even when empty; otherwise stringify
+      nonstring system using Python str.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_missing_input_returns_none$/)'
   - id: case-credentials-ignore-module-overrides
-    why: The credentials-ignore-module-overrides behavior is missing or differs from its pinned fixture.
+    why: Use deployment.litellm_params.api_key then OPENAI_API_KEY, and only deployment.litellm_params.api_base;
+      ignore litellm.api_key/openai_key/api_base and OPENAI_BASE_URL/OPENAI_API_BASE.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_credentials_ignore_module_overrides$/)'
   - id: case-python-string-tool-output
-    why: The python-string-tool-output behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-count-tokens/python-string-tool-output.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_python_string_tool_output$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_count_tokens.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_count_tokens.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_count_tokens*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_count_tokens*")"
       && grep -lq 'openai_count_tokens' tools/oracle/fuzz/corpus/helper_case/openai_count_tokens* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_count_tokens$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_count_tokens)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_count_tokens)"
       && grep -q 'decode_input_token_count' crates/betterlite-openai/fuzz/fuzz_targets/openai_count_tokens.rs &&
       cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_count_tokens_corpus$/)'
+  - id: case-count-http-headers-timeout
+    why: 'POST {trimmed base}/responses/input_tokens, default base https://api.openai.com/v1, with Content-Type:
+      application/json and Authorization: Bearer {api_key}; timeout is explicit unless None, then injected litellm.request_timeout
+      (default 6000 seconds through B004 config).'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_http_headers_timeout$/)'
+  - id: case-request-optional-presence
+    why: Include instructions and transformed tools whenever not None, including empty values; preserve model/input
+      directly and keep empty assistant messages when no tool calls exist.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_request_optional_presence$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_count_tokens_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_count_tokens_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-count-tokens/text-and-content-array.yaml
 - tools/oracle/cases/helpers/providers/openai-count-tokens/image-and-file-parts.yaml
@@ -221,6 +311,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-count-tokens/missing-input-returns-none.yaml
 - tools/oracle/cases/helpers/providers/openai-count-tokens/credentials-ignore-module-overrides.yaml
 - tools/oracle/cases/helpers/providers/openai-count-tokens/python-string-tool-output.yaml
+- tools/oracle/cases/helpers/providers/openai-count-tokens/count-http-headers-timeout.yaml
+- tools/oracle/cases/helpers/providers/openai-count-tokens/request-optional-presence.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -228,10 +320,11 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve optional native-count selection and failure-to-local-counter fallback with diagnostics; injected B013
-  counter uses local tokenizer assets only.
+- Assistant image/file parts are discarded before deciding whether to emit an empty assistant message; counting
+  user content with the assistant role produces different input.
+- An empty extracted instructions string blocks the separate system fallback because the check is is None.
 - Non-string function-call output uses Python str(), including single quotes in dictionary representations.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
-review_level: standard
+review_level: security

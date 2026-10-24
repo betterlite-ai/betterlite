@@ -2,14 +2,53 @@ id: B639
 title: Bedrock rerank request and results
 description: >-
   Add BedrockRerankRequest/Reply using the shared rerank wire records, native source document variants and model
-  ARN. Preserve source document order, result indices/scores and return_documents semantics; invoke the agent-runtime
-  service with the correct signing service/region.
+  ARN. Preserve source document order and result indices/scores; return_documents, rank_fields and max_chunks_per_doc
+  are ignored by this provider; invoke the agent-runtime service with the correct signing service/region.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/rerank/handler.py:
   BedrockRerankHandler.arerank L29-L58; BedrockRerankHandler.rerank L60-L141; BedrockRerankHandler._prepare_request
   L143-L182. litellm/llms/bedrock/rerank/transformation.py: BedrockRerankConfig._transform_sources L32-L55; BedrockRerankConfig._transform_request
   L57-L78; BedrockRerankConfig._transform_response L80-L110.
+
+
+  Named case contracts: text_and_json_document_source: Build B1013 RerankRequest with model,query,documents,top_n,rank_fields,return_documents
+  (handler default True); max_chunks_per_doc is not put in this record. Each string document becomes type=INLINE
+  with inlineDocumentSource.type=TEXT and textDocument.text; each nonstring document becomes INLINE with inlineDocumentSource.type=JSON
+  and jsonDocument holding the unchanged record. Preserve document order and use one query with type=TEXT,textQuery.text=query.
+  rerank_model_arn: Emit rerankingConfiguration.type=BEDROCK_RERANKING_MODEL and bedrockRerankingConfiguration.modelConfiguration.modelArn
+  equal to the supplied model verbatim; do not manufacture an ARN. B595 credential preparation receives original
+  options/model without a bearer shortcut. B591 selects proxy endpoint, then replace every bedrock-runtime substring
+  with bedrock-agent-runtime and append /rerank without trimming slashes. Sign service bedrock via B595 get_request_headers
+  with supports_bearer_token=False, Content-Type=application/json overlaid by extra_headers and exact UTF-8 JSON
+  body. Environment bearer tokens cannot bypass SigV4 here. top_n: numberOfResults is request.top_n or len(documents):
+  absent,None and zero use document count; a negative nonzero count passes through. No local sorting, clipping,
+  document truncation or rank_fields projection is performed. results_index_score: Decode with decode_rerank_reply.
+  Missing usage defaults billed_units to search_units=1 and tokens to an empty record; an explicitly empty usage
+  does not receive the search-unit default, and the same supplied usage record feeds both TypedDict constructors
+  before shared B1013 response validation. A truthy results collection maps each item.get(index) and item.get(relevanceScore)
+  to index,relevance_score in source order, retaining source validation/coercion failures for missing/invalid fields.
+  Use a truthy response id or injected UUID4 string. Missing/None/empty results raises ValueError No results found
+  in the response={response}. return_document_content: return_documents true,false,None and rank_fields have no
+  effect on this request body or response; returned results never attach document content. Even though the handler
+  default is True, it does not reconstruct source documents. max_chunks_per_doc likewise does not affect the payload.
+  rerank_error: Both paths call raise_for_status. HTTPStatusError becomes B682 BedrockError preserving status,text,headers,response;
+  timeout becomes status408 Timeout error occurred. Other transport errors and post-transport JSON or result-shape
+  errors propagate unchanged. Explicit non-AWS Authorization behavior remains B595 even with supports_bearer_token=False;
+  test that shared signing branch separately from environment bearer bypass. rerank_transport_logging: B249 pre_call
+  receives input=data,empty api_key and complete_input_dict,stored endpoint_url,plain prepared headers. Truthy _is_async
+  chooses a matching AsyncHTTPHandler or B173 BEDROCK client; sync uses a matching HTTPHandler or B173 default.
+  POST stored endpoint_url, plain prepared headers and serialized body with the supplied timeout on both paths;
+  async also passes logging_obj to the client. Sync post_call records response.text and empty api_key before JSON
+  decoding; async has no explicit handler post_call. Return the same source projection on both paths.
+
+
+  Write standalone Rust test rerank_credential_identity_isolation in betterlite-bedrock: Distinct configured identities
+  cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle case.
+
+
+  Write standalone Rust test rerank_secret_safe_failure in betterlite-bedrock: Debug and owned failure paths do
+  not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-bedrock/src/rerank.rs with adjacent tests under rerank/. Keep each Rust module at
@@ -26,10 +65,9 @@ description: >-
 
 
   Write rstest function rerank_cases in betterlite-bedrock with these exact named cases (one per oracle file): text_and_json_document_source,
-  rerank_model_arn, top_n, results_index_score, return_document_content, rerank_error. Each case exercises its named
-  outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy
-  and assert both client response and captured upstream request. Existing API tasks retain route registration; this
-  task must not register a duplicate axum route.
+  rerank_model_arn, top_n, results_index_score, return_document_content, rerank_error, rerank_transport_logging.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_rerank* using HelperCase: kind:
@@ -47,9 +85,9 @@ description: >-
 
 
   Budget from 210 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 235 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 493 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 235 production lines, 235 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 660 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -71,42 +109,57 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/rerank/handler.py#L29-L182
-  why: >-
-    Own BedrockRerankHandler.arerank, BedrockRerankHandler.rerank, BedrockRerankHandler._prepare_request. Other
+  why: Own BedrockRerankHandler.arerank, BedrockRerankHandler.rerank, BedrockRerankHandler._prepare_request. Other
     functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/rerank/transformation.py#L32-L110
-  why: >-
-    Own BedrockRerankConfig._transform_sources, BedrockRerankConfig._transform_request, BedrockRerankConfig._transform_response.
+  why: Own BedrockRerankConfig._transform_sources, BedrockRerankConfig._transform_request, BedrockRerankConfig._transform_response.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    text and json document source: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-rerank/text-and-json-document-source.yaml.
+- text: 'text_and_json_document_source: Build B1013 RerankRequest with model,query,documents,top_n,rank_fields,return_documents
+    (handler default True); max_chunks_per_doc is not put in this record. Each string document becomes type=INLINE
+    with inlineDocumentSource.type=TEXT and textDocument.text; each nonstring document becomes INLINE with inlineDocumentSource.type=JSON
+    and jsonDocument holding the unchanged record. Preserve document order and use one query with type=TEXT,textQuery.text=query.'
   proof:
   - case-text-and-json-document-source
   - oracle
   - helper-python
-- text: 'rerank model arn: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-rerank/rerank-model-arn.yaml.'
+- text: 'rerank_model_arn: Emit rerankingConfiguration.type=BEDROCK_RERANKING_MODEL and bedrockRerankingConfiguration.modelConfiguration.modelArn
+    equal to the supplied model verbatim; do not manufacture an ARN. B595 credential preparation receives original
+    options/model without a bearer shortcut. B591 selects proxy endpoint, then replace every bedrock-runtime substring
+    with bedrock-agent-runtime and append /rerank without trimming slashes. Sign service bedrock via B595 get_request_headers
+    with supports_bearer_token=False, Content-Type=application/json overlaid by extra_headers and exact UTF-8 JSON
+    body. Environment bearer tokens cannot bypass SigV4 here.'
   proof:
   - case-rerank-model-arn
   - oracle
   - helper-python
-- text: 'top n: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-rerank/top-n.yaml.'
+- text: 'top_n: numberOfResults is request.top_n or len(documents): absent,None and zero use document count; a negative
+    nonzero count passes through. No local sorting, clipping, document truncation or rank_fields projection is performed.'
   proof:
   - case-top-n
   - oracle
   - helper-python
-- text: 'results index score: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-rerank/results-index-score.yaml.'
+- text: 'results_index_score: Decode with decode_rerank_reply. Missing usage defaults billed_units to search_units=1
+    and tokens to an empty record; an explicitly empty usage does not receive the search-unit default, and the same
+    supplied usage record feeds both TypedDict constructors before shared B1013 response validation. A truthy results
+    collection maps each item.get(index) and item.get(relevanceScore) to index,relevance_score in source order,
+    retaining source validation/coercion failures for missing/invalid fields. Use a truthy response id or injected
+    UUID4 string. Missing/None/empty results raises ValueError No results found in the response={response}.'
   proof:
   - case-results-index-score
   - oracle
   - helper-python
-- text: >-
-    return document content: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-rerank/return-document-content.yaml.
+- text: 'return_document_content: return_documents true,false,None and rank_fields have no effect on this request
+    body or response; returned results never attach document content. Even though the handler default is True, it
+    does not reconstruct source documents. max_chunks_per_doc likewise does not affect the payload.'
   proof:
   - case-return-document-content
   - oracle
   - helper-python
-- text: 'rerank error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-rerank/rerank-error.yaml.'
+- text: 'rerank_error: Both paths call raise_for_status. HTTPStatusError becomes B682 BedrockError preserving status,text,headers,response;
+    timeout becomes status408 Timeout error occurred. Other transport errors and post-transport JSON or result-shape
+    errors propagate unchanged. Explicit non-AWS Authorization behavior remains B595 even with supports_bearer_token=False;
+    test that shared signing branch separately from environment bearer bypass.'
   proof:
   - case-rerank-error
   - oracle
@@ -118,47 +171,94 @@ dod:
 - text: decode_rerank_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'rerank_transport_logging: B249 pre_call receives input=data,empty api_key and complete_input_dict,stored
+    endpoint_url,plain prepared headers. Truthy _is_async chooses a matching AsyncHTTPHandler or B173 BEDROCK client;
+    sync uses a matching HTTPHandler or B173 default. POST stored endpoint_url, plain prepared headers and serialized
+    body with the supplied timeout on both paths; async also passes logging_obj to the client. Sync post_call records
+    response.text and empty api_key before JSON decoding; async has no explicit handler post_call. Return the same
+    source projection on both paths.'
+  proof:
+  - case-rerank-transport-logging
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-text-and-json-document-source
-    why: The text-and-json-document-source behavior is missing or differs from its pinned fixture.
+    why: Build B1013 RerankRequest with model,query,documents,top_n,rank_fields,return_documents (handler default
+      True); max_chunks_per_doc is not put in this record. Each string document becomes type=INLINE with inlineDocumentSource.type=TEXT
+      and textDocument.text; each nonstring document becomes INLINE with inlineDocumentSource.type=JSON and jsonDocument
+      holding the unchanged record. Preserve document order and use one query with type=TEXT,textQuery.text=query.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_text_and_json_document_source$/)'
   - id: case-rerank-model-arn
-    why: The rerank-model-arn behavior is missing or differs from its pinned fixture.
+    why: Emit rerankingConfiguration.type=BEDROCK_RERANKING_MODEL and bedrockRerankingConfiguration.modelConfiguration.modelArn
+      equal to the supplied model verbatim; do not manufacture an ARN. B595 credential preparation receives original
+      options/model without a bearer shortcut. B591 selects proxy endpoint, then replace every bedrock-runtime substring
+      with bedrock-agent-runtime and append /rerank without trimming slashes. Sign service bedrock via B595 get_request_headers
+      with supports_bearer_token=False, Content-Type=application/json overlaid by extra_headers and exact UTF-8
+      JSON body. Environment bearer tokens cannot bypass SigV4 here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_model_arn$/)'
   - id: case-top-n
-    why: The top-n behavior is missing or differs from its pinned fixture.
+    why: 'numberOfResults is request.top_n or len(documents): absent,None and zero use document count; a negative
+      nonzero count passes through. No local sorting, clipping, document truncation or rank_fields projection is
+      performed.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_top_n$/)'
   - id: case-results-index-score
-    why: The results-index-score behavior is missing or differs from its pinned fixture.
+    why: Decode with decode_rerank_reply. Missing usage defaults billed_units to search_units=1 and tokens to an
+      empty record; an explicitly empty usage does not receive the search-unit default, and the same supplied usage
+      record feeds both TypedDict constructors before shared B1013 response validation. A truthy results collection
+      maps each item.get(index) and item.get(relevanceScore) to index,relevance_score in source order, retaining
+      source validation/coercion failures for missing/invalid fields. Use a truthy response id or injected UUID4
+      string. Missing/None/empty results raises ValueError No results found in the response={response}.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_results_index_score$/)'
   - id: case-return-document-content
-    why: The return-document-content behavior is missing or differs from its pinned fixture.
+    why: return_documents true,false,None and rank_fields have no effect on this request body or response; returned
+      results never attach document content. Even though the handler default is True, it does not reconstruct source
+      documents. max_chunks_per_doc likewise does not affect the payload.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_return_document_content$/)'
   - id: case-rerank-error
-    why: The rerank-error behavior is missing or differs from its pinned fixture.
+    why: Both paths call raise_for_status. HTTPStatusError becomes B682 BedrockError preserving status,text,headers,response;
+      timeout becomes status408 Timeout error occurred. Other transport errors and post-transport JSON or result-shape
+      errors propagate unchanged. Explicit non-AWS Authorization behavior remains B595 even with supports_bearer_token=False;
+      test that shared signing branch separately from environment bearer bypass.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_rerank.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_rerank.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_rerank*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_rerank*")"
       && grep -lq 'bedrock_other_rerank' tools/oracle/fuzz/corpus/helper_case/bedrock_other_rerank* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_rerank$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_rerank)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_rerank)"
       && grep -q 'decode_rerank_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_rerank.rs && cargo
       nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_rerank_corpus$/)'
+  - id: case-rerank-transport-logging
+    why: B249 pre_call receives input=data,empty api_key and complete_input_dict,stored endpoint_url,plain prepared
+      headers. Truthy _is_async chooses a matching AsyncHTTPHandler or B173 BEDROCK client; sync uses a matching
+      HTTPHandler or B173 default. POST stored endpoint_url, plain prepared headers and serialized body with the
+      supplied timeout on both paths; async also passes logging_obj to the client. Sync post_call records response.text
+      and empty api_key before JSON decoding; async has no explicit handler post_call. Return the same source projection
+      on both paths.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_cases::case_[0-9]+_rerank_transport_logging$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::rerank_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-rerank/text-and-json-document-source.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-rerank/rerank-model-arn.yaml
@@ -166,6 +266,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-rerank/results-index-score.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-rerank/return-document-content.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-rerank/rerank-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-rerank/rerank-transport-logging.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -173,9 +274,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve source document order, result indices/scores and return_documents semantics; invoke the agent-runtime
-  service with the correct signing service/region.
+- return_documents defaults True but never causes Bedrock results to include documents.
+- An explicitly empty usage object suppresses the default search_units=1.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

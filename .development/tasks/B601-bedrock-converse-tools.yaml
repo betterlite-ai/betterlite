@@ -25,6 +25,48 @@ description: >-
   remains with that prerequisite.
 
 
+  Named case contracts: tool_choice_values: String none returns None only when global/per-call drop_params is literal
+  True; otherwise UnsupportedParamsError400 Bedrock doesn't support tool_choice=none. To drop it from the call,
+  set `litellm.drop_params = True. required ->B688 forced-use downgrade gate then {any:{}} or {auto:{}}; auto ->{auto:{}}.
+  Every dict, even native-shaped, goes through same downgrade gate then function.name defaultempty via B231 sanitizer
+  ->{tool:{name}}. Other strings/types raise UnsupportedParamsError400 Bedrock doesn't support tool_choice=<value>.
+  Supported tool_choice values=['auto', 'required', json object]. To drop it from the call, set `litellm.drop_params
+  = True. (same unmatched backtick). Unknown values are not silently dropped just because drop_params=true. computer_use_tool_split:
+  Computer prefixes are computer_use_preview,computer_,bash_,text_editor_; model argument unused. Detector returnsfalse
+  forNone and stopsfirstmatchingtype; missingtype ignored. Stable partition into computer/regular lists without
+  copies. Transformer computer_ with function ->{type:<tooltype>,name:function.name defaultcomputer,**function.parameters
+  default{}}; parameters can overwrite type/name. Other hostedtools copied; missing bash name defaults bash and
+  text_editor defaults str_replace_editor, but missing computer_use_preview/direct computer name is not filled.
+  Existing nameNone/empty retained; nonhosted tool copiedunchanged. json_mode_tool: Synthetic function namejson_tool_call;
+  schemaNone ->{type:object,additionalProperties:true,properties:{}}, supplied schema usedas-is evenempty/nonobject.
+  Include description onlytruthy. B2202 appends tools preserving prior order/duplicates. _apply_tool_call_transformation
+  sets fake_stream=true only if model contains meta.llama3-3-70b-instruct-v1:0 and original stream is literal True.
+  native_structured_output: response_format requires type key; text is no-op before schema extraction. response_schema
+  key wins over json_schema envelope, includingNone; otherwise extract required json_schema.schema plus optionalname/description.
+  Native capability + schemanon-None ->outputConfig.textFormat.type=json_schema,structure.jsonSchema.schema=JSON
+  string with source spacing/Unicode escapes; optionalname/description included whenevernon-None includingempty.
+  No synthetictools/fake_stream set onnative; json_mode=true alwaysafter nontexttranslation. additional_properties_recursion:
+  Copy schema dictionaries and known branches; add additionalProperties=false only when type exactlyobject and key
+  absent. Preserve true/None/pattern schemas alreadypresent. Traverse properties values, dictitems, $defs/definitions
+  values and anyOf/allOf/oneOf list entries; non-dict entriespass unchanged. Do not traverse additionalProperties
+  schemas,not,patternProperties or tupleitems. Implement iterative traversal under existing parsed-input bounds
+  instead of recursion. unsupported_response_format: Capabilityfalse with schemanon-None appends json_tool_call,
+  forces it only supports_tool_choice && !is_thinking_enabled && !B688 forced_tool_use_unsupported; sourcewarning/downgrade
+  policy staysB688. Originalstream literal True setsfake_stream even when toolcannotbe forced. Any nontext format
+  with noschema (includingjson_object) setsjson_mode=true withouttool injection/fake_stream or newerror; unknown
+  type is not rejectedhere. Missingtype/malformedenvelope failures propagate. strict_tool_spec: BedrockToolSpec
+  requires parameters.type, copies properties default{} andrequired default[] (explicitNone retained), discards
+  all other schema keys except additionalProperties when supports_strict_tools and value non-None. Always emits
+  toolSpec.inputSchema.json,name,description. Include strict only when supports_strict_tools and strict truthy;
+  false/None omitted. Missing required type raisesKeyError; do not silently fabricate object or preserve extras.
+  supported_media_types: Image list png,jpeg,gif,webp; document pdf,csv,doc,docx,xls,xlsx,html,txt,md; video mp4,mov,mkv,webm,flv,mpeg,mpg,wmv,3gp,
+  exactorder. No URL retrieval belongs to these accessors.
+
+
+  Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
+  special defaults; reuse the named lower implementation rather than B157 or a copied catalog heuristic.
+
+
   Implement crates/betterlite-bedrock/src/converse_tools.rs with adjacent tests under converse_tools/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -40,10 +82,9 @@ description: >-
 
   Write rstest function converse_tools_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): tool_choice_values, computer_use_tool_split, json_mode_tool, native_structured_output, additional_properties_recursion,
-  unsupported_response_format, strict_tool_spec. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  unsupported_response_format, strict_tool_spec, supported_media_types. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools* using HelperCase: kind:
@@ -59,9 +100,9 @@ description: >-
 
 
   Budget from 294 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 315 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 531 planned, 550 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 270 production lines, 265 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 680 planned, 700 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -80,8 +121,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L739-L1008
-  why: >-
-    Own AmazonConverseConfig.map_tool_choice_values, AmazonConverseConfig.get_supported_image_types, AmazonConverseConfig.get_supported_document_types,
+  why: Own AmazonConverseConfig.map_tool_choice_values, AmazonConverseConfig.get_supported_image_types, AmazonConverseConfig.get_supported_document_types,
     AmazonConverseConfig.get_supported_video_types, AmazonConverseConfig.is_computer_use_tool_used, AmazonConverseConfig._transform_computer_use_tools,
     AmazonConverseConfig._separate_computer_use_tools, AmazonConverseConfig._create_json_tool_call_for_response_format,
     AmazonConverseConfig._supports_native_structured_outputs, AmazonConverseConfig._add_additional_properties_to_schema,
@@ -93,41 +133,67 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L296-L322
   why: Own BedrockToolSpec.__init__. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'tool choice values: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-tools/tool-choice-values.yaml.'
+- text: 'tool_choice_values: String none returns None only when global/per-call drop_params is literal True; otherwise
+    UnsupportedParamsError400 Bedrock doesn''t support tool_choice=none. To drop it from the call, set `litellm.drop_params
+    = True. required ->B688 forced-use downgrade gate then {any:{}} or {auto:{}}; auto ->{auto:{}}. Every dict,
+    even native-shaped, goes through same downgrade gate then function.name defaultempty via B231 sanitizer ->{tool:{name}}.
+    Other strings/types raise UnsupportedParamsError400 Bedrock doesn''t support tool_choice=<value>. Supported
+    tool_choice values=[''auto'', ''required'', json object]. To drop it from the call, set `litellm.drop_params
+    = True. (same unmatched backtick). Unknown values are not silently dropped just because drop_params=true.'
   proof:
   - case-tool-choice-values
   - oracle
   - helper-python
-- text: >-
-    computer use tool split: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-tools/computer-use-tool-split.yaml.
+- text: 'computer_use_tool_split: Computer prefixes are computer_use_preview,computer_,bash_,text_editor_; model
+    argument unused. Detector returnsfalse forNone and stopsfirstmatchingtype; missingtype ignored. Stable partition
+    into computer/regular lists without copies. Transformer computer_ with function ->{type:<tooltype>,name:function.name
+    defaultcomputer,**function.parameters default{}}; parameters can overwrite type/name. Other hostedtools copied;
+    missing bash name defaults bash and text_editor defaults str_replace_editor, but missing computer_use_preview/direct
+    computer name is not filled. Existing nameNone/empty retained; nonhosted tool copiedunchanged.'
   proof:
   - case-computer-use-tool-split
   - oracle
   - helper-python
-- text: 'json mode tool: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-tools/json-mode-tool.yaml.'
+- text: 'json_mode_tool: Synthetic function namejson_tool_call; schemaNone ->{type:object,additionalProperties:true,properties:{}},
+    supplied schema usedas-is evenempty/nonobject. Include description onlytruthy. B2202 appends tools preserving
+    prior order/duplicates. _apply_tool_call_transformation sets fake_stream=true only if model contains meta.llama3-3-70b-instruct-v1:0
+    and original stream is literal True.'
   proof:
   - case-json-mode-tool
   - oracle
   - helper-python
-- text: >-
-    native structured output: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-tools/native-structured-output.yaml.
+- text: 'native_structured_output: response_format requires type key; text is no-op before schema extraction. response_schema
+    key wins over json_schema envelope, includingNone; otherwise extract required json_schema.schema plus optionalname/description.
+    Native capability + schemanon-None ->outputConfig.textFormat.type=json_schema,structure.jsonSchema.schema=JSON
+    string with source spacing/Unicode escapes; optionalname/description included whenevernon-None includingempty.
+    No synthetictools/fake_stream set onnative; json_mode=true alwaysafter nontexttranslation.'
   proof:
   - case-native-structured-output
   - oracle
   - helper-python
-- text: >-
-    additional properties recursion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-tools/additional-properties-recursion.yaml.
+- text: 'additional_properties_recursion: Copy schema dictionaries and known branches; add additionalProperties=false
+    only when type exactlyobject and key absent. Preserve true/None/pattern schemas alreadypresent. Traverse properties
+    values, dictitems, $defs/definitions values and anyOf/allOf/oneOf list entries; non-dict entriespass unchanged.
+    Do not traverse additionalProperties schemas,not,patternProperties or tupleitems. Implement iterative traversal
+    under existing parsed-input bounds instead of recursion.'
   proof:
   - case-additional-properties-recursion
   - oracle
   - helper-python
-- text: >-
-    unsupported response format: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-tools/unsupported-response-format.yaml.
+- text: 'unsupported_response_format: Capabilityfalse with schemanon-None appends json_tool_call, forces it only
+    supports_tool_choice && !is_thinking_enabled && !B688 forced_tool_use_unsupported; sourcewarning/downgrade policy
+    staysB688. Originalstream literal True setsfake_stream even when toolcannotbe forced. Any nontext format with
+    noschema (includingjson_object) setsjson_mode=true withouttool injection/fake_stream or newerror; unknown type
+    is not rejectedhere. Missingtype/malformedenvelope failures propagate.'
   proof:
   - case-unsupported-response-format
   - oracle
   - helper-python
-- text: 'strict tool spec: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-tools/strict-tool-spec.yaml.'
+- text: 'strict_tool_spec: BedrockToolSpec requires parameters.type, copies properties default{} andrequired default[]
+    (explicitNone retained), discards all other schema keys except additionalProperties when supports_strict_tools
+    and value non-None. Always emits toolSpec.inputSchema.json,name,description. Include strict only when supports_strict_tools
+    and strict truthy; false/None omitted. Missing required type raisesKeyError; do not silently fabricate object
+    or preserve extras.'
   proof:
   - case-strict-tool-spec
   - oracle
@@ -136,44 +202,82 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'supported_media_types: Image list png,jpeg,gif,webp; document pdf,csv,doc,docx,xls,xlsx,html,txt,md; video
+    mp4,mov,mkv,webm,flv,mpeg,mpg,wmv,3gp, exactorder. No URL retrieval belongs to these accessors.'
+  proof:
+  - case-supported-media-types
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-tool-choice-values
-    why: The tool-choice-values behavior is missing or differs from its pinned fixture.
+    why: String none returns None only when global/per-call drop_params is literal True; otherwise UnsupportedParamsError400
+      Bedrock doesn't support tool_choice=none. To drop it from the call, set `litellm.drop_params = True. required
+      ->B688 forced-use downgrade gate then {any:{}} or {auto:{}}; auto ->{auto:{}}. Every dict, even native-shaped,
+      goes through same downgrade gate then function.name defaultempty via B231 sanitizer ->{tool:{name}}. Other
+      strings/types raise UnsupportedParamsError400 Bedrock doesn't support tool_choice=<value>. Supported tool_choice
+      values=['auto', 'required', json object]. To drop it from the call, set `litellm.drop_params = True. (same
+      unmatched backtick). Unknown values are not silently dropped just because drop_params=true.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_tool_choice_values$/)'
   - id: case-computer-use-tool-split
-    why: The computer-use-tool-split behavior is missing or differs from its pinned fixture.
+    why: Computer prefixes are computer_use_preview,computer_,bash_,text_editor_; model argument unused. Detector
+      returnsfalse forNone and stopsfirstmatchingtype; missingtype ignored. Stable partition into computer/regular
+      lists without copies. Transformer computer_ with function ->{type:<tooltype>,name:function.name defaultcomputer,**function.parameters
+      default{}}; parameters can overwrite type/name. Other hostedtools copied; missing bash name defaults bash
+      and text_editor defaults str_replace_editor, but missing computer_use_preview/direct computer name is not
+      filled. Existing nameNone/empty retained; nonhosted tool copiedunchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_computer_use_tool_split$/)'
   - id: case-json-mode-tool
-    why: The json-mode-tool behavior is missing or differs from its pinned fixture.
+    why: Synthetic function namejson_tool_call; schemaNone ->{type:object,additionalProperties:true,properties:{}},
+      supplied schema usedas-is evenempty/nonobject. Include description onlytruthy. B2202 appends tools preserving
+      prior order/duplicates. _apply_tool_call_transformation sets fake_stream=true only if model contains meta.llama3-3-70b-instruct-v1:0
+      and original stream is literal True.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_json_mode_tool$/)'
   - id: case-native-structured-output
-    why: The native-structured-output behavior is missing or differs from its pinned fixture.
+    why: response_format requires type key; text is no-op before schema extraction. response_schema key wins over
+      json_schema envelope, includingNone; otherwise extract required json_schema.schema plus optionalname/description.
+      Native capability + schemanon-None ->outputConfig.textFormat.type=json_schema,structure.jsonSchema.schema=JSON
+      string with source spacing/Unicode escapes; optionalname/description included whenevernon-None includingempty.
+      No synthetictools/fake_stream set onnative; json_mode=true alwaysafter nontexttranslation.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_native_structured_output$/)'
   - id: case-additional-properties-recursion
-    why: The additional-properties-recursion behavior is missing or differs from its pinned fixture.
+    why: Copy schema dictionaries and known branches; add additionalProperties=false only when type exactlyobject
+      and key absent. Preserve true/None/pattern schemas alreadypresent. Traverse properties values, dictitems,
+      $defs/definitions values and anyOf/allOf/oneOf list entries; non-dict entriespass unchanged. Do not traverse
+      additionalProperties schemas,not,patternProperties or tupleitems. Implement iterative traversal under existing
+      parsed-input bounds instead of recursion.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_additional_properties_recursion$/)'
   - id: case-unsupported-response-format
-    why: The unsupported-response-format behavior is missing or differs from its pinned fixture.
+    why: Capabilityfalse with schemanon-None appends json_tool_call, forces it only supports_tool_choice && !is_thinking_enabled
+      && !B688 forced_tool_use_unsupported; sourcewarning/downgrade policy staysB688. Originalstream literal True
+      setsfake_stream even when toolcannotbe forced. Any nontext format with noschema (includingjson_object) setsjson_mode=true
+      withouttool injection/fake_stream or newerror; unknown type is not rejectedhere. Missingtype/malformedenvelope
+      failures propagate.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_unsupported_response_format$/)'
   - id: case-strict-tool-spec
-    why: The strict-tool-spec behavior is missing or differs from its pinned fixture.
+    why: BedrockToolSpec requires parameters.type, copies properties default{} andrequired default[] (explicitNone
+      retained), discards all other schema keys except additionalProperties when supports_strict_tools and value
+      non-None. Always emits toolSpec.inputSchema.json,name,description. Include strict only when supports_strict_tools
+      and strict truthy; false/None omitted. Missing required type raisesKeyError; do not silently fabricate object
+      or preserve extras.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_strict_tool_spec$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_tools.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_tools.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools*")"
       && grep -lq 'bedrock_converse_tools' tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_tools$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-supported-media-types
+    why: Image list png,jpeg,gif,webp; document pdf,csv,doc,docx,xls,xlsx,html,txt,md; video mp4,mov,mkv,webm,flv,mpeg,mpg,wmv,3gp,
+      exactorder. No URL retrieval belongs to these accessors.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_tools_cases::case_[0-9]+_supported_media_types$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-tools/tool-choice-values.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-tools/computer-use-tool-split.yaml
@@ -182,83 +286,72 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-tools/additional-properties-recursion.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-tools/unsupported-response-format.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-tools/strict-tool-spec.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-tools/supported-media-types.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__ L143-L154; AmazonConverseConfig.custom_llm_provider
-  L157-L158; AmazonConverseConfig.get_config_blocks L161-L166; AmazonConverseConfig.get_config L299-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model
-  L388-L389; AmazonConverseConfig._requires_min_max_tokens L392-L393; AmazonConverseConfig._is_nova_2_model L395-L444;
-  AmazonConverseConfig._map_web_search_options L446-L473; AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config
-  L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort
-  L572-L591; AmazonConverseConfig._clamp_thinking_budget_tokens L594-L609; AmazonConverseConfig._is_deepseek_model
-  L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615; AmazonConverseConfig._model_accepts_anthropic_thinking_param
-  L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param L633-L639; AmazonConverseConfig._supports_sampling_params
-  L642-L656; AmazonConverseConfig.get_supported_openai_params L658-L733; AmazonConverseConfig._auto_tool_choice
-  L736-L737 belong to B600; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
-  L169-L218; AmazonConverseConfig._has_orphaned_tool_blocks L221-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
-  L228-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L281-L296; AmazonConverseConfig._assistant_has_tool_calls
-  L1356-L1357; AmazonConverseConfig._opens_with_tool_result L1360-L1371; AmazonConverseConfig._system_run_before
+- 'litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
+  have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata
+  L316-L385 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.__init__
+  L143-L154; AmazonConverseConfig.custom_llm_provider L156-L158; AmazonConverseConfig.get_config_blocks L160-L166;
+  AmazonConverseConfig.get_config L298-L314; AmazonConverseConfig._is_openai_gpt_reasoning_model L387-L389; AmazonConverseConfig._requires_min_max_tokens
+  L391-L393; AmazonConverseConfig._is_nova_2_model L395-L444; AmazonConverseConfig._map_web_search_options L446-L473;
+  AmazonConverseConfig._transform_reasoning_effort_to_reasoning_config L475-L518; AmazonConverseConfig._handle_reasoning_effort_parameter
+  L520-L569; AmazonConverseConfig._validate_anthropic_adaptive_effort L571-L591; AmazonConverseConfig._clamp_thinking_budget_tokens
+  L593-L609; AmazonConverseConfig._is_deepseek_model L611-L612; AmazonConverseConfig._is_deepseek_r1_model L614-L615;
+  AmazonConverseConfig._model_accepts_anthropic_thinking_param L617-L631; AmazonConverseConfig._model_rejects_reasoning_effort_param
+  L633-L639; AmazonConverseConfig._supports_sampling_params L641-L656; AmazonConverseConfig.get_supported_openai_params
+  L658-L733; AmazonConverseConfig._auto_tool_choice L735-L737 belong to B600.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params
+  L1010-L1165; AmazonConverseConfig._map_request_metadata_param L1167-L1170; AmazonConverseConfig._map_context_management_param
+  L1172-L1187; AmazonConverseConfig._map_service_tier_param L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens
+  L1271-L1294; AmazonConverseConfig.get_cache_point_block L1296-L1306; AmazonConverseConfig.get_cache_point_block
+  L1308-L1318; AmazonConverseConfig.get_cache_point_block L1320-L1338; AmazonConverseConfig._build_cache_point_block
+  L1340-L1353; AmazonConverseConfig._transform_inference_params L1508-L1511; AmazonConverseConfig._handle_top_k_value
+  L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config L1539-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config
+  L1555-L1567 belong to B602.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._convert_consecutive_user_messages_to_guarded_text
+  L168-L218; AmazonConverseConfig._has_orphaned_tool_blocks L220-L225; AmazonConverseConfig._neutralize_orphaned_tool_blocks
+  L227-L278; AmazonConverseConfig._handle_orphaned_tool_blocks L280-L296; AmazonConverseConfig._assistant_has_tool_calls
+  L1355-L1357; AmazonConverseConfig._opens_with_tool_result L1359-L1371; AmazonConverseConfig._system_run_before
   L1373-L1378; AmazonConverseConfig._system_run_end L1380-L1384; AmazonConverseConfig._reordered_around_tool_results
   L1386-L1423; AmazonConverseConfig._system_role_message_as_user L1425-L1441; AmazonConverseConfig._converted_or_kept
-  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1462-L1465;
-  AmazonConverseConfig._converted_text_block L1468-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
-  belong to B603; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_all_supported_content_types L779-L780
-  have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.map_openai_params L1010-L1165; AmazonConverseConfig._map_request_metadata_param
-  L1167-L1170; AmazonConverseConfig._map_context_management_param L1172-L1187; AmazonConverseConfig._map_service_tier_param
-  L1189-L1199; AmazonConverseConfig.update_optional_params_with_thinking_tokens L1271-L1294; AmazonConverseConfig.get_cache_point_block
-  L1297-L1306; AmazonConverseConfig.get_cache_point_block L1309-L1318; AmazonConverseConfig.get_cache_point_block
-  L1320-L1338; AmazonConverseConfig._build_cache_point_block L1341-L1353; AmazonConverseConfig._transform_inference_params
-  L1508-L1511; AmazonConverseConfig._handle_top_k_value L1513-L1537; AmazonConverseConfig._merge_parallel_tool_use_config
-  L1540-L1553; AmazonConverseConfig._drop_tool_choice_type_conflicting_with_tool_config L1556-L1567 belong to B602;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params L1569-L1684;
-  AmazonConverseConfig._filter_context_management_for_bedrock_converse L1830-L1859; AmazonConverseConfig._transform_request_helper
-  L1861-L1970; AmazonConverseConfig._async_transform_request L1972-L2014; AmazonConverseConfig.transform_request
-  L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077 belong to B604; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta L1686-L1827
-  belong to B683; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response L2079-L2105; AmazonConverseConfig._transform_response
-  L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709; AmazonConverseConfig.validate_environment L2711-L2724;
-  AmazonConverseConfig.should_fake_stream L2726-L2752 belong to B607; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content L2107-L2117;
-  AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details L2142-L2159;
-  AmazonConverseConfig.thinking_tokens_from_additional_fields L2162-L2170; AmazonConverseConfig.is_converse_usage_shape
-  L2173-L2175; AmazonConverseConfig._usage_count L2178-L2183; AmazonConverseConfig._cache_read_count L2186-L2188;
-  AmazonConverseConfig._cache_write_count L2191-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
-  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed
-  L2287-L2317; AmazonConverseConfig._translate_message_content L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations
-  L2391-L2457; AmazonConverseConfig._unwrap_bedrock_properties L2460-L2480; AmazonConverseConfig._filter_json_mode_tools
-  L2483-L2525 belong to B606; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._validate_request_metadata L316-L385
-  belong to B596; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/types/llms/bedrock.py: ServerSentEvent.__init__ L455-L469; ServerSentEvent.event L472-L473; ServerSentEvent.id
-  L476-L477; ServerSentEvent.retry L480-L481; ServerSentEvent.data L484-L485; ServerSentEvent.json L487-L488; ServerSentEvent.__repr__
-  L491-L492 belong to B599; reuse that implementation or its injected typed boundary.
+  L1443-L1448; AmazonConverseConfig._converted_text_blocks L1450-L1459; AmazonConverseConfig._text_part L1461-L1465;
+  AmazonConverseConfig._converted_text_block L1467-L1471; AmazonConverseConfig._transform_system_message L1473-L1506
+  belong to B603.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._prepare_request_params
+  L1569-L1684; AmazonConverseConfig._transform_request_helper L1861-L1970; AmazonConverseConfig._async_transform_request
+  L1972-L2014; AmazonConverseConfig.transform_request L2016-L2033; AmazonConverseConfig._transform_request L2035-L2077
+  belong to B604.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._transform_reasoning_content
+  L2107-L2117; AmazonConverseConfig._transform_thinking_blocks L2119-L2139; AmazonConverseConfig._parse_cache_details
+  L2141-L2159; AmazonConverseConfig.thinking_tokens_from_additional_fields L2161-L2170; AmazonConverseConfig.is_converse_usage_shape
+  L2172-L2175; AmazonConverseConfig._usage_count L2177-L2183; AmazonConverseConfig._cache_read_count L2185-L2188;
+  AmazonConverseConfig._cache_write_count L2190-L2192; AmazonConverseConfig.usage_from_batch_output L2194-L2215;
+  AmazonConverseConfig.transform_usage L2217-L2265 belong to B605.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.get_tool_call_names
+  L2267-L2285; AmazonConverseConfig.apply_tool_call_transformation_if_needed L2287-L2317; AmazonConverseConfig._translate_message_content
+  L2319-L2388; AmazonConverseConfig._transform_citations_to_annotations L2390-L2457; AmazonConverseConfig._unwrap_bedrock_properties
+  L2459-L2480; AmazonConverseConfig._filter_json_mode_tools L2482-L2525 belong to B606.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig.transform_response
+  L2079-L2105; AmazonConverseConfig._transform_response L2527-L2702; AmazonConverseConfig.get_error_class L2704-L2709;
+  AmazonConverseConfig.validate_environment L2711-L2724; AmazonConverseConfig.should_fake_stream L2726-L2752 belong
+  to B607.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/converse_transformation.py: AmazonConverseConfig._process_tools_and_beta
+  L1686-L1827; AmazonConverseConfig._filter_context_management_for_bedrock_converse L1829-L1859 belong to B683.'
+- 'Function ownership inventory litellm/types/llms/bedrock.py: ServerSentEvent.__init__ L455-L469; ServerSentEvent.event
+  L471-L473; ServerSentEvent.id L475-L477; ServerSentEvent.retry L479-L481; ServerSentEvent.data L483-L485; ServerSentEvent.json
+  L487-L488; ServerSentEvent.__repr__ L490-L492 belong to B599.'
 pitfalls:
-- Port BedrockToolSpec validation into typed constructors without silently filtering required fields; preserve schema
-  additionalProperties behavior.
+- Computer function parameters are spread after generated type/name and may override both.
+- The additionalProperties copier does not descend into additionalProperties itself, despite its object-recursion
+  docstring.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: standard

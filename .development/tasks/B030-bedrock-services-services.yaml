@@ -1,7 +1,7 @@
 id: B030
 title: Bedrock service endpoint composition
 description: >-
-  Finish Bedrock service composition with managed S3 file and batch operations and model-resolution/parameter-pipeline
+  Finish Bedrock service composition with native configured S3 file and Bedrock batch operations and model-resolution/parameter-pipeline
   wiring. B680 installs agents/Claude Platform and B681 installs Responses/passthrough/search/vector/realtime; depend
   directly on those composition parts and the file/batch leaves. Public routes and batch scheduling remain API-family
   work.
@@ -11,10 +11,46 @@ description: >-
   function body. The references and concrete operations below bound that work.
 
 
+  Named case contracts: files_upload_read: Install B644 upload and B645 retrieve/content through B643 authorization
+  and parsed file IDs. Assert configured bucket/prefix and credential identity, JSONL transformation, file ID/size
+  metadata and byte content. Preserve per-operation access errors; uploads use local file bytes or already supplied
+  multipart contents, not downloaded request URLs. files_list_delete: Install B646 list/delete with its actual prefix/list
+  request and deletion response. Exercise distinct deployment credentials and foreign bucket rejection via B643/B2208.
+  Do not expose legacy dead helper branches as new operations. batch_create: Install B649 native Bedrock batch creation
+  with B647 input-record mapping and B648 output-file parsing, B650 request transformation and B651 transport. Preserve
+  inputFile/outputS3Uri model invocation fields, signing and caller-provided native job identifiers; errors retain
+  the leaf response. This is the open-source Bedrock service path, not the enterprise managed batch runner. batch_retrieve_list_cancel:
+  Drive native B649 retrieve/list/cancel and B651 transport, including status mapping, output file conversion, pagination
+  and cancellation behavior. The operation enum must call the leaves, not return fixture tags. Keep public batch
+  listing and runner choice with B1051/B1133/B1112. installed_service_families: Exercise B680 agents/Claude Platform
+  and B681 Responses/passthrough/search/vector/realtime through the same closed dispatcher. Existing model resolution
+  B174 and parameter mapping B175 run at the caller boundary; leaf crates do not call the upper dispatcher. native_s3_is_not_managed:
+  A configured native Bedrock S3 file/batch call uses only the installed open-source leaves and does not construct
+  or register a managed_files hook. Preserve native operation availability even though enterprise-managed IDs/storage
+  are unavailable. Proxy managed-hook errors are HTTP cases of B1031/B1032/B1033/B1034/B087 and B1050/B1051/B1133,
+  not helper calls into FastAPI globals.
+
+
+  The current managed-batch source message is LiteLLM-executed batches need a database: set DATABASE_URL so LiteLLM
+  can keep the batch and its files. Public route owners apply B184 message rewriting while matching status/type/param/code.
+  Request URL downloads remain disabled: local file/multipart bytes are accepted; a route requiring fetched bytes
+  fails through its existing media error owner, with zero outbound fetch. The decision to enable request URL downloads
+  and to add managed files/batches remains open for Max.
+
+
+  Write standalone Rust test bedrock_services_dispatch_credential_identity_isolation in betterlite-provider: Distinct
+  configured identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python
+  oracle case.
+
+
+  Write standalone Rust test bedrock_services_dispatch_secret_safe_failure in betterlite-provider: Debug and owned
+  failure paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-provider/src/bedrock_services_dispatch.rs with adjacent tests under bedrock_services_dispatch/.
   Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
-  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
-  implementation used by tests and oracle adapters.
+  leaf crates remain below this dispatcher and never import it. The production function is the only Rust implementation
+  used by tests and oracle adapters.
 
 
   Register helper operation bedrock_services_services in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
@@ -25,10 +61,10 @@ description: >-
 
 
   Write rstest function bedrock_services_dispatch_cases in betterlite-provider with these exact named cases (one
-  per oracle file): files_upload_read, files_list_delete, batch_create, batch_retrieve_list_cancel. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  per oracle file): files_upload_read, files_list_delete, batch_create, batch_retrieve_list_cancel, installed_service_families,
+  native_s3_is_not_managed. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_services* using HelperCase:
@@ -44,9 +80,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 145 production lines, 81 behavior/config-test lines, 101 combined
-  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 352 planned, 400 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  SDK overloads share an async implementation): 180 production lines, 270 behavior/config-test lines, 140 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 625 planned, 625 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
 scope:
   paths:
@@ -81,24 +117,39 @@ references:
   why: Bedrock file-content dispatcher calls its handler.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L1066-L1070
   why: Bedrock batch cancellation dispatcher.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L470-L483
+  why: Managed upload behavior with the absent enterprise hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
+  why: Executed batches require a managed store as well as a database.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/litellm_executed_batches.py#L323-L330
+  why: Batch error type/code/param.
 dod:
-- text: 'files upload read: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services/files-upload-read.yaml.'
+- text: 'files_upload_read: Install B644 upload and B645 retrieve/content through B643 authorization and parsed
+    file IDs. Assert configured bucket/prefix and credential identity, JSONL transformation, file ID/size metadata
+    and byte content. Preserve per-operation access errors; uploads use local file bytes or already supplied multipart
+    contents, not downloaded request URLs.'
   proof:
   - case-files-upload-read
   - oracle
   - helper-python
-- text: 'files list delete: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services/files-list-delete.yaml.'
+- text: 'files_list_delete: Install B646 list/delete with its actual prefix/list request and deletion response.
+    Exercise distinct deployment credentials and foreign bucket rejection via B643/B2208. Do not expose legacy dead
+    helper branches as new operations.'
   proof:
   - case-files-list-delete
   - oracle
   - helper-python
-- text: 'batch create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services/batch-create.yaml.'
+- text: 'batch_create: Install B649 native Bedrock batch creation with B647 input-record mapping and B648 output-file
+    parsing, B650 request transformation and B651 transport. Preserve inputFile/outputS3Uri model invocation fields,
+    signing and caller-provided native job identifiers; errors retain the leaf response. This is the open-source
+    Bedrock service path, not the enterprise managed batch runner.'
   proof:
   - case-batch-create
   - oracle
   - helper-python
-- text: >-
-    batch retrieve list cancel: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services/batch-retrieve-list-cancel.yaml.
+- text: 'batch_retrieve_list_cancel: Drive native B649 retrieve/list/cancel and B651 transport, including status
+    mapping, output file conversion, pagination and cancellation behavior. The operation enum must call the leaves,
+    not return fixture tags. Keep public batch listing and runner choice with B1051/B1133/B1112.'
   proof:
   - case-batch-retrieve-list-cancel
   - oracle
@@ -107,51 +158,106 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'installed_service_families: Exercise B680 agents/Claude Platform and B681 Responses/passthrough/search/vector/realtime
+    through the same closed dispatcher. Existing model resolution B174 and parameter mapping B175 run at the caller
+    boundary; leaf crates do not call the upper dispatcher.'
+  proof:
+  - case-installed-service-families
+  - oracle
+  - helper-python
+- text: 'native_s3_is_not_managed: A configured native Bedrock S3 file/batch call uses only the installed open-source
+    leaves and does not construct or register a managed_files hook. Preserve native operation availability even
+    though enterprise-managed IDs/storage are unavailable. Proxy managed-hook errors are HTTP cases of B1031/B1032/B1033/B1034/B087
+    and B1050/B1051/B1133, not helper calls into FastAPI globals.'
+  proof:
+  - case-native-s3-is-not-managed
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-files-upload-read
-    why: The files-upload-read behavior is missing or differs from its pinned fixture.
+    why: Install B644 upload and B645 retrieve/content through B643 authorization and parsed file IDs. Assert configured
+      bucket/prefix and credential identity, JSONL transformation, file ID/size metadata and byte content. Preserve
+      per-operation access errors; uploads use local file bytes or already supplied multipart contents, not downloaded
+      request URLs.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_cases::case_[0-9]+_files_upload_read$/)'
   - id: case-files-list-delete
-    why: The files-list-delete behavior is missing or differs from its pinned fixture.
+    why: Install B646 list/delete with its actual prefix/list request and deletion response. Exercise distinct deployment
+      credentials and foreign bucket rejection via B643/B2208. Do not expose legacy dead helper branches as new
+      operations.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_cases::case_[0-9]+_files_list_delete$/)'
   - id: case-batch-create
-    why: The batch-create behavior is missing or differs from its pinned fixture.
+    why: Install B649 native Bedrock batch creation with B647 input-record mapping and B648 output-file parsing,
+      B650 request transformation and B651 transport. Preserve inputFile/outputS3Uri model invocation fields, signing
+      and caller-provided native job identifiers; errors retain the leaf response. This is the open-source Bedrock
+      service path, not the enterprise managed batch runner.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_cases::case_[0-9]+_batch_create$/)'
   - id: case-batch-retrieve-list-cancel
-    why: The batch-retrieve-list-cancel behavior is missing or differs from its pinned fixture.
+    why: Drive native B649 retrieve/list/cancel and B651 transport, including status mapping, output file conversion,
+      pagination and cancellation behavior. The operation enum must call the leaves, not return fixture tags. Keep
+      public batch listing and runner choice with B1051/B1133/B1112.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_cases::case_[0-9]+_batch_retrieve_list_cancel$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_services.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_services.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_services*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_services*")"
       && grep -lq 'bedrock_services_services' tools/oracle/fuzz/corpus/helper_case/bedrock_services_services* &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_services$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-installed-service-families
+    why: Exercise B680 agents/Claude Platform and B681 Responses/passthrough/search/vector/realtime through the
+      same closed dispatcher. Existing model resolution B174 and parameter mapping B175 run at the caller boundary;
+      leaf crates do not call the upper dispatcher.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_cases::case_[0-9]+_installed_service_families$/)'
+  - id: case-native-s3-is-not-managed
+    why: A configured native Bedrock S3 file/batch call uses only the installed open-source leaves and does not
+      construct or register a managed_files hook. Preserve native operation availability even though enterprise-managed
+      IDs/storage are unavailable. Proxy managed-hook errors are HTTP cases of B1031/B1032/B1033/B1034/B087 and
+      B1050/B1051/B1133, not helper calls into FastAPI globals.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_cases::case_[0-9]+_native_s3_is_not_managed$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services/files-upload-read.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services/files-list-delete.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services/batch-create.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services/batch-retrieve-list-cancel.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-services/installed-service-families.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services/native-s3-is-not-managed.yaml
+deviations:
+- what: No enterprise managed-files hook or managed batch store is installed. Native configured Bedrock S3 files/batches
+    remain available. A managed multi-model upload fails HTTP 500, type internal_server_error, param None, code
+    500 (source message Managed files hook not found); LiteLLM-executed batch creation without ManagedBatchStore
+    fails HTTP 400, type invalid_request_error, param None, code 400, with the source database-required message
+    even if DATABASE_URL is set.
+  why: Keep the open-source behavior while Max decides whether betterlite should implement managed files and batches
+    independently. The pinned enterprise hook is absent; native S3 support does not supply it.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L470-L483
 out_of_scope:
-- >-
-  B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
+- B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
   B157-B166 own Python SDK facades, callable hooks and SDK module globals.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Keep configured S3/gateway/workspace authorization at the leaf boundary and test every operation family through
-  executable dispatch.
+- Native S3 file support does not create the enterprise managed_files hook.
+- A database alone cannot satisfy the managed batch runner guard.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 625
   max_new_expects: 0
-review_level: standard
+review_level: security

@@ -1,0 +1,77 @@
+id: B1329
+title: Google and Vertex countTokens endpoint adapters
+description: >-
+  Implement google_count_tokens, owning all methods in gemini/count_tokens/handler.py and
+  vertex_ai/count_tokens/handler.py (129 and 40 nonblank noncomment lines). Studio constructs
+  {api_base-or-default}/v1beta/models/{model}:countTokens, using B1331 native GenAI headers.
+  Vertex resolves B1301 settings and B1303 access tokens, then asks B1304 for mode=count_tokens;
+  its override deliberately ignores supplied api_base/api_key/headers and emits only Bearer auth.
+  The shared cleaner deep-copies contents, preserves falsey contents, converts each functionResponse
+  using the pinned Google record projection and removes id plus None fields. Send exactly
+  {contents: cleaned_contents}; tools/system are not added here. Both variants use the pooled
+  Gemini HTTP client. The timeout argument is accepted but not forwarded by the source method.
+  Preserve upstream HTTP status as APIError and request failures as APIConnectionError, with
+  provider=gemini even on the inherited Vertex path. Decode count JSON with decode_google_count,
+  retaining totalTokens, totalBillableCharacters, modality details and tokenizer_used as typed
+  optional fields. Add google_count fuzz/replay for malformed bodies. Pure helper google_count
+  compares only the cleaner and Studio URL builder through function_response_id,
+  none_contents, original_not_mutated and studio_base_suffix. Native tests additionally assert
+  vertex_ignores_base and bearer_only; Vertex validate_environment refreshes credentials and
+  cannot be a pure helper. Fixture transport tests count_post_body and count_error_kind
+  assert the exact POST and error provenance. Budget 220 code, 170 tests, 100 adapters and 90 fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,google_count_tokens}.rs
+    - crates/betterlite-vertex/src/google_count_tokens/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/google_count.rs
+    - crates/betterlite-vertex/fuzz/corpus/google_count/**
+    - tools/oracle/src/helpers/{mod,google_count}.rs
+    - tools/oracle/helpers/{dispatch,google_count}.py
+    - tools/oracle/cases/helpers/google-count/**
+    - tools/oracle/fuzz/corpus/helper_case/google_count*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L15-L162
+    why: Content cleaning, Studio URL and inherited HTTP execution/error boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/count_tokens/handler.py#L7-L44
+    why: Vertex auth and URL override ignores caller base/header arguments.
+dod:
+  - text: Both countTokens adapters produce the pinned headers, URL and cleaned content records.
+    proof: [count-projection, count-python, oracle]
+  - text: HTTP execution retains inherited error provenance and does not forward unused timeout.
+    proof: [count-http]
+  - text: Count response bytes and helper inputs are covered by committed parser seeds.
+    proof: [count-corpus, count-seeds]
+checks:
+  optional: []
+  commands:
+    - id: count-projection
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_count_tokens::tests::projection/)'
+      why: The cleaner must remove functionResponse.id without mutating the original records.
+    - id: count-http
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_count_tokens::tests::http/)'
+      why: Captured POSTs and failures prove the inherited transport contract.
+    - id: count-python
+      run: test -f tools/oracle/helpers/google_count.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pure content and endpoint fixtures must call the pinned counter methods.
+    - id: count-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_count.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_count)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_count_corpus)'
+      why: External count JSON must replay through the bounded production decoder.
+    - id: count-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_count*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_count::/)'
+      why: Shared-parser count fixtures must select the new variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/google-count/function-response-id.yaml
+  - tools/oracle/cases/helpers/google-count/none-contents.yaml
+  - tools/oracle/cases/helpers/google-count/original-not-mutated.yaml
+  - tools/oracle/cases/helpers/google-count/studio-base-suffix.yaml
+deviations: []
+out_of_scope:
+  - B1330 owns proxy-facing token-counter selection and response wrapping; B1332 owns partner rawPredict counts.
+pitfalls:
+  - The Vertex counter's api_base argument is not a custom-endpoint escape hatch at this pin.
+  - Even Vertex countTokens transport errors identify the inherited gemini provider.
+  - Passing the accepted timeout through to POST would add behavior the pinned implementation lacks.
+budget: {max_changed_lines: 625, max_new_expects: 1}
+review_level: security

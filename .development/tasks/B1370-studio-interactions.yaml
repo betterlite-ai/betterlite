@@ -1,0 +1,88 @@
+id: B1370
+title: Studio interactions revision migration and lifecycle records
+description: >-
+  Implement studio_interactions for the complete 319 nonblank noncomment source lines.
+  Define provider-facing native interaction records with typed known fields and explicit
+  extension payloads for the source's open native content fields; B098 will project its API
+  DTOs into these records. Default api_version is v1beta. Header validation forces JSON and
+  Api-Revision 2026-05-20, resolving x-goog-api-key only when litellm_params is present; URL
+  construction always requires a resolved key and appends ?alt=sse for truthy stream. Keep
+  the exact supported parameter list. A truthy model wins over agent and is stripped using
+  B1331's base-model helper; otherwise require agent. Include input when non-None and copy
+  optional tools/system_instruction/stream/store/background/environment/response_modalities/
+  previous_interaction_id when non-None, retaining false and empty values. Fold truthy
+  response_mime_type into a text response_format unless the existing format is a list or a
+  dictionary already containing mime_type; retain the old format as schema when wrapping.
+  Copy generation_config, remove image_config, omit the emptied generation config, and append
+  an image format to an existing list or turn a scalar format into a two-item list. The image
+  config's own type key can overwrite the initial image type. Caller option records remain
+  unchanged. Implement decode_studio_interaction for create/get/cancel JSON; malformed JSON
+  becomes GeminiError with original status/body/headers, while record validation errors remain
+  distinct. Create stores raw headers and an injected B206 additional-header projection; get
+  stores raw headers only. Streaming consumes already parsed chunks and preserves sparse
+  fields, with object default interaction and all other declared fields absent/None unless
+  supplied. Get/delete/cancel URLs encode interaction_id as one segment, require a key and
+  use an empty body; cancel appends :cancel. Delete treats any 2xx as success and returns the
+  requested ID without reading its body. Helper studio_interactions cases cover model_over_agent,
+  false_optional_values, mime_wrap_schema, image_format_append, image_type_override,
+  create_get_header_difference, encoded_cancel_id and delete_204. Add decoder fuzz inputs for
+  missing fields and native extension records. Plan 350 code, 190 tests, 130 oracle and 85 fuzz
+  lines, cap 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_interactions}.rs
+    - crates/betterlite-vertex/src/studio_interactions/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/studio_interaction.rs
+    - crates/betterlite-vertex/fuzz/corpus/studio_interaction/**
+    - tools/oracle/src/helpers/{mod,studio_interactions}.rs
+    - tools/oracle/helpers/{dispatch,studio_interactions}.py
+    - tools/oracle/cases/helpers/studio-interactions/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_interactions*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/interactions/transformation.py#L44-L389
+    why: Native revision migration, sparse interaction responses and lifecycle URLs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/interactions/generated.py#L1057-L1142
+    why: Consumed response defaults and open native content fields; generic API types remain B098's ownership.
+dod:
+  - text: Interactions revision migration preserves optional-value presence and caller data while constructing lifecycle targets.
+    proof: [studio-interactions-tests, studio-interactions-python, oracle]
+  - text: Interaction response bytes are bounded and replay newly supplied native record fixtures.
+    proof: [studio-interactions-corpus]
+  - text: Shared helper parsing dispatches the interactions transformation cases.
+    proof: [studio-interactions-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-interactions-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_interactions::/) - test(replays_the_studio_interaction_corpus)'
+      why: Tests separately assert revision body rewrites, header metadata and delete/cancel response behavior.
+    - id: studio-interactions-python
+      run: test -f tools/oracle/helpers/studio_interactions.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Fixed settings and a header projection callback keep native interaction transformations pure.
+    - id: studio-interactions-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_interaction.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_interaction)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_interaction_corpus)'
+      why: The production interaction decoder must handle sparse and malformed envelopes without unbounded parsing.
+    - id: studio-interactions-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_interactions*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_interactions::/)'
+      why: New fixtures must select the studio_interactions call tag.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-interactions/model-over-agent.yaml
+  - tools/oracle/cases/helpers/studio-interactions/false-optional-values.yaml
+  - tools/oracle/cases/helpers/studio-interactions/mime-wrap-schema.yaml
+  - tools/oracle/cases/helpers/studio-interactions/image-format-append.yaml
+  - tools/oracle/cases/helpers/studio-interactions/image-type-override.yaml
+  - tools/oracle/cases/helpers/studio-interactions/create-get-header-difference.yaml
+  - tools/oracle/cases/helpers/studio-interactions/encoded-cancel-id.yaml
+  - tools/oracle/cases/helpers/studio-interactions/delete-204.yaml
+deviations: []
+out_of_scope:
+  - All Studio interactions functions and local protocol declarations are owned here; B1369 replaces identity and URL methods for Vertex.
+  - B098 owns SSE framing, HTTP methods and public native routes; B034/B035 inject B206 response-header processing into this leaf adapter.
+pitfalls:
+  - response_format lists suppress response_mime_type wrapping even when they contain no MIME entry.
+  - An image_config type field overwrites the initially supplied image type in the moved format.
+  - Delete success does not depend on receiving valid JSON.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

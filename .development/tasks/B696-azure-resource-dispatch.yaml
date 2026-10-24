@@ -14,13 +14,30 @@ description: >-
   oracle operation for it.
 
 
-  Install these completed leaf operations: B694 Azure file lifecycle; B541 Azure files and batch lifecycle; B542
-  Azure fine-tuning jobs; B543 Azure assistants threads and runs; B686 Azure assistant definition operations; B687
-  Azure thread creation and retrieval; B697 Azure message creation and attachment policy; B544 Azure Responses native
-  requests; B545 Azure realtime protocol and HTTP sessions; B546 Azure web search via Responses; B547 Azure container
-  video and vector-store endpoints; B548 Azure native passthrough preparation and logging. Each dispatch fixture
-  must reach its leaf with a fake transport and assert the resulting request or reply; accept already normalized
-  settings and reuse leaf errors.
+  Install these completed leaf operations: B694 Azure file lifecycle; B541 Azure batch lifecycle; B542 Azure fine-tuning
+  jobs; B543 Azure assistants threads and runs; B686 Azure assistant definition operations; B687 Azure thread creation
+  and retrieval; B697 Azure message creation and attachment policy; B544 Azure Responses native requests; B545 Azure
+  realtime protocol and HTTP sessions; B546 Azure web search via Responses; B547 Azure container video and vector-store
+  endpoints; B548 Azure native passthrough preparation and logging. Each dispatch fixture must reach its leaf with
+  a fake transport and assert the resulting request or reply; accept already normalized settings and reuse leaf
+  errors.
+
+
+  Named case contracts: files_batches: Parameterize B694 file create/content/retrieve/list/delete and B541 batch
+  create/retrieve/cancel/list, retaining their separate record types and empty-delete fallback. fine_tuning: Parameterize
+  all B542 create/list/retrieve/cancel operations with Azure endpoint/version settings. assistant_thread_run: Parameterize
+  B686 assistant definitions, B687 thread create/get, B697 message create/list and B543 buffered/streaming runs;
+  verify exact leaf operation and error passthrough. responses_search: Dispatch B544 Responses and B546 web search
+  separately, including their URL and result differences. realtime: Parameterize B545 websocket realtime and HTTP
+  session creation. container_video_vector: Parameterize every B547 container/video/vector-store URL override and
+  delegated operation without rebuilding OpenAI request transforms. passthrough: Dispatch B548 preparation and logging
+  projection through its leaf collector, preserving response fields and stream output.
+
+
+  Each named composition case uses separate fixture rows for its operations, invokes the existing native dispatcher
+  and then the actual leaf prepare/send/project functions, and asserts captured upstream request and returned typed
+  result. Include a leaf failure per family to detect accidental error rewriting. This composition reads no new
+  config/env values and registers no HTTP route; defaults, headers, warnings and parsers remain with the named leaves.
 
 
   Implement crates/betterlite-provider/src/azure_resource_dispatch.rs with adjacent tests under azure_resource_dispatch/.
@@ -39,8 +56,7 @@ description: >-
   Write rstest function azure_resource_dispatch_cases in betterlite-provider with these exact named cases (one per
   oracle file): files_batches, fine_tuning, assistant_thread_run, responses_search, realtime, container_video_vector,
   passthrough. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports.
-  HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks
-  retain route registration; this task must not register a duplicate axum route.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_resource_dispatch* using HelperCase: kind:
@@ -60,9 +76,9 @@ description: >-
 
 
   Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 145 production lines, 123 behavior/config-test lines, 113 combined
+  SDK overloads share an async implementation): 155 production lines, 210 behavior/config-test lines, 130 combined
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 421 planned, 425 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  wiring lines; 535 planned, 550 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
 scope:
   paths:
@@ -116,38 +132,42 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L38-L43
   why: Operation contract delegated to B548; only native dispatcher wiring is added here.
 dod:
-- text: 'files batches: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-resource-dispatch/files-batches.yaml.'
+- text: 'files_batches: Parameterize B694 file create/content/retrieve/list/delete and B541 batch create/retrieve/cancel/list,
+    retaining their separate record types and empty-delete fallback.'
   proof:
   - case-files-batches
   - oracle
   - helper-python
-- text: 'fine tuning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-resource-dispatch/fine-tuning.yaml.'
+- text: 'fine_tuning: Parameterize all B542 create/list/retrieve/cancel operations with Azure endpoint/version settings.'
   proof:
   - case-fine-tuning
   - oracle
   - helper-python
-- text: 'assistant thread run: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-resource-dispatch/assistant-thread-run.yaml.'
+- text: 'assistant_thread_run: Parameterize B686 assistant definitions, B687 thread create/get, B697 message create/list
+    and B543 buffered/streaming runs; verify exact leaf operation and error passthrough.'
   proof:
   - case-assistant-thread-run
   - oracle
   - helper-python
-- text: 'responses search: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-resource-dispatch/responses-search.yaml.'
+- text: 'responses_search: Dispatch B544 Responses and B546 web search separately, including their URL and result
+    differences.'
   proof:
   - case-responses-search
   - oracle
   - helper-python
-- text: 'realtime: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-resource-dispatch/realtime.yaml.'
+- text: 'realtime: Parameterize B545 websocket realtime and HTTP session creation.'
   proof:
   - case-realtime
   - oracle
   - helper-python
-- text: >-
-    container video vector: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-resource-dispatch/container-video-vector.yaml.
+- text: 'container_video_vector: Parameterize every B547 container/video/vector-store URL override and delegated
+    operation without rebuilding OpenAI request transforms.'
   proof:
   - case-container-video-vector
   - oracle
   - helper-python
-- text: 'passthrough: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-resource-dispatch/passthrough.yaml.'
+- text: 'passthrough: Dispatch B548 preparation and logging projection through its leaf collector, preserving response
+    fields and stream output.'
   proof:
   - case-passthrough
   - oracle
@@ -164,36 +184,38 @@ checks:
   - mutants
   commands:
   - id: case-files-batches
-    why: The files-batches behavior is missing or differs from its pinned fixture.
+    why: Parameterize B694 file create/content/retrieve/list/delete and B541 batch create/retrieve/cancel/list,
+      retaining their separate record types and empty-delete fallback.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_resource_dispatch_cases::case_[0-9]+_files_batches$/)'
   - id: case-fine-tuning
-    why: The fine-tuning behavior is missing or differs from its pinned fixture.
+    why: Parameterize all B542 create/list/retrieve/cancel operations with Azure endpoint/version settings.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_resource_dispatch_cases::case_[0-9]+_fine_tuning$/)'
   - id: case-assistant-thread-run
-    why: The assistant-thread-run behavior is missing or differs from its pinned fixture.
+    why: Parameterize B686 assistant definitions, B687 thread create/get, B697 message create/list and B543 buffered/streaming
+      runs; verify exact leaf operation and error passthrough.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_resource_dispatch_cases::case_[0-9]+_assistant_thread_run$/)'
   - id: case-responses-search
-    why: The responses-search behavior is missing or differs from its pinned fixture.
+    why: Dispatch B544 Responses and B546 web search separately, including their URL and result differences.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_resource_dispatch_cases::case_[0-9]+_responses_search$/)'
   - id: case-realtime
-    why: The realtime behavior is missing or differs from its pinned fixture.
+    why: Parameterize B545 websocket realtime and HTTP session creation.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_resource_dispatch_cases::case_[0-9]+_realtime$/)'
   - id: case-container-video-vector
-    why: The container-video-vector behavior is missing or differs from its pinned fixture.
+    why: Parameterize every B547 container/video/vector-store URL override and delegated operation without rebuilding
+      OpenAI request transforms.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_resource_dispatch_cases::case_[0-9]+_container_video_vector$/)'
   - id: case-passthrough
-    why: The passthrough behavior is missing or differs from its pinned fixture.
+    why: Dispatch B548 preparation and logging projection through its leaf collector, preserving response fields
+      and stream output.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::azure_resource_dispatch_cases::case_[0-9]+_passthrough$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_resource_dispatch.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_resource_dispatch.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_resource_dispatch*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_resource_dispatch*")"
       && grep -lq 'azure_resource_dispatch' tools/oracle/fuzz/corpus/helper_case/azure_resource_dispatch* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_resource_dispatch$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -210,89 +232,75 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-resource-dispatch/passthrough.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/azure/batches/handler.py: AzureBatchesAPI.__init__ L31-L32; AzureBatchesAPI.acreate_batch L34-L40;
-  AzureBatchesAPI.create_batch L42-L74; AzureBatchesAPI.aretrieve_batch L76-L82; AzureBatchesAPI.retrieve_batch
+- 'litellm/llms/azure/realtime/handler.py: forward_messages L31-L39 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/azure/assistants.py: AzureAssistantsAPI.arun_thread L663-L703; AzureAssistantsAPI.async_run_thread_stream
+  L705-L730; AzureAssistantsAPI.run_thread_stream L732-L757; AzureAssistantsAPI.run_thread L761-L781; AzureAssistantsAPI.run_thread
+  L783-L803; AzureAssistantsAPI.run_thread L807-L905 belong to B543.'
+- 'Function ownership inventory litellm/llms/azure/assistants.py: AzureAssistantsAPI.__init__ L37-L38; AzureAssistantsAPI.get_azure_client
+  L40-L64; AzureAssistantsAPI.async_get_azure_client L66-L92; AzureAssistantsAPI.async_get_assistants L96-L120;
+  AzureAssistantsAPI.get_assistants L124-L136; AzureAssistantsAPI.get_assistants L138-L150; AzureAssistantsAPI.get_assistants
+  L154-L190; AzureAssistantsAPI.async_create_assistants L908-L932; AzureAssistantsAPI.create_assistants L934-L971;
+  AzureAssistantsAPI.async_delete_assistant L974-L998; AzureAssistantsAPI.delete_assistant L1000-L1037 belong to
+  B686.'
+- 'Function ownership inventory litellm/llms/azure/assistants.py: AzureAssistantsAPI.async_create_thread L425-L457;
+  AzureAssistantsAPI.create_thread L461-L476; AzureAssistantsAPI.create_thread L478-L493; AzureAssistantsAPI.create_thread
+  L497-L553; AzureAssistantsAPI.async_get_thread L555-L580; AzureAssistantsAPI.get_thread L584-L598; AzureAssistantsAPI.get_thread
+  L600-L614; AzureAssistantsAPI.get_thread L618-L656 belong to B687.'
+- 'Function ownership inventory litellm/llms/azure/assistants.py: AzureAssistantsAPI.a_add_message L194-L229; AzureAssistantsAPI.add_message
+  L233-L248; AzureAssistantsAPI.add_message L250-L265; AzureAssistantsAPI.add_message L269-L318; AzureAssistantsAPI.async_get_messages
+  L320-L345; AzureAssistantsAPI.get_messages L349-L363; AzureAssistantsAPI.get_messages L365-L379; AzureAssistantsAPI.get_messages
+  L383-L421 belong to B697.'
+- 'Function ownership inventory litellm/llms/azure/batches/handler.py: AzureBatchesAPI.__init__ L31-L32; AzureBatchesAPI.acreate_batch
+  L34-L40; AzureBatchesAPI.create_batch L42-L74; AzureBatchesAPI.aretrieve_batch L76-L82; AzureBatchesAPI.retrieve_batch
   L84-L116; AzureBatchesAPI.acancel_batch L118-L124; AzureBatchesAPI.cancel_batch L126-L164; AzureBatchesAPI.alist_batches
-  L166-L173; AzureBatchesAPI.list_batches L175-L208 belong to B541; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/azure/fine_tuning/handler.py: AzureOpenAIFineTuningAPI._ensure_training_type L22-L32; AzureOpenAIFineTuningAPI.acreate_fine_tuning_job
-  L34-L40; AzureOpenAIFineTuningAPI.acancel_fine_tuning_job L42-L48; AzureOpenAIFineTuningAPI.aretrieve_fine_tuning_job
-  L50-L56; AzureOpenAIFineTuningAPI.create_fine_tuning_job L58-L99; AzureOpenAIFineTuningAPI.cancel_fine_tuning_job
-  L101-L139; AzureOpenAIFineTuningAPI.retrieve_fine_tuning_job L141-L179; AzureOpenAIFineTuningAPI.get_openai_client
-  L181-L204 belong to B542; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/assistants.py: AzureAssistantsAPI.arun_thread L663-L703; AzureAssistantsAPI.async_run_thread_stream
-  L705-L730; AzureAssistantsAPI.run_thread_stream L732-L757; AzureAssistantsAPI.run_thread L762-L781; AzureAssistantsAPI.run_thread
-  L784-L803; AzureAssistantsAPI.run_thread L807-L905 belong to B543; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/azure/responses/transformation.py: AzureOpenAIResponsesAPIConfig.custom_llm_provider L30-L31; AzureOpenAIResponsesAPIConfig._supports_reasoning_effort_none
-  L34-L35; AzureOpenAIResponsesAPIConfig._effort_resolves_to_none L38-L39; AzureOpenAIResponsesAPIConfig.get_supported_openai_params
-  L41-L46; AzureOpenAIResponsesAPIConfig.validate_environment L48-L49; AzureOpenAIResponsesAPIConfig.get_stripped_model_name
-  L51-L52; AzureOpenAIResponsesAPIConfig._handle_reasoning_item L54-L89; AzureOpenAIResponsesAPIConfig._validate_input_param
-  L91-L113; AzureOpenAIResponsesAPIConfig.transform_responses_api_request L115-L147; AzureOpenAIResponsesAPIConfig.get_complete_url
-  L149-L177; AzureOpenAIResponsesAPIConfig.supports_native_websocket L179-L180; AzureOpenAIResponsesAPIConfig.get_websocket_url
-  L182-L203; AzureOpenAIResponsesAPIConfig.model_in_websocket_url L205-L207; AzureOpenAIResponsesAPIConfig._construct_url_for_response_id_in_path
-  L212-L238; AzureOpenAIResponsesAPIConfig.transform_delete_response_api_request L240-L260; AzureOpenAIResponsesAPIConfig.transform_get_response_api_request
-  L265-L281; AzureOpenAIResponsesAPIConfig.transform_list_input_items_request L283-L310; AzureOpenAIResponsesAPIConfig.transform_cancel_response_api_request
-  L315-L337; AzureOpenAIResponsesAPIConfig.transform_cancel_response_api_response L339-L353 belong to B544; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/realtime/handler.py: azure_realtime_protocol_for_client L42-L52; _ProxyClientWebSocket.send_text
-  L58-L58; _ProxyClientWebSocket.close L60-L60; AzureOpenAIRealtime.get_auth_headers L65-L77; AzureOpenAIRealtime._construct_url
-  L79-L131; AzureOpenAIRealtime.async_realtime L133-L202 belong to B545; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/search/transformation.py: _unwrap_error_detail L122-L141; _snippet L144-L157; _citation_results
-  L160-L178; _valid_max_results L181-L188; _requested_max_results L191-L201; _capped L204-L205; _search_tool L250-L261;
-  _default_entra_token_minter L264-L267; BingGroundingSearchConfig.__init__ L271-L273; BingGroundingSearchConfig.ui_friendly_name
-  L276-L277; BingGroundingSearchConfig.validate_environment L279-L296; BingGroundingSearchConfig._auth_header L298-L313;
-  BingGroundingSearchConfig._mint_entra_token L315-L328; BingGroundingSearchConfig.get_complete_url L330-L346; BingGroundingSearchConfig.transform_search_request
-  L348-L376; BingGroundingSearchConfig.transform_search_response L378-L405; BingGroundingSearchConfig._upstream_error
-  L407-L412; BingGroundingSearchConfig._priced L414-L425; BingGroundingSearchConfig.get_error_class L427-L438 belong
-  to B546; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/containers/transformation.py: AzureContainerConfig.validate_environment L27-L35; AzureContainerConfig._normalize_api_base
-  L38-L47; AzureContainerConfig._extract_api_version L50-L54; AzureContainerConfig.get_complete_url L56-L83 belong
-  to B547; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/passthrough/transformation.py: _relayed_messages L38-L43; logged_responses_stream L55-L63;
-  is_azure_body_model_inference_endpoint L72-L76; azure_router_model_in_endpoint L79-L83; foreign_azure_deployment
-  L86-L96; without_api_version L99-L102; AzurePassthroughConfig.is_streaming_request L106-L107; AzurePassthroughConfig.get_complete_url
-  L109-L140; AzurePassthroughConfig.validate_environment L142-L155; AzurePassthroughConfig.get_api_base L158-L161;
-  AzurePassthroughConfig.get_api_key L164-L167; AzurePassthroughConfig.get_base_model L170-L171; AzurePassthroughConfig.get_models
-  L173-L174; AzurePassthroughConfig.logging_non_streaming_response L176-L207; AzurePassthroughConfig.handle_logging_collected_chunks
-  L209-L231 belong to B548; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/assistants.py: AzureAssistantsAPI.__init__ L37-L38; AzureAssistantsAPI.get_azure_client L40-L64;
-  AzureAssistantsAPI.async_get_azure_client L66-L92; AzureAssistantsAPI.async_get_assistants L96-L120; AzureAssistantsAPI.get_assistants
-  L125-L136; AzureAssistantsAPI.get_assistants L139-L150; AzureAssistantsAPI.get_assistants L154-L190; AzureAssistantsAPI.async_create_assistants
-  L908-L932; AzureAssistantsAPI.create_assistants L934-L971; AzureAssistantsAPI.async_delete_assistant L974-L998;
-  AzureAssistantsAPI.delete_assistant L1000-L1037 belong to B686; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/azure/assistants.py: AzureAssistantsAPI.async_create_thread L425-L457; AzureAssistantsAPI.create_thread
-  L462-L476; AzureAssistantsAPI.create_thread L479-L493; AzureAssistantsAPI.create_thread L497-L553; AzureAssistantsAPI.async_get_thread
-  L555-L580; AzureAssistantsAPI.get_thread L585-L598; AzureAssistantsAPI.get_thread L601-L614; AzureAssistantsAPI.get_thread
-  L618-L656 belong to B687; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/files/handler.py: AzureOpenAIFilesAPI.__init__ L25-L26; AzureOpenAIFilesAPI._prepare_create_file_data
-  L29-L41; AzureOpenAIFilesAPI.acreate_file L43-L51; AzureOpenAIFilesAPI.create_file L53-L87; AzureOpenAIFilesAPI.afile_content
+  L166-L173; AzureBatchesAPI.list_batches L175-L208 belong to B541.'
+- 'Function ownership inventory litellm/llms/azure/containers/transformation.py: AzureContainerConfig.validate_environment
+  L27-L35; AzureContainerConfig._normalize_api_base L37-L47; AzureContainerConfig._extract_api_version L49-L54;
+  AzureContainerConfig.get_complete_url L56-L83 belong to B547.'
+- 'Function ownership inventory litellm/llms/azure/files/handler.py: AzureOpenAIFilesAPI.__init__ L25-L26; AzureOpenAIFilesAPI._prepare_create_file_data
+  L28-L41; AzureOpenAIFilesAPI.acreate_file L43-L51; AzureOpenAIFilesAPI.create_file L53-L87; AzureOpenAIFilesAPI.afile_content
   L89-L95; AzureOpenAIFilesAPI.file_content L97-L133; AzureOpenAIFilesAPI.aretrieve_file L135-L141; AzureOpenAIFilesAPI.retrieve_file
   L143-L179; AzureOpenAIFilesAPI.adelete_file L181-L190; AzureOpenAIFilesAPI.delete_file L192-L232; AzureOpenAIFilesAPI.alist_files
-  L234-L243; AzureOpenAIFilesAPI.list_files L245-L285 belong to B694; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/assistants.py: AzureAssistantsAPI.a_add_message L194-L229; AzureAssistantsAPI.add_message L234-L248;
-  AzureAssistantsAPI.add_message L251-L265; AzureAssistantsAPI.add_message L269-L318; AzureAssistantsAPI.async_get_messages
-  L320-L345; AzureAssistantsAPI.get_messages L350-L363; AzureAssistantsAPI.get_messages L366-L379; AzureAssistantsAPI.get_messages
-  L383-L421 belong to B697; reuse that implementation or its injected typed boundary.
-- 'litellm/llms/azure/realtime/handler.py: forward_messages L31-L39 have no caller at the pin; do not port them.'
+  L234-L243; AzureOpenAIFilesAPI.list_files L245-L285 belong to B694.'
+- 'Function ownership inventory litellm/llms/azure/fine_tuning/handler.py: AzureOpenAIFineTuningAPI._ensure_training_type
+  L21-L32; AzureOpenAIFineTuningAPI.acreate_fine_tuning_job L34-L40; AzureOpenAIFineTuningAPI.acancel_fine_tuning_job
+  L42-L48; AzureOpenAIFineTuningAPI.aretrieve_fine_tuning_job L50-L56; AzureOpenAIFineTuningAPI.create_fine_tuning_job
+  L58-L99; AzureOpenAIFineTuningAPI.cancel_fine_tuning_job L101-L139; AzureOpenAIFineTuningAPI.retrieve_fine_tuning_job
+  L141-L179; AzureOpenAIFineTuningAPI.get_openai_client L181-L204 belong to B542.'
+- 'Function ownership inventory litellm/llms/azure/passthrough/transformation.py: _relayed_messages L38-L43; logged_responses_stream
+  L55-L63; is_azure_body_model_inference_endpoint L72-L76; azure_router_model_in_endpoint L79-L83; foreign_azure_deployment
+  L86-L96; without_api_version L99-L102; AzurePassthroughConfig.is_streaming_request L106-L107; AzurePassthroughConfig.get_complete_url
+  L109-L140; AzurePassthroughConfig.validate_environment L142-L155; AzurePassthroughConfig.get_api_base L157-L161;
+  AzurePassthroughConfig.get_api_key L163-L167; AzurePassthroughConfig.get_base_model L169-L171; AzurePassthroughConfig.get_models
+  L173-L174; AzurePassthroughConfig.logging_non_streaming_response L176-L207; AzurePassthroughConfig.handle_logging_collected_chunks
+  L209-L231 belong to B548.'
+- 'Function ownership inventory litellm/llms/azure/realtime/handler.py: azure_realtime_protocol_for_client L42-L52;
+  _ProxyClientWebSocket.send_text L58-L58; _ProxyClientWebSocket.close L60-L60; AzureOpenAIRealtime.get_auth_headers
+  L64-L77; AzureOpenAIRealtime._construct_url L79-L131; AzureOpenAIRealtime.async_realtime L133-L202 belong to B545.'
+- 'Function ownership inventory litellm/llms/azure/realtime/handler.py: forward_messages L31-L39 have no caller
+  at the pin; do not implement or add cases.'
+- 'Function ownership inventory litellm/llms/azure/responses/transformation.py: AzureOpenAIResponsesAPIConfig.custom_llm_provider
+  L29-L31; AzureOpenAIResponsesAPIConfig._supports_reasoning_effort_none L33-L35; AzureOpenAIResponsesAPIConfig._effort_resolves_to_none
+  L37-L39; AzureOpenAIResponsesAPIConfig.get_supported_openai_params L41-L46; AzureOpenAIResponsesAPIConfig.validate_environment
+  L48-L49; AzureOpenAIResponsesAPIConfig.get_stripped_model_name L51-L52; AzureOpenAIResponsesAPIConfig._handle_reasoning_item
+  L54-L89; AzureOpenAIResponsesAPIConfig._validate_input_param L91-L113; AzureOpenAIResponsesAPIConfig.transform_responses_api_request
+  L115-L147; AzureOpenAIResponsesAPIConfig.get_complete_url L149-L177; AzureOpenAIResponsesAPIConfig.supports_native_websocket
+  L179-L180; AzureOpenAIResponsesAPIConfig.get_websocket_url L182-L203; AzureOpenAIResponsesAPIConfig.model_in_websocket_url
+  L205-L207; AzureOpenAIResponsesAPIConfig._construct_url_for_response_id_in_path L212-L238; AzureOpenAIResponsesAPIConfig.transform_delete_response_api_request
+  L240-L260; AzureOpenAIResponsesAPIConfig.transform_get_response_api_request L265-L281; AzureOpenAIResponsesAPIConfig.transform_list_input_items_request
+  L283-L310; AzureOpenAIResponsesAPIConfig.transform_cancel_response_api_request L315-L337; AzureOpenAIResponsesAPIConfig.transform_cancel_response_api_response
+  L339-L353 belong to B544.'
+- 'Function ownership inventory litellm/llms/azure/search/transformation.py: _unwrap_error_detail L122-L141; _snippet
+  L144-L157; _citation_results L160-L178; _valid_max_results L181-L188; _requested_max_results L191-L201; _capped
+  L204-L205; _search_tool L250-L261; _default_entra_token_minter L264-L267; BingGroundingSearchConfig.__init__ L271-L273;
+  BingGroundingSearchConfig.ui_friendly_name L275-L277; BingGroundingSearchConfig.validate_environment L279-L296;
+  BingGroundingSearchConfig._auth_header L298-L313; BingGroundingSearchConfig._mint_entra_token L315-L328; BingGroundingSearchConfig.get_complete_url
+  L330-L346; BingGroundingSearchConfig.transform_search_request L348-L376; BingGroundingSearchConfig.transform_search_response
+  L378-L405; BingGroundingSearchConfig._upstream_error L407-L412; BingGroundingSearchConfig._priced L414-L425; BingGroundingSearchConfig.get_error_class
+  L427-L438 belong to B546.'
 pitfalls:
-- Azure passthrough logging uses B103 response assembly rather than reconstructing stream text in the dispatcher.
+- Container/video/vector overrides must retain the OpenAI leaf operation while changing its Azure base URL.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: standard

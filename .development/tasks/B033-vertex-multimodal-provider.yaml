@@ -1,0 +1,102 @@
+id: B033
+title: Connect Vertex embedding and media operations to the API pipeline
+description: >-
+  Add vertex_media_dispatch to betterlite-provider and its core bindings. The remaining owned
+  Python body is VertexTextToSpeechConfig.dispatch_text_to_speech, L140-L208, 57 nonblank
+  noncomment lines. Resolve its three Vertex fields with B1301 safe getters; a string voice
+  passes unchanged, a nonempty object contributes name, and an empty object becomes None.
+  Write those credentials plus api_base into the request's litellm_params. Invoke the existing
+  speech handler with client=None, provider=vertex_ai and _is_async=aspeech; its api_key argument
+  has no effect. Test object_voice_name, empty_voice_object, speech_client_reset and credential
+  propagation through the executable operation, leaving voice/language mapping with B1352.
+  Compose B1395's installed embedding operation, retaining its catalog-before-media selection
+  and embedding-only environment aliases. B1349's image selectors choose
+  B1345/B1346 generation and B1347/B1348 edit transforms, passed to B998/B999 execution.
+  Install B1352 speech, B1353 Lyria, B1354 recognition and B1355 Gemini transcription through
+  B1135/B1122 audio contracts. Supply B1001 language/file normalization, B1003 audio sniffing
+  and B1120 image MIME callbacks from core. Bind B1360 to B1014 rerank execution. For realtime,
+  use B1365's existing core factory: Chirp retains B1357's lifecycle, while Vertex Live combines
+  B1379 client conversion, B1382 server frames and B1381 close accounting with B1115's usage
+  converter. Supply the common relay from B1008 and the same cancellation owner to both backends.
+  Export B1361/B1362 video preparation/poll/content operations for B093 without adding video
+  routes before that API task. Register no HTTP route in this composition.
+  Booted-proxy fixtures use the existing aliases: embeddings POST /v1/embeddings, /embeddings,
+  /engines/{model:path}/embeddings and /openai/deployments/{model:path}/embeddings; images POST
+  /v1/images/generations, /images/generations, /openai/deployments/{model:path}/images/generations,
+  /v1/images/edits, /images/edits and /openai/deployments/{model:path}/images/edits; audio POST
+  /v1/audio/speech, /audio/speech, /v1/audio/transcriptions and /audio/transcriptions; rerank POST
+  /v2/rerank, /v1/rerank and /rerank; WebSocket /v1/realtime, /realtime and /openai/v1/realtime.
+  Keep aliases as separate steps in the corresponding family fixture. Include Gemini embedding
+  and text-embedding-005, multimodalembedding@001 paired input, Imagen edit multipart, Lyria
+  binary output, recognition language selection, a Live tool turn and a provider refusal.
+  Capture request headers/body, media types, ordered frames, close codes, x-litellm-* headers
+  and error status/type/param/code. A disconnect fixture proves relay cleanup. Native tests
+  verify all video capability arms and reject unsupported operations without creating routes.
+  Estimated work is 230 bindings/dispatch, 180 native assertions and 350 protocol fixtures,
+  capped at 800; byte parsing remains with the named media and route tasks.
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_media_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_media_dispatch/**
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/{lib,dispatch,operation}.rs
+    - crates/betterlite-core/src/api/{mod,vertex_media_bindings}.rs
+    - crates/betterlite-core/src/api/vertex_media_bindings/**
+    - tools/oracle/cases/api/vertex-media/**
+    - tools/oracle/fixtures/vertex-media/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/text_to_speech/transformation.py#L140-L208
+    why: Speech dispatch owns voice extraction and the final handler arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12315
+    why: Embedding route decorators and shared handler entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L67-L353
+    why: Image generation and edit aliases exercised without duplicate registration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12522-L12801
+    why: Audio decorators, binary response and multipart transcription boundaries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L136
+    why: Rerank v2, v1 and short aliases and response headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12856-L13045
+    why: WebSocket route authentication and connection cleanup are retained from B1125.
+dod:
+  - text: Typed Vertex media operations invoke their actual leaf implementations, including the speech dispatcher and video capabilities.
+    proof: [vertex-media-provider, vertex-media-core]
+  - text: Existing HTTP aliases serve Vertex embeddings, images, audio and rerank with matching wire results.
+    proof: [vertex-media-fixtures, oracle]
+  - text: Vertex Live exchanges ordered tool events and disconnects release the owned relay.
+    proof: [vertex-media-core, vertex-media-fixtures, oracle]
+checks:
+  optional: []
+  commands:
+    - id: vertex-media-provider
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^vertex_media_dispatch::/)'
+      why: Each capability must execute its selected adapter rather than merely advertise support.
+    - id: vertex-media-core
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vertex_media_bindings::/)'
+      why: Core tests assert speech argument replacement, callback injection and owned realtime cleanup.
+    - id: vertex-media-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/vertex-media)" && test -f tools/oracle/cases/api/vertex-media/live-disconnect.yaml && test -f tools/oracle/cases/api/vertex-media/image-edit.yaml
+      why: Multipart image and WebSocket effects need committed protocol fixtures in addition to native tests.
+oracle_cases:
+  - tools/oracle/cases/api/vertex-media/embedding-aliases.yaml
+  - tools/oracle/cases/api/vertex-media/multimodal-pairing.yaml
+  - tools/oracle/cases/api/vertex-media/image-generation.yaml
+  - tools/oracle/cases/api/vertex-media/image-edit.yaml
+  - tools/oracle/cases/api/vertex-media/speech-and-lyria.yaml
+  - tools/oracle/cases/api/vertex-media/transcription.yaml
+  - tools/oracle/cases/api/vertex-media/rerank-aliases.yaml
+  - tools/oracle/cases/api/vertex-media/live-tool-turn.yaml
+  - tools/oracle/cases/api/vertex-media/live-disconnect.yaml
+  - tools/oracle/cases/api/vertex-media/provider-error.yaml
+deviations: []
+out_of_scope:
+  - B1352 owns the other live speech transformation methods; the legacy handler it covers has no caller at the pin.
+  - B1340-B1349, B1352-B1362 and B1365 own modality transforms and transports; B1378-B1382/B1394 own shared Live protocol functions.
+  - B006/B082/B083/B085/B1125 keep their route factories. B093 owns future video routes and B157 the SDK surface.
+pitfalls:
+  - Voice object extraction belongs before the existing voice mapper; forwarding the whole object changes default language selection.
+  - Vertex Live and Chirp share the public socket path but use different backend transports and termination rules.
+  - The speech dispatcher deliberately discards a supplied client while prediction embeddings retain their own branch-specific client rules.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

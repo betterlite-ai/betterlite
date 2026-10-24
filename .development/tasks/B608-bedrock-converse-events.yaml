@@ -18,6 +18,49 @@ description: >-
   its implementation remains with that prerequisite.
 
 
+  Named case contracts: message_start_id: Initialize state: content_blocks=[],tool_calls_index=None,response_id=None,current_tool_name=None,thinking_ran=false,provider_reasoning_tokens=None,json_mode
+  defaultfalse. converse parser stores chatcmpl-<conversationId> only when response_idNone and top-level messageStart
+  has truthy conversationId; a falsey/missing id leaves stateNone. A first non-messageStart object generates chatcmpl-<UUID>.
+  Retain stored id thereafter; do not overwrite from later messageStart. Nova wrapper dispatch unwraps messageStart
+  before this helper, so that path uses fallback id rather than pretending the wrapper survived. content_text_delta:
+  converse_chunk_parser int-converts contentBlockIndex default0. Ordered dispatch start,delta,contentBlockIndex-stop,stopReason,usage;
+  earlier key wins when several present. Delta priority text,toolUse,reasoningContent,citationsContent. Text presence
+  wins even empty and does not append tool buffer. Raw citationsContent only becomes delta.provider_specific_fields,
+  not normalized annotations. Unknown direct converse event yields one empty delta with no assistant role/content
+  unless trace or one of start/delta/contentBlockIndex/stopReason keys present. tool_input_delta: Start always resets
+  content_blocks; non-None toolUse uses B598 reverse name and stores current name, then tool index0/incremented
+  per emitted start, ignoring provider index. Emit id, function name, arguments empty string. Delta appends entire
+  toolUse block, emits arguments with id/nameNone and stored index or provider index fallback. It does not assemble
+  a complete JSON object. Preserve malformed required-field failures and independent request state. thinking_signature:
+  Thinking delta exposes raw reasoningContent, reasoning_content=text if text key exists. Thinking-block priority
+  text ->{type:thinking,thinking}, signature ->{type:thinking,signature,thinking:empty}, redactedContent ->{type:redacted_thinking,data};
+  unknown ->[]. If nonempty thinking blocks with no extracted text, reasoning_content=empty string. Start supports
+  non-None reasoningContent after toolUse branch, storing raw fields. Any nonempty thinking-block list sets thinking_ran;
+  no cumulative signature reconstruction here. content_stop_finish: Stop clears current tool name; empty-args predicate
+  false when no buffered deltas or first buffered delta lacks toolUse. Otherwise concatenate toolUse.input strings;
+  exactly empty emits one arguments={} chunk using stored index or provider index, while whitespace is not empty.
+  Stop does not clear content_blocks, so repeated stop can repeat that empty chunk. stopReason without higher-priority
+  keys maps through B206 and stores B605 additionalModelResponseFields reasoning count; finish_reason for other
+  chunks is empty string. metadata_usage: usage branch uses B605 transform_usage with remembered thinking_ran and
+  provider_reasoning_tokens; no reasoning-content estimate supplied. Always one choiceindex0, model=requested, stored
+  responseid. Truthy trace ->top-level provider_specific_fields.trace and assistant/contentempty even for usage-only
+  event; falsey trace omitted. Pure usage/metrics has role/contentNone but still one choice. ModelResponseStream
+  wire defaults stayB005. invoke_chunk_provider_dispatch: Ordered base parser: outputText field ->text withoutfinish;
+  else model containing ai21 ->required completions[0].data.text and finishedstop; else any contentBlockIndex/stopReason/metrics/trace
+  key ->converse parser; else first present Nova wrapper in messageStart,contentBlockStart,contentBlockDelta,contentBlockStop,messageStop,metadata
+  ->validate inner dict and converse parser. Else outputs ->text only for listlength1 and textnon-None, finish only
+  top-level stop_reason non-None; else generation ->text; else text ->text; else finish_reason ->finished rawvalue;
+  else truthy completionReason ->finished rawvalue. Unknown ->empty unfinished GChunk, index0,usageNone,tool_useNone.
+  Usage alone withoutmetrics/Nova wrapper does not select converse. json_tool_stream: Only json_mode literal True
+  and restored name json_tool_call suppress start tool emission/index increment; each tool input fragment becomes
+  text content, without properties unwrapping/JSON validation. Stop clears current name and emits no empty-argument
+  tool chunk. Non-tool start resets content buffer but does not clear current tool name, so malformed sequence retains
+  the source state behavior until stop. converse_projection_error: Any exception inside converse_chunk_parser becomes
+  generic Exception Received streaming error - <exception>; no source HTTP status/type/param supplied. Failures
+  in the outer provider-specific dispatch before entering converse retain their own error. Native framed exception
+  statuses belongB599 and are not duplicate parser cases.
+
+
   Implement crates/betterlite-bedrock/src/converse_events.rs with adjacent tests under converse_events/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -33,10 +76,9 @@ description: >-
 
   Write rstest function converse_events_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): message_start_id, content_text_delta, tool_input_delta, thinking_signature, content_stop_finish, metadata_usage,
-  native_exception, invoke_chunk_provider_dispatch. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  invoke_chunk_provider_dispatch, json_tool_stream, converse_projection_error. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_converse_events* using HelperCase: kind:
@@ -52,9 +94,9 @@ description: >-
 
 
   Budget from 291 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 310 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 539 planned, 550 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 280 production lines, 290 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 715 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -73,49 +115,73 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L407-L743
-  why: >-
-    Own AWSEventStreamDecoder.__init__, AWSEventStreamDecoder.check_empty_tool_call_args, AWSEventStreamDecoder.extract_reasoning_content_str,
+  why: Own AWSEventStreamDecoder.__init__, AWSEventStreamDecoder.check_empty_tool_call_args, AWSEventStreamDecoder.extract_reasoning_content_str,
     AWSEventStreamDecoder.translate_thinking_blocks, AWSEventStreamDecoder._initialize_converse_response_id, AWSEventStreamDecoder._handle_converse_start_event,
     AWSEventStreamDecoder._handle_converse_delta_event, AWSEventStreamDecoder._handle_converse_stop_event, AWSEventStreamDecoder.converse_chunk_parser,
     AWSEventStreamDecoder._chunk_parser. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'message start id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/message-start-id.yaml.'
+- text: 'message_start_id: Initialize state: content_blocks=[],tool_calls_index=None,response_id=None,current_tool_name=None,thinking_ran=false,provider_reasoning_tokens=None,json_mode
+    defaultfalse. converse parser stores chatcmpl-<conversationId> only when response_idNone and top-level messageStart
+    has truthy conversationId; a falsey/missing id leaves stateNone. A first non-messageStart object generates chatcmpl-<UUID>.
+    Retain stored id thereafter; do not overwrite from later messageStart. Nova wrapper dispatch unwraps messageStart
+    before this helper, so that path uses fallback id rather than pretending the wrapper survived.'
   proof:
   - case-message-start-id
   - oracle
   - helper-python
-- text: 'content text delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/content-text-delta.yaml.'
+- text: 'content_text_delta: converse_chunk_parser int-converts contentBlockIndex default0. Ordered dispatch start,delta,contentBlockIndex-stop,stopReason,usage;
+    earlier key wins when several present. Delta priority text,toolUse,reasoningContent,citationsContent. Text presence
+    wins even empty and does not append tool buffer. Raw citationsContent only becomes delta.provider_specific_fields,
+    not normalized annotations. Unknown direct converse event yields one empty delta with no assistant role/content
+    unless trace or one of start/delta/contentBlockIndex/stopReason keys present.'
   proof:
   - case-content-text-delta
   - oracle
   - helper-python
-- text: 'tool input delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/tool-input-delta.yaml.'
+- text: 'tool_input_delta: Start always resets content_blocks; non-None toolUse uses B598 reverse name and stores
+    current name, then tool index0/incremented per emitted start, ignoring provider index. Emit id, function name,
+    arguments empty string. Delta appends entire toolUse block, emits arguments with id/nameNone and stored index
+    or provider index fallback. It does not assemble a complete JSON object. Preserve malformed required-field failures
+    and independent request state.'
   proof:
   - case-tool-input-delta
   - oracle
   - helper-python
-- text: 'thinking signature: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/thinking-signature.yaml.'
+- text: 'thinking_signature: Thinking delta exposes raw reasoningContent, reasoning_content=text if text key exists.
+    Thinking-block priority text ->{type:thinking,thinking}, signature ->{type:thinking,signature,thinking:empty},
+    redactedContent ->{type:redacted_thinking,data}; unknown ->[]. If nonempty thinking blocks with no extracted
+    text, reasoning_content=empty string. Start supports non-None reasoningContent after toolUse branch, storing
+    raw fields. Any nonempty thinking-block list sets thinking_ran; no cumulative signature reconstruction here.'
   proof:
   - case-thinking-signature
   - oracle
   - helper-python
-- text: 'content stop finish: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/content-stop-finish.yaml.'
+- text: 'content_stop_finish: Stop clears current tool name; empty-args predicate false when no buffered deltas
+    or first buffered delta lacks toolUse. Otherwise concatenate toolUse.input strings; exactly empty emits one
+    arguments={} chunk using stored index or provider index, while whitespace is not empty. Stop does not clear
+    content_blocks, so repeated stop can repeat that empty chunk. stopReason without higher-priority keys maps through
+    B206 and stores B605 additionalModelResponseFields reasoning count; finish_reason for other chunks is empty
+    string.'
   proof:
   - case-content-stop-finish
   - oracle
   - helper-python
-- text: 'metadata usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/metadata-usage.yaml.'
+- text: 'metadata_usage: usage branch uses B605 transform_usage with remembered thinking_ran and provider_reasoning_tokens;
+    no reasoning-content estimate supplied. Always one choiceindex0, model=requested, stored responseid. Truthy
+    trace ->top-level provider_specific_fields.trace and assistant/contentempty even for usage-only event; falsey
+    trace omitted. Pure usage/metrics has role/contentNone but still one choice. ModelResponseStream wire defaults
+    stayB005.'
   proof:
   - case-metadata-usage
   - oracle
   - helper-python
-- text: 'native exception: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/native-exception.yaml.'
-  proof:
-  - case-native-exception
-  - oracle
-  - helper-python
-- text: >-
-    invoke chunk provider dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-converse-events/invoke-chunk-provider-dispatch.yaml.
+- text: 'invoke_chunk_provider_dispatch: Ordered base parser: outputText field ->text withoutfinish; else model
+    containing ai21 ->required completions[0].data.text and finishedstop; else any contentBlockIndex/stopReason/metrics/trace
+    key ->converse parser; else first present Nova wrapper in messageStart,contentBlockStart,contentBlockDelta,contentBlockStop,messageStop,metadata
+    ->validate inner dict and converse parser. Else outputs ->text only for listlength1 and textnon-None, finish
+    only top-level stop_reason non-None; else generation ->text; else text ->text; else finish_reason ->finished
+    rawvalue; else truthy completionReason ->finished rawvalue. Unknown ->empty unfinished GChunk, index0,usageNone,tool_useNone.
+    Usage alone withoutmetrics/Nova wrapper does not select converse.'
   proof:
   - case-invoke-chunk-provider-dispatch
   - oracle
@@ -124,47 +190,100 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'json_tool_stream: Only json_mode literal True and restored name json_tool_call suppress start tool emission/index
+    increment; each tool input fragment becomes text content, without properties unwrapping/JSON validation. Stop
+    clears current name and emits no empty-argument tool chunk. Non-tool start resets content buffer but does not
+    clear current tool name, so malformed sequence retains the source state behavior until stop.'
+  proof:
+  - case-json-tool-stream
+  - oracle
+  - helper-python
+- text: 'converse_projection_error: Any exception inside converse_chunk_parser becomes generic Exception Received
+    streaming error - <exception>; no source HTTP status/type/param supplied. Failures in the outer provider-specific
+    dispatch before entering converse retain their own error. Native framed exception statuses belongB599 and are
+    not duplicate parser cases.'
+  proof:
+  - case-converse-projection-error
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-message-start-id
-    why: The message-start-id behavior is missing or differs from its pinned fixture.
+    why: 'Initialize state: content_blocks=[],tool_calls_index=None,response_id=None,current_tool_name=None,thinking_ran=false,provider_reasoning_tokens=None,json_mode
+      defaultfalse. converse parser stores chatcmpl-<conversationId> only when response_idNone and top-level messageStart
+      has truthy conversationId; a falsey/missing id leaves stateNone. A first non-messageStart object generates
+      chatcmpl-<UUID>. Retain stored id thereafter; do not overwrite from later messageStart. Nova wrapper dispatch
+      unwraps messageStart before this helper, so that path uses fallback id rather than pretending the wrapper
+      survived.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_message_start_id$/)'
   - id: case-content-text-delta
-    why: The content-text-delta behavior is missing or differs from its pinned fixture.
+    why: converse_chunk_parser int-converts contentBlockIndex default0. Ordered dispatch start,delta,contentBlockIndex-stop,stopReason,usage;
+      earlier key wins when several present. Delta priority text,toolUse,reasoningContent,citationsContent. Text
+      presence wins even empty and does not append tool buffer. Raw citationsContent only becomes delta.provider_specific_fields,
+      not normalized annotations. Unknown direct converse event yields one empty delta with no assistant role/content
+      unless trace or one of start/delta/contentBlockIndex/stopReason keys present.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_content_text_delta$/)'
   - id: case-tool-input-delta
-    why: The tool-input-delta behavior is missing or differs from its pinned fixture.
+    why: Start always resets content_blocks; non-None toolUse uses B598 reverse name and stores current name, then
+      tool index0/incremented per emitted start, ignoring provider index. Emit id, function name, arguments empty
+      string. Delta appends entire toolUse block, emits arguments with id/nameNone and stored index or provider
+      index fallback. It does not assemble a complete JSON object. Preserve malformed required-field failures and
+      independent request state.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_tool_input_delta$/)'
   - id: case-thinking-signature
-    why: The thinking-signature behavior is missing or differs from its pinned fixture.
+    why: Thinking delta exposes raw reasoningContent, reasoning_content=text if text key exists. Thinking-block
+      priority text ->{type:thinking,thinking}, signature ->{type:thinking,signature,thinking:empty}, redactedContent
+      ->{type:redacted_thinking,data}; unknown ->[]. If nonempty thinking blocks with no extracted text, reasoning_content=empty
+      string. Start supports non-None reasoningContent after toolUse branch, storing raw fields. Any nonempty thinking-block
+      list sets thinking_ran; no cumulative signature reconstruction here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_thinking_signature$/)'
   - id: case-content-stop-finish
-    why: The content-stop-finish behavior is missing or differs from its pinned fixture.
+    why: Stop clears current tool name; empty-args predicate false when no buffered deltas or first buffered delta
+      lacks toolUse. Otherwise concatenate toolUse.input strings; exactly empty emits one arguments={} chunk using
+      stored index or provider index, while whitespace is not empty. Stop does not clear content_blocks, so repeated
+      stop can repeat that empty chunk. stopReason without higher-priority keys maps through B206 and stores B605
+      additionalModelResponseFields reasoning count; finish_reason for other chunks is empty string.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_content_stop_finish$/)'
   - id: case-metadata-usage
-    why: The metadata-usage behavior is missing or differs from its pinned fixture.
+    why: usage branch uses B605 transform_usage with remembered thinking_ran and provider_reasoning_tokens; no reasoning-content
+      estimate supplied. Always one choiceindex0, model=requested, stored responseid. Truthy trace ->top-level provider_specific_fields.trace
+      and assistant/contentempty even for usage-only event; falsey trace omitted. Pure usage/metrics has role/contentNone
+      but still one choice. ModelResponseStream wire defaults stayB005.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_metadata_usage$/)'
-  - id: case-native-exception
-    why: The native-exception behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_native_exception$/)'
   - id: case-invoke-chunk-provider-dispatch
-    why: The invoke-chunk-provider-dispatch behavior is missing or differs from its pinned fixture.
+    why: 'Ordered base parser: outputText field ->text withoutfinish; else model containing ai21 ->required completions[0].data.text
+      and finishedstop; else any contentBlockIndex/stopReason/metrics/trace key ->converse parser; else first present
+      Nova wrapper in messageStart,contentBlockStart,contentBlockDelta,contentBlockStop,messageStop,metadata ->validate
+      inner dict and converse parser. Else outputs ->text only for listlength1 and textnon-None, finish only top-level
+      stop_reason non-None; else generation ->text; else text ->text; else finish_reason ->finished rawvalue; else
+      truthy completionReason ->finished rawvalue. Unknown ->empty unfinished GChunk, index0,usageNone,tool_useNone.
+      Usage alone withoutmetrics/Nova wrapper does not select converse.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_invoke_chunk_provider_dispatch$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_events.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_converse_events.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_events*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_events*")"
       && grep -lq 'bedrock_converse_events' tools/oracle/fuzz/corpus/helper_case/bedrock_converse_events* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_events$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-json-tool-stream
+    why: Only json_mode literal True and restored name json_tool_call suppress start tool emission/index increment;
+      each tool input fragment becomes text content, without properties unwrapping/JSON validation. Stop clears
+      current name and emits no empty-argument tool chunk. Non-tool start resets content buffer but does not clear
+      current tool name, so malformed sequence retains the source state behavior until stop.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_json_tool_stream$/)'
+  - id: case-converse-projection-error
+    why: Any exception inside converse_chunk_parser becomes generic Exception Received streaming error - <exception>;
+      no source HTTP status/type/param supplied. Failures in the outer provider-specific dispatch before entering
+      converse retain their own error. Native framed exception statuses belongB599 and are not duplicate parser
+      cases.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::converse_events_cases::case_[0-9]+_converse_projection_error$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-events/message-start-id.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-events/content-text-delta.yaml
@@ -172,37 +291,37 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-converse-events/thinking-signature.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-events/content-stop-finish.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-events/metadata-usage.yaml
-- tools/oracle/cases/helpers/providers/bedrock-converse-events/native-exception.yaml
 - tools/oracle/cases/helpers/providers/bedrock-converse-events/invoke-chunk-provider-dispatch.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-events/json-tool-stream.yaml
+- tools/oracle/cases/helpers/providers/bedrock-converse-events/converse-projection-error.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
-  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
-  L146-L166 belong to B611; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360 belong to B691; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser
-  L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856;
-  AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874;
-  MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__ L884-L885; MockResponseIterator._handle_json_mode_chunk
-  L887-L913; MockResponseIterator._chunk_parser L915-L953; MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__
-  L962-L963; MockResponseIterator.__anext__ L965-L969 belong to B609; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; _response_header L363-L364; _EventStreamTally.__init__
+- 'litellm/llms/bedrock/chat/__init__.py: get_bedrock_event_stream_decoder L9-L25 belong to B609.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _response_header L363-L364; _EventStreamTally.__init__
   L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event L379-L381; _EventStreamTally.undecoded_stream_error
-  L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AWSEventStreamDecoder._parse_message_from_event
-  L788-L813 belong to B599; reuse that implementation or its injected typed boundary.
+  L383-L403; AWSEventStreamDecoder._parse_message_from_event L788-L813 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; AWSEventStreamDecoder.iter_bytes
+  L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833;
+  AmazonAnthropicClaudeStreamDecoder._chunk_parser L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853;
+  AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856; AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871;
+  AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874; MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__
+  L884-L885; MockResponseIterator._handle_json_mode_chunk L887-L913; MockResponseIterator._chunk_parser L915-L953;
+  MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__ L962-L963; MockResponseIterator.__anext__
+  L965-L969 belong to B609.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110;
+  AmazonCohereChatConfig.get_config L112-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
+  L146-L166 belong to B611.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call
+  L274-L360 belong to B691.'
 pitfalls:
-- Preserve index and usage ordering; use the already bounded AWS frame decoder and leave transport lifecycle separate.
+- A Nova messageStart wrapper is unwrapped before response-id initialization, so its inner conversationId is not
+  read by the top-level messageStart branch.
+- Repeated stop events can repeat an empty-argument chunk because stop does not clear the tool buffer.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard

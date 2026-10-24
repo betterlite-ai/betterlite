@@ -1,0 +1,81 @@
+id: B1372
+title: Create Vertex batches and resolve tuned endpoint models
+description: >-
+  Implement vertex_batch_create from handler.py L1-L291, 240 nonblank noncomment lines,
+  excluding the list-payload helper owned by B1373. Reject truthy custom_endpoint with
+  VertexAIError 400 before creating a client or resolving credentials. Resolve B1302 access
+  token/project synchronously at the public preparation boundary even for the async variant;
+  native async execution must await I/O rather than block its executor. Use JSON charset=utf-8
+  and Bearer headers. Pass explicit project or resolved project and location or us-central1
+  to B1371 request conversion. When the resulting model contains /endpoints/, perform a
+  protected GET to resolve deployedModels[0].model before posting the batch. A custom base
+  whose path is exactly /v1 or /v1beta1 uses B1304 path grafting; any other path is a mount
+  prefix before the default /v1/resource path. Require status 200 and a truthy first deployed
+  model, otherwise preserve upstream status or return VertexAIError 400; later deployed models
+  never substitute for an empty first one. The collection URL uses B1305's regional/global
+  host and v1/projects/project/locations/location/batchPredictionJobs, then B1304's custom
+  proxy rules, retaining the source's colon-derived endpoint argument. Create posts serialized
+  request JSON and passes the body to B1371; the outer timeout/max_retries arguments are
+  accepted but not forwarded here. Async HTTPStatusError logs status and the first 1000 body
+  characters before propagating. Implement bounded decode_vertex_batch_payload for job and
+  endpoint JSON, exposing it to B1373, and fuzz both envelopes. Native tests assert
+  custom_endpoint_before_auth, endpoint_lookup_before_create, first_deployed_model_only,
+  lookup_status_propagation, async_no_blocking, timeout_not_forwarded,
+  publisher_skips_resolution and deployed_model_replacement. Pure helper vertex_batch_target
+  calls only URL construction for collection_global, version_root_graft and
+  mounted_endpoint_get, never the tuned-model lookup. Budget 265 transport/decoder,
+  220 tests, 100 oracle and 80 fuzz lines, cap 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_batch_create}.rs
+    - crates/betterlite-vertex/src/vertex_batch_create/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_payload.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_batch_payload/**
+    - tools/oracle/src/helpers/{mod,vertex_batch_target}.rs
+    - tools/oracle/helpers/{dispatch,vertex_batch_target}.py
+    - tools/oracle/cases/helpers/vertex-batch-target/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_batch_target*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L38-L291
+    why: Create dispatch, tuned endpoint resolution and custom-base collection URL construction.
+dod:
+  - text: Batch creation rejects unsupported deployments and resolves a tuned model before its prediction-job POST.
+    proof: [batch-create-execution]
+  - text: Pure batch target construction preserves custom version roots and endpoint mount prefixes.
+    proof: [batch-create-target-tests, batch-create-python, oracle]
+  - text: Batch payload decoding and target helper fixtures replay newly added corpus inputs.
+    proof: [batch-create-corpus, batch-create-seeds]
+checks:
+  optional: []
+  commands:
+    - id: batch-create-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_create::execution::/)'
+      why: Injected transports prove authentication, resolution and creation order without real Google access.
+    - id: batch-create-target-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_create::target::/)'
+      why: Endpoint resource GETs and collection POSTs must retain their distinct custom-base rules.
+    - id: batch-create-python
+      run: test -f tools/oracle/helpers/vertex_batch_target.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Target fixtures invoke only URL and decoded-record projections, never create_batch HTTP execution.
+    - id: batch-create-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_payload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_payload_corpus)'
+      why: Both endpoint and batch job payloads enter decode_vertex_batch_payload under replay.
+    - id: batch-create-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_target*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_target::/)'
+      why: Added target records must dispatch the Vertex batch helper variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-batch-target/collection-global.yaml
+  - tools/oracle/cases/helpers/vertex-batch-target/version-root-graft.yaml
+  - tools/oracle/cases/helpers/vertex-batch-target/mounted-endpoint-get.yaml
+deviations: []
+out_of_scope:
+  - B1373 owns _vertex_batch_list_payload at L79-L80 and retrieve/list/cancel methods from L293 onward.
+  - B1371 owns all pure batch record and model-path conversion; B086 owns managed-batch interception and public batch routes.
+pitfalls:
+  - Endpoint resolution selects deployedModels[0] rather than searching for any nonempty deployed model.
+  - A custom /v1 base swallows the default version segment, while an arbitrary mount path retains it.
+  - The create wrapper's timeout and max_retries do not reach either HTTP call at this pin.
+budget: {max_changed_lines: 750, max_new_expects: 1}
+review_level: security

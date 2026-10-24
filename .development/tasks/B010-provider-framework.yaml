@@ -20,6 +20,10 @@ description: >-
   340 tests (770 total). Write the behavior rstest functions b010_provider_framework_tests_behavior in adjacent
   tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
   names.
+
+
+  Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
+  ranges. Do not reintroduce a dependency on B010/B016 for these small helpers.
 scope:
   paths:
   - Cargo.toml
@@ -30,38 +34,29 @@ scope:
   - tools/oracle/cases/provider-framework/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L68-L467
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L68-L467
   why: Common provider transformation interface and its extension hooks.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/bridges/completion_transformation.py#L18-L55
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/bridges/completion_transformation.py#L18-L55
   why: Request/response/iterator bridge boundary.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L1-L220
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L1-L220
   why: Iterator responsibilities and end-of-stream state.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L1-L180
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_utils.py#L1-L180
   why: Shared provider response helpers.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-L83
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-L83
   why: Typed inputs shared by provider implementations.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiohttp_openai/chat/transformation.py#L27-L81
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiohttp_openai/chat/transformation.py#L27-L81
   why: Distinct endpoint, auth and response projection.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/chat/transformation.py#L316-L365
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/chat/transformation.py#L316-L365
   why: Provider-local transform-and-retry hook used by B026.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L450-L477
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L450-L477
   why: Bounded transformation attempts, distinct from router retries.
 dod:
 - text: Chat, streaming and embedding calls pass through the provider enum and retain all listed oracle behavior.
   proof:
   - oracle
   - provider-framework-tests
-- text: >-
-    Unsupported executable adapters and call types fail before HTTP, and parallel calls do not share mutable request/settings
-    state.
+- text: Unsupported executable adapters and call types fail before HTTP, and parallel calls do not share mutable
+    request/settings state.
   proof:
   - provider-framework-tests
 - text: Disconnects drop the upstream stream and decoding remains incremental under a slow provider.
@@ -77,8 +72,7 @@ checks:
   commands:
   - id: provider-framework-tests
     why: the required tests fail or the filter selects no tests
-    run: >-
-      cargo nextest run --locked -p betterlite-provider -p betterlite-server --no-tests=fail -E 'test(/::b010_provider_framework_tests_behavior($|::)/)
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-server --no-tests=fail -E 'test(/::b010_provider_framework_tests_behavior($|::)/)
       - test(/replays_the_/)'
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
@@ -92,20 +86,19 @@ oracle_cases:
 - tools/oracle/cases/provider-framework/aiohttp-explicit-base.yaml
 deviations: []
 out_of_scope:
-- >-
-  Router retry policy is B017; the provider-local transform-on-422 seam belongs here and B026 supplies Azure AI
+- Router retry policy is B017; the provider-local transform-on-422 seam belongs here and B026 supplies Azure AI
   behavior.
 - Python dynamic extension classes and synchronous wrappers are B157-B165.
 - Additional endpoints are represented only when their owning tasks implement their concrete types.
-- >-
-  base_llm.bridges chat-to-Responses conversion is B080; B010 defines its typed seam only, because Responses models
+- base_llm.bridges chat-to-Responses conversion is B080; B010 defines its typed seam only, because Responses models
   are not yet available.
-- >-
-  Base transformation tool/role/thinking helpers delegate to B175-B182; iterator SSE parsing is B005 and endpoint-specific
+- Base transformation tool/role/thinking helpers delegate to B175-B182; iterator SSE parsing is B005 and endpoint-specific
   iterators B080-B099; no parallel parser is added.
+- Shared base config/error, thinking/tool helpers and None/dict response-schema branches listed in B2202 belong
+  to B2202; this framework consumes them, never implements a parallel version. Python class-object response-schema
+  extraction remains B160.
 pitfalls:
-- >-
-  B004 puts wire models and the OpenAI adapter in the same crate, so betterlite-provider may depend on betterlite-openai
+- B004 puts wire models and the OpenAI adapter in the same crate, so betterlite-provider may depend on betterlite-openai
   but never the reverse.
 - A catalog ProviderId is metadata and must not be used as proof that an executable adapter exists.
 - Do not buffer streams to make all operation result types look alike.

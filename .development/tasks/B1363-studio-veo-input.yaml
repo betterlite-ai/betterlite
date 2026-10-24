@@ -1,0 +1,75 @@
+id: B1363
+title: Studio Veo input mapping and API-key precedence
+description: >-
+  Implement studio_veo_request for image conversion, constructor, capability/option/size
+  methods, environment validation, URL construction and create request transformation at
+  gemini/videos/transformation.py L40-L57 and L93-L297, 198 nonblank noncomment method lines.
+  Add Gemini video input/parameter types at gemini.py L235-L298. Input reference becomes image;
+  four recognized sizes yield aspect ratio and 720p/1080p resolution, with no Vertex catalog
+  gate. Unknown nonempty sizes produce 16:9 only. A truthy explicit resolution suppresses
+  inference; after mapping, provider fields not already mapped pass through, including model
+  and prompt. String seconds use integer conversion, failures are ignored, and no duration
+  default is inserted. Resolve API key from explicit argument, litellm_params.api_key, module
+  litellm.api_key, GOOGLE_API_KEY, then GEMINI_API_KEY, using B1331-loaded settings. Force
+  x-goog-api-key and JSON content type. Only None api_base invokes GEMINI_API_BASE or
+  https://generativelanguage.googleapis.com; an empty string remains explicit. Empty model
+  returns the trimmed base; otherwise remove all gemini/ occurrences and append
+  /v1beta/models/model:predictLongRunning. Create copies options, removes image by key presence,
+  passes image dictionaries unchanged and uses a seek-to-zero consuming file reader otherwise.
+  Strings are not URI downloads here and fail the file-reader requirement. Construct the
+  eight optional parameter fields with None defaults, dropping unrecognized fields and nulls
+  at serialization; do not turn docstring restrictions into extra validation. Return JSON,
+  no files and the unchanged complete URL. The studio_veo_request helper covers
+  resolution_without_catalog, empty_resolution_inferred, provider_field_passthrough,
+  typed_parameter_filter, module_key_before_env, empty_explicit_base and consumed_image_cursor.
+  Reuse B1361's identical file conversion primitive via MIME callback. Budget 260 code,
+  175 tests and 140 adapters, capped at 650.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_veo_request}.rs
+    - crates/betterlite-vertex/src/studio_veo_request/**
+    - tools/oracle/src/helpers/{mod,studio_veo_request}.rs
+    - tools/oracle/helpers/{dispatch,studio_veo_request}.py
+    - tools/oracle/cases/helpers/studio-veo-request/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_veo_request*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L40-L297
+    why: Studio image reader, permissive option mapping, auth order and typed request filtering; response helpers are excluded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L235-L298
+    why: Gemini video parameter declarations and optional defaults.
+dod:
+  - text: Studio Veo requests preserve size inference, API-key order and typed parameter omissions.
+    proof: [studio-veo-input-tests, studio-veo-input-python, oracle]
+  - text: Input mapping cases are registered under the Studio Veo helper tag.
+    proof: [studio-veo-input-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-veo-input-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_veo_request::/)'
+      why: Auth precedence and explicit empty-base behavior are tested independently of request serialization.
+    - id: studio-veo-input-python
+      run: test -f tools/oracle/helpers/studio_veo_request.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter compares the pinned mapper before and after Pydantic parameter filtering.
+    - id: studio-veo-input-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_veo_request*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_veo_request::/)'
+      why: Shared case decoding must dispatch Studio video input records.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-veo-request/resolution-without-catalog.yaml
+  - tools/oracle/cases/helpers/studio-veo-request/empty-resolution-inferred.yaml
+  - tools/oracle/cases/helpers/studio-veo-request/provider-field-passthrough.yaml
+  - tools/oracle/cases/helpers/studio-veo-request/typed-parameter-filter.yaml
+  - tools/oracle/cases/helpers/studio-veo-request/module-key-before-env.yaml
+  - tools/oracle/cases/helpers/studio-veo-request/empty-explicit-base.yaml
+  - tools/oracle/cases/helpers/studio-veo-request/consumed-image-cursor.yaml
+deviations: []
+out_of_scope:
+  - B1364 owns _json_payload, _usage_video_resolution_from_parameters and every method from transform_video_create_response through get_error_class at L299-L618.
+  - B035 assembles the Studio provider; B093 owns the eventual video route and operation dispatcher.
+pitfalls:
+  - An explicit empty api_base is not replaced with the Gemini default host.
+  - sampleCount can survive option mapping but is dropped by GeminiVideoGenerationParameters at this pin.
+  - Studio infers resolution for recognized sizes without consulting model pricing metadata.
+budget: {max_changed_lines: 650, max_new_expects: 1}
+review_level: security

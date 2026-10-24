@@ -6,15 +6,20 @@ description: >-
   transforms remain injected callers, avoiding a dependency from this base policy back to B502 or B504.
 
 
-  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/openai.py: OpenAIConfig.__init__
-  L154-L172; OpenAIConfig.get_config L175-L176; OpenAIConfig.get_supported_openai_params L178-L200; OpenAIConfig._gpt_config_for_model
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/chat/gpt_5_transformation.py:
+  AzureOpenAIGPT5Config.is_model_gpt_5_model L37-L39. litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172;
+  OpenAIConfig.get_config L175-L176; OpenAIConfig.get_supported_openai_params L178-L200; OpenAIConfig._gpt_config_for_model
   L202-L205; OpenAIConfig._map_openai_params L207-L212; OpenAIConfig._transform_messages L214-L215; OpenAIConfig.map_openai_params
   L217-L252; OpenAIConfig.get_error_class L254-L259; OpenAIConfig.transform_request L261-L270; OpenAIConfig.transform_response
   L272-L298; OpenAIConfig.validate_environment L300-L313; OpenAIConfig.get_model_response_iterator L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser
   L329-L336. litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig.__init__ L118-L137; OpenAIGPTConfig.get_config
   L140-L141; OpenAIGPTConfig.get_supported_openai_params L143-L185; OpenAIGPTConfig.is_openai_catalog_model L188-L193;
   OpenAIGPTConfig._map_openai_params L195-L217; OpenAIGPTConfig.map_openai_params L219-L231; OpenAIUnknownModelConfig.get_supported_openai_params
-  L833-L834. litellm/llms/openai/common_utils.py: OpenAIError.__init__ L57-L84.
+  L833-L834. litellm/llms/openai/common_utils.py: OpenAIError.__init__ L57-L84. litellm/utils.py: add_openai_metadata
+  L10292-L10324; _add_path_to_api_base L10197-L10232. litellm/llms/openai/chat/gpt_audio_transformation.py: OpenAIGPTAudioConfig.is_model_gpt_audio_model
+  L33-L36. litellm/llms/openai/chat/o_series_transformation.py: OpenAIOSeriesConfig.is_model_o_series_model L117-L124.
+  litellm/llms/openai/chat/gpt_5_transformation.py: is_gpt_reasoning_series_name L70-L72; OpenAIGPT5Config.is_model_gpt_5_model
+  L86-L87.
 
 
   Callers include utils.py:4956-4961, o_series_transformation.py:52, gpt_5_transformation.py:232 and gpt_audio_transformation.py:29.
@@ -27,6 +32,53 @@ description: >-
   does not depend on B193 or B004. Concrete catalog loading remains B193. Create betterlite-openai with minimal
   request/response DTO dependencies here; B004 later adds chat execution. The base forwarding hooks accept prepared
   typed inputs and caller-supplied projections rather than importing their later implementations.
+
+
+  Named case contracts: o_series_routing: Strip the last provider prefix, require length > 1, o followed by a digit
+  and membership in open_ai_chat_completion_models; unknown o-shaped names fall through. gpt5_routing: Match gpt-5
+  or gpt-6 anywhere in the model, excluding gpt-5-chat in the final slash-delimited component; compare prefixed
+  and unknown catalog names. audio_routing: Require the original complete model name in the chat catalog and the
+  substring audio; do not strip provider prefixes for this predicate. catalog_user_only: Only chat/text catalog
+  members receive user, including names containing responses/ whose suffix is checked. unknown_reasoning_effort:
+  Only exact OpenAIConfig selects OpenAIUnknownModelConfig for noncatalog models and adds reasoning_effort; AzureAIStudioConfig
+  and other subclasses retain the GPT allowlist. base_parameter_allowlist: Preserve frequency_penalty, logit_bias,
+  logprobs, top_logprobs, max_tokens, max_completion_tokens, modalities, prediction, n, presence_penalty, seed,
+  stop, stream, stream_options, temperature, top_p, tools, tool_choice, function_call, functions, max_retries, extra_headers,
+  parallel_tool_calls, audio, web_search_options, service_tier, safety_identifier, prompt_cache_key, prompt_cache_retention
+  and store; unsupported keys are omitted while existing optional_params survive. base_auth_override: Authorization
+  defaults to Bearer {api_key}, including Bearer None; caller headers override that exact key. base_projection_forwarding:
+  Before JSON conversion, call injected PostCallSink with raw response text and set the logging response_headers
+  to raw headers; then call ChatResponseProjection with the decoded response, response headers and hidden_params.headers.
+  Verify ordering even when JSON conversion fails. Stream conversion uses the injected typed stream projection;
+  projected errors propagate. base_request_overlay: Optional parameters overlay model/messages in the outgoing body;
+  the base message hook is identity and non-None constructor settings survive get_config. openai_error_defaults:
+  OpenAIError retains status, headers and body; absent request is POST https://api.openai.com/v1 and absent response
+  uses the supplied status and that request. metadata_filter_limit: None stays None; retain only string-valued entries,
+  stringify keys, omit hidden_params and retain the first 16 surviving entries in insertion order; return an independent
+  map, including empty input. overlapping_api_base_path: Parse api_base as httpx.URL, split nonempty base and ending
+  path segments, select the first suffix/prefix overlap, and combine them with exactly one leading slash; no overlap
+  appends all segments. Preserve the original query entries/order and fragment after path rewriting. This is a shared
+  primitive used by Azure URL helpers and other providers; it does not append or recognize /v1 on its own. azure_gpt5_route_predicate:
+  Azure GPT-5 selection accepts the shared is_gpt_reasoning_series_name result or the substring gpt5_series anywhere
+  in the model, without catalog membership. Preserve case sensitivity; this predicate is reused by B2230 and B532.
+
+
+  Write standalone Rust test openai_base_config_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_base_config_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
+  ranges. Do not reintroduce a dependency on B010/B016 for these small helpers.
+
+
+  PostCallSink is the base forwarding interface supplied by B249 at composition. The test sink records text and
+  response headers without importing B249 into this lower task, just as ChatResponseProjection is supplied by B004.
+  B004 owns decoding; invoking the projection must occur after the post-call effect.
 
 
   Implement crates/betterlite-openai/src/openai_base_config.rs with adjacent tests under openai_base_config/. Keep
@@ -43,10 +95,11 @@ description: >-
 
 
   Write rstest function openai_base_config_cases in betterlite-openai with these exact named cases (one per oracle
-  file): o_series_routing, gpt5_routing, audio_routing, unknown_model_routing, catalog_user_only, old_gpt_response_format_drop,
-  unknown_reasoning_effort. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): o_series_routing, gpt5_routing, audio_routing, catalog_user_only, old_gpt_response_format_drop, unknown_reasoning_effort,
+  base_parameter_allowlist, base_auth_override, base_projection_forwarding, base_request_overlay, openai_error_defaults,
+  metadata_filter_limit, overlapping_api_base_path, azure_gpt5_route_predicate. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_base_config* using HelperCase: kind: helper
@@ -55,17 +108,16 @@ description: >-
   production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
 
 
-  Outside-byte boundary: decode_base_chat_response consumes base OpenAIConfig raw response JSON bytes in crates/betterlite-openai/src/openai_base_config.rs
-  (or its scoped child module). Add cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/openai_base_config.rs
-  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-openai/fuzz/corpus/openai_base_config.
-  The adjacent test replays_the_openai_base_config_corpus uses the same function and asserts expected success/failure
-  categories; never introduce a parser solely for fuzzing.
+  Inject a ChatResponseProjection callback accepting the already decoded response record, response headers and hidden_params.headers;
+  B004 supplies convert_to_model_response_object and its decoder. Inject typed stream record projection for ModelResponseStream;
+  B005 supplies stream decoding. Base forwarding never decodes bytes and adds no provider fuzz target. B171 owns
+  the shared HelperCase parser.
 
 
-  Budget from 295 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 315 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 601 planned, 625 maximum changed lines.
+  Budget from 366 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 315 production lines, 290 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 765 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/src/lib.rs
@@ -82,21 +134,16 @@ scope:
   - crates/betterlite-openai/src/error.rs
   - crates/betterlite-openai/src/openai_base_config.rs
   - crates/betterlite-openai/src/openai_base_config/**
-  - crates/betterlite-openai/fuzz/Cargo.toml
-  - crates/betterlite-openai/fuzz/fuzz_targets/openai_base_config.rs
-  - crates/betterlite-openai/fuzz/corpus/openai_base_config/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L154-L336
-  why: >-
-    Own OpenAIConfig.__init__, OpenAIConfig.get_config, OpenAIConfig.get_supported_openai_params, OpenAIConfig._gpt_config_for_model,
+  why: Own OpenAIConfig.__init__, OpenAIConfig.get_config, OpenAIConfig.get_supported_openai_params, OpenAIConfig._gpt_config_for_model,
     OpenAIConfig._map_openai_params, OpenAIConfig._transform_messages, OpenAIConfig.map_openai_params, OpenAIConfig.get_error_class,
     OpenAIConfig.transform_request, OpenAIConfig.transform_response, OpenAIConfig.validate_environment, OpenAIConfig.get_model_response_iterator,
     OpenAIChatCompletionResponseIterator.chunk_parser. Other functions in this file remain with the owners listed
     below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L118-L231
-  why: >-
-    Own OpenAIGPTConfig.__init__, OpenAIGPTConfig.get_config, OpenAIGPTConfig.get_supported_openai_params, OpenAIGPTConfig.is_openai_catalog_model,
+  why: Own OpenAIGPTConfig.__init__, OpenAIGPTConfig.get_config, OpenAIGPTConfig.get_supported_openai_params, OpenAIGPTConfig.is_openai_catalog_model,
     OpenAIGPTConfig._map_openai_params, OpenAIGPTConfig.map_openai_params. Other functions in this file remain with
     the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L833-L834
@@ -104,40 +151,49 @@ references:
     listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L57-L84
   why: Own OpenAIError.__init__. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_5_transformation.py#L70-L87
+  why: Own is_gpt_reasoning_series_name L70-L72; OpenAIGPT5Config.is_model_gpt_5_model L86-L87; callers reuse these
+    shared primitives.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/o_series_transformation.py#L117-L124
+  why: Own OpenAIOSeriesConfig.is_model_o_series_model L117-L124; callers reuse these shared primitives.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_audio_transformation.py#L33-L36
+  why: Own OpenAIGPTAudioConfig.is_model_gpt_audio_model L33-L36; callers reuse these shared primitives.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10292-L10324
+  why: Own add_openai_metadata L10292-L10324; callers reuse these shared primitives.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10197-L10232
+  why: Own the small path-overlap helper below provider callers, previously left in the unsliced B157 utility umbrella.
 dod:
-- text: 'o series routing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/o-series-routing.yaml.'
+- text: 'o_series_routing: Strip the last provider prefix, require length > 1, o followed by a digit and membership
+    in open_ai_chat_completion_models; unknown o-shaped names fall through.'
   proof:
   - case-o-series-routing
   - oracle
   - helper-python
-- text: 'gpt5 routing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/gpt5-routing.yaml.'
+- text: 'gpt5_routing: Match gpt-5 or gpt-6 anywhere in the model, excluding gpt-5-chat in the final slash-delimited
+    component; compare prefixed and unknown catalog names.'
   proof:
   - case-gpt5-routing
   - oracle
   - helper-python
-- text: 'audio routing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/audio-routing.yaml.'
+- text: 'audio_routing: Require the original complete model name in the chat catalog and the substring audio; do
+    not strip provider prefixes for this predicate.'
   proof:
   - case-audio-routing
   - oracle
   - helper-python
-- text: 'unknown model routing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/unknown-model-routing.yaml.'
-  proof:
-  - case-unknown-model-routing
-  - oracle
-  - helper-python
-- text: 'catalog user only: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/catalog-user-only.yaml.'
+- text: 'catalog_user_only: Only chat/text catalog members receive user, including names containing responses/ whose
+    suffix is checked.'
   proof:
   - case-catalog-user-only
   - oracle
   - helper-python
-- text: >-
-    old gpt response format drop: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/old-gpt-response-format-drop.yaml.
+- text: 'old gpt response format drop: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/old-gpt-response-format-drop.yaml.'
   proof:
   - case-old-gpt-response-format-drop
   - oracle
   - helper-python
-- text: >-
-    unknown reasoning effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/unknown-reasoning-effort.yaml.
+- text: 'unknown_reasoning_effort: Only exact OpenAIConfig selects OpenAIUnknownModelConfig for noncatalog models
+    and adds reasoning_effort; AzureAIStudioConfig and other subclasses retain the GPT allowlist.'
   proof:
   - case-unknown-reasoning-effort
   - oracle
@@ -146,160 +202,404 @@ dod:
     parser.
   proof:
   - helper-case-corpus
-- text: decode_base_chat_response has newly committed malformed and boundary inputs replayed through production
-    parsing.
+- text: 'base_parameter_allowlist: Preserve frequency_penalty, logit_bias, logprobs, top_logprobs, max_tokens, max_completion_tokens,
+    modalities, prediction, n, presence_penalty, seed, stop, stream, stream_options, temperature, top_p, tools,
+    tool_choice, function_call, functions, max_retries, extra_headers, parallel_tool_calls, audio, web_search_options,
+    service_tier, safety_identifier, prompt_cache_key, prompt_cache_retention and store; unsupported keys are omitted
+    while existing optional_params survive.'
   proof:
-  - parser-corpus
+  - case-base-parameter-allowlist
+  - oracle
+  - helper-python
+- text: 'base_auth_override: Authorization defaults to Bearer {api_key}, including Bearer None; caller headers override
+    that exact key.'
+  proof:
+  - case-base-auth-override
+  - oracle
+  - helper-python
+- text: 'base_projection_forwarding: Before JSON conversion, call injected PostCallSink with raw response text and
+    set the logging response_headers to raw headers; then call ChatResponseProjection with the decoded response,
+    response headers and hidden_params.headers. Verify ordering even when JSON conversion fails. Stream conversion
+    uses the injected typed stream projection; projected errors propagate.'
+  proof:
+  - case-base-projection-forwarding
+  - oracle
+  - helper-python
+- text: 'base_request_overlay: Optional parameters overlay model/messages in the outgoing body; the base message
+    hook is identity and non-None constructor settings survive get_config.'
+  proof:
+  - case-base-request-overlay
+  - oracle
+  - helper-python
+- text: 'openai_error_defaults: OpenAIError retains status, headers and body; absent request is POST https://api.openai.com/v1
+    and absent response uses the supplied status and that request.'
+  proof:
+  - case-openai-error-defaults
+  - oracle
+  - helper-python
+- text: 'metadata_filter_limit: None stays None; retain only string-valued entries, stringify keys, omit hidden_params
+    and retain the first 16 surviving entries in insertion order; return an independent map, including empty input.'
+  proof:
+  - case-metadata-filter-limit
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+- text: 'overlapping_api_base_path: Parse api_base as httpx.URL, split nonempty base and ending path segments, select
+    the first suffix/prefix overlap, and combine them with exactly one leading slash; no overlap appends all segments.
+    Preserve the original query entries/order and fragment after path rewriting. This is a shared primitive used
+    by Azure URL helpers and other providers; it does not append or recognize /v1 on its own.'
+  proof:
+  - case-overlapping-api-base-path
+  - oracle
+  - helper-python
+- text: 'azure_gpt5_route_predicate: Azure GPT-5 selection accepts the shared is_gpt_reasoning_series_name result
+    or the substring gpt5_series anywhere in the model, without catalog membership. Preserve case sensitivity; this
+    predicate is reused by B2230 and B532.'
+  proof:
+  - case-azure-gpt5-route-predicate
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-o-series-routing
-    why: The o-series-routing behavior is missing or differs from its pinned fixture.
+    why: Strip the last provider prefix, require length > 1, o followed by a digit and membership in open_ai_chat_completion_models;
+      unknown o-shaped names fall through.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_o_series_routing$/)'
   - id: case-gpt5-routing
-    why: The gpt5-routing behavior is missing or differs from its pinned fixture.
+    why: Match gpt-5 or gpt-6 anywhere in the model, excluding gpt-5-chat in the final slash-delimited component;
+      compare prefixed and unknown catalog names.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_gpt5_routing$/)'
   - id: case-audio-routing
-    why: The audio-routing behavior is missing or differs from its pinned fixture.
+    why: Require the original complete model name in the chat catalog and the substring audio; do not strip provider
+      prefixes for this predicate.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_audio_routing$/)'
-  - id: case-unknown-model-routing
-    why: The unknown-model-routing behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_unknown_model_routing$/)'
   - id: case-catalog-user-only
-    why: The catalog-user-only behavior is missing or differs from its pinned fixture.
+    why: Only chat/text catalog members receive user, including names containing responses/ whose suffix is checked.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_catalog_user_only$/)'
   - id: case-old-gpt-response-format-drop
-    why: The old-gpt-response-format-drop behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-base-config/old-gpt-response-format-drop.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_old_gpt_response_format_drop$/)'
   - id: case-unknown-reasoning-effort
-    why: The unknown-reasoning-effort behavior is missing or differs from its pinned fixture.
+    why: Only exact OpenAIConfig selects OpenAIUnknownModelConfig for noncatalog models and adds reasoning_effort;
+      AzureAIStudioConfig and other subclasses retain the GPT allowlist.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_unknown_reasoning_effort$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_base_config.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_base_config.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_base_config*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_base_config*")"
       && grep -lq 'openai_base_config' tools/oracle/fuzz/corpus/helper_case/openai_base_config* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_base_config$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: parser-corpus
-    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_base_config)"
-      && grep -q 'decode_base_chat_response' crates/betterlite-openai/fuzz/fuzz_targets/openai_base_config.rs &&
-      cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_base_config_corpus$/)'
+  - id: case-base-parameter-allowlist
+    why: Preserve frequency_penalty, logit_bias, logprobs, top_logprobs, max_tokens, max_completion_tokens, modalities,
+      prediction, n, presence_penalty, seed, stop, stream, stream_options, temperature, top_p, tools, tool_choice,
+      function_call, functions, max_retries, extra_headers, parallel_tool_calls, audio, web_search_options, service_tier,
+      safety_identifier, prompt_cache_key, prompt_cache_retention and store; unsupported keys are omitted while
+      existing optional_params survive.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_base_parameter_allowlist$/)'
+  - id: case-base-auth-override
+    why: Authorization defaults to Bearer {api_key}, including Bearer None; caller headers override that exact key.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_base_auth_override$/)'
+  - id: case-base-projection-forwarding
+    why: Before JSON conversion, call injected PostCallSink with raw response text and set the logging response_headers
+      to raw headers; then call ChatResponseProjection with the decoded response, response headers and hidden_params.headers.
+      Verify ordering even when JSON conversion fails. Stream conversion uses the injected typed stream projection;
+      projected errors propagate.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_base_projection_forwarding$/)'
+  - id: case-base-request-overlay
+    why: Optional parameters overlay model/messages in the outgoing body; the base message hook is identity and
+      non-None constructor settings survive get_config.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_base_request_overlay$/)'
+  - id: case-openai-error-defaults
+    why: OpenAIError retains status, headers and body; absent request is POST https://api.openai.com/v1 and absent
+      response uses the supplied status and that request.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_openai_error_defaults$/)'
+  - id: case-metadata-filter-limit
+    why: None stays None; retain only string-valued entries, stringify keys, omit hidden_params and retain the first
+      16 surviving entries in insertion order; return an independent map, including empty input.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_metadata_filter_limit$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_secret_safe_failure$/)'
+  - id: case-overlapping-api-base-path
+    why: Parse api_base as httpx.URL, split nonempty base and ending path segments, select the first suffix/prefix
+      overlap, and combine them with exactly one leading slash; no overlap appends all segments. Preserve the original
+      query entries/order and fragment after path rewriting. This is a shared primitive used by Azure URL helpers
+      and other providers; it does not append or recognize /v1 on its own.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_overlapping_api_base_path$/)'
+  - id: case-azure-gpt5-route-predicate
+    why: Azure GPT-5 selection accepts the shared is_gpt_reasoning_series_name result or the substring gpt5_series
+      anywhere in the model, without catalog membership. Preserve case sensitivity; this predicate is reused by
+      B2230 and B532.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_base_config_cases::case_[0-9]+_azure_gpt5_route_predicate$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-base-config/o-series-routing.yaml
 - tools/oracle/cases/helpers/providers/openai-base-config/gpt5-routing.yaml
 - tools/oracle/cases/helpers/providers/openai-base-config/audio-routing.yaml
-- tools/oracle/cases/helpers/providers/openai-base-config/unknown-model-routing.yaml
 - tools/oracle/cases/helpers/providers/openai-base-config/catalog-user-only.yaml
 - tools/oracle/cases/helpers/providers/openai-base-config/old-gpt-response-format-drop.yaml
 - tools/oracle/cases/helpers/providers/openai-base-config/unknown-reasoning-effort.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/base-parameter-allowlist.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/base-auth-override.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/base-projection-forwarding.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/base-request-overlay.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/openai-error-defaults.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/metadata-filter-limit.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/overlapping-api-base-path.yaml
+- tools/oracle/cases/helpers/providers/openai-base-config/azure-gpt5-route-predicate.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config L82-L98;
-  MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params L105-L109
-  belong to B036; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356; OpenAIChatCompletion.make_openai_embedding_request
-  L1201-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request L1218-L1232; OpenAIChatCompletion.aembedding
-  L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to B006; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
-  L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
-  L465-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L506-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
-  L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
-  L889-L1011 belong to B004; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
-  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454; OpenAIChatCompletion.image_generation
-  L1456-L1554 belong to B511; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
-  L1620-L1666 belong to B514; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client L1683-L1711;
-  OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
-  L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
-  L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
-  L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
-  L1986-L2026 belong to B516; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client L2041-L2069;
-  OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
-  L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch L2157-L2164; OpenAIBatchesAPI.cancel_batch
-  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
-  L2254-L2277; OpenAIAssistantsAPI.async_get_openai_client L2279-L2302; OpenAIAssistantsAPI.async_get_assistants
-  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2343-L2353; OpenAIAssistantsAPI.get_assistants L2356-L2366; OpenAIAssistantsAPI.get_assistants
-  L2370-L2414; OpenAIAssistantsAPI.async_create_assistants L2417-L2438; OpenAIAssistantsAPI.create_assistants L2440-L2471;
-  OpenAIAssistantsAPI.async_delete_assistant L2474-L2495; OpenAIAssistantsAPI.delete_assistant L2497-L2528 belong
-  to B519; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
-  L2568-L2580; OpenAIAssistantsAPI.add_message L2583-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
-  L2644-L2665; OpenAIAssistantsAPI.get_messages L2670-L2681; OpenAIAssistantsAPI.get_messages L2684-L2695; OpenAIAssistantsAPI.get_messages
-  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2773-L2785;
-  OpenAIAssistantsAPI.create_thread L2788-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
-  L2861-L2887; OpenAIAssistantsAPI.get_thread L2892-L2903; OpenAIAssistantsAPI.get_thread L2906-L2917; OpenAIAssistantsAPI.get_thread
-  L2921-L2958 belong to B520; reuse that implementation or its injected typed boundary.
 - 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
   port them.'
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
-  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3074-L3093; OpenAIAssistantsAPI.run_thread
-  L3096-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig.contains_pdf_url L233-L238; OpenAIGPTConfig._handle_pdf_url
-  L240-L248; OpenAIGPTConfig._async_handle_pdf_url L250-L257; OpenAIGPTConfig._common_file_data_check L259-L264;
-  OpenAIGPTConfig._apply_common_transform_content_item L266-L296; OpenAIGPTConfig._transform_content_item L298-L313;
-  OpenAIGPTConfig._async_transform_content_item L315-L329; OpenAIGPTConfig._transform_messages L334-L337; OpenAIGPTConfig._transform_messages
-  L340-L346; OpenAIGPTConfig._transform_messages L350-L382; OpenAIGPTConfig.remove_cache_control_flag_from_messages_and_tools
+- 'litellm/llms/openai/chat/gpt_5_transformation.py: other functions retain the owners recorded in B502 (model-family
+  transforms) or B024 and B515 (utils); this task owns only the named ranges.'
+- 'litellm/llms/openai/chat/o_series_transformation.py: other functions retain the owners recorded in B502 (model-family
+  transforms) or B024 and B515 (utils); this task owns only the named ranges.'
+- 'litellm/llms/openai/chat/gpt_audio_transformation.py: other functions retain the owners recorded in B502 (model-family
+  transforms) or B024 and B515 (utils); this task owns only the named ranges.'
+- 'litellm/utils.py: other functions retain the owners recorded in B502 (model-family transforms) or B024 and B515
+  (utils); this task owns only the named ranges.'
+- 'Function ownership inventory litellm/llms/azure/chat/gpt_5_transformation.py: AzureOpenAIGPT5Config._model_map_lookup_name
+  L22-L35; AzureOpenAIGPT5Config.get_supported_openai_params L41-L68; AzureOpenAIGPT5Config.map_openai_params L70-L122;
+  AzureOpenAIGPT5Config.transform_request L124-L139 belong to B532.'
+- 'Function ownership inventory litellm/llms/openai/chat/gpt_5_transformation.py: _catalogue_declares_default_effort
+  L18-L31; _normalize_reasoning_effort_for_chat_completion L34-L48; _get_effort_level L51-L64; OpenAIGPT5Config.is_model_gpt_5_search_model
+  L89-L99; OpenAIGPT5Config.is_model_gpt_5_codex_model L101-L104; OpenAIGPT5Config.is_model_gpt_5_2_model L106-L110;
+  OpenAIGPT5Config.is_model_gpt_5_4_model L112-L116; OpenAIGPT5Config._gpt_series_version L118-L123; OpenAIGPT5Config.is_model_gpt_5_4_plus_model
+  L125-L129; OpenAIGPT5Config.is_model_gpt_5_6_plus_model L131-L134; OpenAIGPT5Config.is_model_gpt_6_plus_model
+  L136-L139; OpenAIGPT5Config._model_map_lookup_name L141-L150; OpenAIGPT5Config._supports_reasoning_effort_level
+  L152-L164; OpenAIGPT5Config.effort_resolves_to_none L166-L193; OpenAIGPT5Config._is_reasoning_effort_level_explicitly_disabled
+  L195-L210; OpenAIGPT5Config.get_supported_openai_params L212-L253; OpenAIGPT5Config.map_openai_params L255-L367
+  belong to B502.'
+- 'Function ownership inventory litellm/llms/openai/chat/gpt_audio_transformation.py: OpenAIGPTAudioConfig.get_config
+  L19-L21; OpenAIGPTAudioConfig.get_supported_openai_params L23-L31; OpenAIGPTAudioConfig._map_openai_params L38-L50
+  belong to B502.'
+- 'Function ownership inventory litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig.contains_pdf_url
+  L233-L238; OpenAIGPTConfig._handle_pdf_url L240-L248; OpenAIGPTConfig._async_handle_pdf_url L250-L257; OpenAIGPTConfig._common_file_data_check
+  L259-L264; OpenAIGPTConfig._apply_common_transform_content_item L266-L296; OpenAIGPTConfig._transform_content_item
+  L298-L313; OpenAIGPTConfig._async_transform_content_item L315-L329; OpenAIGPTConfig._transform_messages L333-L337;
+  OpenAIGPTConfig._transform_messages L339-L346; OpenAIGPTConfig._transform_messages L350-L382; OpenAIGPTConfig.remove_cache_control_flag_from_messages_and_tools
   L384-L406; OpenAIGPTConfig._targets_openai_hosted_endpoint L408-L421; OpenAIGPTConfig._should_preserve_cache_control_for_endpoint
   L423-L436; OpenAIGPTConfig._sanitized_tools_update_for_openai L438-L465; OpenAIGPTConfig._prompt_cache_ordered_messages
   L467-L474; OpenAIGPTConfig.transform_request L476-L511; OpenAIGPTConfig.async_transform_request L513-L548 belong
-  to B503; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig._passed_in_tools L550-L551; OpenAIGPTConfig._check_and_fix_if_content_is_tool_call
-  L553-L580; OpenAIGPTConfig._get_finish_reason L582-L586; OpenAIGPTConfig._transform_choices L588-L659; OpenAIGPTConfig.transform_response
-  L661-L708; OpenAIGPTConfig.get_error_class L710-L715; OpenAIGPTConfig.get_complete_url L717-L743; OpenAIGPTConfig.validate_environment
-  L745-L762; OpenAIGPTConfig.get_models L764-L789; OpenAIGPTConfig.get_api_key L792-L793; OpenAIGPTConfig.get_api_base
-  L796-L803; OpenAIGPTConfig.get_base_model L806-L807; OpenAIGPTConfig.get_token_counter L809-L814; OpenAIGPTConfig.get_model_response_iterator
-  L816-L826; OpenAIChatCompletionStreamingHandler._map_reasoning_to_reasoning_content L838-L855; OpenAIChatCompletionStreamingHandler._extract_error_from_chunk
-  L858-L870; OpenAIChatCompletionStreamingHandler.chunk_parser L872-L898 belong to B504; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/common_utils.py: _get_client_init_params L39-L41; BaseOpenAILLM.get_cached_openai_client L212-L221;
-  BaseOpenAILLM.owns_wrapped_http_client L224-L236; BaseOpenAILLM.set_cached_openai_client L239-L259; BaseOpenAILLM.get_openai_client_cache_key
-  L262-L292; BaseOpenAILLM.get_openai_client_initialization_param_fields L295-L302; BaseOpenAILLM._get_async_http_client
-  L305-L330; BaseOpenAILLM._get_sync_http_client L333-L349 belong to B173; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/common_utils.py: drop_params_from_unprocessable_entity_error L89-L130; is_output_token_limit_error
-  L138-L145; _output_token_limit_completion L148-L162; _output_token_limit_chunk L165-L178; _iter_once L181-L182;
-  _aiter_once L185-L186; build_output_token_limit_response L189-L203 belong to B505; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/openai/common_utils.py: is_openai_backed_api_base L51-L53; get_openai_credentials L358-L377 belong
-  to B500; reuse that implementation or its injected typed boundary.
+  to B503.'
+- 'Function ownership inventory litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig._passed_in_tools
+  L550-L551; OpenAIGPTConfig._check_and_fix_if_content_is_tool_call L553-L580; OpenAIGPTConfig._get_finish_reason
+  L582-L586; OpenAIGPTConfig._transform_choices L588-L659; OpenAIGPTConfig.transform_response L661-L708; OpenAIGPTConfig.get_error_class
+  L710-L715; OpenAIGPTConfig.get_complete_url L717-L743; OpenAIGPTConfig.validate_environment L745-L762; OpenAIGPTConfig.get_models
+  L764-L789; OpenAIGPTConfig.get_api_key L791-L793; OpenAIGPTConfig.get_api_base L795-L803; OpenAIGPTConfig.get_base_model
+  L805-L807; OpenAIGPTConfig.get_token_counter L809-L814; OpenAIGPTConfig.get_model_response_iterator L816-L826;
+  OpenAIChatCompletionStreamingHandler._map_reasoning_to_reasoning_content L838-L855; OpenAIChatCompletionStreamingHandler._extract_error_from_chunk
+  L857-L870; OpenAIChatCompletionStreamingHandler.chunk_parser L872-L898 belong to B504.'
+- 'Function ownership inventory litellm/llms/openai/chat/o_series_transformation.py: OpenAIOSeriesConfig.get_config
+  L36-L38; OpenAIOSeriesConfig.translate_developer_role_to_system_role L40-L44; OpenAIOSeriesConfig.get_supported_openai_params
+  L46-L89; OpenAIOSeriesConfig.map_openai_params L91-L115; OpenAIOSeriesConfig._transform_messages L126-L129; OpenAIOSeriesConfig._transform_messages
+  L131-L137; OpenAIOSeriesConfig._transform_messages L139-L156 belong to B502.'
+- 'Function ownership inventory litellm/llms/openai/common_utils.py: _get_client_init_params L39-L41; BaseOpenAILLM.get_cached_openai_client
+  L211-L221; BaseOpenAILLM.owns_wrapped_http_client L223-L236; BaseOpenAILLM.set_cached_openai_client L238-L259;
+  BaseOpenAILLM.get_openai_client_cache_key L261-L292; BaseOpenAILLM.get_openai_client_initialization_param_fields
+  L294-L302; BaseOpenAILLM._get_async_http_client L304-L330; BaseOpenAILLM._get_sync_http_client L332-L349 belong
+  to B173.'
+- 'Function ownership inventory litellm/llms/openai/common_utils.py: is_openai_backed_api_base L51-L53; get_openai_credentials
+  L358-L377 belong to B500.'
+- 'Function ownership inventory litellm/llms/openai/common_utils.py: drop_params_from_unprocessable_entity_error
+  L89-L130; is_output_token_limit_error L138-L145; _output_token_limit_completion L148-L162; _output_token_limit_chunk
+  L165-L178; _iter_once L181-L182; _aiter_once L185-L186; build_output_token_limit_response L189-L203 belong to
+  B505.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
+  L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
+  L464-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L505-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
+  L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
+  L889-L1011 belong to B004.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
+  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356;
+  OpenAIChatCompletion.make_openai_embedding_request L1200-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request
+  L1217-L1232; OpenAIChatCompletion.aembedding L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to
+  B006.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config
+  L81-L98; MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params
+  L105-L109 belong to B036.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454;
+  OpenAIChatCompletion.image_generation L1456-L1554 belong to B511.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
+  L1620-L1666 belong to B514.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client
+  L1683-L1711; OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
+  L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
+  L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
+  L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
+  L1986-L2026 belong to B516.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client
+  L2041-L2069; OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
+  L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch L2157-L2164; OpenAIBatchesAPI.cancel_batch
+  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.__init__ L2251-L2252; OpenAIAssistantsAPI.get_openai_client
+  L2254-L2277; OpenAIAssistantsAPI.async_get_openai_client L2279-L2302; OpenAIAssistantsAPI.async_get_assistants
+  L2306-L2338; OpenAIAssistantsAPI.get_assistants L2342-L2353; OpenAIAssistantsAPI.get_assistants L2355-L2366; OpenAIAssistantsAPI.get_assistants
+  L2370-L2414; OpenAIAssistantsAPI.async_create_assistants L2417-L2438; OpenAIAssistantsAPI.create_assistants L2440-L2471;
+  OpenAIAssistantsAPI.async_delete_assistant L2474-L2495; OpenAIAssistantsAPI.delete_assistant L2497-L2528 belong
+  to B519.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
+  L2567-L2580; OpenAIAssistantsAPI.add_message L2582-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
+  L2644-L2665; OpenAIAssistantsAPI.get_messages L2669-L2681; OpenAIAssistantsAPI.get_messages L2683-L2695; OpenAIAssistantsAPI.get_messages
+  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2772-L2785;
+  OpenAIAssistantsAPI.create_thread L2787-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
+  L2861-L2887; OpenAIAssistantsAPI.get_thread L2891-L2903; OpenAIAssistantsAPI.get_thread L2905-L2917; OpenAIAssistantsAPI.get_thread
+  L2921-L2958 belong to B520.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
+  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3073-L3093; OpenAIAssistantsAPI.run_thread
+  L3095-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
+  no caller at the pin; do not implement or add cases.'
+- 'Function ownership inventory litellm/utils.py: get_requester_metadata L10327-L10341 belong to B024.'
+- 'Function ownership inventory litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class
+  L117-L126; _snapshot_exception_for_hook L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response
+  L168-L179; _get_cached_llm_caching_handler L182-L193; _get_cached_audio_utils L201-L212; custom_llm_setup L572-L581;
+  _add_custom_logger_callback_to_specific_event L584-L621; _custom_logger_class_exists_in_success_callbacks L624-L639;
+  _custom_logger_class_exists_in_failure_callbacks L642-L657; _is_same_registered_custom_logger L660-L668; get_request_guardrails
+  L671-L678; get_applied_guardrails L681-L696; load_credentials_from_list L699-L719; get_dynamic_callbacks L722-L728;
+  _is_gemini_model L731-L742; _remove_thought_signature_from_id L745-L751; _process_assistant_message_tool_calls
+  L754-L782; _process_tool_message_id L785-L795; _remove_thought_signatures_from_messages L798-L823; _restore_correlation_context_if_supported
+  L826-L838; _is_streaming_response_for_correlation L841-L873; _is_converted_stream_result L876-L880; _run_success_deployment_hook_on_converted_chat_stream
+  L883-L906; _NamedFile.name L911-L912; _LoggingClassGetter.__call__ L916-L916; _ResponseMetadataUpdater.__call__
+  L920-L929; _SupportedOpenAIParamsGetter.__call__ L933-L939; _NestedPathChecker.__call__ L943-L943; _NestedValueDeleter.__call__
+  L947-L947; _BaseModelFromMetadataGetter.__call__ L951-L951; _ocr_document_summary L954-L971; function_setup L981-L1344;
+  _dispatch_success_logging L1347-L1368; _schedule_async_success_logging L1371-L1408; _client_async_logging_helper
+  L1411-L1431; _get_wrapper_num_retries L1434-L1456; _get_wrapper_timeout L1459-L1467; check_coroutine L1470-L1472;
+  async_pre_call_deployment_hook L1475-L1495; async_post_call_success_deployment_hook L1498-L1531; async_post_call_failure_deployment_hook
+  L1534-L1584; post_call_processing L1587-L1671; client L1674-L2315; _is_async_request L2318-L2348; _is_streaming_request
+  L2361-L2373; _select_tokenizer L2376-L2384; _huggingface_tokenizer_backend L2387-L2392; _select_custom_tokenizer_helper
+  L2395-L2400; _select_tokenizer_helper L2403-L2419; _return_openai_tokenizer L2422-L2423; uses_anthropic_tokenizer
+  L2426-L2427; huggingface_tokenizer_kind L2433-L2443; _return_huggingface_tokenizer L2446-L2453; _load_huggingface_tokenizer
+  L2456-L2469; supports_httpx_timeout L2589-L2598; supports_web_search L2622-L2640; supports_url_context L2643-L2661;
+  supports_audio_input L2941-L2943; supports_pdf_input L2946-L2948; supports_audio_output L2951-L2953; supports_prompt_cache_breakpoint
+  L2977-L2982; supports_thinking_cache_preservation L2985-L2990; supports_computer_use L2993-L3011; is_vision_explicitly_disabled
+  L3014-L3020; supports_vision L3023-L3038; supports_anthropic_thinking_payload L3048-L3051; get_supported_regions
+  L3081-L3121; supports_embedding_image_input L3124-L3132; _update_dictionary L3136-L3151; _convert_stringified_numbers
+  L3154-L3167; _resolve_builtin_model_cost_entry L3190-L3221; is_generalized_model_info L3224-L3235; _get_builtin_model_info_for_registration
+  L3238-L3250; set_live_deployment_replay L3266-L3274; reapply_runtime_model_cost_registrations L3277-L3298; cost_map_omits_token_price
+  L3301-L3314; register_model L3317-L3479; _should_drop_param L3482-L3486; _bedrock_route_for_request L3489-L3494;
+  _get_non_default_params L3497-L3507; get_optional_params_transcription L3510-L3597; _map_openai_size_to_vertex_ai_aspect_ratio
+  L3600-L3614; get_optional_params_image_gen L3617-L3744; get_optional_params_embeddings L3747-L4101; _remove_additional_properties
+  L4104-L4124; _remove_strict_from_schema L4127-L4145; _remove_json_schema_refs L4148-L4178; _remove_unsupported_params
+  L4181-L4193; filter_out_litellm_params L4196-L4199; _provider_supports_vertex_params L4202-L4210; PreProcessNonDefaultParams.base_pre_process_non_default_params
+  L4214-L4257; PreProcessNonDefaultParams.embedding_pre_process_non_default_params L4259-L4278; pre_process_non_default_params
+  L4281-L4339; remove_sensitive_keys_from_dict L4342-L4353; pre_process_optional_params L4356-L4431; add_provider_specific_params_to_optional_params
+  L5049-L5087; _apply_openai_param_overrides L5090-L5110; provider_rejectable_params L5116-L5126; get_non_default_params
+  L5129-L5142; calculate_max_parallel_requests L5145-L5185; _get_deployment_order L5188-L5198; get_order_filtered_deployments
+  L5201-L5217; get_excluded_filtered_deployments L5220-L5242; _get_model_region L5245-L5267; _infer_model_region
+  L5270-L5310; _is_region_eu L5313-L5324; _is_region_us L5327-L5338; is_region_allowed L5341-L5347; get_model_region
+  L5350-L5371; get_first_chars_messages L5374-L5380; _count_characters L5383-L5386; get_response_string L5389-L5432;
+  get_utc_datetime L5435-L5436; json_schema_type L6504-L6527; load_test_model L6625-L6665; get_provider_fields L6668-L6681;
+  create_proxy_transport_and_mounts L6684-L6706; validate_environment L6709-L7128; acreate L7131-L7132; valid_model
+  L7135-L7144; check_valid_key L7147-L7165; _should_retry L7168-L7194; _get_retry_after_from_exception_header L7197-L7228;
+  _calculate_retry_after L7231-L7254; register_prompt_template L7258-L7322; TextCompletionStreamWrapper.__init__
+  L7326-L7336; TextCompletionStreamWrapper.__iter__ L7338-L7339; TextCompletionStreamWrapper.__aiter__ L7341-L7342;
+  TextCompletionStreamWrapper.convert_to_text_completion_object L7344-L7367; TextCompletionStreamWrapper.__next__
+  L7369-L7389; TextCompletionStreamWrapper.__anext__ L7391-L7400; mock_stream_usage_chunk L7403-L7413; mock_completion_streaming_obj
+  L7416-L7443; async_mock_completion_streaming_obj L7446-L7473; read_config_args L7477-L7488; process_system_message
+  L7494-L7504; process_messages L7507-L7531; attempt_message_addition L7534-L7551; can_add_message L7554-L7557;
+  get_token_count L7560-L7561; shorten_message_to_fit_limit L7564-L7614; trim_messages L7620-L7718; AvailableModelsCache.__init__
+  L7725-L7727; AvailableModelsCache._get_env_hash L7729-L7732; AvailableModelsCache._check_env_changed L7734-L7740;
+  AvailableModelsCache._get_cache_key L7742-L7753; AvailableModelsCache.get_cached_model_info L7755-L7772; AvailableModelsCache.set_cached_model_info
+  L7774-L7782; _infer_valid_provider_from_env_vars L7789-L7810; _get_valid_models_from_provider_api L7813-L7832;
+  get_valid_models L7835-L7906; print_args_passed_to_litellm L7909-L7949; get_logging_id L7952-L7957; _get_base_model_from_metadata
+  L7960-L7983; ModelResponseIterator.__init__ L7987-L7994; ModelResponseIterator.__iter__ L7997-L7998; ModelResponseIterator.__next__
+  L8000-L8004; ModelResponseIterator.__aiter__ L8007-L8008; ModelResponseIterator.__anext__ L8010-L8014; ModelResponseListIterator.__init__
+  L8018-L8021; ModelResponseListIterator.__iter__ L8024-L8025; ModelResponseListIterator.__next__ L8027-L8034; ModelResponseListIterator.__aiter__
+  L8037-L8038; ModelResponseListIterator.__anext__ L8040-L8047; CustomModelResponseIterator.__init__ L8051-L8052;
+  is_cached_message L8055-L8101; convert_to_dict L8228-L8243; convert_list_message_to_dict L8246-L8252; validate_and_fix_openai_messages
+  L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param L8289-L8311; cleanup_none_field_in_message
+  L8314-L8321; validate_chat_completion_user_messages L8324-L8362; validate_chat_completion_tool_choice L8365-L8396;
+  validate_openai_optional_params L8399-L8415; _get_model_cost_entry_for_provider_config L8427-L8442; ProviderConfigManager.get_provider_embedding_config
+  L8767-L8858; ProviderConfigManager.get_provider_rerank_config L8860-L8908; ProviderConfigManager.get_provider_decisions_config
+  L8910-L8928; ProviderConfigManager.get_provider_anthropic_messages_config L8930-L8935; ProviderConfigManager._get_provider_anthropic_messages_config_cached
+  L8937-L9010; ProviderConfigManager.get_provider_audio_transcription_config L9012-L9110; ProviderConfigManager.get_provider_responses_api_config
+  L9112-L9148; ProviderConfigManager._get_python_responses_api_config L9150-L9243; ProviderConfigManager.get_provider_skills_api_config
+  L9245-L9260; ProviderConfigManager.get_provider_evals_api_config L9262-L9279; ProviderConfigManager.get_provider_passthrough_config
+  L9344-L9397; ProviderConfigManager.get_provider_files_config L9410-L9445; ProviderConfigManager.get_provider_batches_config
+  L9447-L9460; ProviderConfigManager.get_provider_vector_store_config L9462-L9472; ProviderConfigManager.get_provider_vector_stores_config
+  L9474-L9561; ProviderConfigManager.get_provider_vector_store_files_config L9563-L9573; ProviderConfigManager.get_provider_image_generation_config
+  L9575-L9688; ProviderConfigManager.get_provider_video_config L9690-L9725; ProviderConfigManager.get_provider_container_config
+  L9727-L9743; ProviderConfigManager.get_provider_realtime_config L9745-L9758; ProviderConfigManager.get_provider_realtime_http_config
+  L9760-L9782; ProviderConfigManager.get_provider_image_edit_config L9784-L9857; ProviderConfigManager.get_provider_search_config
+  L9859-L9916; ProviderConfigManager.get_provider_sandbox_config L9918-L9934; ProviderConfigManager.get_provider_harness_config
+  L9936-L9965; ProviderConfigManager.get_provider_text_to_speech_config L9967-L10033; ProviderConfigManager.get_provider_google_genai_generate_content_config
+  L10035-L10067; get_end_user_id_for_cost_tracking L10070-L10096; should_use_cohere_v1_client L10099-L10105; get_prompt_cache_min_tokens
+  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; get_standard_openai_params L10235-L10236; get_non_default_completion_params
+  L10239-L10240; peek_reasoning_summary_aliases L10243-L10258; strip_reasoning_summary_aliases_from_optional_params
+  L10261-L10283; get_non_default_transcription_params L10286-L10289; return_raw_request L10344-L10389; jsonify_tools
+  L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion L10417-L10424; __getattr__ L10427-L10439
+  belong to B157.'
+- 'Function ownership inventory litellm/utils.py: get_optional_params L4434-L5043 belong to B175.'
+- 'Function ownership inventory litellm/utils.py: function_to_dict L6530-L6616 belong to B178.'
+- 'Function ownership inventory litellm/utils.py: is_base64_encoded L8104-L8120; get_base64_str L8123-L8129 belong
+  to B183.'
+- 'Function ownership inventory litellm/utils.py: _get_bundled_model_cost_map L8418-L8424 belong to B193.'
+- 'Function ownership inventory litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer
+  L2518-L2532; create_tokenizer L2535-L2547 belong to B195.'
+- 'Function ownership inventory litellm/utils.py: token_counter L2550-L2586 belong to B196.'
+- 'Function ownership inventory litellm/utils.py: get_max_tokens L5439-L5498 belong to B205.'
+- 'Function ownership inventory litellm/utils.py: has_tool_call_blocks L8132-L8141; any_assistant_message_has_thinking_blocks
+  L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks L8165-L8194; add_dummy_tool L8197-L8215 belong
+  to B2202.'
+- 'Function ownership inventory litellm/utils.py: _strip_stable_vertex_version L5501-L5502; _strip_dated_snapshot_suffix
+  L5508-L5509; _get_base_bedrock_model L5512-L5521; _strip_openai_finetune_model_name L5524-L5540; _strip_model_name
+  L5543-L5559; get_model_cost_mutation_generation L5572-L5573; _invalidate_model_cost_lowercase_map L5576-L5588;
+  _rebuild_model_cost_lowercase_map L5591-L5599; _handle_stale_map_entry_rebuild L5602-L5618; _get_model_cost_key
+  L5640-L5678; _get_model_info_from_model_cost L5681-L5682; _check_provider_match L5685-L5727; _is_potential_model_name_in_model_cost
+  L5906-L5915 belong to B2217.'
+- 'Function ownership inventory litellm/utils.py: _get_model_info_helper (L6111-L6372) belong to B2218.'
+- 'Function ownership inventory litellm/utils.py: _get_model_info_from_generalization L5742-L5777; _strip_mantle_region_prefix
+  L5780-L5783; _get_potential_model_names L5786-L5844; _get_max_position_embeddings L5847-L5867; _model_not_mapped_message
+  L5921-L5925; _get_model_info_helper (L5928-L6110, L6373-L6377) belong to B2219.'
+- 'Function ownership inventory litellm/utils.py: get_provider_info L5888-L5903; ProviderConfigManager.get_provider_model_info
+  L9294-L9342 belong to B2220.'
+- 'Function ownership inventory litellm/utils.py: supports_system_messages L2601-L2619; supports_native_streaming
+  L2664-L2695; supports_response_schema L2698-L2739; supports_parallel_function_calling L2742-L2750; supports_function_calling
+  L2753-L2771; supports_tool_choice L2774-L2778; _supports_provider_info_factory L2781-L2790; _supports_factory
+  L2793-L2852; declared_value_factory L2855-L2892; is_explicitly_disabled_factory L2895-L2938; supports_prompt_caching
+  L2956-L2974; supports_reasoning L3041-L3045; supports_none_reasoning_effort L3054-L3058; supports_mid_conversation_system
+  L3061-L3067; supports_native_structured_output L3070-L3078 belong to B2221.'
+- 'Function ownership inventory litellm/utils.py: _cached_get_model_info_helper L5870-L5885; _build_model_info L6380-L6404;
+  _cached_get_model_info L6407-L6413; get_model_info L6416-L6497 belong to B2225.'
+- 'Function ownership inventory litellm/utils.py: ProviderConfigManager._build_provider_config_map L8451-L8625;
+  ProviderConfigManager._get_azure_config L8627-L8642; ProviderConfigManager._get_azure_ai_config L8644-L8649; ProviderConfigManager._get_vertex_ai_config
+  L8651-L8671; ProviderConfigManager._get_bedrock_config L8673-L8678; ProviderConfigManager._get_cohere_config L8680-L8687;
+  ProviderConfigManager._get_sail_chat_config L8689-L8693; ProviderConfigManager._get_langgraph_config L8695-L8700;
+  ProviderConfigManager._get_langflow_config L8702-L8707; ProviderConfigManager.get_provider_chat_config L8709-L8765;
+  ProviderConfigManager.get_provider_image_variation_config L9399-L9408 belong to B2230.'
+- 'Function ownership inventory litellm/utils.py: ProviderConfigManager.get_provider_text_completion_config L9281-L9292
+  belong to B2237.'
+- 'Function ownership inventory litellm/utils.py: print_verbose L544-L559; _print_verbose_is_active L562-L567 belong
+  to B2239.'
+- 'Function ownership inventory litellm/utils.py: extract_duration_from_srt_or_vtt L10168-L10194 belong to B515.'
+- 'Function ownership inventory litellm/utils.py: modify_url L6619-L6622 belong to B535.'
+- 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
+  do not implement or add cases.'
 pitfalls:
-- Family selection returns a tag before any family mapper runs, avoiding a base-config dependency on its subclasses.
+- The catalog predicate splits on the first responses/ occurrence anywhere in the name, whereas the o-series predicate
+  splits on the last slash.
+- OpenAIUnknownModelConfig selection uses type(self) is OpenAIConfig, so inheritance alone must not grant reasoning_effort.
+- Authorization merging is case-sensitive at this Python seam; normalizing header names before applying the caller
+  overlay changes the oracle result.
+- Metadata filtering happens before the 16-key cutoff, so hidden_params and non-string values must not consume slots.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 775
   max_new_expects: 0
-review_level: standard
+review_level: security

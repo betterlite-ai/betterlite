@@ -17,6 +17,44 @@ description: >-
   that prerequisite.
 
 
+  Named case contracts: incremental_sse_stream: Run every protocol case against both sync and async wrappers. Buffer
+  arbitrary text reads until newline; strip each complete line and require data:. Ignore blank/nondata/empty data
+  and valid nondict JSON. Parse each remaining line independently; event must be dict. Truthy contentBlockDelta.delta.text
+  emits one assistant content delta,finish_reason=None,index0; no text validation beyond source typed constructor.
+  nonstream_json_fake_stream: Require HTTP status exactly200 before inspecting lowercased content-type. If it contains
+  application/json, read the entire body and parse strict JSON, then B654 _parse_json_response. Emit exactly TWO
+  chunks: assistant content (even empty),finish_reason=None, then empty Delta with finish_reason stop. Do not attach
+  usage, calculate tokens or honor arbitrary custom_llm_provider; wrap with B005 CustomStreamWrapper provider bedrock.
+  Run B654 JSON/A2A/raw fallback cases here. stream_usage: Within one dict event emit text first, then metadata
+  usage when metadata truthy and usage KEY exists. Empty {} usage still emits a stop chunk with all counts0; None/wrong
+  type fails rather than skipping. Usage inputTokens/outputTokens/totalTokens each default0 independently. A top-level
+  dict message then emits another stop chunk; one line can emit content,usage-stop,message-stop in that order. stream_terminal_event:
+  Any top-level message dict, even empty, emits an empty stop delta without its content. This does not terminate
+  parsing: later lines continue. [DONE] is invalid JSON and skipped, and EOF adds no stop sentinel. Repeated metadata/message
+  events may emit repeated stops; only B005 outer stream normalization owns subsequent policy. multiline_data_not_joined:
+  Consecutive data: lines parse separately even within one SSE event; do not join them with newline. CRLF is handled
+  by line.strip, and leading whitespace before data: is accepted. Split inside JSON text chunks is buffered until
+  newline. bad_json_skipped: JSON syntax failures alone debug Skipping non-JSON SSE line: {first100chars} and skip.
+  Type/attribute/Usage validation errors propagate through the stream, and are not caught by this JSONDecodeError
+  branch. fresh_id_created_zero: Every emitted content,usage and stop chunk independently calls UUID4 and uses id
+  chatcmpl-{uuid},created0,model=supplied model,object chat.completion.chunk,index0. Fix UUID sequence in oracle;
+  never reuse one completion id across the underlying adapter emissions. unterminated_line: Discard residual buffer
+  at EOF even if it contains complete valid JSON after data:. Empty stream yields no chunks. This deliberately differs
+  from buffered B654 response parsing. stream_http_request: Use supplied correct-kind HTTPHandler/AsyncHTTPHandler
+  or B173 shared default client(params={}, async provider BEDROCK). POST api_base with caller headers,data=truthy
+  signed_json_body else json.dumps(data),stream=True,logging_obj; empty signed bytes take JSON fallback. No explicit
+  timeout passed. post_call via B249 uses input messages,api_key empty,original_response first stream response received,complete_input_dict
+  data only after status200. stream_http_errors: Non200 raises B682 with raw status,headers,response and message
+  Python str(response.read/aread bytes), not decoded body text. JSON response read/parse failure -> BedrockError
+  raw status/headers and AgentCore: Failed to read/parse JSON response body: {error}. The subsequent B654 projection
+  is outside that catch; projection errors propagate directly.
+
+
+  Cancellation has no explicit branch in the owned LiteLLM methods. Add standalone Rust test agentcore_stream_releases_transport_on_drop
+  using a captured upstream stream and B173 transport ownership; keep this resource invariant out of Python differential
+  cases.
+
+
   Implement crates/betterlite-bedrock/src/agentcore_stream.rs with adjacent tests under agentcore_stream/. Keep
   each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -31,11 +69,10 @@ description: >-
 
 
   Write rstest function agentcore_stream_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): incremental_sse_stream, first_event_inspection, nonstream_json_fake_stream, stream_usage, stream_terminal_event,
-  upstream_cancel, multiline_data_not_joined, bad_json_skipped, fresh_id_created_zero, unterminated_line. Each case
-  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use
-  the booted proxy and assert both client response and captured upstream request. Existing API tasks retain route
-  registration; this task must not register a duplicate axum route.
+  file): incremental_sse_stream, nonstream_json_fake_stream, stream_usage, stream_terminal_event, multiline_data_not_joined,
+  bad_json_skipped, fresh_id_created_zero, unterminated_line, stream_http_request, stream_http_errors. Each case
+  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API
+  tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream* using HelperCase:
@@ -54,9 +91,9 @@ description: >-
 
 
   Budget from 378 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 395 production lines, 135 behavior/config-test lines,
-  95 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 705 planned, 725 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 280 production lines, 295 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 770 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -78,65 +115,66 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L531-L971
-  why: >-
-    Own AmazonAgentCoreConfig._stream_agentcore_response_sync, AmazonAgentCoreConfig.get_sync_custom_stream_wrapper,
+  why: Own AmazonAgentCoreConfig._stream_agentcore_response_sync, AmazonAgentCoreConfig.get_sync_custom_stream_wrapper,
     AmazonAgentCoreConfig._stream_agentcore_response, AmazonAgentCoreConfig.get_async_custom_stream_wrapper. Other
     functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    incremental sse stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/incremental-sse-stream.yaml.
+- text: 'incremental_sse_stream: Run every protocol case against both sync and async wrappers. Buffer arbitrary
+    text reads until newline; strip each complete line and require data:. Ignore blank/nondata/empty data and valid
+    nondict JSON. Parse each remaining line independently; event must be dict. Truthy contentBlockDelta.delta.text
+    emits one assistant content delta,finish_reason=None,index0; no text validation beyond source typed constructor.'
   proof:
   - case-incremental-sse-stream
   - oracle
   - helper-python
-- text: >-
-    first event inspection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/first-event-inspection.yaml.
-  proof:
-  - case-first-event-inspection
-  - oracle
-  - helper-python
-- text: >-
-    nonstream json fake stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/nonstream-json-fake-stream.yaml.
+- text: 'nonstream_json_fake_stream: Require HTTP status exactly200 before inspecting lowercased content-type. If
+    it contains application/json, read the entire body and parse strict JSON, then B654 _parse_json_response. Emit
+    exactly TWO chunks: assistant content (even empty),finish_reason=None, then empty Delta with finish_reason stop.
+    Do not attach usage, calculate tokens or honor arbitrary custom_llm_provider; wrap with B005 CustomStreamWrapper
+    provider bedrock. Run B654 JSON/A2A/raw fallback cases here.'
   proof:
   - case-nonstream-json-fake-stream
   - oracle
   - helper-python
-- text: 'stream usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-usage.yaml.'
+- text: 'stream_usage: Within one dict event emit text first, then metadata usage when metadata truthy and usage
+    KEY exists. Empty {} usage still emits a stop chunk with all counts0; None/wrong type fails rather than skipping.
+    Usage inputTokens/outputTokens/totalTokens each default0 independently. A top-level dict message then emits
+    another stop chunk; one line can emit content,usage-stop,message-stop in that order.'
   proof:
   - case-stream-usage
   - oracle
   - helper-python
-- text: >-
-    stream terminal event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-terminal-event.yaml.
+- text: 'stream_terminal_event: Any top-level message dict, even empty, emits an empty stop delta without its content.
+    This does not terminate parsing: later lines continue. [DONE] is invalid JSON and skipped, and EOF adds no stop
+    sentinel. Repeated metadata/message events may emit repeated stops; only B005 outer stream normalization owns
+    subsequent policy.'
   proof:
   - case-stream-terminal-event
   - oracle
   - helper-python
-- text: 'upstream cancel: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/upstream-cancel.yaml.'
-  proof:
-  - case-upstream-cancel
-  - oracle
-  - helper-python
-- text: >-
-    multiline data not joined: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/multiline-data-not-joined.yaml.
+- text: 'multiline_data_not_joined: Consecutive data: lines parse separately even within one SSE event; do not join
+    them with newline. CRLF is handled by line.strip, and leading whitespace before data: is accepted. Split inside
+    JSON text chunks is buffered until newline.'
   proof:
   - case-multiline-data-not-joined
   - oracle
   - helper-python
-- text: >-
-    bad json skipped: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/bad-json-skipped.yaml.
+- text: 'bad_json_skipped: JSON syntax failures alone debug Skipping non-JSON SSE line: {first100chars} and skip.
+    Type/attribute/Usage validation errors propagate through the stream, and are not caught by this JSONDecodeError
+    branch.'
   proof:
   - case-bad-json-skipped
   - oracle
   - helper-python
-- text: >-
-    fresh id created zero: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/fresh-id-created-zero.yaml.
+- text: 'fresh_id_created_zero: Every emitted content,usage and stop chunk independently calls UUID4 and uses id
+    chatcmpl-{uuid},created0,model=supplied model,object chat.completion.chunk,index0. Fix UUID sequence in oracle;
+    never reuse one completion id across the underlying adapter emissions.'
   proof:
   - case-fresh-id-created-zero
   - oracle
   - helper-python
-- text: >-
-    unterminated line: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/unterminated-line.yaml.
+- text: 'unterminated_line: Discard residual buffer at EOF even if it contains complete valid JSON after data:.
+    Empty stream yields no chunks. This deliberately differs from buffered B654 response parsing.'
   proof:
   - case-unterminated-line
   - oracle
@@ -148,95 +186,143 @@ dod:
 - text: decode_agentcore_line has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'stream_http_request: Use supplied correct-kind HTTPHandler/AsyncHTTPHandler or B173 shared default client(params={},
+    async provider BEDROCK). POST api_base with caller headers,data=truthy signed_json_body else json.dumps(data),stream=True,logging_obj;
+    empty signed bytes take JSON fallback. No explicit timeout passed. post_call via B249 uses input messages,api_key
+    empty,original_response first stream response received,complete_input_dict data only after status200.'
+  proof:
+  - case-stream-http-request
+  - oracle
+  - helper-python
+- text: 'stream_http_errors: Non200 raises B682 with raw status,headers,response and message Python str(response.read/aread
+    bytes), not decoded body text. JSON response read/parse failure -> BedrockError raw status/headers and AgentCore:
+    Failed to read/parse JSON response body: {error}. The subsequent B654 projection is outside that catch; projection
+    errors propagate directly.'
+  proof:
+  - case-stream-http-errors
+  - oracle
+  - helper-python
+- text: Dropping the stream releases its transport owner without reading another frame.
+  proof:
+  - stream-drop
 checks:
   optional:
   - mutants
   commands:
   - id: case-incremental-sse-stream
-    why: The incremental-sse-stream behavior is missing or differs from its pinned fixture.
+    why: Run every protocol case against both sync and async wrappers. Buffer arbitrary text reads until newline;
+      strip each complete line and require data:. Ignore blank/nondata/empty data and valid nondict JSON. Parse
+      each remaining line independently; event must be dict. Truthy contentBlockDelta.delta.text emits one assistant
+      content delta,finish_reason=None,index0; no text validation beyond source typed constructor.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_incremental_sse_stream$/)'
-  - id: case-first-event-inspection
-    why: The first-event-inspection behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_first_event_inspection$/)'
   - id: case-nonstream-json-fake-stream
-    why: The nonstream-json-fake-stream behavior is missing or differs from its pinned fixture.
+    why: 'Require HTTP status exactly200 before inspecting lowercased content-type. If it contains application/json,
+      read the entire body and parse strict JSON, then B654 _parse_json_response. Emit exactly TWO chunks: assistant
+      content (even empty),finish_reason=None, then empty Delta with finish_reason stop. Do not attach usage, calculate
+      tokens or honor arbitrary custom_llm_provider; wrap with B005 CustomStreamWrapper provider bedrock. Run B654
+      JSON/A2A/raw fallback cases here.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_nonstream_json_fake_stream$/)'
   - id: case-stream-usage
-    why: The stream-usage behavior is missing or differs from its pinned fixture.
+    why: Within one dict event emit text first, then metadata usage when metadata truthy and usage KEY exists. Empty
+      {} usage still emits a stop chunk with all counts0; None/wrong type fails rather than skipping. Usage inputTokens/outputTokens/totalTokens
+      each default0 independently. A top-level dict message then emits another stop chunk; one line can emit content,usage-stop,message-stop
+      in that order.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_stream_usage$/)'
   - id: case-stream-terminal-event
-    why: The stream-terminal-event behavior is missing or differs from its pinned fixture.
+    why: 'Any top-level message dict, even empty, emits an empty stop delta without its content. This does not terminate
+      parsing: later lines continue. [DONE] is invalid JSON and skipped, and EOF adds no stop sentinel. Repeated
+      metadata/message events may emit repeated stops; only B005 outer stream normalization owns subsequent policy.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_stream_terminal_event$/)'
-  - id: case-upstream-cancel
-    why: The upstream-cancel behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_upstream_cancel$/)'
   - id: case-multiline-data-not-joined
-    why: The multiline-data-not-joined behavior is missing or differs from its pinned fixture.
+    why: 'Consecutive data: lines parse separately even within one SSE event; do not join them with newline. CRLF
+      is handled by line.strip, and leading whitespace before data: is accepted. Split inside JSON text chunks is
+      buffered until newline.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_multiline_data_not_joined$/)'
   - id: case-bad-json-skipped
-    why: The bad-json-skipped behavior is missing or differs from its pinned fixture.
+    why: 'JSON syntax failures alone debug Skipping non-JSON SSE line: {first100chars} and skip. Type/attribute/Usage
+      validation errors propagate through the stream, and are not caught by this JSONDecodeError branch.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_bad_json_skipped$/)'
   - id: case-fresh-id-created-zero
-    why: The fresh-id-created-zero behavior is missing or differs from its pinned fixture.
+    why: Every emitted content,usage and stop chunk independently calls UUID4 and uses id chatcmpl-{uuid},created0,model=supplied
+      model,object chat.completion.chunk,index0. Fix UUID sequence in oracle; never reuse one completion id across
+      the underlying adapter emissions.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_fresh_id_created_zero$/)'
   - id: case-unterminated-line
-    why: The unterminated-line behavior is missing or differs from its pinned fixture.
+    why: Discard residual buffer at EOF even if it contains complete valid JSON after data:. Empty stream yields
+      no chunks. This deliberately differs from buffered B654 response parsing.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_unterminated_line$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_agentcore_stream.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_agentcore_stream.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream*")"
       && grep -lq 'bedrock_services_agentcore_stream' tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_stream*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_agentcore_stream$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_stream)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_stream)"
       && grep -q 'decode_agentcore_line' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_agentcore_stream.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_agentcore_stream_corpus$/)'
+  - id: case-stream-http-request
+    why: Use supplied correct-kind HTTPHandler/AsyncHTTPHandler or B173 shared default client(params={}, async provider
+      BEDROCK). POST api_base with caller headers,data=truthy signed_json_body else json.dumps(data),stream=True,logging_obj;
+      empty signed bytes take JSON fallback. No explicit timeout passed. post_call via B249 uses input messages,api_key
+      empty,original_response first stream response received,complete_input_dict data only after status200.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_stream_http_request$/)'
+  - id: case-stream-http-errors
+    why: 'Non200 raises B682 with raw status,headers,response and message Python str(response.read/aread bytes),
+      not decoded body text. JSON response read/parse failure -> BedrockError raw status/headers and AgentCore:
+      Failed to read/parse JSON response body: {error}. The subsequent B654 projection is outside that catch; projection
+      errors propagate directly.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_cases::case_[0-9]+_stream_http_errors$/)'
+  - id: stream-drop
+    why: Stream ownership leaks an upstream connection on cancellation.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_stream_releases_transport_on_drop$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/incremental-sse-stream.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/first-event-inspection.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/nonstream-json-fake-stream.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-usage.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-terminal-event.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/upstream-cancel.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/multiline-data-not-joined.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/bad-json-skipped.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/fresh-id-created-zero.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/unterminated-line.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-http-request.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-stream/stream-http-errors.yaml
+deviations:
+- what: Invalid SSE debug records omit the raw first100 characters while retaining the skip category.
+  why: Repository redaction rules prohibit logging user/provider content from malformed lines.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L630-L632
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._extract_sse_json L294-L309; AmazonAgentCoreConfig._extract_usage_from_event
-  L311-L321; AmazonAgentCoreConfig._extract_content_delta L323-L334; AmazonAgentCoreConfig._extract_content_from_message
-  L336-L345; AmazonAgentCoreConfig._calculate_usage L347-L380; AmazonAgentCoreConfig._parse_json_response L382-L453;
-  AmazonAgentCoreConfig._get_parsed_response L455-L480; AmazonAgentCoreConfig._parse_sse_stream L482-L529; AmazonAgentCoreConfig.transform_response
-  L986-L1051 belong to B654; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig.__init__ L55-L57; AmazonAgentCoreConfig.get_supported_openai_params
-  L59-L63; AmazonAgentCoreConfig.map_openai_params L65-L75; AmazonAgentCoreConfig.get_complete_url L77-L114; AmazonAgentCoreConfig.sign_request
-  L116-L156; AmazonAgentCoreConfig._get_agent_runtime_arn L158-L169; AmazonAgentCoreConfig._extract_region_from_arn
-  L171-L180; AmazonAgentCoreConfig._get_runtime_session_id L182-L194; AmazonAgentCoreConfig._get_runtime_user_id
-  L196-L203; AmazonAgentCoreConfig.transform_request L205-L271; AmazonAgentCoreConfig._should_forward_multimodal_content
-  L274-L292; AmazonAgentCoreConfig.has_custom_stream_wrapper L974-L976; AmazonAgentCoreConfig.supports_stream_param_in_request_body
-  L979-L984; AmazonAgentCoreConfig.validate_environment L1053-L1063; AmazonAgentCoreConfig.get_error_class L1065-L1066;
-  AmazonAgentCoreConfig.should_fake_stream L1068-L1075 belong to B653; reuse that implementation or its injected
-  typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig.__init__
+  L55-L57; AmazonAgentCoreConfig.get_supported_openai_params L59-L63; AmazonAgentCoreConfig.map_openai_params L65-L75;
+  AmazonAgentCoreConfig.get_complete_url L77-L114; AmazonAgentCoreConfig.sign_request L116-L156; AmazonAgentCoreConfig._get_agent_runtime_arn
+  L158-L169; AmazonAgentCoreConfig._extract_region_from_arn L171-L180; AmazonAgentCoreConfig._get_runtime_session_id
+  L182-L194; AmazonAgentCoreConfig._get_runtime_user_id L196-L203; AmazonAgentCoreConfig.transform_request L205-L271;
+  AmazonAgentCoreConfig._should_forward_multimodal_content L273-L292; AmazonAgentCoreConfig.has_custom_stream_wrapper
+  L973-L976; AmazonAgentCoreConfig.supports_stream_param_in_request_body L978-L984; AmazonAgentCoreConfig.validate_environment
+  L1053-L1063; AmazonAgentCoreConfig.get_error_class L1065-L1066; AmazonAgentCoreConfig.should_fake_stream L1068-L1075
+  belong to B653.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._extract_sse_json
+  L294-L309; AmazonAgentCoreConfig._extract_usage_from_event L311-L321; AmazonAgentCoreConfig._extract_content_delta
+  L323-L334; AmazonAgentCoreConfig._extract_content_from_message L336-L345; AmazonAgentCoreConfig._calculate_usage
+  L347-L380; AmazonAgentCoreConfig._parse_json_response L382-L453; AmazonAgentCoreConfig._get_parsed_response L455-L480;
+  AmazonAgentCoreConfig._parse_sse_stream L482-L529; AmazonAgentCoreConfig.transform_response L986-L1051 belong
+  to B654.'
 pitfalls:
-- AgentCore data lines are parsed separately; standard SSE multiline joining changes the emitted chunks.
+- A metadata event with usage={} emits a terminal chunk, but usage=None fails; testing only truthy usage misses
+  this distinction.
+- The final-message event emits only a stop marker, so its text never appears unless content deltas already carried
+  it.
 budget:
-  max_changed_lines: 725
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

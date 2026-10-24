@@ -14,6 +14,43 @@ description: >-
   L622-L710.
 
 
+  Named case contracts: assistant_first_text: Scan data in order for the first assistant text block; return its
+  value (default empty string) and annotations immediately, even when that text is empty. Missing matches return
+  empty content and None annotations. citation_index_relocation: Falsey annotations become None; copy url_citation
+  and fill only missing nested start_index/end_index from top-level keys. Existing nested values including None
+  win; other annotation types pass unchanged and order is stable. thread_id_metadata: Replace choices with one index=0
+  assistant message and finish_reason=stop; set requested model and hidden thread_id, preserving other hidden keys;
+  annotations use None when empty. token_count_warning: Call B196 twice with model=gpt-3.5-turbo (messages for prompt,
+  text plus count_response_tokens=True for reply), sum usage; an exception logs Failed to calculate token usage:
+  <error> and retains any existing usage rather than synthesizing zero. message_delta_stream: Trim each incoming
+  line; event: replaces current_event and data: parses each line independently. Ignore invalid JSON and nontext/empty
+  text deltas; emit one assistant chunk per nonempty text item with index=0, finish_reason=None, chat.completion.chunk,
+  supplied model, one stable chatcmpl-<8 hex> id and integer created time. run_terminal_stream: thread.created records
+  id. thread.message.completed accumulates every text annotation without deduplication. Run terminal/error event
+  names are ignored. Only data:[DONE] emits one stop chunk with content=None and all collected annotations, attaches
+  truthy thread_id then returns; EOF without DONE emits no terminal chunk. split_sse_event: Exercise network-split
+  UTF-8 lines through B005 framing while retaining the pinned line-based semantics: no multiline data concatenation
+  and current_event persists across blank lines. stream_thread_payload: Streaming always POSTs the B559 create-thread-and-run
+  URL with assistant_id and stream=true. Only falsey thread_id adds thread.messages with user/system converted to
+  user; a truthy existing id is neither sent nor used to add messages. instructions is retained by key presence;
+  ssl_verify defaults None and timeout is not passed. stream_status_failure: Only 200/201 stream responses are accepted;
+  otherwise await/read bytes, decode UTF-8 and raise AzureAIAgentsError with the raw status and Streaming request
+  failed: <body>.
+
+
+  Write standalone Rust test agent_results_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test agent_results_secret_safe_failure in betterlite-foundry: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2202. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-foundry/src/agent_results.rs with adjacent tests under agent_results/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -29,9 +66,9 @@ description: >-
 
   Write rstest function agent_results_cases in betterlite-foundry with these exact named cases (one per oracle file):
   assistant_first_text, citation_index_relocation, thread_id_metadata, token_count_warning, message_delta_stream,
-  run_terminal_stream, split_sse_event. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  run_terminal_stream, split_sse_event, stream_thread_payload, stream_status_failure. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_agent_results* using HelperCase: kind:
@@ -49,9 +86,9 @@ description: >-
 
 
   Budget from 211 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 235 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 506 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 250 production lines, 220 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 650 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -73,45 +110,57 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L158-L256
-  why: >-
-    Own AzureAIAgentsHandler._extract_content_from_messages, AzureAIAgentsHandler._transform_annotations, AzureAIAgentsHandler._build_model_response.
+  why: Own AzureAIAgentsHandler._extract_content_from_messages, AzureAIAgentsHandler._transform_annotations, AzureAIAgentsHandler._build_model_response.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L554-L710
   why: Own AzureAIAgentsHandler.acompletion_stream, AzureAIAgentsHandler._process_sse_stream. Other functions in
     this file remain with the owners listed below.
 dod:
-- text: 'assistant first text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/assistant-first-text.yaml.'
+- text: 'assistant_first_text: Scan data in order for the first assistant text block; return its value (default
+    empty string) and annotations immediately, even when that text is empty. Missing matches return empty content
+    and None annotations.'
   proof:
   - case-assistant-first-text
   - oracle
   - helper-python
-- text: >-
-    citation index relocation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/citation-index-relocation.yaml.
+- text: 'citation_index_relocation: Falsey annotations become None; copy url_citation and fill only missing nested
+    start_index/end_index from top-level keys. Existing nested values including None win; other annotation types
+    pass unchanged and order is stable.'
   proof:
   - case-citation-index-relocation
   - oracle
   - helper-python
-- text: 'thread id metadata: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/thread-id-metadata.yaml.'
+- text: 'thread_id_metadata: Replace choices with one index=0 assistant message and finish_reason=stop; set requested
+    model and hidden thread_id, preserving other hidden keys; annotations use None when empty.'
   proof:
   - case-thread-id-metadata
   - oracle
   - helper-python
-- text: 'token count warning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/token-count-warning.yaml.'
+- text: 'token_count_warning: Call B196 twice with model=gpt-3.5-turbo (messages for prompt, text plus count_response_tokens=True
+    for reply), sum usage; an exception logs Failed to calculate token usage: <error> and retains any existing usage
+    rather than synthesizing zero.'
   proof:
   - case-token-count-warning
   - oracle
   - helper-python
-- text: 'message delta stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/message-delta-stream.yaml.'
+- text: 'message_delta_stream: Trim each incoming line; event: replaces current_event and data: parses each line
+    independently. Ignore invalid JSON and nontext/empty text deltas; emit one assistant chunk per nonempty text
+    item with index=0, finish_reason=None, chat.completion.chunk, supplied model, one stable chatcmpl-<8 hex> id
+    and integer created time.'
   proof:
   - case-message-delta-stream
   - oracle
   - helper-python
-- text: 'run terminal stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/run-terminal-stream.yaml.'
+- text: 'run_terminal_stream: thread.created records id. thread.message.completed accumulates every text annotation
+    without deduplication. Run terminal/error event names are ignored. Only data:[DONE] emits one stop chunk with
+    content=None and all collected annotations, attaches truthy thread_id then returns; EOF without DONE emits no
+    terminal chunk.'
   proof:
   - case-run-terminal-stream
   - oracle
   - helper-python
-- text: 'split sse event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-results/split-sse-event.yaml.'
+- text: 'split_sse_event: Exercise network-split UTF-8 lines through B005 framing while retaining the pinned line-based
+    semantics: no multiline data concatenation and current_event persists across blank lines.'
   proof:
   - case-split-sse-event
   - oracle
@@ -123,50 +172,95 @@ dod:
 - text: decode_agent_event has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'stream_thread_payload: Streaming always POSTs the B559 create-thread-and-run URL with assistant_id and
+    stream=true. Only falsey thread_id adds thread.messages with user/system converted to user; a truthy existing
+    id is neither sent nor used to add messages. instructions is retained by key presence; ssl_verify defaults None
+    and timeout is not passed.'
+  proof:
+  - case-stream-thread-payload
+  - oracle
+  - helper-python
+- text: 'stream_status_failure: Only 200/201 stream responses are accepted; otherwise await/read bytes, decode UTF-8
+    and raise AzureAIAgentsError with the raw status and Streaming request failed: <body>.'
+  proof:
+  - case-stream-status-failure
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-assistant-first-text
-    why: The assistant-first-text behavior is missing or differs from its pinned fixture.
+    why: Scan data in order for the first assistant text block; return its value (default empty string) and annotations
+      immediately, even when that text is empty. Missing matches return empty content and None annotations.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_assistant_first_text$/)'
   - id: case-citation-index-relocation
-    why: The citation-index-relocation behavior is missing or differs from its pinned fixture.
+    why: Falsey annotations become None; copy url_citation and fill only missing nested start_index/end_index from
+      top-level keys. Existing nested values including None win; other annotation types pass unchanged and order
+      is stable.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_citation_index_relocation$/)'
   - id: case-thread-id-metadata
-    why: The thread-id-metadata behavior is missing or differs from its pinned fixture.
+    why: Replace choices with one index=0 assistant message and finish_reason=stop; set requested model and hidden
+      thread_id, preserving other hidden keys; annotations use None when empty.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_thread_id_metadata$/)'
   - id: case-token-count-warning
-    why: The token-count-warning behavior is missing or differs from its pinned fixture.
+    why: 'Call B196 twice with model=gpt-3.5-turbo (messages for prompt, text plus count_response_tokens=True for
+      reply), sum usage; an exception logs Failed to calculate token usage: <error> and retains any existing usage
+      rather than synthesizing zero.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_token_count_warning$/)'
   - id: case-message-delta-stream
-    why: The message-delta-stream behavior is missing or differs from its pinned fixture.
+    why: 'Trim each incoming line; event: replaces current_event and data: parses each line independently. Ignore
+      invalid JSON and nontext/empty text deltas; emit one assistant chunk per nonempty text item with index=0,
+      finish_reason=None, chat.completion.chunk, supplied model, one stable chatcmpl-<8 hex> id and integer created
+      time.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_message_delta_stream$/)'
   - id: case-run-terminal-stream
-    why: The run-terminal-stream behavior is missing or differs from its pinned fixture.
+    why: thread.created records id. thread.message.completed accumulates every text annotation without deduplication.
+      Run terminal/error event names are ignored. Only data:[DONE] emits one stop chunk with content=None and all
+      collected annotations, attaches truthy thread_id then returns; EOF without DONE emits no terminal chunk.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_run_terminal_stream$/)'
   - id: case-split-sse-event
-    why: The split-sse-event behavior is missing or differs from its pinned fixture.
+    why: 'Exercise network-split UTF-8 lines through B005 framing while retaining the pinned line-based semantics:
+      no multiline data concatenation and current_event persists across blank lines.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_split_sse_event$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_results.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_results.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_results*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_results*")"
       && grep -lq 'foundry_agent_results' tools/oracle/fuzz/corpus/helper_case/foundry_agent_results* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_agent_results$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_agent_results)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_agent_results)"
       && grep -q 'decode_agent_event' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_agent_results.rs && cargo
       nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_agent_results_corpus$/)'
+  - id: case-stream-thread-payload
+    why: Streaming always POSTs the B559 create-thread-and-run URL with assistant_id and stream=true. Only falsey
+      thread_id adds thread.messages with user/system converted to user; a truthy existing id is neither sent nor
+      used to add messages. instructions is retained by key presence; ssl_verify defaults None and timeout is not
+      passed.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_stream_thread_payload$/)'
+  - id: case-stream-status-failure
+    why: 'Only 200/201 stream responses are accepted; otherwise await/read bytes, decode UTF-8 and raise AzureAIAgentsError
+      with the raw status and Streaming request failed: <body>.'
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_cases::case_[0-9]+_stream_status_failure$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_results_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-agent-results/assistant-first-text.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-results/citation-index-relocation.yaml
@@ -175,27 +269,27 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-agent-results/message-delta-stream.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-results/run-terminal-stream.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-results/split-sse-event.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/stream-thread-payload.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-results/stream-status-failure.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler.completion L302-L350; AzureAIAgentsHandler._execute_agent_flow_sync
-  L352-L421; AzureAIAgentsHandler.acompletion L426-L478; AzureAIAgentsHandler._execute_agent_flow_async L480-L549
-  belong to B560; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure_ai/agents/handler.py: _SyncAgentRequest.__call__ L106-L106; _AsyncAgentRequest.__call__ L110-L112;
-  AzureAIAgentsHandler.__init__ L122-L123; AzureAIAgentsHandler._build_thread_url L131-L132; AzureAIAgentsHandler._build_messages_url
+- 'Function ownership inventory litellm/llms/azure_ai/agents/handler.py: _SyncAgentRequest.__call__ L106-L106; _AsyncAgentRequest.__call__
+  L110-L112; AzureAIAgentsHandler.__init__ L122-L123; AzureAIAgentsHandler._build_thread_url L131-L132; AzureAIAgentsHandler._build_messages_url
   L134-L136; AzureAIAgentsHandler._build_runs_url L138-L140; AzureAIAgentsHandler._build_run_status_url L142-L145;
   AzureAIAgentsHandler._build_list_messages_url L147-L149; AzureAIAgentsHandler._build_create_thread_and_run_url
   L151-L153; AzureAIAgentsHandler._prepare_completion_params L258-L289; AzureAIAgentsHandler._check_response L291-L297
-  belong to B559; reuse that implementation or its injected typed boundary.
+  belong to B559.'
+- 'Function ownership inventory litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler.completion L302-L350;
+  AzureAIAgentsHandler._execute_agent_flow_sync L352-L421; AzureAIAgentsHandler.acompletion L426-L478; AzureAIAgentsHandler._execute_agent_flow_async
+  L480-L549 belong to B560.'
 pitfalls:
-- Preserve first assistant text selection, citations/index relocation, hidden thread id and gpt-3.5-turbo local
-  token-count fallback with warning.
+- An empty first assistant text block prevents searching later assistant text.
+- The parser keeps current_event across blank lines and ignores run.failed; only [DONE] emits stop.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 650
   max_new_expects: 0
-review_level: standard
+review_level: security

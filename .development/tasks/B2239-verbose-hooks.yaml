@@ -1,0 +1,387 @@
+id: B2239
+title: Injected verbose logging hooks
+description: >-
+  Implement injected logger/console verbose hooks below stream assembly and logging callbacks, preserving their
+  different boolean guards. Apply B187 redaction to emitted payloads; never let logging failures change the request
+  result. This task reads resolved settings, not process globals.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/main.py: print_verbose L8836-L8842.
+  litellm/utils.py: print_verbose L544-L559; _print_verbose_is_active L562-L567.
+
+
+  Named case contracts: main_verbose_guard: main.print_verbose always emits debug, then console only for truthy
+  litellm.set_verbose. Default false. A logger exception prevents console emission because both are in the same
+  try; logger and console exceptions are swallowed. utils_verbose_levels: utils.print_verbose defaults logger_only=false
+  and log_level=DEBUG. Exact DEBUG/INFO/ERROR choose their logger method; an unknown level emits no logger record.
+  Console requires set_verbose is True and logger_only is False, not general truthiness. A logger exception prevents
+  console; either sink failure is swallowed. verbose_active: _print_verbose_is_active returns true only for set_verbose
+  is True or logger enabled DEBUG. Logging module set_verbose and exposed litellm.set_verbose are distinct source
+  values; inject the latter for console guards. Reuse the same resolved setting as both verbose entry points. redacted_verbose_payload:
+  Both hooks redact credential/body values through B187 before a sink sees them; fixture sink errors do not expose
+  secret payloads in outward failure. This is the repository privacy deviation, with logging level and suppression
+  preserved.
+
+
+  Load set_verbose through betterlite-config, with injected environment lookup and the defaults/precedence stated
+  here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest verbose_hooks_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  Implement crates/betterlite-logging/src/verbose_hooks.rs with adjacent tests under verbose_hooks/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation verbose_hooks in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function verbose_hooks_cases in betterlite-logging with these exact named cases (one per oracle file):
+  main_verbose_guard, utils_verbose_levels, verbose_active, redacted_verbose_payload. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/verbose_hooks* using HelperCase: kind: helper
+  and the externally tagged verbose_hooks variant inside call. Do not put the Python stdin operation field in a
+  HelperCase. Add oracle test helper_seeds_select_verbose_hooks that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 29 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 75 production lines, 130 behavior/config-test lines, 90 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 35 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 365 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/verbose_hooks.rs
+  - crates/betterlite-logging/src/verbose_hooks/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/verbose_hooks.rs
+  - tools/oracle/src/helpers/verbose_hooks/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/verbose_hooks.py
+  - tools/oracle/cases/helpers/providers/verbose-hooks/**
+  - tools/oracle/fuzz/corpus/helper_case/verbose_hooks*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/shared.rs
+  - crates/betterlite-config/src/providers/shared/verbose_hooks.rs
+  - crates/betterlite-config/src/providers/shared/verbose_hooks/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/verbose_hooks_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/verbose_hooks*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8836-L8842
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L544-L559
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L562-L567
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New verbose_hooks seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: 'main_verbose_guard: main.print_verbose always emits debug, then console only for truthy litellm.set_verbose.
+    Default false. A logger exception prevents console emission because both are in the same try; logger and console
+    exceptions are swallowed.'
+  proof:
+  - case-main-verbose-guard
+  - oracle
+  - helper-python
+- text: 'utils_verbose_levels: utils.print_verbose defaults logger_only=false and log_level=DEBUG. Exact DEBUG/INFO/ERROR
+    choose their logger method; an unknown level emits no logger record. Console requires set_verbose is True and
+    logger_only is False, not general truthiness. A logger exception prevents console; either sink failure is swallowed.'
+  proof:
+  - case-utils-verbose-levels
+  - oracle
+  - helper-python
+- text: 'verbose_active: _print_verbose_is_active returns true only for set_verbose is True or logger enabled DEBUG.
+    Logging module set_verbose and exposed litellm.set_verbose are distinct source values; inject the latter for
+    console guards. Reuse the same resolved setting as both verbose entry points.'
+  proof:
+  - case-verbose-active
+  - oracle
+  - helper-python
+- text: 'redacted_verbose_payload: Both hooks redact credential/body values through B187 before a sink sees them;
+    fixture sink errors do not expose secret payloads in outward failure. This is the repository privacy deviation,
+    with logging level and suppression preserved.'
+  proof:
+  - case-redacted-verbose-payload
+  - oracle
+  - helper-python
+- text: The real config loader resolves set_verbose, including its default and precedence.
+  proof:
+  - config-set-verbose
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/verbose_hooks.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/verbose_hooks*")"
+      && grep -lq 'verbose_hooks' tools/oracle/fuzz/corpus/helper_case/verbose_hooks* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_verbose_hooks$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-main-verbose-guard
+    why: main.print_verbose always emits debug, then console only for truthy litellm.set_verbose. Default false.
+      A logger exception prevents console emission because both are in the same try; logger and console exceptions
+      are swallowed.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::verbose_hooks_cases::case_[0-9]+_main_verbose_guard$/)'
+  - id: case-utils-verbose-levels
+    why: utils.print_verbose defaults logger_only=false and log_level=DEBUG. Exact DEBUG/INFO/ERROR choose their
+      logger method; an unknown level emits no logger record. Console requires set_verbose is True and logger_only
+      is False, not general truthiness. A logger exception prevents console; either sink failure is swallowed.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::verbose_hooks_cases::case_[0-9]+_utils_verbose_levels$/)'
+  - id: case-verbose-active
+    why: _print_verbose_is_active returns true only for set_verbose is True or logger enabled DEBUG. Logging module
+      set_verbose and exposed litellm.set_verbose are distinct source values; inject the latter for console guards.
+      Reuse the same resolved setting as both verbose entry points.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::verbose_hooks_cases::case_[0-9]+_verbose_active$/)'
+  - id: case-redacted-verbose-payload
+    why: Both hooks redact credential/body values through B187 before a sink sees them; fixture sink errors do not
+      expose secret payloads in outward failure. This is the repository privacy deviation, with logging level and
+      suppression preserved.
+    run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::verbose_hooks_cases::case_[0-9]+_redacted_verbose_payload$/)'
+  - id: config-set-verbose
+    why: set_verbose lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::verbose_hooks_config_cases::case_[0-9]+_loads_set_verbose$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/verbose-hooks/main-verbose-guard.yaml
+- tools/oracle/cases/helpers/providers/verbose-hooks/utils-verbose-levels.yaml
+- tools/oracle/cases/helpers/providers/verbose-hooks/verbose-active.yaml
+- tools/oracle/cases/helpers/providers/verbose-hooks/redacted-verbose-payload.yaml
+deviations:
+- what: Verbose logger and console payloads are redacted before emission; LiteLLM can print raw supplied payloads.
+  why: The repository requires secrets and message bodies to stay out of diagnostic logs. Preserve source sink ordering
+    and failure suppression.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L544-L559
+out_of_scope:
+- B249 owns pre_call/post_call callbacks; B187 owns the redaction algorithm. Other main.py/utils.py functions retain
+  their explicit function owners.
+- 'Function ownership inventory litellm/main.py: _complete_text_completion_openai L1771-L1850; _complete_custom_openai
+  L2590-L2728 belong to B024.'
+- 'Function ownership inventory litellm/main.py: _complete_azure L1338-L1469; _complete_azure_text L1472-L1563 belong
+  to B025.'
+- 'Function ownership inventory litellm/main.py: _complete_azure_ai L1617-L1768 belong to B026.'
+- 'Function ownership inventory litellm/main.py: _complete_anthropic_text L2827-L2879; _complete_anthropic L2882-L2945
+  belong to B027.'
+- 'Function ownership inventory litellm/main.py: _complete_bedrock_mantle L2173-L2216; _complete_amazon_nova L3145-L3178;
+  _complete_bedrock L4178-L4304 belong to B028.'
+- 'Function ownership inventory litellm/main.py: _complete_vertex_ai_beta L3683-L3748; _complete_vertex_ai L3751-L3933
+  belong to B031.'
+- 'Function ownership inventory litellm/main.py: _complete_xai L2060-L2108; _complete_mistral L2731-L2770; _complete_text_completion_codestral
+  L3995-L4042 belong to B036.'
+- 'Function ownership inventory litellm/main.py: _complete_cohere_chat L3047-L3109 belong to B037.'
+- 'Function ownership inventory litellm/main.py: _complete_deepseek L1566-L1614; _complete_text_completion_inception
+  L4045-L4106 belong to B038.'
+- 'Function ownership inventory litellm/main.py: _complete_minimax L2500-L2543 belong to B039.'
+- 'Function ownership inventory litellm/main.py: _complete_hosted_vllm L2546-L2587; _complete_oobabooga L3301-L3332;
+  _complete_vllm L4421-L4455; _complete_ollama L4458-L4495; _complete_ollama_chat L4498-L4537; _complete_triton
+  L4540-L4573; _complete_petals L4615-L4652; _complete_lemonade L4822-L4859 belong to B040.'
+- 'Function ownership inventory litellm/main.py: _complete_fireworks_ai L1853-L1907; _complete_together_ai L1910-L1957;
+  _complete_groq L2111-L2170; _complete_cometapi L2451-L2497; _complete_replicate L2773-L2824; _complete_huggingface
+  L3181-L3221; _complete_openrouter L3444-L3518; _complete_vercel_ai_gateway L3548-L3623; _complete_edenai L3626-L3649;
+  _complete_predibase L3936-L3992; _complete_cloudflare L4576-L4612; _complete_bytez L4782-L4819 belong to B041.'
+- 'Function ownership inventory litellm/main.py: _complete_heroku L1960-L2007; _complete_sap L2344-L2387; _complete_oci
+  L3224-L3256; _complete_databricks L3335-L3404; _complete_datarobot L3407-L3441; _complete_sagemaker_chat L4109-L4143;
+  _complete_sagemaker L4146-L4171; _complete_watsonx L4307-L4341; _complete_watsonx_text L4344-L4418; _complete_snowflake
+  L4655-L4705; _complete_gdc L4743-L4779; _complete_ovhcloud L4862-L4906 belong to B042.'
+- 'Function ownership inventory litellm/main.py: _complete_gigachat L2282-L2341; _complete_nlp_cloud L2948-L2995;
+  _complete_aleph_alpha L2998-L3044; _complete_maritalk L3112-L3142; _complete_compactifai L3259-L3298; _complete_nadir
+  L3521-L3545; _complete_gradient_ai L4708-L4740 belong to B043.'
+- 'Function ownership inventory litellm/main.py: _complete_aiohttp_openai L2390-L2448; _complete_custom L4913-L4979;
+  _complete_custom_providers L4982-L5042 belong to B044.'
+- 'Function ownership inventory litellm/main.py: _complete_fal_ai L3652-L3680 belong to B046.'
+- 'Function ownership inventory litellm/main.py: _complete_ragflow L2010-L2057 belong to B049.'
+- 'Function ownership inventory litellm/main.py: _complete_a2a L2219-L2279; _complete_langgraph L5045-L5091; _complete_langflow
+  L5094-L5140 belong to B050.'
+- 'Function ownership inventory litellm/main.py: _resolve_control_options L347-L357; LiteLLM.__init__ L364-L375;
+  Chat.__init__ L379-L385; Completions.__init__ L389-L391; Completions.create L393-L401; AsyncCompletions.__init__
+  L405-L407; AsyncCompletions.create L409-L417; acompletion L420-L740; _resolve_dispatched_chat_response L743-L746;
+  _model_response_from_cached_dict L749-L750; _transcription_response_from_cached_dict L753-L754; _async_streaming
+  L757-L771; _handle_mock_potential_exceptions L774-L814; _handle_mock_timeout L817-L828; _handle_mock_timeout_async
+  L831-L842; _sleep_for_timeout L845-L851; _sleep_for_timeout_async L854-L860; admission_input_tokens L871-L883;
+  admitted_prompt_token_counter L886-L889; mock_completion L892-L1057; responses_api_bridge_check L1083-L1194; _is_claude_tool_target
+  L1200-L1208; _without_anthropic_only_tool_keys L1211-L1219; _drop_anthropic_only_tool_keys L1222-L1225; _ProxyAuthHeadersProvider.get_auth_headers
+  L1229-L1229; _proxy_auth_headers L1232-L1233; _build_custom_pricing_entry L1244-L1267; _get_router_deployment_id
+  L1270-L1281; _register_custom_pricing_for_request L1284-L1317; _custom_api_first_output L4909-L4910; completion
+  L5143-L6084; completion_with_retries L6087-L6110; acompletion_with_retries L6113-L6136; responses_with_retries
+  L6139-L6164; aresponses_with_retries L6167-L6191; aembedding L6195-L6250; embedding L6256-L6278; embedding L6282-L6304;
+  embedding L6309-L7371; _resolve_dispatched_text_completion_response L7375-L7382; _resolve_pending_chat_response
+  L7385-L7386; atext_completion L7389-L7456; text_completion L7459-L7692; aadapter_completion L7698-L7726; aadapter_generate_content
+  L7729-L7738; adapter_completion L7741-L7761; moderation L7767-L7789; amoderation L7792-L7864; atranscription L7870-L7929;
+  transcription L7932-L8195; aspeech L8198-L8234; speech L8237-L8719; ahealth_check L8725-L8831; config_completion
+  L8845-L8853; acount_tokens L9277-L9372; __getattr__ L9400-L9411 belong to B158.'
+- 'Function ownership inventory litellm/main.py: _load_default_encoding L9394-L9397 belong to B195.'
+- 'Function ownership inventory litellm/main.py: _load_module_encoding L9379-L9382; _get_encoding L9385-L9391 belong
+  to B196.'
+- 'Function ownership inventory litellm/main.py: _provider_config_items L1236-L1237; _locals_snapshot L1240-L1241;
+  _dispatch_metadata L1320-L1321; _dispatch_client_http L1324-L1325; _dispatch_client_azure L1328-L1331; _dispatch_client_openai
+  L1334-L1335 belong to B198.'
+- 'Function ownership inventory litellm/main.py: stream_chunk_builder_text_completion L8856-L8907; _reported_cost_is_priced_by_calculator
+  L8913-L8917; _stream_builder_response_cost L8920-L8932; _joined_streamed_citations L8935-L8938; _stream_builder_model_map_cost
+  L8941-L8950; _set_stream_builder_response_cost L8953-L8958; _stamp_streaming_usage_cost L8961-L8968; _stream_choice_delta
+  L8983-L8989; _delta_carries_more_than_text L8992-L8993; _simple_text_part L8996-L9001; stream_chunk_builder L9004-L9271
+  belong to B2227.'
+- 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
+  L1069-L1080 belong to B500.'
+- 'Function ownership inventory litellm/utils.py: get_requester_metadata L10327-L10341 belong to B024.'
+- 'Function ownership inventory litellm/utils.py: _get_cached_custom_logger L103-L114; _accepts_fallback_depth_kwarg_for_class
+  L117-L126; _snapshot_exception_for_hook L129-L151; _get_cached_custom_guardrail L154-L165; _get_cached_caching_handler_response
+  L168-L179; _get_cached_llm_caching_handler L182-L193; _get_cached_audio_utils L201-L212; custom_llm_setup L572-L581;
+  _add_custom_logger_callback_to_specific_event L584-L621; _custom_logger_class_exists_in_success_callbacks L624-L639;
+  _custom_logger_class_exists_in_failure_callbacks L642-L657; _is_same_registered_custom_logger L660-L668; get_request_guardrails
+  L671-L678; get_applied_guardrails L681-L696; load_credentials_from_list L699-L719; get_dynamic_callbacks L722-L728;
+  _is_gemini_model L731-L742; _remove_thought_signature_from_id L745-L751; _process_assistant_message_tool_calls
+  L754-L782; _process_tool_message_id L785-L795; _remove_thought_signatures_from_messages L798-L823; _restore_correlation_context_if_supported
+  L826-L838; _is_streaming_response_for_correlation L841-L873; _is_converted_stream_result L876-L880; _run_success_deployment_hook_on_converted_chat_stream
+  L883-L906; _NamedFile.name L911-L912; _LoggingClassGetter.__call__ L916-L916; _ResponseMetadataUpdater.__call__
+  L920-L929; _SupportedOpenAIParamsGetter.__call__ L933-L939; _NestedPathChecker.__call__ L943-L943; _NestedValueDeleter.__call__
+  L947-L947; _BaseModelFromMetadataGetter.__call__ L951-L951; _ocr_document_summary L954-L971; function_setup L981-L1344;
+  _dispatch_success_logging L1347-L1368; _schedule_async_success_logging L1371-L1408; _client_async_logging_helper
+  L1411-L1431; _get_wrapper_num_retries L1434-L1456; _get_wrapper_timeout L1459-L1467; check_coroutine L1470-L1472;
+  async_pre_call_deployment_hook L1475-L1495; async_post_call_success_deployment_hook L1498-L1531; async_post_call_failure_deployment_hook
+  L1534-L1584; post_call_processing L1587-L1671; client L1674-L2315; _is_async_request L2318-L2348; _is_streaming_request
+  L2361-L2373; _select_tokenizer L2376-L2384; _huggingface_tokenizer_backend L2387-L2392; _select_custom_tokenizer_helper
+  L2395-L2400; _select_tokenizer_helper L2403-L2419; _return_openai_tokenizer L2422-L2423; uses_anthropic_tokenizer
+  L2426-L2427; huggingface_tokenizer_kind L2433-L2443; _return_huggingface_tokenizer L2446-L2453; _load_huggingface_tokenizer
+  L2456-L2469; supports_httpx_timeout L2589-L2598; supports_web_search L2622-L2640; supports_url_context L2643-L2661;
+  supports_audio_input L2941-L2943; supports_pdf_input L2946-L2948; supports_audio_output L2951-L2953; supports_prompt_cache_breakpoint
+  L2977-L2982; supports_thinking_cache_preservation L2985-L2990; supports_computer_use L2993-L3011; is_vision_explicitly_disabled
+  L3014-L3020; supports_vision L3023-L3038; supports_anthropic_thinking_payload L3048-L3051; get_supported_regions
+  L3081-L3121; supports_embedding_image_input L3124-L3132; _update_dictionary L3136-L3151; _convert_stringified_numbers
+  L3154-L3167; _resolve_builtin_model_cost_entry L3190-L3221; is_generalized_model_info L3224-L3235; _get_builtin_model_info_for_registration
+  L3238-L3250; set_live_deployment_replay L3266-L3274; reapply_runtime_model_cost_registrations L3277-L3298; cost_map_omits_token_price
+  L3301-L3314; register_model L3317-L3479; _should_drop_param L3482-L3486; _bedrock_route_for_request L3489-L3494;
+  _get_non_default_params L3497-L3507; get_optional_params_transcription L3510-L3597; _map_openai_size_to_vertex_ai_aspect_ratio
+  L3600-L3614; get_optional_params_image_gen L3617-L3744; get_optional_params_embeddings L3747-L4101; _remove_additional_properties
+  L4104-L4124; _remove_strict_from_schema L4127-L4145; _remove_json_schema_refs L4148-L4178; _remove_unsupported_params
+  L4181-L4193; filter_out_litellm_params L4196-L4199; _provider_supports_vertex_params L4202-L4210; PreProcessNonDefaultParams.base_pre_process_non_default_params
+  L4214-L4257; PreProcessNonDefaultParams.embedding_pre_process_non_default_params L4259-L4278; pre_process_non_default_params
+  L4281-L4339; remove_sensitive_keys_from_dict L4342-L4353; pre_process_optional_params L4356-L4431; add_provider_specific_params_to_optional_params
+  L5049-L5087; _apply_openai_param_overrides L5090-L5110; provider_rejectable_params L5116-L5126; get_non_default_params
+  L5129-L5142; calculate_max_parallel_requests L5145-L5185; _get_deployment_order L5188-L5198; get_order_filtered_deployments
+  L5201-L5217; get_excluded_filtered_deployments L5220-L5242; _get_model_region L5245-L5267; _infer_model_region
+  L5270-L5310; _is_region_eu L5313-L5324; _is_region_us L5327-L5338; is_region_allowed L5341-L5347; get_model_region
+  L5350-L5371; get_first_chars_messages L5374-L5380; _count_characters L5383-L5386; get_response_string L5389-L5432;
+  get_utc_datetime L5435-L5436; json_schema_type L6504-L6527; load_test_model L6625-L6665; get_provider_fields L6668-L6681;
+  create_proxy_transport_and_mounts L6684-L6706; validate_environment L6709-L7128; acreate L7131-L7132; valid_model
+  L7135-L7144; check_valid_key L7147-L7165; _should_retry L7168-L7194; _get_retry_after_from_exception_header L7197-L7228;
+  _calculate_retry_after L7231-L7254; register_prompt_template L7258-L7322; TextCompletionStreamWrapper.__init__
+  L7326-L7336; TextCompletionStreamWrapper.__iter__ L7338-L7339; TextCompletionStreamWrapper.__aiter__ L7341-L7342;
+  TextCompletionStreamWrapper.convert_to_text_completion_object L7344-L7367; TextCompletionStreamWrapper.__next__
+  L7369-L7389; TextCompletionStreamWrapper.__anext__ L7391-L7400; mock_stream_usage_chunk L7403-L7413; mock_completion_streaming_obj
+  L7416-L7443; async_mock_completion_streaming_obj L7446-L7473; read_config_args L7477-L7488; process_system_message
+  L7494-L7504; process_messages L7507-L7531; attempt_message_addition L7534-L7551; can_add_message L7554-L7557;
+  get_token_count L7560-L7561; shorten_message_to_fit_limit L7564-L7614; trim_messages L7620-L7718; AvailableModelsCache.__init__
+  L7725-L7727; AvailableModelsCache._get_env_hash L7729-L7732; AvailableModelsCache._check_env_changed L7734-L7740;
+  AvailableModelsCache._get_cache_key L7742-L7753; AvailableModelsCache.get_cached_model_info L7755-L7772; AvailableModelsCache.set_cached_model_info
+  L7774-L7782; _infer_valid_provider_from_env_vars L7789-L7810; _get_valid_models_from_provider_api L7813-L7832;
+  get_valid_models L7835-L7906; print_args_passed_to_litellm L7909-L7949; get_logging_id L7952-L7957; _get_base_model_from_metadata
+  L7960-L7983; ModelResponseIterator.__init__ L7987-L7994; ModelResponseIterator.__iter__ L7997-L7998; ModelResponseIterator.__next__
+  L8000-L8004; ModelResponseIterator.__aiter__ L8007-L8008; ModelResponseIterator.__anext__ L8010-L8014; ModelResponseListIterator.__init__
+  L8018-L8021; ModelResponseListIterator.__iter__ L8024-L8025; ModelResponseListIterator.__next__ L8027-L8034; ModelResponseListIterator.__aiter__
+  L8037-L8038; ModelResponseListIterator.__anext__ L8040-L8047; CustomModelResponseIterator.__init__ L8051-L8052;
+  is_cached_message L8055-L8101; convert_to_dict L8228-L8243; convert_list_message_to_dict L8246-L8252; validate_and_fix_openai_messages
+  L8255-L8271; validate_and_fix_openai_tools L8274-L8286; validate_and_fix_thinking_param L8289-L8311; cleanup_none_field_in_message
+  L8314-L8321; validate_chat_completion_user_messages L8324-L8362; validate_chat_completion_tool_choice L8365-L8396;
+  validate_openai_optional_params L8399-L8415; _get_model_cost_entry_for_provider_config L8427-L8442; ProviderConfigManager.get_provider_embedding_config
+  L8767-L8858; ProviderConfigManager.get_provider_rerank_config L8860-L8908; ProviderConfigManager.get_provider_decisions_config
+  L8910-L8928; ProviderConfigManager.get_provider_anthropic_messages_config L8930-L8935; ProviderConfigManager._get_provider_anthropic_messages_config_cached
+  L8937-L9010; ProviderConfigManager.get_provider_audio_transcription_config L9012-L9110; ProviderConfigManager.get_provider_responses_api_config
+  L9112-L9148; ProviderConfigManager._get_python_responses_api_config L9150-L9243; ProviderConfigManager.get_provider_skills_api_config
+  L9245-L9260; ProviderConfigManager.get_provider_evals_api_config L9262-L9279; ProviderConfigManager.get_provider_passthrough_config
+  L9344-L9397; ProviderConfigManager.get_provider_files_config L9410-L9445; ProviderConfigManager.get_provider_batches_config
+  L9447-L9460; ProviderConfigManager.get_provider_vector_store_config L9462-L9472; ProviderConfigManager.get_provider_vector_stores_config
+  L9474-L9561; ProviderConfigManager.get_provider_vector_store_files_config L9563-L9573; ProviderConfigManager.get_provider_image_generation_config
+  L9575-L9688; ProviderConfigManager.get_provider_video_config L9690-L9725; ProviderConfigManager.get_provider_container_config
+  L9727-L9743; ProviderConfigManager.get_provider_realtime_config L9745-L9758; ProviderConfigManager.get_provider_realtime_http_config
+  L9760-L9782; ProviderConfigManager.get_provider_image_edit_config L9784-L9857; ProviderConfigManager.get_provider_search_config
+  L9859-L9916; ProviderConfigManager.get_provider_sandbox_config L9918-L9934; ProviderConfigManager.get_provider_harness_config
+  L9936-L9965; ProviderConfigManager.get_provider_text_to_speech_config L9967-L10033; ProviderConfigManager.get_provider_google_genai_generate_content_config
+  L10035-L10067; get_end_user_id_for_cost_tracking L10070-L10096; should_use_cohere_v1_client L10099-L10105; get_prompt_cache_min_tokens
+  L10108-L10129; is_prompt_caching_valid_prompt L10132-L10165; get_standard_openai_params L10235-L10236; get_non_default_completion_params
+  L10239-L10240; peek_reasoning_summary_aliases L10243-L10258; strip_reasoning_summary_aliases_from_optional_params
+  L10261-L10283; get_non_default_transcription_params L10286-L10289; return_raw_request L10344-L10389; jsonify_tools
+  L10392-L10406; get_empty_usage L10409-L10414; should_run_mock_completion L10417-L10424; __getattr__ L10427-L10439
+  belong to B157.'
+- 'Function ownership inventory litellm/utils.py: get_optional_params L4434-L5043 belong to B175.'
+- 'Function ownership inventory litellm/utils.py: function_to_dict L6530-L6616 belong to B178.'
+- 'Function ownership inventory litellm/utils.py: is_base64_encoded L8104-L8120; get_base64_str L8123-L8129 belong
+  to B183.'
+- 'Function ownership inventory litellm/utils.py: _get_bundled_model_cost_map L8418-L8424 belong to B193.'
+- 'Function ownership inventory litellm/utils.py: encode L2472-L2491; decode L2494-L2515; create_pretrained_tokenizer
+  L2518-L2532; create_tokenizer L2535-L2547 belong to B195.'
+- 'Function ownership inventory litellm/utils.py: token_counter L2550-L2586 belong to B196.'
+- 'Function ownership inventory litellm/utils.py: get_max_tokens L5439-L5498 belong to B205.'
+- 'Function ownership inventory litellm/utils.py: has_tool_call_blocks L8132-L8141; any_assistant_message_has_thinking_blocks
+  L8144-L8162; last_assistant_with_tool_calls_has_no_thinking_blocks L8165-L8194; add_dummy_tool L8197-L8215 belong
+  to B2202.'
+- 'Function ownership inventory litellm/utils.py: _strip_stable_vertex_version L5501-L5502; _strip_dated_snapshot_suffix
+  L5508-L5509; _get_base_bedrock_model L5512-L5521; _strip_openai_finetune_model_name L5524-L5540; _strip_model_name
+  L5543-L5559; get_model_cost_mutation_generation L5572-L5573; _invalidate_model_cost_lowercase_map L5576-L5588;
+  _rebuild_model_cost_lowercase_map L5591-L5599; _handle_stale_map_entry_rebuild L5602-L5618; _get_model_cost_key
+  L5640-L5678; _get_model_info_from_model_cost L5681-L5682; _check_provider_match L5685-L5727; _is_potential_model_name_in_model_cost
+  L5906-L5915 belong to B2217.'
+- 'Function ownership inventory litellm/utils.py: _get_model_info_helper (L6111-L6372) belong to B2218.'
+- 'Function ownership inventory litellm/utils.py: _get_model_info_from_generalization L5742-L5777; _strip_mantle_region_prefix
+  L5780-L5783; _get_potential_model_names L5786-L5844; _get_max_position_embeddings L5847-L5867; _model_not_mapped_message
+  L5921-L5925; _get_model_info_helper (L5928-L6110, L6373-L6377) belong to B2219.'
+- 'Function ownership inventory litellm/utils.py: get_provider_info L5888-L5903; ProviderConfigManager.get_provider_model_info
+  L9294-L9342 belong to B2220.'
+- 'Function ownership inventory litellm/utils.py: supports_system_messages L2601-L2619; supports_native_streaming
+  L2664-L2695; supports_response_schema L2698-L2739; supports_parallel_function_calling L2742-L2750; supports_function_calling
+  L2753-L2771; supports_tool_choice L2774-L2778; _supports_provider_info_factory L2781-L2790; _supports_factory
+  L2793-L2852; declared_value_factory L2855-L2892; is_explicitly_disabled_factory L2895-L2938; supports_prompt_caching
+  L2956-L2974; supports_reasoning L3041-L3045; supports_none_reasoning_effort L3054-L3058; supports_mid_conversation_system
+  L3061-L3067; supports_native_structured_output L3070-L3078 belong to B2221.'
+- 'Function ownership inventory litellm/utils.py: _cached_get_model_info_helper L5870-L5885; _build_model_info L6380-L6404;
+  _cached_get_model_info L6407-L6413; get_model_info L6416-L6497 belong to B2225.'
+- 'Function ownership inventory litellm/utils.py: ProviderConfigManager._build_provider_config_map L8451-L8625;
+  ProviderConfigManager._get_azure_config L8627-L8642; ProviderConfigManager._get_azure_ai_config L8644-L8649; ProviderConfigManager._get_vertex_ai_config
+  L8651-L8671; ProviderConfigManager._get_bedrock_config L8673-L8678; ProviderConfigManager._get_cohere_config L8680-L8687;
+  ProviderConfigManager._get_sail_chat_config L8689-L8693; ProviderConfigManager._get_langgraph_config L8695-L8700;
+  ProviderConfigManager._get_langflow_config L8702-L8707; ProviderConfigManager.get_provider_chat_config L8709-L8765;
+  ProviderConfigManager.get_provider_image_variation_config L9399-L9408 belong to B2230.'
+- 'Function ownership inventory litellm/utils.py: ProviderConfigManager.get_provider_text_completion_config L9281-L9292
+  belong to B2237.'
+- 'Function ownership inventory litellm/utils.py: extract_duration_from_srt_or_vtt L10168-L10194 belong to B515.'
+- 'Function ownership inventory litellm/utils.py: modify_url L6619-L6622 belong to B535.'
+- 'Function ownership inventory litellm/utils.py: _add_path_to_api_base L10197-L10232; add_openai_metadata L10292-L10324
+  belong to B668.'
+- 'Function ownership inventory litellm/utils.py: _handle_new_key_with_scan L5621-L5637 have no caller at the pin;
+  do not implement or add cases.'
+pitfalls:
+- main.print_verbose uses truthiness but utils.print_verbose uses identity with True; a fixture value1 separates
+  these paths.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

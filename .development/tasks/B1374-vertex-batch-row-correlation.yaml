@@ -1,0 +1,90 @@
+id: B1374
+title: Correlate Vertex batch labels and regroup embedding outputs
+description: >-
+  Build vertex_batch_rows from files/transformation.py L159-L292, L384-L527 and
+  L778-L780, 242 nonblank noncomment function lines, plus 31 row/embedding/envelope
+  declaration lines at L110-L156. Preserve arbitrary custom_id strings through
+  lower-case unpadded base32 labels split into 59-character payloads after b32_; retain
+  the lossy 63-character litellm_custom_id alongside litellm_custom_id_raw and numbered
+  suffixes. Reading prefers a non-None top-level key, then numerically ordered raw chunks
+  even with gaps, then the ordinary label or unknown; failed base32 decoding returns the
+  first raw label unchanged. Empty decoded text remains a valid identifier. Define typed
+  VertexBatchRow and OpenAiBatchOutput records with explicit optional response/error fields.
+  Decode JSON bytes in decode_vertex_batch_row and external label/key bytes in
+  decode_vertex_batch_correlation; neither performs IO. Recognize embedding rows by request
+  plus response.embedding or a failed request.content, and generation rows by all three
+  request/response/processed_time keys plus candidates, promptFeedback or truthy status.
+  Parse the full fan-out suffix #index/total before percent-decoding custom_id. Regroup
+  embeddings in first-seen identifier order, sorting positions within each group and requiring
+  precisely 0 through max(total)-1; missing, duplicate or failed elements fail that whole
+  entry with vertex_ai_error. Sum B1371 embedding token counts and emit B006 embedding
+  records with model or empty string. Inject UUIDs into batch_req_ ids. Extract model from
+  the first decoded publishers/.../models segment; the first occurrence of litellm-vertex-files/
+  alone determines passthrough recognition. Expose vertex_batch_rows helper operation with
+  cases unicode_chunk_roundtrip, raw_label_fallback, empty_id, numeric_suffix_order,
+  encoded_hash_suffix, shuffled_embedding_groups, missing_embedding_position,
+  duplicate_embedding_position, provider_failed_element and first_managed_prefix.
+  Allocate 240 production, 175 tests, 95 adapters and 95 decoder/corpus lines, maximum 650.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,vertex_batch_rows}.rs
+    - crates/betterlite-vertex/src/vertex_batch_rows/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_rows.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_batch_rows/**
+    - tools/oracle/src/helpers/{mod,vertex_batch_rows}.rs
+    - tools/oracle/helpers/{dispatch,vertex_batch_rows}.py
+    - tools/oracle/cases/helpers/vertex-batch-rows/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_batch_rows*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L110-L156
+    why: Typed row labels, embedding vectors/usage and OpenAI output envelopes consumed by correlation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L159-L292
+    why: Label encoding, recovery precedence and row-shape detection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L384-L527
+    why: OpenAI envelopes, fan-out regrouping and model/passthrough path recognition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L778-L780
+    why: The JSON row parser used by both buffered and streamed readers.
+dod:
+  - text: Correlation survives Unicode, label splitting and shuffled embedding output without shifting input positions.
+    proof: [batch-row-tests, batch-row-python, oracle]
+  - text: Malformed row, suffix and base32 inputs exercise production decoding through newly added corpora.
+    proof: [batch-row-corpus, batch-row-seeds]
+checks:
+  optional: []
+  commands:
+    - id: batch-row-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_rows::/) - test(replays_the_vertex_batch_rows_corpus)'
+      why: Each correlation or grouping outcome has its own rstest case.
+    - id: batch-row-python
+      run: test -f tools/oracle/helpers/vertex_batch_rows.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Adapters call the pinned pure row functions with deterministic UUIDs.
+    - id: batch-row-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_rows.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_rows)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_rows_corpus)'
+      why: The fuzz entry selects row JSON or correlation bytes and invokes the same decoders as production.
+    - id: batch-row-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_rows*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_rows::/)'
+      why: Shared-parser tests require the externally tagged call.vertex_batch_rows variant on every new seed.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-batch-rows/unicode-chunk-roundtrip.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/raw-label-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/empty-id.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/numeric-suffix-order.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/encoded-hash-suffix.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/shuffled-embedding-groups.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/missing-embedding-position.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/duplicate-embedding-position.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/provider-failed-element.yaml
+  - tools/oracle/cases/helpers/vertex-batch-rows/first-managed-prefix.yaml
+deviations: []
+out_of_scope:
+  - B1375 owns input fan-out and upload byte sources at L530-L775, L783-L848 and the parameter mapper.
+  - B1376 owns file targets and metadata; B1393 owns parse_gcs_bucket_and_object_name and GCS authorization.
+  - B1377 owns peeking, stream closure, conversion context and content transforms at L295-L381 and L1239-L1512.
+pitfalls:
+  - A numeric chunk suffix is sorted numerically, so _10 follows _2 despite lexical order.
+  - An embedding group's declared total is the maximum of its row totals rather than the first row's total.
+  - Unknown batch data must remain distinguishable from a malformed recognized embedding group.
+budget: {max_changed_lines: 650, max_new_expects: 1}
+review_level: security

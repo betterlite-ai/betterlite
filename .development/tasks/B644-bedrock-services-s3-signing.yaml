@@ -1,10 +1,10 @@
 id: B644
 title: Bedrock S3 signed requests and object upload
 description: >-
-  Add S3RequestPlan for object upload and provider file metadata. Preserve managed object names, upload URL to S3
-  conversion, service=s3 signing, encryption headers, bucket-owner expectations, actual UTF-8 byte size and generated
-  job names from an injected clock/id source. Use only trusted bucket settings for destination selection, including
-  upload paths.
+  Implement native Bedrock S3 upload naming, destination selection, request signing and file metadata. Preserve
+  the source distinction between upload destination selection from litellm_params and download authorization through
+  trusted snapshots. Reuse shared cloud naming and AWS credential/signing primitives; B595 now owns generic batch-service
+  signing, B649 owns batch job names, and B650 owns the common batch error wrapper.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/files/transformation.py:
@@ -14,8 +14,70 @@ description: >-
   L462-L478; BedrockFilesConfig.get_object_name L480-L504; BedrockFilesConfig.get_complete_file_url L506-L547; BedrockFilesConfig.get_supported_openai_params
   L549-L550; BedrockFilesConfig.map_openai_params L552-L559; BedrockFilesConfig._sign_s3_request L1110-L1181; BedrockFilesConfig._convert_https_url_to_s3_uri
   L1183-L1235; BedrockFilesConfig.transform_create_file_response L1237-L1263; BedrockFilesConfig.get_error_class
-  L1265-L1266. litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027.
+  L1265-L1266.
+
+
+  Named case contracts: managed_upload_object_name: get_object_name requires extracted content not None or ValueError
+  file content is required. For purpose exactly batch, _get_content_from_openai_file uses tuple element1 when supplied,
+  retains strings, strictly UTF-8-decodes bytes, and delegates SDK PathLike/current-position file reads to B159.
+  Unsupported values fall back to an empty byte string and hence empty text; short tuples retain their index error.
+  Parse every nonblank splitlines line with decode_upload_record before choosing the first record; malformed later
+  lines still fail. For a nonempty batch, read first.body default {} and model default empty string, remove one
+  bedrock/ prefix, replace colon with hyphen, sanitize via B2208 with fallback model, then emit litellm-bedrock-files-{safe_model}-{hyphenated_uuid4}.jsonl.
+  For empty/whitespace batch or another purpose, B2208 emits litellm-bedrock-files/{uuid4_hex}-{sanitized_filename},
+  with fallback filename file. s3_virtual_and_path_style: Convert upload URLs using case-sensitive re.match patterns
+  https://s3\.([^.]+)\.amazonaws\.com/([^/]+)/(.+) and https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+), in that
+  order. On a match percent-decode the captured key once, including query/fragment text captured by .+. Otherwise
+  parse URL and split its path after removing all leading slashes at the first slash; require two parts or ValueError
+  Unable to parse S3 URL: {url}, without enforcing HTTPS/S3 host or a nonempty key. This fallback excludes parsed
+  query/fragment and accepts custom endpoints and China path-style hosts. Dotted virtual-host bucket names do not
+  match the second regex. Return s3://{bucket}/{decoded_key} and the final slash component as filename, including
+  an empty filename for a trailing slash. s3_signature_service: _sign_s3_request resolves B591 region with model
+  empty string and obtains B594 resolve_s3_credentials, including the shared B590 s3_access_key_id/s3_secret_access_key
+  pair. Compute lowercase SHA256 hex of exact content UTF-8. Prepare PUT through the source requests preparation
+  semantics with Content-Type=application/json,x-amz-content-sha256={hash},Content-Language=en,Cache-Control=private,
+  immutable, max-age=31536000, s-maxage=0. B591 get_aws_region_name_for_non_llm_api_calls chooses the signing region;
+  S3SigV4Auth signs service s3. Return the AWS request headers and body, decoding bytes as UTF-8, using original
+  content only if body is None. Preserve prepared Content-Length and signed bytes for non-ASCII content; do not
+  sign a reserialized JSONL document. Missing Python boto3 remains the SDK ImportError Missing boto3 to call bedrock.
+  Run 'pip install boto3'.; Rust uses its compiled signing library. kms_encryption_header: A truthy s3_encryption_key_id
+  adds exact x-amz-server-side-encryption=aws:kms and x-amz-server-side-encryption-aws-kms-key-id={key} before signing.
+  Empty/None omits both. This PUT signer does not add x-amz-expected-bucket-owner; owner headers are applied only
+  by the later request paths that actually set them. Reuse B643 KMS/owner resolution without inventing another precedence
+  rule. upload_content_size: _uploaded_object_size prefers litellm_params._s3_upload_content_length whenever it
+  is a Python int, including bool and negative integers. Otherwise use response Content-Length default string0,
+  convert to integer only when isdigit() is true, else0; preserve conversion errors for digit-like strings Python
+  int cannot parse. The source response does not normally report uploaded bytes, so B646 must record actual UTF-8
+  byte count before this helper. Assert non-ASCII payload length and the fallback separately. create_file_object:
+  transform_create_file_response reads truthy litellm_params.upload_url and converts it to S3 id/filename; a missing/falsey
+  URL produces empty strings. Construct purpose=batch regardless of original purpose, status=uploaded,object=file,created_at=int(injected
+  time.time()), and bytes from _uploaded_object_size. It does not inspect response JSON or enforce HTTP success
+  itself. get_error_class delegates B682 preserving status,message,headers. upload_destination: Merge request parameters
+  through B596. Upload bucket uses truthy litellm_params.s3_bucket_name then os.getenv AWS_S3_BUCKET_NAME; it does
+  not call the trusted-snapshot download helper. Missing bucket raises ValueError S3 bucket_name is required. Set
+  's3_bucket_name' in litellm_params or AWS_S3_BUCKET_NAME env var. B2208 splits configured bucket/prefix. Choose
+  truthy litellm_params.s3_region_name, then optional_params.s3_region_name, then B591 _get_aws_region_name(merged_params,model).
+  Require data.file not None before data.purpose not None, with ValueError file is required or purpose is required;
+  empty values are not rejected here. B235 extract_file_data feeds object naming, optional configured prefix is
+  prepended, and B2208 encodes the S3 key. Choose truthy merged s3_endpoint_url or https://s3.{region}.{B198 get_aws_dns_suffix(region)},
+  strip trailing slashes and append /{bucket}/{encoded_key}. Preserve partition suffixes and source failure order.
+  file_config_contract: Constructor creates a zero-state BedrockJsonlFilesTransformation handle and calls B590 BaseAWSLLM.__init__;
+  record transformations remain B647/B648. custom_llm_provider is BEDROCK, file_upload_http_method is PUT, supported
+  OpenAI params are [], and map_openai_params returns its optional record unchanged. validate_environment copies
+  input headers, pops _s3_signed_request_headers from litellm_params, and overlays it only when a Mapping, with
+  signed values winning; even a nonmapping value is consumed. This hook performs no fresh credential resolution.
+
+
+  Load s3_region_name, s3_endpoint_url through betterlite-config, with injected environment lookup and the defaults/precedence
+  stated here. Deployment inputs use litellm_params and global inputs use litellm_settings. Add config rstest bedrock_s3_signing_config_cases;
+  each named loads_<key> case invokes the real B002 loader, checks explicit values and defaults, and adds config_yaml
+  parser seeds. Reject unrelated keys.
+
+
+  s3_region_name and s3_endpoint_url default None and have no additional S3-specific environment-variable fallback
+  in these functions. Reuse B643 bucket/KMS loader cases, B590 static S3 credential loader cases and B591 AWS region
+  settings. Upload bytes are supplied uploads or explicitly opened SDK files from B159; a request string is content,
+  never a filename or URL to fetch.
 
 
   Implement crates/betterlite-bedrock/src/s3_signing.rs with adjacent tests under s3_signing/. Keep each Rust module
@@ -32,11 +94,10 @@ description: >-
 
 
   Write rstest function s3_signing_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  managed_upload_object_name, s3_virtual_and_path_style, s3_signature_service, kms_encryption_header, bucket_owner_header,
-  upload_content_size, generated_job_name, create_file_object. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  managed_upload_object_name, s3_virtual_and_path_style, s3_signature_service, kms_encryption_header, upload_content_size,
+  create_file_object, upload_destination, file_config_contract. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing* using HelperCase:
@@ -67,10 +128,10 @@ description: >-
   invariant; it is not a Python oracle case.
 
 
-  Budget from 323 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 340 production lines, 147 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 654 planned, 675 maximum changed lines.
+  Budget from 257 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 270 production lines, 275 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 40 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 780 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -89,69 +150,91 @@ scope:
   - crates/betterlite-bedrock/fuzz/Cargo.toml
   - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_signing.rs
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_signing/**
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_s3_signing.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_s3_signing/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_s3_signing_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_s3_signing*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cloud_storage_security.py#L11-L167
   why: S3 managed-object naming and bucket/prefix authorization called by the covered provider functions; port the
     S3-specific helper here.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L375-L559
-  why: >-
-    Own _uploaded_object_size, BedrockFilesConfig.__init__, BedrockFilesConfig.custom_llm_provider, BedrockFilesConfig.file_upload_http_method,
+  why: Own _uploaded_object_size, BedrockFilesConfig.__init__, BedrockFilesConfig.custom_llm_provider, BedrockFilesConfig.file_upload_http_method,
     BedrockFilesConfig.validate_environment, BedrockFilesConfig._get_content_from_openai_file, BedrockFilesConfig._get_s3_object_name_from_batch_jsonl,
     BedrockFilesConfig.get_object_name, BedrockFilesConfig.get_complete_file_url, BedrockFilesConfig.get_supported_openai_params,
     BedrockFilesConfig.map_openai_params. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/files/transformation.py#L1110-L1266
-  why: >-
-    Own BedrockFilesConfig._sign_s3_request, BedrockFilesConfig._convert_https_url_to_s3_uri, BedrockFilesConfig.transform_create_file_response,
+  why: Own BedrockFilesConfig._sign_s3_request, BedrockFilesConfig._convert_https_url_to_s3_uri, BedrockFilesConfig.transform_create_file_response,
     BedrockFilesConfig.get_error_class. Other functions in this file remain with the owners listed below.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1906-L1984
-  why: Own CommonBatchFilesUtils.sign_aws_request, CommonBatchFilesUtils.generate_unique_job_name. Other functions
-    in this file remain with the owners listed below.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L2023-L2027
-  why: Own CommonBatchFilesUtils.get_error_class. Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    managed upload object name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/managed-upload-object-name.yaml.
+- text: 'managed_upload_object_name: get_object_name requires extracted content not None or ValueError file content
+    is required. For purpose exactly batch, _get_content_from_openai_file uses tuple element1 when supplied, retains
+    strings, strictly UTF-8-decodes bytes, and delegates SDK PathLike/current-position file reads to B159. Unsupported
+    values fall back to an empty byte string and hence empty text; short tuples retain their index error. Parse
+    every nonblank splitlines line with decode_upload_record before choosing the first record; malformed later lines
+    still fail. For a nonempty batch, read first.body default {} and model default empty string, remove one bedrock/
+    prefix, replace colon with hyphen, sanitize via B2208 with fallback model, then emit litellm-bedrock-files-{safe_model}-{hyphenated_uuid4}.jsonl.
+    For empty/whitespace batch or another purpose, B2208 emits litellm-bedrock-files/{uuid4_hex}-{sanitized_filename},
+    with fallback filename file.'
   proof:
   - case-managed-upload-object-name
   - oracle
   - helper-python
-- text: >-
-    s3 virtual and path style: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-virtual-and-path-style.yaml.
+- text: 's3_virtual_and_path_style: Convert upload URLs using case-sensitive re.match patterns https://s3\.([^.]+)\.amazonaws\.com/([^/]+)/(.+)
+    and https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+), in that order. On a match percent-decode the captured
+    key once, including query/fragment text captured by .+. Otherwise parse URL and split its path after removing
+    all leading slashes at the first slash; require two parts or ValueError Unable to parse S3 URL: {url}, without
+    enforcing HTTPS/S3 host or a nonempty key. This fallback excludes parsed query/fragment and accepts custom endpoints
+    and China path-style hosts. Dotted virtual-host bucket names do not match the second regex. Return s3://{bucket}/{decoded_key}
+    and the final slash component as filename, including an empty filename for a trailing slash.'
   proof:
   - case-s3-virtual-and-path-style
   - oracle
   - helper-python
-- text: >-
-    s3 signature service: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-signature-service.yaml.
+- text: 's3_signature_service: _sign_s3_request resolves B591 region with model empty string and obtains B594 resolve_s3_credentials,
+    including the shared B590 s3_access_key_id/s3_secret_access_key pair. Compute lowercase SHA256 hex of exact
+    content UTF-8. Prepare PUT through the source requests preparation semantics with Content-Type=application/json,x-amz-content-sha256={hash},Content-Language=en,Cache-Control=private,
+    immutable, max-age=31536000, s-maxage=0. B591 get_aws_region_name_for_non_llm_api_calls chooses the signing
+    region; S3SigV4Auth signs service s3. Return the AWS request headers and body, decoding bytes as UTF-8, using
+    original content only if body is None. Preserve prepared Content-Length and signed bytes for non-ASCII content;
+    do not sign a reserialized JSONL document. Missing Python boto3 remains the SDK ImportError Missing boto3 to
+    call bedrock. Run ''pip install boto3''.; Rust uses its compiled signing library.'
   proof:
   - case-s3-signature-service
   - oracle
   - helper-python
-- text: >-
-    kms encryption header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/kms-encryption-header.yaml.
+- text: 'kms_encryption_header: A truthy s3_encryption_key_id adds exact x-amz-server-side-encryption=aws:kms and
+    x-amz-server-side-encryption-aws-kms-key-id={key} before signing. Empty/None omits both. This PUT signer does
+    not add x-amz-expected-bucket-owner; owner headers are applied only by the later request paths that actually
+    set them. Reuse B643 KMS/owner resolution without inventing another precedence rule.'
   proof:
   - case-kms-encryption-header
   - oracle
   - helper-python
-- text: >-
-    bucket owner header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/bucket-owner-header.yaml.
-  proof:
-  - case-bucket-owner-header
-  - oracle
-  - helper-python
-- text: >-
-    upload content size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/upload-content-size.yaml.
+- text: 'upload_content_size: _uploaded_object_size prefers litellm_params._s3_upload_content_length whenever it
+    is a Python int, including bool and negative integers. Otherwise use response Content-Length default string0,
+    convert to integer only when isdigit() is true, else0; preserve conversion errors for digit-like strings Python
+    int cannot parse. The source response does not normally report uploaded bytes, so B646 must record actual UTF-8
+    byte count before this helper. Assert non-ASCII payload length and the fallback separately.'
   proof:
   - case-upload-content-size
   - oracle
   - helper-python
-- text: 'generated job name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/generated-job-name.yaml.'
-  proof:
-  - case-generated-job-name
-  - oracle
-  - helper-python
-- text: 'create file object: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/create-file-object.yaml.'
+- text: 'create_file_object: transform_create_file_response reads truthy litellm_params.upload_url and converts
+    it to S3 id/filename; a missing/falsey URL produces empty strings. Construct purpose=batch regardless of original
+    purpose, status=uploaded,object=file,created_at=int(injected time.time()), and bytes from _uploaded_object_size.
+    It does not inspect response JSON or enforce HTTP success itself. get_error_class delegates B682 preserving
+    status,message,headers.'
   proof:
   - case-create-file-object
   - oracle
@@ -169,51 +252,102 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'upload_destination: Merge request parameters through B596. Upload bucket uses truthy litellm_params.s3_bucket_name
+    then os.getenv AWS_S3_BUCKET_NAME; it does not call the trusted-snapshot download helper. Missing bucket raises
+    ValueError S3 bucket_name is required. Set ''s3_bucket_name'' in litellm_params or AWS_S3_BUCKET_NAME env var.
+    B2208 splits configured bucket/prefix. Choose truthy litellm_params.s3_region_name, then optional_params.s3_region_name,
+    then B591 _get_aws_region_name(merged_params,model). Require data.file not None before data.purpose not None,
+    with ValueError file is required or purpose is required; empty values are not rejected here. B235 extract_file_data
+    feeds object naming, optional configured prefix is prepended, and B2208 encodes the S3 key. Choose truthy merged
+    s3_endpoint_url or https://s3.{region}.{B198 get_aws_dns_suffix(region)}, strip trailing slashes and append
+    /{bucket}/{encoded_key}. Preserve partition suffixes and source failure order.'
+  proof:
+  - case-upload-destination
+  - oracle
+  - helper-python
+- text: 'file_config_contract: Constructor creates a zero-state BedrockJsonlFilesTransformation handle and calls
+    B590 BaseAWSLLM.__init__; record transformations remain B647/B648. custom_llm_provider is BEDROCK, file_upload_http_method
+    is PUT, supported OpenAI params are [], and map_openai_params returns its optional record unchanged. validate_environment
+    copies input headers, pops _s3_signed_request_headers from litellm_params, and overlays it only when a Mapping,
+    with signed values winning; even a nonmapping value is consumed. This hook performs no fresh credential resolution.'
+  proof:
+  - case-file-config-contract
+  - oracle
+  - helper-python
+- text: The real config loader resolves s3_region_name, including its default and precedence.
+  proof:
+  - config-s3-region-name
+- text: The real config loader resolves s3_endpoint_url, including its default and precedence.
+  proof:
+  - config-s3-endpoint-url
 checks:
   optional:
   - mutants
   commands:
   - id: case-managed-upload-object-name
-    why: The managed-upload-object-name behavior is missing or differs from its pinned fixture.
+    why: get_object_name requires extracted content not None or ValueError file content is required. For purpose
+      exactly batch, _get_content_from_openai_file uses tuple element1 when supplied, retains strings, strictly
+      UTF-8-decodes bytes, and delegates SDK PathLike/current-position file reads to B159. Unsupported values fall
+      back to an empty byte string and hence empty text; short tuples retain their index error. Parse every nonblank
+      splitlines line with decode_upload_record before choosing the first record; malformed later lines still fail.
+      For a nonempty batch, read first.body default {} and model default empty string, remove one bedrock/ prefix,
+      replace colon with hyphen, sanitize via B2208 with fallback model, then emit litellm-bedrock-files-{safe_model}-{hyphenated_uuid4}.jsonl.
+      For empty/whitespace batch or another purpose, B2208 emits litellm-bedrock-files/{uuid4_hex}-{sanitized_filename},
+      with fallback filename file.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_managed_upload_object_name$/)'
   - id: case-s3-virtual-and-path-style
-    why: The s3-virtual-and-path-style behavior is missing or differs from its pinned fixture.
+    why: 'Convert upload URLs using case-sensitive re.match patterns https://s3\.([^.]+)\.amazonaws\.com/([^/]+)/(.+)
+      and https://([^.]+)\.s3\.([^.]+)\.amazonaws\.com/(.+), in that order. On a match percent-decode the captured
+      key once, including query/fragment text captured by .+. Otherwise parse URL and split its path after removing
+      all leading slashes at the first slash; require two parts or ValueError Unable to parse S3 URL: {url}, without
+      enforcing HTTPS/S3 host or a nonempty key. This fallback excludes parsed query/fragment and accepts custom
+      endpoints and China path-style hosts. Dotted virtual-host bucket names do not match the second regex. Return
+      s3://{bucket}/{decoded_key} and the final slash component as filename, including an empty filename for a trailing
+      slash.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_s3_virtual_and_path_style$/)'
   - id: case-s3-signature-service
-    why: The s3-signature-service behavior is missing or differs from its pinned fixture.
+    why: _sign_s3_request resolves B591 region with model empty string and obtains B594 resolve_s3_credentials,
+      including the shared B590 s3_access_key_id/s3_secret_access_key pair. Compute lowercase SHA256 hex of exact
+      content UTF-8. Prepare PUT through the source requests preparation semantics with Content-Type=application/json,x-amz-content-sha256={hash},Content-Language=en,Cache-Control=private,
+      immutable, max-age=31536000, s-maxage=0. B591 get_aws_region_name_for_non_llm_api_calls chooses the signing
+      region; S3SigV4Auth signs service s3. Return the AWS request headers and body, decoding bytes as UTF-8, using
+      original content only if body is None. Preserve prepared Content-Length and signed bytes for non-ASCII content;
+      do not sign a reserialized JSONL document. Missing Python boto3 remains the SDK ImportError Missing boto3
+      to call bedrock. Run 'pip install boto3'.; Rust uses its compiled signing library.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_s3_signature_service$/)'
   - id: case-kms-encryption-header
-    why: The kms-encryption-header behavior is missing or differs from its pinned fixture.
+    why: A truthy s3_encryption_key_id adds exact x-amz-server-side-encryption=aws:kms and x-amz-server-side-encryption-aws-kms-key-id={key}
+      before signing. Empty/None omits both. This PUT signer does not add x-amz-expected-bucket-owner; owner headers
+      are applied only by the later request paths that actually set them. Reuse B643 KMS/owner resolution without
+      inventing another precedence rule.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_kms_encryption_header$/)'
-  - id: case-bucket-owner-header
-    why: The bucket-owner-header behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_bucket_owner_header$/)'
   - id: case-upload-content-size
-    why: The upload-content-size behavior is missing or differs from its pinned fixture.
+    why: _uploaded_object_size prefers litellm_params._s3_upload_content_length whenever it is a Python int, including
+      bool and negative integers. Otherwise use response Content-Length default string0, convert to integer only
+      when isdigit() is true, else0; preserve conversion errors for digit-like strings Python int cannot parse.
+      The source response does not normally report uploaded bytes, so B646 must record actual UTF-8 byte count before
+      this helper. Assert non-ASCII payload length and the fallback separately.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_upload_content_size$/)'
-  - id: case-generated-job-name
-    why: The generated-job-name behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_generated_job_name$/)'
   - id: case-create-file-object
-    why: The create-file-object behavior is missing or differs from its pinned fixture.
+    why: transform_create_file_response reads truthy litellm_params.upload_url and converts it to S3 id/filename;
+      a missing/falsey URL produces empty strings. Construct purpose=batch regardless of original purpose, status=uploaded,object=file,created_at=int(injected
+      time.time()), and bytes from _uploaded_object_size. It does not inspect response JSON or enforce HTTP success
+      itself. get_error_class delegates B682 preserving status,message,headers.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_create_file_object$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_signing.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_s3_signing.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing*")"
       && grep -lq 'bedrock_services_s3_signing' tools/oracle/fuzz/corpus/helper_case/bedrock_services_s3_signing*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_s3_signing$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_signing)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_s3_signing)"
       && grep -q 'decode_upload_record' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_s3_signing.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_s3_signing_corpus$/)'
   - id: credential-identity-isolation
@@ -222,129 +356,151 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_s3_signing_secret_safe_failure$/)'
+  - id: case-upload-destination
+    why: Merge request parameters through B596. Upload bucket uses truthy litellm_params.s3_bucket_name then os.getenv
+      AWS_S3_BUCKET_NAME; it does not call the trusted-snapshot download helper. Missing bucket raises ValueError
+      S3 bucket_name is required. Set 's3_bucket_name' in litellm_params or AWS_S3_BUCKET_NAME env var. B2208 splits
+      configured bucket/prefix. Choose truthy litellm_params.s3_region_name, then optional_params.s3_region_name,
+      then B591 _get_aws_region_name(merged_params,model). Require data.file not None before data.purpose not None,
+      with ValueError file is required or purpose is required; empty values are not rejected here. B235 extract_file_data
+      feeds object naming, optional configured prefix is prepended, and B2208 encodes the S3 key. Choose truthy
+      merged s3_endpoint_url or https://s3.{region}.{B198 get_aws_dns_suffix(region)}, strip trailing slashes and
+      append /{bucket}/{encoded_key}. Preserve partition suffixes and source failure order.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_upload_destination$/)'
+  - id: case-file-config-contract
+    why: Constructor creates a zero-state BedrockJsonlFilesTransformation handle and calls B590 BaseAWSLLM.__init__;
+      record transformations remain B647/B648. custom_llm_provider is BEDROCK, file_upload_http_method is PUT, supported
+      OpenAI params are [], and map_openai_params returns its optional record unchanged. validate_environment copies
+      input headers, pops _s3_signed_request_headers from litellm_params, and overlays it only when a Mapping, with
+      signed values winning; even a nonmapping value is consumed. This hook performs no fresh credential resolution.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::s3_signing_cases::case_[0-9]+_file_config_contract$/)'
+  - id: config-s3-region-name
+    why: s3_region_name lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_s3_signing_config_cases::case_[0-9]+_loads_s3_region_name$/)'
+  - id: config-s3-endpoint-url
+    why: s3_endpoint_url lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_s3_signing_config_cases::case_[0-9]+_loads_s3_endpoint_url$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/managed-upload-object-name.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-virtual-and-path-style.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/s3-signature-service.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/kms-encryption-header.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/bucket-owner-header.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/upload-content-size.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/generated-job-name.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/create-file-object.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/upload-destination.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-s3-signing/file-config-contract.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
-- 'litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
-  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
-  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
-  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
+- 'litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
+  no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
   L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
   _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
   L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
-  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
-  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
-  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
-  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
-  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
-  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
-  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
-  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
-  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298; _listing_query L301-L305; _requested_listing_purpose
-  L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted L318-L321; _listing_bucket_name
-  L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372; BedrockFilesConfig.transform_retrieve_file_request
-  L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response L1276-L1282; BedrockFilesConfig.transform_delete_file_request
-  L1284-L1292; BedrockFilesConfig.transform_delete_file_response L1294-L1307; BedrockFilesConfig.transform_list_files_request
-  L1309-L1317; BedrockFilesConfig.transform_list_files_next_request L1319-L1335; BedrockFilesConfig._signed_listing_request
-  L1337-L1361; BedrockFilesConfig.transform_list_files_response L1363-L1391; BedrockFilesConfig.transform_file_content_request
-  L1393-L1412; BedrockFilesConfig._transform_s3_file_request L1414-L1432; BedrockFilesConfig._s3_request_target
-  L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body L1459-L1488 belong to B645; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record L575-L614; BedrockFilesConfig._is_titan_v2_embed_model
-  L639-L681; BedrockFilesConfig._lookup_provider_specific_field L684-L715; BedrockFilesConfig._coerce_embedding_input_to_string
-  L718-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params L773-L819 belong to B647; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
-  L822-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L846-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
-  L858-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model
+  L95-L96; _strip_llm_routing_prefix L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials
+  L192-L198; get_configured_s3_bucket_name L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets
+  L233-L250; _rejected_file_id L256-L266; _resolve_managed_s3_object L269-L279 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: _managed_listing_prefix L294-L298;
+  _listing_query L301-L305; _requested_listing_purpose L308-L310; _walked_listing_purpose L313-L315; _output_location_still_unlisted
+  L318-L321; _listing_bucket_name L324-L332; _listed_object_created_at L335-L339; _listed_managed_file L342-L372;
+  BedrockFilesConfig.transform_retrieve_file_request L1268-L1274; BedrockFilesConfig.transform_retrieve_file_response
+  L1276-L1282; BedrockFilesConfig.transform_delete_file_request L1284-L1292; BedrockFilesConfig.transform_delete_file_response
+  L1294-L1307; BedrockFilesConfig.transform_list_files_request L1309-L1317; BedrockFilesConfig.transform_list_files_next_request
+  L1319-L1335; BedrockFilesConfig._signed_listing_request L1337-L1361; BedrockFilesConfig.transform_list_files_response
+  L1363-L1391; BedrockFilesConfig.transform_file_content_request L1393-L1412; BedrockFilesConfig._transform_s3_file_request
+  L1414-L1432; BedrockFilesConfig._s3_request_target L1434-L1457; BedrockFilesConfig._sign_s3_request_without_body
+  L1459-L1488 belong to B645.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response
+  L1490-L1503; BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537;
+  BedrockJsonlFilesTransformation._get_s3_object_name L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file
+  L1555-L1590 belong to B646.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._classify_batch_record
+  L574-L614; BedrockFilesConfig._is_titan_v2_embed_model L638-L681; BedrockFilesConfig._lookup_provider_specific_field
+  L683-L715; BedrockFilesConfig._coerce_embedding_input_to_string L717-L771; BedrockFilesConfig._map_openai_embedding_to_bedrock_params
+  L773-L819 belong to B647.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig._transform_text_completion_body_to_chat_body
+  L821-L843; BedrockFilesConfig._transform_responses_body_to_chat_body L845-L855; BedrockFilesConfig._transform_batch_body_to_chat_body
+  L857-L874; BedrockFilesConfig._map_openai_to_bedrock_params L876-L952; BedrockFilesConfig._resolve_batch_record_model_and_provider
   L954-L965; BedrockFilesConfig._transform_openai_jsonl_content_to_bedrock_jsonl_content L967-L1024; BedrockFilesConfig.transform_create_file_request
-  L1026-L1108 belong to B648; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockFilesConfig.transform_file_content_response L1490-L1503;
-  BedrockJsonlFilesTransformation._transform_openai_jsonl_content_to_bedrock_jsonl_content L1530-L1537; BedrockJsonlFilesTransformation._get_s3_object_name
-  L1539-L1553; BedrockJsonlFilesTransformation._get_content_from_openai_file L1555-L1590 belong to B646; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
+  L1026-L1108 belong to B648.'
+- 'Function ownership inventory litellm/llms/bedrock/files/transformation.py: BedrockJsonlFilesTransformation.transform_openai_file_content_to_bedrock_file_content
   L1511-L1528; BedrockJsonlFilesTransformation.transform_s3_bucket_response_to_openai_file_object L1592-L1613 have
-  no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/files/transformation.py: _frozen_mapping L87-L88; _invoke_route_model L95-L96; _strip_llm_routing_prefix
-  L99-L108; extract_s3_uri_from_file_id L166-L186; _trusted_s3_model_credentials L192-L198; get_configured_s3_bucket_name
-  L201-L212; get_configured_s3_bucket_names L215-L230; _validate_file_id_against_configured_buckets L233-L250; _rejected_file_id
-  L256-L266; _resolve_managed_s3_object L269-L279 belong to B643; reuse that implementation or its injected typed
-  boundary.
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- >-
-  Preserve managed object names, upload URL to S3 conversion, service=s3 signing, encryption headers, bucket-owner
-  expectations, actual UTF-8 byte size and generated job names from an injected clock/id source.
+- Upload destination selection reads litellm_params directly, while download authorization requires a trusted snapshot.
+- The standard-AWS URL regex captures query and fragment text as part of the key, while custom-endpoint fallback
+  does not.
 budget:
-  max_changed_lines: 675
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

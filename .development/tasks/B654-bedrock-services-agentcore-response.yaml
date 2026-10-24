@@ -16,6 +16,40 @@ description: >-
   that prerequisite.
 
 
+  Named case contracts: json_content_message: JSON strategy order: if jsonrpc key exists (value irrelevant), use
+  B2210 extract_text_from_a2a_response and return only if nonempty. Next dict result is authoritative: concatenate
+  text from its content list and keep it as final_message, even if empty. Next list response concatenates text blocks.
+  Then first string among result,response wins, including empty. No native OpenAI choices projection exists here;
+  choices-only JSON goes to raw JSON fallback. sse_content_delta: Strip whole buffered text, split newline, strip
+  each line. Only data: prefix with nonempty remainder is JSON-decoded; only dict JSON survives. Process event.contentBlockDelta.delta.text
+  when truthy and concatenate in order. Empty or nondict event ignored; wrong nested shapes may fail. This buffered
+  path accepts a final unterminated line, unlike B655 streaming. sse_usage_event: Read event.metadata.usage when
+  metadata truthy and usage key exists; only truthy extracted usage replaces previous usage. Last truthy usage wins;
+  empty/None does not clear it. Final Usage prompt_tokens=inputTokens default0,completion_tokens=outputTokens default0,total_tokens=totalTokens
+  default0 independently; do not derive total. plain_text_response: Choose JSON only when lowercased content-type
+  contains application/json, including parameters/case variants. Everything else, absent header and plain text use
+  the SSE line parser. Bare plain text therefore produces empty content; do not return it verbatim or sniff JSON
+  from the body. missing_usage: When usage absent/falsey, call B196 token_counter(model,messages), then token_counter(model,text=content,count_response_tokens=True),
+  sum and set Usage. Any counter error warns Failed to calculate token usage: {error} and leaves preexisting model_response.usage
+  unchanged. Counter success debug Calculated usage - prompt: {p}, completion: {c}, total: {t}. malformed_event_fallback:
+  Malformed data JSON, including [DONE], debugs Skipping non-JSON line: {first100 characters} and is skipped; nondict
+  valid JSON/empty lines silently skipped. No multiline SSE join, [DONE] termination or generic SSE parser. Strict
+  application/json malformed body instead fails the whole transform. a2a_json_reply: Run B2210 direct parts, nested
+  message, singular artifact,status message,first plural artifact and depth-limit cases through the jsonrpc branch.
+  Empty A2A text falls through to normal dict-result extraction, not a second A2A implementation. json_raw_fallback:
+  Nondict JSON warns AgentCore: JSON response is not a dict. Returning raw JSON as content. and emits json.dumps(value).
+  Unrecognized dict warns AgentCore: Could not extract content from JSON response keys {keys}. Returning raw JSON
+  as content. and emits the whole serialized dict. All JSON strategies set usage=None; a supplied usage field is
+  ignored. Content extraction accepts only a list, joins dict blocks containing text without separators, ignores
+  other blocks, and lets nonstring text join failures propagate. sse_final_message: Retain the last top-level message
+  that is a dict, including {}. At end a truthy final_message supplies ALL content through content-list extraction,
+  replacing deltas even when its content extracts empty; {} is falsey and permits delta fallback. It is not appended
+  to deltas. agentcore_response_error: Mutate supplied response to one assistant choice,index0,finish_reason stop;
+  model always supplied model. Keep unrelated response fields. Any outer error logs Error processing Bedrock AgentCore
+  response: {error}, then B682 BedrockError message Error processing response: {error},status=raw status,headers=raw
+  headers even200. There is no own HTTP-status check before parsing.
+
+
   Implement crates/betterlite-bedrock/src/agentcore_response.rs with adjacent tests under agentcore_response/. Keep
   each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -30,10 +64,10 @@ description: >-
 
 
   Write rstest function agentcore_response_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): json_openai_reply, json_content_message, sse_content_delta, sse_usage_event, plain_text_response, missing_usage,
-  malformed_event_fallback. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): json_content_message, sse_content_delta, sse_usage_event, plain_text_response, missing_usage, malformed_event_fallback,
+  a2a_json_reply, json_raw_fallback, sse_final_message, agentcore_response_error. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route
+  registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_response* using HelperCase:
@@ -51,9 +85,9 @@ description: >-
 
 
   Budget from 228 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 250 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 521 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 260 production lines, 295 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 750 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -75,8 +109,7 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L294-L529
-  why: >-
-    Own AmazonAgentCoreConfig._extract_sse_json, AmazonAgentCoreConfig._extract_usage_from_event, AmazonAgentCoreConfig._extract_content_delta,
+  why: Own AmazonAgentCoreConfig._extract_sse_json, AmazonAgentCoreConfig._extract_usage_from_event, AmazonAgentCoreConfig._extract_content_delta,
     AmazonAgentCoreConfig._extract_content_from_message, AmazonAgentCoreConfig._calculate_usage, AmazonAgentCoreConfig._parse_json_response,
     AmazonAgentCoreConfig._get_parsed_response, AmazonAgentCoreConfig._parse_sse_stream. Other functions in this
     file remain with the owners listed below.
@@ -84,43 +117,47 @@ references:
   why: Own AmazonAgentCoreConfig.transform_response. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: >-
-    json openai reply: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/json-openai-reply.yaml.
-  proof:
-  - case-json-openai-reply
-  - oracle
-  - helper-python
-- text: >-
-    json content message: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/json-content-message.yaml.
+- text: 'json_content_message: JSON strategy order: if jsonrpc key exists (value irrelevant), use B2210 extract_text_from_a2a_response
+    and return only if nonempty. Next dict result is authoritative: concatenate text from its content list and keep
+    it as final_message, even if empty. Next list response concatenates text blocks. Then first string among result,response
+    wins, including empty. No native OpenAI choices projection exists here; choices-only JSON goes to raw JSON fallback.'
   proof:
   - case-json-content-message
   - oracle
   - helper-python
-- text: >-
-    sse content delta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/sse-content-delta.yaml.
+- text: 'sse_content_delta: Strip whole buffered text, split newline, strip each line. Only data: prefix with nonempty
+    remainder is JSON-decoded; only dict JSON survives. Process event.contentBlockDelta.delta.text when truthy and
+    concatenate in order. Empty or nondict event ignored; wrong nested shapes may fail. This buffered path accepts
+    a final unterminated line, unlike B655 streaming.'
   proof:
   - case-sse-content-delta
   - oracle
   - helper-python
-- text: >-
-    sse usage event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/sse-usage-event.yaml.
+- text: 'sse_usage_event: Read event.metadata.usage when metadata truthy and usage key exists; only truthy extracted
+    usage replaces previous usage. Last truthy usage wins; empty/None does not clear it. Final Usage prompt_tokens=inputTokens
+    default0,completion_tokens=outputTokens default0,total_tokens=totalTokens default0 independently; do not derive
+    total.'
   proof:
   - case-sse-usage-event
   - oracle
   - helper-python
-- text: >-
-    plain text response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/plain-text-response.yaml.
+- text: 'plain_text_response: Choose JSON only when lowercased content-type contains application/json, including
+    parameters/case variants. Everything else, absent header and plain text use the SSE line parser. Bare plain
+    text therefore produces empty content; do not return it verbatim or sniff JSON from the body.'
   proof:
   - case-plain-text-response
   - oracle
   - helper-python
-- text: 'missing usage: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/missing-usage.yaml.'
+- text: 'missing_usage: When usage absent/falsey, call B196 token_counter(model,messages), then token_counter(model,text=content,count_response_tokens=True),
+    sum and set Usage. Any counter error warns Failed to calculate token usage: {error} and leaves preexisting model_response.usage
+    unchanged. Counter success debug Calculated usage - prompt: {p}, completion: {c}, total: {t}.'
   proof:
   - case-missing-usage
   - oracle
   - helper-python
-- text: >-
-    malformed event fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/malformed-event-fallback.yaml.
+- text: 'malformed_event_fallback: Malformed data JSON, including [DONE], debugs Skipping non-JSON line: {first100
+    characters} and is skipped; nondict valid JSON/empty lines silently skipped. No multiline SSE join, [DONE] termination
+    or generic SSE parser. Strict application/json malformed body instead fails the whole transform.'
   proof:
   - case-malformed-event-fallback
   - oracle
@@ -132,83 +169,154 @@ dod:
 - text: decode_agentcore_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'a2a_json_reply: Run B2210 direct parts, nested message, singular artifact,status message,first plural artifact
+    and depth-limit cases through the jsonrpc branch. Empty A2A text falls through to normal dict-result extraction,
+    not a second A2A implementation.'
+  proof:
+  - case-a2a-json-reply
+  - oracle
+  - helper-python
+- text: 'json_raw_fallback: Nondict JSON warns AgentCore: JSON response is not a dict. Returning raw JSON as content.
+    and emits json.dumps(value). Unrecognized dict warns AgentCore: Could not extract content from JSON response
+    keys {keys}. Returning raw JSON as content. and emits the whole serialized dict. All JSON strategies set usage=None;
+    a supplied usage field is ignored. Content extraction accepts only a list, joins dict blocks containing text
+    without separators, ignores other blocks, and lets nonstring text join failures propagate.'
+  proof:
+  - case-json-raw-fallback
+  - oracle
+  - helper-python
+- text: 'sse_final_message: Retain the last top-level message that is a dict, including {}. At end a truthy final_message
+    supplies ALL content through content-list extraction, replacing deltas even when its content extracts empty;
+    {} is falsey and permits delta fallback. It is not appended to deltas.'
+  proof:
+  - case-sse-final-message
+  - oracle
+  - helper-python
+- text: 'agentcore_response_error: Mutate supplied response to one assistant choice,index0,finish_reason stop; model
+    always supplied model. Keep unrelated response fields. Any outer error logs Error processing Bedrock AgentCore
+    response: {error}, then B682 BedrockError message Error processing response: {error},status=raw status,headers=raw
+    headers even200. There is no own HTTP-status check before parsing.'
+  proof:
+  - case-agentcore-response-error
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
-  - id: case-json-openai-reply
-    why: The json-openai-reply behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_json_openai_reply$/)'
   - id: case-json-content-message
-    why: The json-content-message behavior is missing or differs from its pinned fixture.
+    why: 'JSON strategy order: if jsonrpc key exists (value irrelevant), use B2210 extract_text_from_a2a_response
+      and return only if nonempty. Next dict result is authoritative: concatenate text from its content list and
+      keep it as final_message, even if empty. Next list response concatenates text blocks. Then first string among
+      result,response wins, including empty. No native OpenAI choices projection exists here; choices-only JSON
+      goes to raw JSON fallback.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_json_content_message$/)'
   - id: case-sse-content-delta
-    why: The sse-content-delta behavior is missing or differs from its pinned fixture.
+    why: 'Strip whole buffered text, split newline, strip each line. Only data: prefix with nonempty remainder is
+      JSON-decoded; only dict JSON survives. Process event.contentBlockDelta.delta.text when truthy and concatenate
+      in order. Empty or nondict event ignored; wrong nested shapes may fail. This buffered path accepts a final
+      unterminated line, unlike B655 streaming.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_sse_content_delta$/)'
   - id: case-sse-usage-event
-    why: The sse-usage-event behavior is missing or differs from its pinned fixture.
+    why: Read event.metadata.usage when metadata truthy and usage key exists; only truthy extracted usage replaces
+      previous usage. Last truthy usage wins; empty/None does not clear it. Final Usage prompt_tokens=inputTokens
+      default0,completion_tokens=outputTokens default0,total_tokens=totalTokens default0 independently; do not derive
+      total.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_sse_usage_event$/)'
   - id: case-plain-text-response
-    why: The plain-text-response behavior is missing or differs from its pinned fixture.
+    why: Choose JSON only when lowercased content-type contains application/json, including parameters/case variants.
+      Everything else, absent header and plain text use the SSE line parser. Bare plain text therefore produces
+      empty content; do not return it verbatim or sniff JSON from the body.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_plain_text_response$/)'
   - id: case-missing-usage
-    why: The missing-usage behavior is missing or differs from its pinned fixture.
+    why: 'When usage absent/falsey, call B196 token_counter(model,messages), then token_counter(model,text=content,count_response_tokens=True),
+      sum and set Usage. Any counter error warns Failed to calculate token usage: {error} and leaves preexisting
+      model_response.usage unchanged. Counter success debug Calculated usage - prompt: {p}, completion: {c}, total:
+      {t}.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_missing_usage$/)'
   - id: case-malformed-event-fallback
-    why: The malformed-event-fallback behavior is missing or differs from its pinned fixture.
+    why: 'Malformed data JSON, including [DONE], debugs Skipping non-JSON line: {first100 characters} and is skipped;
+      nondict valid JSON/empty lines silently skipped. No multiline SSE join, [DONE] termination or generic SSE
+      parser. Strict application/json malformed body instead fails the whole transform.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_malformed_event_fallback$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_agentcore_response.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_agentcore_response.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_response*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_response*")"
       && grep -lq 'bedrock_services_agentcore_response' tools/oracle/fuzz/corpus/helper_case/bedrock_services_agentcore_response*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_agentcore_response$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_response)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_agentcore_response)"
       && grep -q 'decode_agentcore_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_agentcore_response.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_agentcore_response_corpus$/)'
+  - id: case-a2a-json-reply
+    why: Run B2210 direct parts, nested message, singular artifact,status message,first plural artifact and depth-limit
+      cases through the jsonrpc branch. Empty A2A text falls through to normal dict-result extraction, not a second
+      A2A implementation.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_a2a_json_reply$/)'
+  - id: case-json-raw-fallback
+    why: 'Nondict JSON warns AgentCore: JSON response is not a dict. Returning raw JSON as content. and emits json.dumps(value).
+      Unrecognized dict warns AgentCore: Could not extract content from JSON response keys {keys}. Returning raw
+      JSON as content. and emits the whole serialized dict. All JSON strategies set usage=None; a supplied usage
+      field is ignored. Content extraction accepts only a list, joins dict blocks containing text without separators,
+      ignores other blocks, and lets nonstring text join failures propagate.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_json_raw_fallback$/)'
+  - id: case-sse-final-message
+    why: Retain the last top-level message that is a dict, including {}. At end a truthy final_message supplies
+      ALL content through content-list extraction, replacing deltas even when its content extracts empty; {} is
+      falsey and permits delta fallback. It is not appended to deltas.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_sse_final_message$/)'
+  - id: case-agentcore-response-error
+    why: 'Mutate supplied response to one assistant choice,index0,finish_reason stop; model always supplied model.
+      Keep unrelated response fields. Any outer error logs Error processing Bedrock AgentCore response: {error},
+      then B682 BedrockError message Error processing response: {error},status=raw status,headers=raw headers even200.
+      There is no own HTTP-status check before parsing.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::agentcore_response_cases::case_[0-9]+_agentcore_response_error$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/json-openai-reply.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/json-content-message.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/sse-content-delta.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/sse-usage-event.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/plain-text-response.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/missing-usage.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/malformed-event-fallback.yaml
-deviations: []
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/a2a-json-reply.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/json-raw-fallback.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/sse-final-message.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-agentcore-response/agentcore-response-error.yaml
+deviations:
+- what: Raw response bodies, SSE lines, content and trace values are omitted from debug records; warning/error categories
+    and fallback results remain unchanged.
+  why: The source logs response JSON, the first500 response characters and event data; repository redaction rules
+    require content-safe diagnostics.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/agentcore/transformation.py#L455-L529
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._stream_agentcore_response_sync L531-L632;
-  AmazonAgentCoreConfig.get_sync_custom_stream_wrapper L634-L750; AmazonAgentCoreConfig._stream_agentcore_response
-  L752-L853; AmazonAgentCoreConfig.get_async_custom_stream_wrapper L855-L971 belong to B655; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig.__init__ L55-L57; AmazonAgentCoreConfig.get_supported_openai_params
-  L59-L63; AmazonAgentCoreConfig.map_openai_params L65-L75; AmazonAgentCoreConfig.get_complete_url L77-L114; AmazonAgentCoreConfig.sign_request
-  L116-L156; AmazonAgentCoreConfig._get_agent_runtime_arn L158-L169; AmazonAgentCoreConfig._extract_region_from_arn
-  L171-L180; AmazonAgentCoreConfig._get_runtime_session_id L182-L194; AmazonAgentCoreConfig._get_runtime_user_id
-  L196-L203; AmazonAgentCoreConfig.transform_request L205-L271; AmazonAgentCoreConfig._should_forward_multimodal_content
-  L274-L292; AmazonAgentCoreConfig.has_custom_stream_wrapper L974-L976; AmazonAgentCoreConfig.supports_stream_param_in_request_body
-  L979-L984; AmazonAgentCoreConfig.validate_environment L1053-L1063; AmazonAgentCoreConfig.get_error_class L1065-L1066;
-  AmazonAgentCoreConfig.should_fake_stream L1068-L1075 belong to B653; reuse that implementation or its injected
-  typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig.__init__
+  L55-L57; AmazonAgentCoreConfig.get_supported_openai_params L59-L63; AmazonAgentCoreConfig.map_openai_params L65-L75;
+  AmazonAgentCoreConfig.get_complete_url L77-L114; AmazonAgentCoreConfig.sign_request L116-L156; AmazonAgentCoreConfig._get_agent_runtime_arn
+  L158-L169; AmazonAgentCoreConfig._extract_region_from_arn L171-L180; AmazonAgentCoreConfig._get_runtime_session_id
+  L182-L194; AmazonAgentCoreConfig._get_runtime_user_id L196-L203; AmazonAgentCoreConfig.transform_request L205-L271;
+  AmazonAgentCoreConfig._should_forward_multimodal_content L273-L292; AmazonAgentCoreConfig.has_custom_stream_wrapper
+  L973-L976; AmazonAgentCoreConfig.supports_stream_param_in_request_body L978-L984; AmazonAgentCoreConfig.validate_environment
+  L1053-L1063; AmazonAgentCoreConfig.get_error_class L1065-L1066; AmazonAgentCoreConfig.should_fake_stream L1068-L1075
+  belong to B653.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/agentcore/transformation.py: AmazonAgentCoreConfig._stream_agentcore_response_sync
+  L531-L632; AmazonAgentCoreConfig.get_sync_custom_stream_wrapper L634-L750; AmazonAgentCoreConfig._stream_agentcore_response
+  L752-L853; AmazonAgentCoreConfig.get_async_custom_stream_wrapper L855-L971 belong to B655.'
 pitfalls:
-- Preserve typed fallback interpretations, original raw provider metadata and source error mapping while bounding
-  parsing work.
+- A JSON content-type selects parsing before body inspection, while text/plain JSON is treated as SSE and can yield
+  empty content.
+- A truthy final message replaces all collected deltas even when it has no readable text content.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: standard

@@ -18,6 +18,36 @@ description: >-
   or missing model/messages returns AzureOpenAIError 422.
 
 
+  Named case contracts: azure_text_prompt_every_call: Call B177 prompt_factory(custom_llm_provider=azure_text) on
+  every input, not just the chat bridge. Build model/prompt then overlay every remaining optional param. Cloudflare
+  selection uses gateway.ai.cloudflare.com substring and B531 client construction with data.model=None before option
+  overlay. max_retries_default_two: Pop optional_params.max_retries with literal default 2, not the DEFAULT_MAX_RETRIES
+  environment setting; explicit None stays None. Sync buffered rejects non-int with AzureOpenAIError 422 max retries
+  must be an int (bool passes), while async buffered does not validate it. Direct sync streaming repeats the pop/check
+  on data; the public caller already removed the key. missing_model_messages_422: Reject only None model/messages,
+  before prompt conversion, with AzureOpenAIError 422 Missing model or messages; empty strings/lists proceed. azure_text_auth:
+  validate_environment starts with content-type=application/json; non-None api_key adds api-key even when empty,
+  otherwise non-None token adds Authorization=Bearer <token>. The completion headers argument is used for logging,
+  not inserted into extra_headers. azure_text_stream_dispatch: Async branch streams for any truthy optional stream;
+  sync requires the literal True. Public sync-stream call omits litellm_params so its helper gets {}; async preserves
+  them. Both raw-create streams return B005 CustomStreamWrapper(provider=azure_text), never an async-generator facade
+  that delays failures. azure_text_client_errors: Sync paths require AzureOpenAI, async require AsyncAzureOpenAI;
+  other clients raise AzureOpenAIError 500 azure_client is not an instance of AzureOpenAI/AsyncAzureOpenAI respectively.
+  Buffered paths preserve existing AzureOpenAIError; async-stream wraps every exception with status_code attribute
+  default 500, str(error) and headers attribute or response.headers. azure_text_response_projection: Both buffered
+  paths call completions.with_raw_response.create(**data,timeout=timeout), then B202 convert_to_chat_model_response_object.
+  Sync first validates TextCompletionResponse; async passes model_dump directly. AzureOpenAITextConfig forwards
+  frequency_penalty,logit_bias,max_tokens,n,presence_penalty,stop,temperature,top_p, each default None, to B202.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
+  OpenAI text config construction and optional text-to-chat conversion call B2237 directly; public text API routes
+  are not prerequisites of this provider leaf.
+
+
   Implement crates/betterlite-azure/src/completion.rs with adjacent tests under completion/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -32,11 +62,11 @@ description: >-
 
 
   Write rstest function completion_cases in betterlite-azure with these exact named cases (one per oracle file):
-  text_prompt_request, chat_to_text_prompt, token_prompt, stream_text_choices, completion_errors, azure_text_prompt_every_call,
-  cloudflare_model_null, max_retries_default_two, invalid_retries_422, missing_model_messages_422. Each case exercises
-  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  token_prompt, stream_text_choices, completion_errors, azure_text_prompt_every_call, cloudflare_model_null, max_retries_default_two,
+  invalid_retries_422, missing_model_messages_422, azure_text_auth, azure_text_stream_dispatch, azure_text_client_errors,
+  azure_text_response_projection. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_completion* using HelperCase: kind: helper
@@ -51,9 +81,9 @@ description: >-
 
 
   Budget from 335 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 350 production lines, 135 behavior/config-test lines,
-  95 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 605 planned, 625 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 355 production lines, 235 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 730 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -72,23 +102,12 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L18-L358
-  why: >-
-    Own AzureTextCompletion.__init__, AzureTextCompletion.validate_environment, AzureTextCompletion.completion,
+  why: Own AzureTextCompletion.__init__, AzureTextCompletion.validate_environment, AzureTextCompletion.completion,
     AzureTextCompletion.acompletion, AzureTextCompletion.streaming, AzureTextCompletion.async_streaming. Other functions
     in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/transformation.py#L31-L51
   why: Own AzureOpenAITextConfig.__init__. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'text prompt request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/text-prompt-request.yaml.'
-  proof:
-  - case-text-prompt-request
-  - oracle
-  - helper-python
-- text: 'chat to text prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/chat-to-text-prompt.yaml.'
-  proof:
-  - case-chat-to-text-prompt
-  - oracle
-  - helper-python
 - text: 'token prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/token-prompt.yaml.'
   proof:
   - case-token-prompt
@@ -104,8 +123,9 @@ dod:
   - case-completion-errors
   - oracle
   - helper-python
-- text: >-
-    azure text prompt every call: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/azure-text-prompt-every-call.yaml.
+- text: 'azure_text_prompt_every_call: Call B177 prompt_factory(custom_llm_provider=azure_text) on every input,
+    not just the chat bridge. Build model/prompt then overlay every remaining optional param. Cloudflare selection
+    uses gateway.ai.cloudflare.com substring and B531 client construction with data.model=None before option overlay.'
   proof:
   - case-azure-text-prompt-every-call
   - oracle
@@ -115,7 +135,10 @@ dod:
   - case-cloudflare-model-null
   - oracle
   - helper-python
-- text: 'max retries default two: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/max-retries-default-two.yaml.'
+- text: 'max_retries_default_two: Pop optional_params.max_retries with literal default 2, not the DEFAULT_MAX_RETRIES
+    environment setting; explicit None stays None. Sync buffered rejects non-int with AzureOpenAIError 422 max retries
+    must be an int (bool passes), while async buffered does not validate it. Direct sync streaming repeats the pop/check
+    on data; the public caller already removed the key.'
   proof:
   - case-max-retries-default-two
   - oracle
@@ -125,8 +148,8 @@ dod:
   - case-invalid-retries-422
   - oracle
   - helper-python
-- text: >-
-    missing model messages 422: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/missing-model-messages-422.yaml.
+- text: 'missing_model_messages_422: Reject only None model/messages, before prompt conversion, with AzureOpenAIError
+    422 Missing model or messages; empty strings/lists proceed.'
   proof:
   - case-missing-model-messages-422
   - oracle
@@ -134,56 +157,103 @@ dod:
 - text: New azure_completion seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
+- text: 'azure_text_auth: validate_environment starts with content-type=application/json; non-None api_key adds
+    api-key even when empty, otherwise non-None token adds Authorization=Bearer <token>. The completion headers
+    argument is used for logging, not inserted into extra_headers.'
+  proof:
+  - case-azure-text-auth
+  - oracle
+  - helper-python
+- text: 'azure_text_stream_dispatch: Async branch streams for any truthy optional stream; sync requires the literal
+    True. Public sync-stream call omits litellm_params so its helper gets {}; async preserves them. Both raw-create
+    streams return B005 CustomStreamWrapper(provider=azure_text), never an async-generator facade that delays failures.'
+  proof:
+  - case-azure-text-stream-dispatch
+  - oracle
+  - helper-python
+- text: 'azure_text_client_errors: Sync paths require AzureOpenAI, async require AsyncAzureOpenAI; other clients
+    raise AzureOpenAIError 500 azure_client is not an instance of AzureOpenAI/AsyncAzureOpenAI respectively. Buffered
+    paths preserve existing AzureOpenAIError; async-stream wraps every exception with status_code attribute default
+    500, str(error) and headers attribute or response.headers.'
+  proof:
+  - case-azure-text-client-errors
+  - oracle
+  - helper-python
+- text: 'azure_text_response_projection: Both buffered paths call completions.with_raw_response.create(**data,timeout=timeout),
+    then B202 convert_to_chat_model_response_object. Sync first validates TextCompletionResponse; async passes model_dump
+    directly. AzureOpenAITextConfig forwards frequency_penalty,logit_bias,max_tokens,n,presence_penalty,stop,temperature,top_p,
+    each default None, to B202.'
+  proof:
+  - case-azure-text-response-projection
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
-  - id: case-text-prompt-request
-    why: The text-prompt-request behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_text_prompt_request$/)'
-  - id: case-chat-to-text-prompt
-    why: The chat-to-text-prompt behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_chat_to_text_prompt$/)'
   - id: case-token-prompt
-    why: The token-prompt behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/token-prompt.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_token_prompt$/)'
   - id: case-stream-text-choices
-    why: The stream-text-choices behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/stream-text-choices.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_stream_text_choices$/)'
   - id: case-completion-errors
-    why: The completion-errors behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/completion-errors.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_completion_errors$/)'
   - id: case-azure-text-prompt-every-call
-    why: The azure-text-prompt-every-call behavior is missing or differs from its pinned fixture.
+    why: Call B177 prompt_factory(custom_llm_provider=azure_text) on every input, not just the chat bridge. Build
+      model/prompt then overlay every remaining optional param. Cloudflare selection uses gateway.ai.cloudflare.com
+      substring and B531 client construction with data.model=None before option overlay.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_azure_text_prompt_every_call$/)'
   - id: case-cloudflare-model-null
-    why: The cloudflare-model-null behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/cloudflare-model-null.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_cloudflare_model_null$/)'
   - id: case-max-retries-default-two
-    why: The max-retries-default-two behavior is missing or differs from its pinned fixture.
+    why: Pop optional_params.max_retries with literal default 2, not the DEFAULT_MAX_RETRIES environment setting;
+      explicit None stays None. Sync buffered rejects non-int with AzureOpenAIError 422 max retries must be an int
+      (bool passes), while async buffered does not validate it. Direct sync streaming repeats the pop/check on data;
+      the public caller already removed the key.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_max_retries_default_two$/)'
   - id: case-invalid-retries-422
-    why: The invalid-retries-422 behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-completion/invalid-retries-422.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_invalid_retries_422$/)'
   - id: case-missing-model-messages-422
-    why: The missing-model-messages-422 behavior is missing or differs from its pinned fixture.
+    why: Reject only None model/messages, before prompt conversion, with AzureOpenAIError 422 Missing model or messages;
+      empty strings/lists proceed.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_missing_model_messages_422$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_completion.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_completion.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_completion*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_completion*")"
       && grep -lq 'azure_completion' tools/oracle/fuzz/corpus/helper_case/azure_completion* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_completion$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-azure-text-auth
+    why: validate_environment starts with content-type=application/json; non-None api_key adds api-key even when
+      empty, otherwise non-None token adds Authorization=Bearer <token>. The completion headers argument is used
+      for logging, not inserted into extra_headers.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_azure_text_auth$/)'
+  - id: case-azure-text-stream-dispatch
+    why: Async branch streams for any truthy optional stream; sync requires the literal True. Public sync-stream
+      call omits litellm_params so its helper gets {}; async preserves them. Both raw-create streams return B005
+      CustomStreamWrapper(provider=azure_text), never an async-generator facade that delays failures.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_azure_text_stream_dispatch$/)'
+  - id: case-azure-text-client-errors
+    why: Sync paths require AzureOpenAI, async require AsyncAzureOpenAI; other clients raise AzureOpenAIError 500
+      azure_client is not an instance of AzureOpenAI/AsyncAzureOpenAI respectively. Buffered paths preserve existing
+      AzureOpenAIError; async-stream wraps every exception with status_code attribute default 500, str(error) and
+      headers attribute or response.headers.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_azure_text_client_errors$/)'
+  - id: case-azure-text-response-projection
+    why: Both buffered paths call completions.with_raw_response.create(**data,timeout=timeout), then B202 convert_to_chat_model_response_object.
+      Sync first validates TextCompletionResponse; async passes model_dump directly. AzureOpenAITextConfig forwards
+      frequency_penalty,logit_bias,max_tokens,n,presence_penalty,stop,temperature,top_p, each default None, to B202.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::completion_cases::case_[0-9]+_azure_text_response_projection$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/providers/azure-completion/text-prompt-request.yaml
-- tools/oracle/cases/helpers/providers/azure-completion/chat-to-text-prompt.yaml
 - tools/oracle/cases/helpers/providers/azure-completion/token-prompt.yaml
 - tools/oracle/cases/helpers/providers/azure-completion/stream-text-choices.yaml
 - tools/oracle/cases/helpers/providers/azure-completion/completion-errors.yaml
@@ -192,6 +262,10 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-completion/max-retries-default-two.yaml
 - tools/oracle/cases/helpers/providers/azure-completion/invalid-retries-422.yaml
 - tools/oracle/cases/helpers/providers/azure-completion/missing-model-messages-422.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/azure-text-auth.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/azure-text-stream-dispatch.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/azure-text-client-errors.yaml
+- tools/oracle/cases/helpers/providers/azure-completion/azure-text-response-projection.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -199,9 +273,10 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Reuse azure_text_pt only for the chat-to-text path; preserve explicit completion parameters and Azure deployment
-  URL rules.
+- The async stream selector uses truthiness while the sync selector uses is True, so the same non-boolean stream
+  option follows different branches.
+- A None retry value fails only where the synchronous guard runs; the async buffered path accepts it.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: standard

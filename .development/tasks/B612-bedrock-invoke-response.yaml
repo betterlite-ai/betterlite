@@ -1,27 +1,39 @@
 id: B612
 title: Bedrock Invoke reply conversion and stream ownership
 description: >-
-  Add InvokeReply decoding for base provider families and the typed custom stream wrapper. Preserve token counts
-  from body/header, response metadata, provider-specific field names and malformed-body errors. Family-specific
-  transforms compose through explicit match arms added by their tasks.
+  Decode buffered Invoke responses and compose the concrete provider reply transforms. The custom stream methods
+  now belong to lower B2206, so this selector can depend directly on Nova, Claude and Pegasus without a reverse
+  dependency. Preserve the three distinct failure boundaries and header-only base-family usage.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
-  AmazonInvokeConfig.transform_response L281-L419; AmazonInvokeConfig.get_async_custom_stream_wrapper L444-L480;
-  AmazonInvokeConfig.get_sync_custom_stream_wrapper L483-L523; AmazonInvokeConfig.has_custom_stream_wrapper L526-L527;
-  AmazonInvokeConfig.supports_stream_param_in_request_body L530-L534.
+  AmazonInvokeConfig.transform_response L281-L419.
 
 
-  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
-  that prerequisite.
+  Named case contracts: base_family_outputs: Use B2205 provider selection. Cohere text key presence wins over generations
+  and leaves finish_reason unchanged; otherwise use generations[0].text and B206 map_finish_reason on its required
+  finish_reason. AI21 uses completions[0].data.text; meta,llama,deepseek_r1 use generation. Mistral delegates B613
+  get_outputText including its raw finish reason. Every other base family falls through to results[0].outputText
+  as Titan, including unknown providers. Do not read body token counts in these branches. family_reply_delegation:
+  Anthropic B618, Nova B614 and Pegasus B617 return their complete responses immediately, bypassing base content/usage/clock
+  handling. Forward all source arguments; Nova does not receive api_key while Anthropic and Pegasus do. All three
+  receive json_mode. Their exceptions are inside the common processing catch and become BedrockError 422. decode_and_processing_errors:
+  JSON decoding failures use B682 BedrockError with raw response status, raw text message and original headers,
+  even for status 200. Valid JSON with a malformed family payload instead yields status 422 and message Error processing={raw_response.text},
+  Received error={error}. The same catch wraps delegated family errors, including an existing BedrockError; compare
+  its displayed message. Successful JSON is debug-logged with indent=4 and default=str before provider selection.
+  content_assignment_and_empty: Assign outputText only when it is not None, has positive length, and choices[0].message
+  exists with tool_calls None. Any tool_calls value other than None, including [], suppresses assignment and accepts
+  empty/missing text. Otherwise raise BedrockError using the original response status/headers and message Error
+  parsing received text={outputText}.
 
-
-  Reuse make_call from B691 (litellm/llms/bedrock/chat/invoke_handler.py); its implementation remains with that
-  prerequisite.
-
-
-  Reuse make_sync_call from B691 (litellm/llms/bedrock/chat/invoke_handler.py); its implementation remains with
-  that prerequisite.
+  Error-{error}. Distinguish this boundary from the earlier 422 processing catch; preserve preexisting content on
+  the tool-call path. response_header_token_counts: Read x-amzn-bedrock-input-token-count and x-amzn-bedrock-output-token-count
+  case-insensitively through response headers. Truthy strings, including "0" and negative numbers, are passed to
+  int; missing/empty values call B196 token_counter on messages or reply text with count_response_tokens=True. Conversion
+  and fallback errors occur outside both catches. Set usage prompt/completion/total to these values and their sum;
+  ignore body usage. Preserve response id and other fields, set created to integer epoch seconds and model to the
+  requested model.
 
 
   Implement crates/betterlite-bedrock/src/invoke_response.rs with adjacent tests under invoke_response/. Keep each
@@ -38,10 +50,10 @@ description: >-
 
 
   Write rstest function invoke_response_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): ai21_completion, cohere_generations, titan_output, llama_generation, mistral_output, response_header_token_counts,
-  stream_owned_response. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): base_family_outputs, family_reply_delegation, decode_and_processing_errors, content_assignment_and_empty,
+  response_header_token_counts. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_response* using HelperCase: kind:
@@ -58,10 +70,10 @@ description: >-
   categories; never introduce a parser solely for fuzzing.
 
 
-  Budget from 217 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 240 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 511 planned, 525 maximum changed lines.
+  Budget from 132 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 175 production lines, 210 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 570 planned, 575 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -82,53 +94,9 @@ scope:
   - crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_response/**
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L281-L419
-  why: Own AmazonInvokeConfig.transform_response. Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L444-L534
-  why: >-
-    Own AmazonInvokeConfig.get_async_custom_stream_wrapper, AmazonInvokeConfig.get_sync_custom_stream_wrapper, AmazonInvokeConfig.has_custom_stream_wrapper,
-    AmazonInvokeConfig.supports_stream_param_in_request_body. Other functions in this file remain with the owners
-    listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L281-L419
+  why: Own buffered decode, provider dispatch, distinct catches and usage construction.
 dod:
-- text: 'ai21 completion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-response/ai21-completion.yaml.'
-  proof:
-  - case-ai21-completion
-  - oracle
-  - helper-python
-- text: 'cohere generations: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-response/cohere-generations.yaml.'
-  proof:
-  - case-cohere-generations
-  - oracle
-  - helper-python
-- text: 'titan output: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-response/titan-output.yaml.'
-  proof:
-  - case-titan-output
-  - oracle
-  - helper-python
-- text: 'llama generation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-response/llama-generation.yaml.'
-  proof:
-  - case-llama-generation
-  - oracle
-  - helper-python
-- text: 'mistral output: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-response/mistral-output.yaml.'
-  proof:
-  - case-mistral-output
-  - oracle
-  - helper-python
-- text: >-
-    response header token counts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-response/response-header-token-counts.yaml.
-  proof:
-  - case-response-header-token-counts
-  - oracle
-  - helper-python
-- text: >-
-    stream owned response: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-response/stream-owned-response.yaml.
-  proof:
-  - case-stream-owned-response
-  - oracle
-  - helper-python
 - text: New bedrock_invoke_response seeds parse as the intended call variant and replay through the shared production
     parser.
   proof:
@@ -136,75 +104,138 @@ dod:
 - text: decode_invoke_reply has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'base_family_outputs: Use B2205 provider selection. Cohere text key presence wins over generations and leaves
+    finish_reason unchanged; otherwise use generations[0].text and B206 map_finish_reason on its required finish_reason.
+    AI21 uses completions[0].data.text; meta,llama,deepseek_r1 use generation. Mistral delegates B613 get_outputText
+    including its raw finish reason. Every other base family falls through to results[0].outputText as Titan, including
+    unknown providers. Do not read body token counts in these branches.'
+  proof:
+  - case-base-family-outputs
+  - oracle
+  - helper-python
+- text: 'family_reply_delegation: Anthropic B618, Nova B614 and Pegasus B617 return their complete responses immediately,
+    bypassing base content/usage/clock handling. Forward all source arguments; Nova does not receive api_key while
+    Anthropic and Pegasus do. All three receive json_mode. Their exceptions are inside the common processing catch
+    and become BedrockError 422.'
+  proof:
+  - case-family-reply-delegation
+  - oracle
+  - helper-python
+- text: 'decode_and_processing_errors: JSON decoding failures use B682 BedrockError with raw response status, raw
+    text message and original headers, even for status 200. Valid JSON with a malformed family payload instead yields
+    status 422 and message Error processing={raw_response.text}, Received error={error}. The same catch wraps delegated
+    family errors, including an existing BedrockError; compare its displayed message. Successful JSON is debug-logged
+    with indent=4 and default=str before provider selection.'
+  proof:
+  - case-decode-and-processing-errors
+  - oracle
+  - helper-python
+- text: 'content_assignment_and_empty: Assign outputText only when it is not None, has positive length, and choices[0].message
+    exists with tool_calls None. Any tool_calls value other than None, including [], suppresses assignment and accepts
+    empty/missing text. Otherwise raise BedrockError using the original response status/headers and message Error
+    parsing received text={outputText}.
+
+    Error-{error}. Distinguish this boundary from the earlier 422 processing catch; preserve preexisting content
+    on the tool-call path.'
+  proof:
+  - case-content-assignment-and-empty
+  - oracle
+  - helper-python
+- text: 'response_header_token_counts: Read x-amzn-bedrock-input-token-count and x-amzn-bedrock-output-token-count
+    case-insensitively through response headers. Truthy strings, including "0" and negative numbers, are passed
+    to int; missing/empty values call B196 token_counter on messages or reply text with count_response_tokens=True.
+    Conversion and fallback errors occur outside both catches. Set usage prompt/completion/total to these values
+    and their sum; ignore body usage. Preserve response id and other fields, set created to integer epoch seconds
+    and model to the requested model.'
+  proof:
+  - case-response-header-token-counts
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
-  - id: case-ai21-completion
-    why: The ai21-completion behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_ai21_completion$/)'
-  - id: case-cohere-generations
-    why: The cohere-generations behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_cohere_generations$/)'
-  - id: case-titan-output
-    why: The titan-output behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_titan_output$/)'
-  - id: case-llama-generation
-    why: The llama-generation behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_llama_generation$/)'
-  - id: case-mistral-output
-    why: The mistral-output behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_mistral_output$/)'
-  - id: case-response-header-token-counts
-    why: The response-header-token-counts behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_response_header_token_counts$/)'
-  - id: case-stream-owned-response
-    why: The stream-owned-response behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_stream_owned_response$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_response.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_response.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_response*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_response*")"
       && grep -lq 'bedrock_invoke_response' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_response* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_response$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_response)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_response)"
       && grep -q 'decode_invoke_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_response.rs &&
       cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_response_corpus$/)'
+  - id: case-base-family-outputs
+    why: Use B2205 provider selection. Cohere text key presence wins over generations and leaves finish_reason unchanged;
+      otherwise use generations[0].text and B206 map_finish_reason on its required finish_reason. AI21 uses completions[0].data.text;
+      meta,llama,deepseek_r1 use generation. Mistral delegates B613 get_outputText including its raw finish reason.
+      Every other base family falls through to results[0].outputText as Titan, including unknown providers. Do not
+      read body token counts in these branches.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_base_family_outputs$/)'
+  - id: case-family-reply-delegation
+    why: Anthropic B618, Nova B614 and Pegasus B617 return their complete responses immediately, bypassing base
+      content/usage/clock handling. Forward all source arguments; Nova does not receive api_key while Anthropic
+      and Pegasus do. All three receive json_mode. Their exceptions are inside the common processing catch and become
+      BedrockError 422.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_family_reply_delegation$/)'
+  - id: case-decode-and-processing-errors
+    why: JSON decoding failures use B682 BedrockError with raw response status, raw text message and original headers,
+      even for status 200. Valid JSON with a malformed family payload instead yields status 422 and message Error
+      processing={raw_response.text}, Received error={error}. The same catch wraps delegated family errors, including
+      an existing BedrockError; compare its displayed message. Successful JSON is debug-logged with indent=4 and
+      default=str before provider selection.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_decode_and_processing_errors$/)'
+  - id: case-content-assignment-and-empty
+    why: 'Assign outputText only when it is not None, has positive length, and choices[0].message exists with tool_calls
+      None. Any tool_calls value other than None, including [], suppresses assignment and accepts empty/missing
+      text. Otherwise raise BedrockError using the original response status/headers and message Error parsing received
+      text={outputText}.
+
+      Error-{error}. Distinguish this boundary from the earlier 422 processing catch; preserve preexisting content
+      on the tool-call path.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_content_assignment_and_empty$/)'
+  - id: case-response-header-token-counts
+    why: Read x-amzn-bedrock-input-token-count and x-amzn-bedrock-output-token-count case-insensitively through
+      response headers. Truthy strings, including "0" and negative numbers, are passed to int; missing/empty values
+      call B196 token_counter on messages or reply text with count_response_tokens=True. Conversion and fallback
+      errors occur outside both catches. Set usage prompt/completion/total to these values and their sum; ignore
+      body usage. Preserve response id and other fields, set created to integer epoch seconds and model to the requested
+      model.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_response_cases::case_[0-9]+_response_header_token_counts$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/providers/bedrock-invoke-response/ai21-completion.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-response/cohere-generations.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-response/titan-output.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-response/llama-generation.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-response/mistral-output.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-response/base-family-outputs.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-response/family-reply-delegation.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-response/decode-and-processing-errors.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-response/content-assignment-and-empty.yaml
 - tools/oracle/cases/helpers/providers/bedrock-invoke-response/response-header-token-counts.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-response/stream-owned-response.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py: _bedrock_invoke_guardrail_headers
-  L55-L74; AmazonInvokeConfig.__init__ L78-L80; AmazonInvokeConfig.get_supported_openai_params L82-L90; AmazonInvokeConfig.map_openai_params
-  L92-L107; AmazonInvokeConfig.get_complete_url L109-L144; AmazonInvokeConfig.sign_request L146-L167; AmazonInvokeConfig._apply_config_to_params
-  L169-L173; AmazonInvokeConfig.transform_request L175-L279; AmazonInvokeConfig.validate_environment L421-L438;
-  AmazonInvokeConfig.get_error_class L440-L441; AmazonInvokeConfig.get_bedrock_invoke_provider L537-L570; AmazonInvokeConfig._get_provider_from_model_path
-  L573-L590; AmazonInvokeConfig.convert_messages_to_prompt L592-L630 belong to B611; reuse that implementation or
-  its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  _bedrock_invoke_guardrail_headers L55-L74; AmazonInvokeConfig.__init__ L78-L80; AmazonInvokeConfig.get_supported_openai_params
+  L82-L90; AmazonInvokeConfig.map_openai_params L92-L107; AmazonInvokeConfig.get_complete_url L109-L144; AmazonInvokeConfig.sign_request
+  L146-L167; AmazonInvokeConfig._apply_config_to_params L169-L173; AmazonInvokeConfig.validate_environment L421-L438;
+  AmazonInvokeConfig.get_error_class L440-L441; AmazonInvokeConfig.get_bedrock_invoke_provider L536-L570; AmazonInvokeConfig._get_provider_from_model_path
+  L572-L590; AmazonInvokeConfig.convert_messages_to_prompt L592-L630 belong to B2205.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  AmazonInvokeConfig.get_async_custom_stream_wrapper L443-L480; AmazonInvokeConfig.get_sync_custom_stream_wrapper
+  L482-L523; AmazonInvokeConfig.has_custom_stream_wrapper L525-L527; AmazonInvokeConfig.supports_stream_param_in_request_body
+  L529-L534 belong to B2206.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  AmazonInvokeConfig.transform_request L175-L279 belong to B611.'
 pitfalls:
-- Preserve token counts from body/header, response metadata, provider-specific field names and malformed-body errors.
+- An empty tool_calls list bypasses the empty-text failure because the source tests None, not truthiness.
+- A Mistral parsing error with status 400 is wrapped by this caller as status 422.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 575
   max_new_expects: 0
 review_level: standard

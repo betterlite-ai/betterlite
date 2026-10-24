@@ -14,6 +14,28 @@ description: >-
   L2497-L2528.
 
 
+  Named case contracts: list_assistants_pagination: Sync list defaults order=desc and limit=20; always pass those
+  two keys, even when explicitly None, and include before/after only when truthy. Calling the public method with
+  aget_assistants=True drops all four pagination inputs and the async helper receives its defaults desc/20/None/None;
+  direct async helper calls retain their inputs. assistant_error: Create forwards create_assistant_data without
+  rewriting; delete passes assistant_id; every method returns the SDK result and propagates SDK failures unchanged.
+  Only the literal boolean True selects async. sdk_client_argument_projection: Construct the SDK client only when
+  client is None: api_base becomes base_url; omit None-valued api_key, timeout, max_retries and organization, but
+  retain empty strings/zero. A supplied client wins without rebuilding it. Separate sync/async constructors select
+  the client type. assistants_beta_default: The SDK beta assistants namespace supplies OpenAI-Beta: assistants=v2
+  for list/create/delete. Capture all three operations through the same header case as threads/messages and vector
+  stores.
+
+
+  Write standalone Rust test openai_assistants_credential_identity_isolation in betterlite-openai: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test openai_assistants_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
   Implement crates/betterlite-openai/src/assistants.rs with adjacent tests under assistants/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -28,10 +50,10 @@ description: >-
 
 
   Write rstest function assistants_cases in betterlite-openai with these exact named cases (one per oracle file):
-  list_assistants_pagination, create_tools_resources, delete_assistant, beta_header, assistant_error. Each case
-  exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use
-  the booted proxy and assert both client response and captured upstream request. Existing API tasks retain route
-  registration; this task must not register a duplicate axum route.
+  list_assistants_pagination, create_tools_resources, delete_assistant, assistant_error, sdk_client_argument_projection,
+  assistants_beta_default. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_assistants* using HelperCase: kind: helper
@@ -48,9 +70,9 @@ description: >-
 
 
   Budget from 244 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 265 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 510 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 265 production lines, 190 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 635 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -72,15 +94,16 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2251-L2528
-  why: >-
-    Own OpenAIAssistantsAPI.__init__, OpenAIAssistantsAPI.get_openai_client, OpenAIAssistantsAPI.async_get_openai_client,
+  why: Own OpenAIAssistantsAPI.__init__, OpenAIAssistantsAPI.get_openai_client, OpenAIAssistantsAPI.async_get_openai_client,
     OpenAIAssistantsAPI.async_get_assistants, OpenAIAssistantsAPI.get_assistants, OpenAIAssistantsAPI.get_assistants,
     OpenAIAssistantsAPI.get_assistants, OpenAIAssistantsAPI.async_create_assistants, OpenAIAssistantsAPI.create_assistants,
     OpenAIAssistantsAPI.async_delete_assistant, OpenAIAssistantsAPI.delete_assistant. Other functions in this file
     remain with the owners listed below.
 dod:
-- text: >-
-    list assistants pagination: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-assistants/list-assistants-pagination.yaml.
+- text: 'list_assistants_pagination: Sync list defaults order=desc and limit=20; always pass those two keys, even
+    when explicitly None, and include before/after only when truthy. Calling the public method with aget_assistants=True
+    drops all four pagination inputs and the async helper receives its defaults desc/20/None/None; direct async
+    helper calls retain their inputs.'
   proof:
   - case-list-assistants-pagination
   - oracle
@@ -95,12 +118,8 @@ dod:
   - case-delete-assistant
   - oracle
   - helper-python
-- text: 'beta header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-assistants/beta-header.yaml.'
-  proof:
-  - case-beta-header
-  - oracle
-  - helper-python
-- text: 'assistant error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-assistants/assistant-error.yaml.'
+- text: 'assistant_error: Create forwards create_assistant_data without rewriting; delete passes assistant_id; every
+    method returns the SDK result and propagates SDK failures unchanged. Only the literal boolean True selects async.'
   proof:
   - case-assistant-error
   - oracle
@@ -112,119 +131,142 @@ dod:
 - text: decode_assistant_object has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'sdk_client_argument_projection: Construct the SDK client only when client is None: api_base becomes base_url;
+    omit None-valued api_key, timeout, max_retries and organization, but retain empty strings/zero. A supplied client
+    wins without rebuilding it. Separate sync/async constructors select the client type.'
+  proof:
+  - case-sdk-client-argument-projection
+  - oracle
+  - helper-python
+- text: 'assistants_beta_default: The SDK beta assistants namespace supplies OpenAI-Beta: assistants=v2 for list/create/delete.
+    Capture all three operations through the same header case as threads/messages and vector stores.'
+  proof:
+  - case-assistants-beta-default
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-list-assistants-pagination
-    why: The list-assistants-pagination behavior is missing or differs from its pinned fixture.
+    why: Sync list defaults order=desc and limit=20; always pass those two keys, even when explicitly None, and
+      include before/after only when truthy. Calling the public method with aget_assistants=True drops all four
+      pagination inputs and the async helper receives its defaults desc/20/None/None; direct async helper calls
+      retain their inputs.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_list_assistants_pagination$/)'
   - id: case-create-tools-resources
-    why: The create-tools-resources behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-assistants/create-tools-resources.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_create_tools_resources$/)'
   - id: case-delete-assistant
-    why: The delete-assistant behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-assistants/delete-assistant.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_delete_assistant$/)'
-  - id: case-beta-header
-    why: The beta-header behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_beta_header$/)'
   - id: case-assistant-error
-    why: The assistant-error behavior is missing or differs from its pinned fixture.
+    why: Create forwards create_assistant_data without rewriting; delete passes assistant_id; every method returns
+      the SDK result and propagates SDK failures unchanged. Only the literal boolean True selects async.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_assistant_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_assistants.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_assistants.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_assistants*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_assistants*")"
       && grep -lq 'openai_assistants' tools/oracle/fuzz/corpus/helper_case/openai_assistants* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_assistants$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_assistants)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_assistants)"
       && grep -q 'decode_assistant_object' crates/betterlite-openai/fuzz/fuzz_targets/openai_assistants.rs && cargo
       nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_assistants_corpus$/)'
+  - id: case-sdk-client-argument-projection
+    why: 'Construct the SDK client only when client is None: api_base becomes base_url; omit None-valued api_key,
+      timeout, max_retries and organization, but retain empty strings/zero. A supplied client wins without rebuilding
+      it. Separate sync/async constructors select the client type.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_sdk_client_argument_projection$/)'
+  - id: case-assistants-beta-default
+    why: 'The SDK beta assistants namespace supplies OpenAI-Beta: assistants=v2 for list/create/delete. Capture
+      all three operations through the same header case as threads/messages and vector stores.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::assistants_cases::case_[0-9]+_assistants_beta_default$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_assistants_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_assistants_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-assistants/list-assistants-pagination.yaml
 - tools/oracle/cases/helpers/providers/openai-assistants/create-tools-resources.yaml
 - tools/oracle/cases/helpers/providers/openai-assistants/delete-assistant.yaml
-- tools/oracle/cases/helpers/providers/openai-assistants/beta-header.yaml
 - tools/oracle/cases/helpers/providers/openai-assistants/assistant-error.yaml
+- tools/oracle/cases/helpers/providers/openai-assistants/sdk-client-argument-projection.yaml
+- tools/oracle/cases/helpers/providers/openai-assistants/assistants-beta-default.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config L82-L98;
-  MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params L105-L109
-  belong to B036; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356; OpenAIChatCompletion.make_openai_embedding_request
-  L1201-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request L1218-L1232; OpenAIChatCompletion.aembedding
-  L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to B006; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
+- 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
+  port them.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.__init__ L360-L361; OpenAIChatCompletion._set_dynamic_params_on_client
   L363-L372; OpenAIChatCompletion._get_openai_client L374-L462; OpenAIChatCompletion.make_openai_chat_completion_request
-  L465-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L506-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
+  L464-L503; OpenAIChatCompletion.make_sync_openai_chat_completion_request L505-L545; OpenAIChatCompletion._call_agentic_completion_hooks_openai
   L547-L625; OpenAIChatCompletion.mock_streaming L627-L643; OpenAIChatCompletion.completion L645-L887; OpenAIChatCompletion.acompletion
-  L889-L1011 belong to B004; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
-  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454; OpenAIChatCompletion.image_generation
-  L1456-L1554 belong to B511; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
-  L1620-L1666 belong to B514; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client L1683-L1711;
-  OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
+  L889-L1011 belong to B004.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.streaming L1013-L1068; OpenAIChatCompletion.async_streaming
+  L1070-L1187; OpenAIChatCompletion.get_stream_options L1189-L1197 belong to B005.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: _embedding_request_without_sdk_defaults L345-L356;
+  OpenAIChatCompletion.make_openai_embedding_request L1200-L1215; OpenAIChatCompletion.make_sync_openai_embedding_request
+  L1217-L1232; OpenAIChatCompletion.aembedding L1234-L1303; OpenAIChatCompletion.embedding L1305-L1390 belong to
+  B006.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: MistralEmbeddingConfig.__init__ L73-L79; MistralEmbeddingConfig.get_config
+  L81-L98; MistralEmbeddingConfig.get_supported_openai_params L100-L103; MistralEmbeddingConfig.map_openai_params
+  L105-L109 belong to B036.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.aimage_generation L1392-L1454;
+  OpenAIChatCompletion.image_generation L1456-L1554 belong to B511.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIChatCompletion.audio_speech L1556-L1618; OpenAIChatCompletion.async_audio_speech
+  L1620-L1666 belong to B514.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIFilesAPI.__init__ L1680-L1681; OpenAIFilesAPI.get_openai_client
+  L1683-L1711; OpenAIFilesAPI.acreate_file L1713-L1719; OpenAIFilesAPI.create_file L1721-L1753; OpenAIFilesAPI.afile_content
   L1755-L1761; OpenAIFilesAPI.file_content L1763-L1799; OpenAIFilesAPI.afile_content_streaming L1801-L1825; OpenAIFilesAPI.file_content_streaming
   L1827-L1881; OpenAIFilesAPI.aretrieve_file L1883-L1889; OpenAIFilesAPI.retrieve_file L1891-L1927; OpenAIFilesAPI.adelete_file
   L1929-L1935; OpenAIFilesAPI.delete_file L1937-L1973; OpenAIFilesAPI.alist_files L1975-L1984; OpenAIFilesAPI.list_files
-  L1986-L2026 belong to B516; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client L2041-L2069;
-  OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
+  L1986-L2026 belong to B516.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIBatchesAPI.__init__ L2038-L2039; OpenAIBatchesAPI.get_openai_client
+  L2041-L2069; OpenAIBatchesAPI.acreate_batch L2071-L2077; OpenAIBatchesAPI.create_batch L2079-L2112; OpenAIBatchesAPI.aretrieve_batch
   L2114-L2121; OpenAIBatchesAPI.retrieve_batch L2123-L2155; OpenAIBatchesAPI.acancel_batch L2157-L2164; OpenAIBatchesAPI.cancel_batch
-  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517;
-  reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
-  L2568-L2580; OpenAIAssistantsAPI.add_message L2583-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
-  L2644-L2665; OpenAIAssistantsAPI.get_messages L2670-L2681; OpenAIAssistantsAPI.get_messages L2684-L2695; OpenAIAssistantsAPI.get_messages
-  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2773-L2785;
-  OpenAIAssistantsAPI.create_thread L2788-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
-  L2861-L2887; OpenAIAssistantsAPI.get_thread L2892-L2903; OpenAIAssistantsAPI.get_thread L2906-L2917; OpenAIAssistantsAPI.get_thread
-  L2921-L2958 belong to B520; reuse that implementation or its injected typed boundary.
-- 'litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have no caller at the pin; do not
-  port them.'
-- >-
-  litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
-  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3074-L3093; OpenAIAssistantsAPI.run_thread
-  L3096-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config L175-L176; OpenAIConfig.get_supported_openai_params
-  L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params L207-L212; OpenAIConfig._transform_messages
-  L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class L254-L259; OpenAIConfig.transform_request
-  L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment L300-L313; OpenAIConfig.get_model_response_iterator
-  L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser L329-L336 belong to B668; reuse that implementation
-  or its injected typed boundary.
+  L2166-L2202; OpenAIBatchesAPI.alist_batches L2204-L2212; OpenAIBatchesAPI.list_batches L2214-L2247 belong to B517.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.a_add_message L2532-L2563; OpenAIAssistantsAPI.add_message
+  L2567-L2580; OpenAIAssistantsAPI.add_message L2582-L2595; OpenAIAssistantsAPI.add_message L2599-L2642; OpenAIAssistantsAPI.async_get_messages
+  L2644-L2665; OpenAIAssistantsAPI.get_messages L2669-L2681; OpenAIAssistantsAPI.get_messages L2683-L2695; OpenAIAssistantsAPI.get_messages
+  L2699-L2731; OpenAIAssistantsAPI.async_create_thread L2735-L2768; OpenAIAssistantsAPI.create_thread L2772-L2785;
+  OpenAIAssistantsAPI.create_thread L2787-L2800; OpenAIAssistantsAPI.create_thread L2804-L2859; OpenAIAssistantsAPI.async_get_thread
+  L2861-L2887; OpenAIAssistantsAPI.get_thread L2891-L2903; OpenAIAssistantsAPI.get_thread L2905-L2917; OpenAIAssistantsAPI.get_thread
+  L2921-L2958 belong to B520.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.arun_thread L2965-L3001; OpenAIAssistantsAPI.async_run_thread_stream
+  L3003-L3035; OpenAIAssistantsAPI.run_thread_stream L3037-L3069; OpenAIAssistantsAPI.run_thread L3073-L3093; OpenAIAssistantsAPI.run_thread
+  L3095-L3115; OpenAIAssistantsAPI.run_thread L3119-L3207 belong to B521.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIConfig.__init__ L154-L172; OpenAIConfig.get_config
+  L174-L176; OpenAIConfig.get_supported_openai_params L178-L200; OpenAIConfig._gpt_config_for_model L202-L205; OpenAIConfig._map_openai_params
+  L207-L212; OpenAIConfig._transform_messages L214-L215; OpenAIConfig.map_openai_params L217-L252; OpenAIConfig.get_error_class
+  L254-L259; OpenAIConfig.transform_request L261-L270; OpenAIConfig.transform_response L272-L298; OpenAIConfig.validate_environment
+  L300-L313; OpenAIConfig.get_model_response_iterator L315-L325; OpenAIChatCompletionResponseIterator.chunk_parser
+  L329-L336 belong to B668.'
+- 'Function ownership inventory litellm/llms/openai/openai.py: OpenAIAssistantsAPI.delete_thread L2960-L2961 have
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- The Assistants beta header is part of the wire request, including list and delete operations.
+- The public async-list branch fails to forward pagination even though the async helper supports it; wiring all
+  arguments through would change the pin.
+- A supplied SDK client is used as-is, without the explicit missing/wrong-async checks used by files and batches.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 650
   max_new_expects: 0
-review_level: standard
+review_level: security

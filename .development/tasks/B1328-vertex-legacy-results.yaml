@@ -1,0 +1,84 @@
+id: B1328
+title: Legacy Vertex prediction results and asynchronous execution
+description: >-
+  Add legacy_prediction records and async execution for vertex_ai_non_gemini.py L17-L57 and
+  L425-L682 (256 nonblank noncomment lines). Define the typed LegacyInvocation variants
+  Chat, Text, CustomEndpoint and PrivateEndpoint, with an injected Google prediction client
+  implemented over B173 transport; expose its SDK-equivalent request/result records so tests
+  intercept at send_message_async/predict_async/predict_streaming_async. Resolve tokens through
+  B1303. Native adapters use publisher-model predict/streaming prediction and deployed-endpoint
+  predict RPCs, preserving Google SDK field serialization captured by the reference fixture.
+  Take the first prediction; strip everything through the first literal newline-Output-colon-newline.
+  Copy a Message result directly, otherwise apply the source string conversion, including None.
+  Use injected time and B195 local encoding when usage_metadata lacks prompt counts; preserve
+  server usage when available. The language-model finish mapper is an injected B206 callback.
+  Async completion wraps failures as Vertex 500. Chat/text streams remove stream from options;
+  custom/private streams synthesize TextStreamer whitespace-separated words, and private mode
+  additionally removes stream from instances[0]. Unhandled modes produce Unable to generate
+  response. Preserve sync/async TextStreamer exhaustion without restoring lost whitespace.
+  Native projection tests cover output_separator, first_prediction, none_string, sdk_usage
+  and local_usage. Helper legacy_prediction_result drives only the in-memory TextStreamer,
+  covering word_stream, whitespace_only, unicode_whitespace and sync_async_exhaustion.
+  It does not call async_completion or async_streaming. Rust fixture-client tests assert
+  operation selection, option mutation and cancellation. Decode prediction JSON with
+  decode_legacy_prediction, fuzz target legacy_prediction and a replay corpus. Budget 300
+  execution/projection, 190 tests, 120 adapters and 90 decoding/fuzz lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,legacy_prediction}.rs
+    - crates/betterlite-vertex/src/legacy_prediction/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/legacy_prediction.rs
+    - crates/betterlite-vertex/fuzz/corpus/legacy_prediction/**
+    - tools/oracle/src/helpers/{mod,legacy_prediction_result}.rs
+    - tools/oracle/helpers/{dispatch,legacy_prediction_result}.py
+    - tools/oracle/cases/helpers/legacy-prediction-result/**
+    - tools/oracle/fuzz/corpus/helper_case/legacy_prediction_result*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_non_gemini.py#L17-L57
+    why: Legacy error facts and whitespace-based TextStreamer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_non_gemini.py#L425-L682
+    why: Asynchronous SDK call seams, prediction extraction and usage fallbacks.
+dod:
+  - text: Native prediction projection preserves first-result extraction, string conversion and fallback usage.
+    proof: [legacy-results]
+  - text: TextStreamer yields source-equivalent bare words and exhaustion in both iteration modes.
+    proof: [legacy-results, legacy-python, oracle]
+  - text: Asynchronous prediction calls select the proper operation and release owned transports on cancellation.
+    proof: [legacy-execution]
+  - text: Prediction bytes and new helper fixture records are exercised by production decoders.
+    proof: [legacy-corpus, legacy-seeds]
+checks:
+  optional: []
+  commands:
+    - id: legacy-results
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^legacy_prediction::tests::projection/)'
+      why: First-result extraction and fallback usage need direct result assertions.
+    - id: legacy-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^legacy_prediction::tests::execution/)'
+      why: Captured Google request records must reflect each asynchronous branch.
+    - id: legacy-python
+      run: test -f tools/oracle/helpers/legacy_prediction_result.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter constructs TextStreamer locally and observes only its deterministic iterator output.
+    - id: legacy-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/legacy_prediction.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/legacy_prediction)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_legacy_prediction_corpus)'
+      why: Upstream prediction shapes must pass through the bounded decoder under fuzz replay.
+    - id: legacy-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/legacy_prediction_result*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::legacy_prediction_result::/)'
+      why: Result fixtures must select the legacy prediction operation.
+oracle_cases:
+  - tools/oracle/cases/helpers/legacy-prediction-result/word-stream.yaml
+  - tools/oracle/cases/helpers/legacy-prediction-result/whitespace-only.yaml
+  - tools/oracle/cases/helpers/legacy-prediction-result/unicode-whitespace.yaml
+  - tools/oracle/cases/helpers/legacy-prediction-result/sync-async-exhaustion.yaml
+deviations: []
+out_of_scope:
+  - B1320 owns completion and cache lookup at L58-L424; _set_client_in_cache has no caller at the pin.
+  - B157 supplies Python SDK object bindings; native prediction requests and replies remain in this task.
+pitfalls:
+  - TextStreamer.split() discards whitespace and yields bare words without adding spaces.
+  - Async private streaming removes stream from the first instance as well as the option map.
+  - Async completion maps arbitrary failures to 500 while the synchronous outer wrapper uses APIConnectionError.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,82 @@
+id: B1333
+title: Vertex Claude chat policy and output sanitization
+description: >-
+  Implement vertex_claude_chat over B576/B577/B580 Anthropic parameter, request and reply
+  adapters, owning VertexAIAnthropicConfig and all output_params_utils functions (about 230
+  nonblank noncomment lines). Provider identity is vertex_ai and billing metadata is stripped.
+  Remove model after parent request shaping. Sanitize output_config by removing nonobjects,
+  dropping effort only when B569 says the Vertex model does not support it, preserving all
+  other keys, and removing the object if empty; output_format passes unchanged and the global
+  unsupported-key set is empty. For response_format, use the claude-3-sonnet-20240229 fallback
+  model only for parent mapping unless B688 reports supports_native_structured_output=true;
+  restore the original model for adaptive-thinking conversion and final responses.
+  Compose B568 automatic betas with tool-search-tool-2025-10-19 and context edits: compact_20260112
+  selects compact-2026-01-12, every other edit selects context-management-2025-06-27. Merge
+  extra_headers.anthropic-beta from comma-separated strings or lists, drop extra_headers from
+  the body, and write the resulting set into both anthropic_beta and the header. Compare beta
+  sets independent of Python hash iteration, while preserving membership exactly. Accept
+  vertex_ai and vertex_ai_beta in is_supported_model, using lowercase claude or catalog membership.
+  The remote-image policy calls B183's no-fetch rejection; inline bytes remain usable. Pure
+  helper vertex_claude_chat cases effort_haiku, effort_opus, native_schema_capability,
+  compact_and_other_edits, manual_beta_union, model_removed and response_model_restored cover
+  these overrides. Rust remote_image_rejected verifies the deviation's status/type/param/code
+  and zero credential/HTTP calls.
+  Budget 270 implementation, 180 tests, 130 adapters and 70 dependency/wiring lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,vertex_claude_chat}.rs
+    - crates/betterlite-vertex/src/vertex_claude_chat/**
+    - tools/oracle/src/helpers/{mod,vertex_claude_chat}.rs
+    - tools/oracle/helpers/{dispatch,vertex_claude_chat}.py
+    - tools/oracle/cases/helpers/vertex-claude-chat/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_claude_chat*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/transformation.py#L29-L230
+    why: Vertex-specific chat overrides, remote image policy and response model restoration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/output_params_utils.py#L18-L73
+    why: Shared output_config effort filtering and untouched output_format.
+dod:
+  - text: Vertex Claude chat applies capability-sensitive output policy and the exact beta membership.
+    proof: [claude-overrides, claude-python, oracle]
+  - text: Remote image inputs requiring bytes fail before any fetch and inline images remain usable.
+    proof: [claude-media]
+  - text: New Claude override fixtures select the production helper entry.
+    proof: [claude-seeds]
+checks:
+  optional: []
+  commands:
+    - id: claude-overrides
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_claude_chat::tests::overrides/)'
+      why: Tests must distinguish native structured output from the tool-based fallback.
+    - id: claude-media
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_claude_chat::tests::remote_image_rejected$/)'
+      why: The Vertex inlining override must not re-enable request URL downloads.
+    - id: claude-python
+      run: test -f tools/oracle/helpers/vertex_claude_chat.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Reference adapters compare parent-composed Vertex requests and stable beta sets.
+    - id: claude-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_claude_chat*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_claude_chat::/)'
+      why: Claude fixtures must carry the registered override variant under call.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-claude-chat/effort-haiku.yaml
+  - tools/oracle/cases/helpers/vertex-claude-chat/effort-opus.yaml
+  - tools/oracle/cases/helpers/vertex-claude-chat/native-schema-capability.yaml
+  - tools/oracle/cases/helpers/vertex-claude-chat/compact-and-other-edits.yaml
+  - tools/oracle/cases/helpers/vertex-claude-chat/manual-beta-union.yaml
+  - tools/oracle/cases/helpers/vertex-claude-chat/model-removed.yaml
+  - tools/oracle/cases/helpers/vertex-claude-chat/response-model-restored.yaml
+deviations:
+  - what: Vertex Claude chat image URLs that require inlining return HTTP 400, type invalid_request_error, param image_url and code unsupported_remote_media; no request URL is fetched and supplied inline image bytes still work.
+    why: inlines_remote_media selects URL retrieval here; the download policy remains open for Max, so no downloader is added.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/transformation.py#L55-L56
+out_of_scope:
+  - The local VertexAIError class at L20-L26 has no caller at the pin; shared Vertex errors are already B1300.
+  - B1339 owns experimental_pass_through/transformation.py; this task exports its output sanitizer for that caller.
+pitfalls:
+  - Haiku's unsupported effort is dropped without removing unrelated output_config keys.
+  - The structured-output fallback model must not leak into response.model.
+  - Vertex requires tool-search-tool-2025-10-19 even when the inherited tool-search beta differs.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: standard

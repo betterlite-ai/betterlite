@@ -1,0 +1,53 @@
+id: B1327
+title: Select Gemini complete and streaming execution paths
+description: >-
+  Implement the public GeminiCall entry in betterlite-vertex from VertexLLM.completion at
+  L2870-L3070 (181 nonblank noncomment lines). Pop stream from optional_params before building
+  the request-transform arguments. acompletion selects the async path; only literal true selects
+  streaming. Delegate async operations to B1316. The synchronous facade uses the same owned
+  runtime and B1302 token cache, B1304 URL/header resolution, B1321 synchronous cache/body
+  preparation, B1316 HTTP opening and B1326 complete decoding. Preserve the source distinction
+  between timeout=None and an explicit zero in this sync path; neither facade starts a nested
+  runtime or blocks an async worker. Supplied sync/async clients are selected only for the matching
+  facade, with pool fallback otherwise. Native selection tests cover stream_absent,
+  stream_false, stream_true, async_complete, async_stream and explicit_zero_timeout.
+  The source completion method performs I/O, so it is not invoked by a helper adapter;
+  B031 compares complete and streaming effects through booted chat requests.
+  Verify the sync facade with an injected runtime and
+  transport that records auth, transform and send order; assert one POST and no generated stream
+  request before iteration. This is the SDK/provider selection layer, not an additional server
+  handler. The implementation budget is 220 selection/facade lines, 170 ordered-effect tests
+  and 130 runtime/cancellation integration lines, capped at 575.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_call}.rs
+    - crates/betterlite-vertex/src/gemini_call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2870-L3070
+    why: Stream removal, async branch selection and synchronous execution ordering.
+dod:
+  - text: Stream selection and timeout presence determine the same execution mode as the pinned entry point.
+    proof: [selection-tests]
+  - text: The sync facade preserves operation order without duplicate requests or nested runtimes.
+    proof: [selection-effects]
+checks:
+  optional: []
+  commands:
+    - id: selection-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_call::tests::selection/)'
+      why: Missing, false and true stream flags must not collapse into one branch.
+    - id: selection-effects
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_call::tests::ordered_effects/)'
+      why: The facade must authenticate and transform before exactly one send.
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Python awaitable and client-object bindings are B157; the native facade accepts typed clients and runtime handles.
+  - B1316 owns HTTP operations; B031 selects this provider from main.py; earlier configuration/response methods are B1305/B1308-B1316/B1322/B1323/B1326.
+pitfalls:
+  - stream is removed from the caller's option map before cache/body transformation observes it.
+  - A supplied AsyncHTTPHandler cannot serve the synchronous client branch.
+  - stream=1 is not the literal True check modeled by the typed boolean option.
+budget: {max_changed_lines: 575, max_new_expects: 0}
+review_level: security

@@ -14,9 +14,35 @@ description: >-
   L122-L133; decode_character_id_with_provider L136-L190; extract_original_character_id L193-L196.
 
 
-  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
-  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
-  and no copied helper algorithm is permitted.
+  Call B997 ImageEditRequestUtils.get_image_content_type directly through its lower media helper module; do not
+  copy its filename/header detection. This task owns identifier parsing, character-list rewrites and multipart tuples
+  only. No environment variables or config settings are read.
+
+
+  Named case contracts: video_id_roundtrip: Encode UTF-8 litellm:custom_llm_provider:{provider};model_id:{model_id
+  or empty};video_id:{video_id} with standard padded base64 and video_ prefix; decode all three strings, preserving
+  empty model_id rather than returning None. character_id_roundtrip: Use character_ and litellm:custom_llm_provider:{provider};model_id:{model_id
+  or empty};character_id:{character_id}; extraction returns only the decoded original ID. invalid_id_fallback: Empty
+  IDs, wrong prefixes, bad base64/UTF-8 and payloads with fewer than three semicolon-separated fields retain the
+  entire original ID with provider/model None. Only decoding exceptions emit the debug error; absent separators
+  do not. input_reference_string_png: Pass a string, including https://example.invalid/a.png, as the multipart body
+  without fetching it; B997 determines image/png and filename input_reference.png for non-BufferedReader values.
+  multipart_input_file: BufferedReader images use their exact name and original stream with B997 MIME; BytesIO/bytes
+  keep input_reference.png even when image MIME is JPEG. Append to the supplied field name/list without replacing
+  earlier fields. encode_identity_guards: An empty provider or empty ID returns the original unchanged; any successfully
+  decoded non-None provider, including an empty string, prevents double encoding even when the requested provider/model
+  differ. decode_permissive_fields: Pad to a multiple of four; replace every occurrence of the outer prefix, not
+  just the first. Split on semicolons, use only the first three fields, and replace literal litellm:custom_llm_provider:,
+  model_id:, video_id:/character_id: anywhere within each field without validating their prefixes; discard extra
+  fields. character_list_rewrite: Only a list-valued characters is traversed. Copy dictionaries with string id and
+  replace that id using the character decoder; retain other keys, non-dictionaries, missing/non-string ids and non-list
+  characters unchanged. The outer request retains all unrelated fields. video_filename_mime: Video tuples use a
+  truthy .name or input_video.mp4; any mimetypes guess starting video/ wins (including video/webm) before content
+  inspection. An image or unknown filename falls back to video/mp4. video_probe_cursor: For BytesIO/BufferedReader
+  read at most the first 64 bytes from offset zero and restore the original cursor on successful read; bytes use
+  their first 64 bytes. ftyp anywhere in this prefix returns video/mp4; absent ftyp, unsupported input kinds and
+  seek/read failures also return video/mp4 without warning. Preserve the source cursor behavior when a read/restore
+  throws.
 
 
   Implement crates/betterlite-openai/src/openai_video_identifiers.rs with adjacent tests under openai_video_identifiers/.
@@ -33,10 +59,10 @@ description: >-
 
 
   Write rstest function openai_video_identifiers_cases in betterlite-openai with these exact named cases (one per
-  oracle file): video_id_roundtrip, character_id_roundtrip, invalid_id_fallback, input_reference_string_png, multipart_input_file.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  oracle file): video_id_roundtrip, character_id_roundtrip, invalid_id_fallback, input_reference_string_png, multipart_input_file,
+  encode_identity_guards, decode_permissive_fields, character_list_rewrite, video_filename_mime, video_probe_cursor.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers* using HelperCase: kind:
@@ -55,9 +81,9 @@ description: >-
 
 
   Budget from 204 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 230 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
-  wiring lines; 490 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 230 production lines, 265 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 65 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 720 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -82,39 +108,44 @@ references:
   why: Own OpenAIVideoConfig._decode_character_ids_in_create_video_request. Other functions in this file remain
     with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L574-L628
-  why: >-
-    Own OpenAIVideoConfig._add_image_to_files, OpenAIVideoConfig._video_file_tuple, OpenAIVideoConfig._add_video_to_files,
+  why: Own OpenAIVideoConfig._add_image_to_files, OpenAIVideoConfig._video_file_tuple, OpenAIVideoConfig._add_video_to_files,
     OpenAIVideoConfig._get_video_content_type. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L20-L196
-  why: >-
-    Own DecodedCharacterId, _add_base64_padding, encode_video_id_with_provider, decode_video_id_with_provider, extract_original_video_id,
-    encode_character_id_with_provider, decode_character_id_with_provider, extract_original_character_id. Other functions
-    in this file remain with the owners listed below.
+  why: Own DecodedCharacterId, _add_base64_padding, encode_video_id_with_provider, decode_video_id_with_provider,
+    extract_original_video_id, encode_character_id_with_provider, decode_character_id_with_provider, extract_original_character_id.
+    Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L16-L18
+  why: Actual ID prefixes and character payload template.
 dod:
-- text: 'video id roundtrip: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/video-id-roundtrip.yaml.'
+- text: 'video_id_roundtrip: Encode UTF-8 litellm:custom_llm_provider:{provider};model_id:{model_id or empty};video_id:{video_id}
+    with standard padded base64 and video_ prefix; decode all three strings, preserving empty model_id rather than
+    returning None.'
   proof:
   - case-video-id-roundtrip
   - oracle
   - helper-python
-- text: >-
-    character id roundtrip: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/character-id-roundtrip.yaml.
+- text: 'character_id_roundtrip: Use character_ and litellm:custom_llm_provider:{provider};model_id:{model_id or
+    empty};character_id:{character_id}; extraction returns only the decoded original ID.'
   proof:
   - case-character-id-roundtrip
   - oracle
   - helper-python
-- text: 'invalid id fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/invalid-id-fallback.yaml.'
+- text: 'invalid_id_fallback: Empty IDs, wrong prefixes, bad base64/UTF-8 and payloads with fewer than three semicolon-separated
+    fields retain the entire original ID with provider/model None. Only decoding exceptions emit the debug error;
+    absent separators do not.'
   proof:
   - case-invalid-id-fallback
   - oracle
   - helper-python
-- text: >-
-    input reference string png: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/input-reference-string-png.yaml.
+- text: 'input_reference_string_png: Pass a string, including https://example.invalid/a.png, as the multipart body
+    without fetching it; B997 determines image/png and filename input_reference.png for non-BufferedReader values.'
   proof:
   - case-input-reference-string-png
   - oracle
   - helper-python
-- text: >-
-    multipart input file: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-video-identifiers/multipart-input-file.yaml.
+- text: 'multipart_input_file: BufferedReader images use their exact name and original stream with B997 MIME; BytesIO/bytes
+    keep input_reference.png even when image MIME is JPEG. Append to the supplied field name/list without replacing
+    earlier fields.'
   proof:
   - case-multipart-input-file
   - oracle
@@ -126,73 +157,142 @@ dod:
 - text: decode_provider_video_id has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'encode_identity_guards: An empty provider or empty ID returns the original unchanged; any successfully
+    decoded non-None provider, including an empty string, prevents double encoding even when the requested provider/model
+    differ.'
+  proof:
+  - case-encode-identity-guards
+  - oracle
+  - helper-python
+- text: 'decode_permissive_fields: Pad to a multiple of four; replace every occurrence of the outer prefix, not
+    just the first. Split on semicolons, use only the first three fields, and replace literal litellm:custom_llm_provider:,
+    model_id:, video_id:/character_id: anywhere within each field without validating their prefixes; discard extra
+    fields.'
+  proof:
+  - case-decode-permissive-fields
+  - oracle
+  - helper-python
+- text: 'character_list_rewrite: Only a list-valued characters is traversed. Copy dictionaries with string id and
+    replace that id using the character decoder; retain other keys, non-dictionaries, missing/non-string ids and
+    non-list characters unchanged. The outer request retains all unrelated fields.'
+  proof:
+  - case-character-list-rewrite
+  - oracle
+  - helper-python
+- text: 'video_filename_mime: Video tuples use a truthy .name or input_video.mp4; any mimetypes guess starting video/
+    wins (including video/webm) before content inspection. An image or unknown filename falls back to video/mp4.'
+  proof:
+  - case-video-filename-mime
+  - oracle
+  - helper-python
+- text: 'video_probe_cursor: For BytesIO/BufferedReader read at most the first 64 bytes from offset zero and restore
+    the original cursor on successful read; bytes use their first 64 bytes. ftyp anywhere in this prefix returns
+    video/mp4; absent ftyp, unsupported input kinds and seek/read failures also return video/mp4 without warning.
+    Preserve the source cursor behavior when a read/restore throws.'
+  proof:
+  - case-video-probe-cursor
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-video-id-roundtrip
-    why: The video-id-roundtrip behavior is missing or differs from its pinned fixture.
+    why: Encode UTF-8 litellm:custom_llm_provider:{provider};model_id:{model_id or empty};video_id:{video_id} with
+      standard padded base64 and video_ prefix; decode all three strings, preserving empty model_id rather than
+      returning None.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_video_id_roundtrip$/)'
   - id: case-character-id-roundtrip
-    why: The character-id-roundtrip behavior is missing or differs from its pinned fixture.
+    why: Use character_ and litellm:custom_llm_provider:{provider};model_id:{model_id or empty};character_id:{character_id};
+      extraction returns only the decoded original ID.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_character_id_roundtrip$/)'
   - id: case-invalid-id-fallback
-    why: The invalid-id-fallback behavior is missing or differs from its pinned fixture.
+    why: Empty IDs, wrong prefixes, bad base64/UTF-8 and payloads with fewer than three semicolon-separated fields
+      retain the entire original ID with provider/model None. Only decoding exceptions emit the debug error; absent
+      separators do not.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_invalid_id_fallback$/)'
   - id: case-input-reference-string-png
-    why: The input-reference-string-png behavior is missing or differs from its pinned fixture.
+    why: Pass a string, including https://example.invalid/a.png, as the multipart body without fetching it; B997
+      determines image/png and filename input_reference.png for non-BufferedReader values.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_input_reference_string_png$/)'
   - id: case-multipart-input-file
-    why: The multipart-input-file behavior is missing or differs from its pinned fixture.
+    why: BufferedReader images use their exact name and original stream with B997 MIME; BytesIO/bytes keep input_reference.png
+      even when image MIME is JPEG. Append to the supplied field name/list without replacing earlier fields.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_multipart_input_file$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_video_identifiers.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_video_identifiers.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers*")"
       && grep -lq 'openai_video_identifiers' tools/oracle/fuzz/corpus/helper_case/openai_video_identifiers* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_video_identifiers$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_video_identifiers)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_video_identifiers)"
       && grep -q 'decode_provider_video_id' crates/betterlite-openai/fuzz/fuzz_targets/openai_video_identifiers.rs
       && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_video_identifiers_corpus$/)'
+  - id: case-encode-identity-guards
+    why: An empty provider or empty ID returns the original unchanged; any successfully decoded non-None provider,
+      including an empty string, prevents double encoding even when the requested provider/model differ.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_encode_identity_guards$/)'
+  - id: case-decode-permissive-fields
+    why: 'Pad to a multiple of four; replace every occurrence of the outer prefix, not just the first. Split on
+      semicolons, use only the first three fields, and replace literal litellm:custom_llm_provider:, model_id:,
+      video_id:/character_id: anywhere within each field without validating their prefixes; discard extra fields.'
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_decode_permissive_fields$/)'
+  - id: case-character-list-rewrite
+    why: Only a list-valued characters is traversed. Copy dictionaries with string id and replace that id using
+      the character decoder; retain other keys, non-dictionaries, missing/non-string ids and non-list characters
+      unchanged. The outer request retains all unrelated fields.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_character_list_rewrite$/)'
+  - id: case-video-filename-mime
+    why: Video tuples use a truthy .name or input_video.mp4; any mimetypes guess starting video/ wins (including
+      video/webm) before content inspection. An image or unknown filename falls back to video/mp4.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_video_filename_mime$/)'
+  - id: case-video-probe-cursor
+    why: For BytesIO/BufferedReader read at most the first 64 bytes from offset zero and restore the original cursor
+      on successful read; bytes use their first 64 bytes. ftyp anywhere in this prefix returns video/mp4; absent
+      ftyp, unsupported input kinds and seek/read failures also return video/mp4 without warning. Preserve the source
+      cursor behavior when a read/restore throws.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_video_identifiers_cases::case_[0-9]+_video_probe_cursor$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-video-identifiers/video-id-roundtrip.yaml
 - tools/oracle/cases/helpers/providers/openai-video-identifiers/character-id-roundtrip.yaml
 - tools/oracle/cases/helpers/providers/openai-video-identifiers/invalid-id-fallback.yaml
 - tools/oracle/cases/helpers/providers/openai-video-identifiers/input-reference-string-png.yaml
 - tools/oracle/cases/helpers/providers/openai-video-identifiers/multipart-input-file.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/encode-identity-guards.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/decode-permissive-fields.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/character-list-rewrite.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/video-filename-mime.yaml
+- tools/oracle/cases/helpers/providers/openai-video-identifiers/video-probe-cursor.yaml
 deviations: []
 out_of_scope:
-- >-
-  litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.transform_video_create_character_request L463-L474;
-  OpenAIVideoConfig.transform_video_create_character_response L476-L481; OpenAIVideoConfig.transform_video_get_character_request
-  L483-L493; OpenAIVideoConfig.transform_video_get_character_response L495-L500; OpenAIVideoConfig.transform_video_edit_request
-  L502-L528; OpenAIVideoConfig.transform_video_edit_response L530-L540; OpenAIVideoConfig.transform_video_extension_request
-  L542-L561; OpenAIVideoConfig.transform_video_extension_response L563-L572 belong to B526; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.__init__ L47-L48; OpenAIVideoConfig.get_supported_openai_params
-  L50-L63; OpenAIVideoConfig.map_openai_params L65-L72; OpenAIVideoConfig.validate_environment L74-L91; OpenAIVideoConfig.get_complete_url
-  L93-L105; OpenAIVideoConfig.use_multipart_form_data L107-L108; OpenAIVideoConfig.transform_video_create_request
+- 'Function ownership inventory litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.__init__ L47-L48;
+  OpenAIVideoConfig.get_supported_openai_params L50-L63; OpenAIVideoConfig.map_openai_params L65-L72; OpenAIVideoConfig.validate_environment
+  L74-L91; OpenAIVideoConfig.get_complete_url L93-L105; OpenAIVideoConfig.use_multipart_form_data L107-L108; OpenAIVideoConfig.transform_video_create_request
   L110-L146; OpenAIVideoConfig.transform_video_create_response L177-L200; OpenAIVideoConfig.transform_video_content_request
   L202-L232; OpenAIVideoConfig.transform_video_remix_request L234-L262; OpenAIVideoConfig.transform_video_content_response
   L264-L270; OpenAIVideoConfig.transform_video_remix_response L272-L299; OpenAIVideoConfig.transform_video_list_request
   L301-L334; OpenAIVideoConfig.transform_video_list_response L336-L375; OpenAIVideoConfig.transform_video_delete_request
   L377-L399; OpenAIVideoConfig.transform_video_delete_response L401-L412; OpenAIVideoConfig.transform_video_status_retrieve_request
   L414-L434; OpenAIVideoConfig.transform_video_status_retrieve_response L436-L452; OpenAIVideoConfig.get_error_class
-  L454-L461 belong to B525; reuse that implementation or its injected typed boundary.
+  L454-L461 belong to B525.'
+- 'Function ownership inventory litellm/llms/openai/videos/transformation.py: OpenAIVideoConfig.transform_video_create_character_request
+  L463-L474; OpenAIVideoConfig.transform_video_create_character_response L476-L481; OpenAIVideoConfig.transform_video_get_character_request
+  L483-L493; OpenAIVideoConfig.transform_video_get_character_response L495-L500; OpenAIVideoConfig.transform_video_edit_request
+  L502-L528; OpenAIVideoConfig.transform_video_edit_response L530-L540; OpenAIVideoConfig.transform_video_extension_request
+  L542-L561; OpenAIVideoConfig.transform_video_extension_response L563-L572 belong to B526.'
 pitfalls:
-- Malformed managed video IDs fall back to the original ID instead of becoming decode errors.
+- The video ID docstring says vid_, but the executable constant is video_.
+- A semicolon inside a provider ID is not escaped, so only the third field survives extraction.
+- An I/O exception during the video MIME probe can leave the file cursor changed; only successful probes restore
+  it.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard

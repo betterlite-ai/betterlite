@@ -1,0 +1,79 @@
+id: B1334
+title: Gemini image dimensions, generation options and search tools
+description: >-
+  Build gemini_image_policy for common_utils.py L18-L347, including its exact dimension/aspect
+  tables and every image helper (approximately 280 nonblank noncomment lines). Parse positive
+  width x height strings case-insensitively; auto and invalid dimensions produce no mapping.
+  Prefer the exact table, otherwise minimize multiplicative aspect-ratio distance with source
+  insertion-order ties. Use rational comparisons, not floating logarithms; compare area against
+  768², 1536² and 3072² to select 512/1K/2K/4K. B193 supports_image_size overrides the fallback
+  that disables imageSize for model names containing 2.5-flash. Gemini models receive imageConfig;
+  other models receive aspectRatio/imageSize at top level. Existing optional_params keys suppress
+  n/size/pass-through mappings, but explicit imageConfig objects overwrite inferred configuration.
+  Only parse an imageConfig string when the caller opts in; invalid JSON raises UnsupportedParamsError.
+  Reuse B1308 tool mapping, drop mixed search/functions according to its policy, avoid adding a
+  second search tool, and deduplicate by the first matching search-key kind while retaining order.
+  Generation config starts response_modalities=[IMAGE,TEXT], strips unsupported imageSize, and
+  chooses the first non-None candidateCount/candidate_count/sampleCount/n. B1322 supplies Search
+  request counts from flattened candidate metadata. Register helper gemini_image_policy with
+  exact_portrait_table, nearest_ratio_tie, area_boundaries, flash_size_omitted, catalog_size_override,
+  explicit_image_config, candidate_alias_order and search_dedup. decode_image_options handles
+  size text and optional JSON configuration; add image_options fuzz target and replay. Budget
+  300 policy/table lines, 190 tests, 110 adapters and 95 parser/fuzz lines, maximum 775.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,gemini_image_policy}.rs
+    - crates/betterlite-vertex/src/gemini_image_policy/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/image_options.rs
+    - crates/betterlite-vertex/fuzz/corpus/image_options/**
+    - tools/oracle/src/helpers/{mod,gemini_image_policy}.rs
+    - tools/oracle/helpers/{dispatch,gemini_image_policy}.py
+    - tools/oracle/cases/helpers/gemini-image-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_image_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L18-L347
+    why: Image tables, nearest-ratio selection, parameter precedence and image-search tool handling.
+dod:
+  - text: Image size and generation options preserve exact dimensions, capability gates and alias precedence.
+    proof: [image-policy-tests, image-policy-python, oracle]
+  - text: Image-option text and JSON parsing are bounded and replay their committed malformed-input corpus.
+    proof: [image-policy-corpus]
+  - text: Image policy fixture tags reach the same production mapping used by image adapters.
+    proof: [image-policy-seeds]
+checks:
+  optional: []
+  commands:
+    - id: image-policy-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_image_policy::/) - test(replays_the_image_options_corpus)'
+      why: Dimension thresholds and search-key deduplication need explicit boundary assertions.
+    - id: image-policy-python
+      run: test -f tools/oracle/helpers/gemini_image_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Rational Rust dimension selection must agree with the pinned Python mapping on supported inputs.
+    - id: image-policy-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/image_options.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/image_options)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_image_options_corpus)'
+      why: External imageConfig JSON and dimension strings must exercise decode_image_options.
+    - id: image-policy-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_image_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_image_policy::/)'
+      why: Shared corpus parsing must invoke the image-policy helper variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-image-policy/exact-portrait-table.yaml
+  - tools/oracle/cases/helpers/gemini-image-policy/nearest-ratio-tie.yaml
+  - tools/oracle/cases/helpers/gemini-image-policy/area-boundaries.yaml
+  - tools/oracle/cases/helpers/gemini-image-policy/flash-size-omitted.yaml
+  - tools/oracle/cases/helpers/gemini-image-policy/catalog-size-override.yaml
+  - tools/oracle/cases/helpers/gemini-image-policy/explicit-image-config.yaml
+  - tools/oracle/cases/helpers/gemini-image-policy/candidate-alias-order.yaml
+  - tools/oracle/cases/helpers/gemini-image-policy/search-dedup.yaml
+deviations: []
+out_of_scope:
+  - B1331 owns Studio identity/model discovery, B1330 token counting and B1378 encode_unserializable_types in common_utils.py.
+  - Image HTTP execution and generated-image byte decoding belong to the B033/B035 image operation tasks.
+pitfalls:
+  - Dimensions 1280x896 and 896x1280 have explicit table mappings that override nearest-ratio inference.
+  - candidateCount=0 is selected because alias precedence checks None rather than truthiness.
+  - A tool containing multiple search keys is deduplicated according to the first recognized key only.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: standard

@@ -1,0 +1,79 @@
+id: B1325
+title: Google AI Studio chat capabilities and media input
+description: >-
+  Add studio_chat to betterlite-vertex as the GoogleAIStudioGeminiConfig counterpart. Reuse
+  B1310's common mapping and B1312's conversation walker while preserving this subclass's
+  supported-parameter list: it advertises penalties, omits top_k/top_logprobs/extra_headers,
+  and adds audio only when the model string contains tts. Reasoning support uses the gemini
+  catalog identity or the newer-model predicate. Keep all eight class defaults absent,
+  including response_schema; expose configured response_schema through studio_chat_settings
+  loader tests rather than assigning the docstring's numeric examples. Own _image_url_fields
+  and all class methods in the source file. Inline inputs and Gemini Files API URIs remain
+  usable. Ordinary HTTP/HTTPS image or file inputs requiring the source's download conversion
+  fail with the stated deviation; a failed fetch is not simulated as a silent fallback.
+  Compare pure capability and safe-message results with helper studio_chat_input for tts_audio,
+  plain_chat_parameters, inherited_reasoning, file_api_passthrough, inline_image_detail and
+  missing_file_field. Rust rejected_url tests assert the error envelope and zero transport calls.
+  Add new HelperCase seeds under call.studio_chat_input. No parser beyond the existing chat and
+  inline-media boundaries is required. This file has 149 nonblank noncomment lines; allow
+  150 adapter policy, 150 tests, 95 oracle adapters and 100 settings/registration lines, cap 550.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_chat}.rs
+    - crates/betterlite-vertex/src/studio_chat/**
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/studio_chat.rs
+    - crates/betterlite-config/src/providers/vertex/studio_chat/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/studio_chat_input.rs
+    - tools/oracle/src/helpers/studio_chat_input/**
+    - tools/oracle/helpers/{dispatch,studio_chat_input}.py
+    - tools/oracle/cases/helpers/studio-chat-input/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_chat_input*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L19-L173
+    why: Entire Studio chat specialization, including its distinct capabilities and URL preprocessing.
+dod:
+  - text: Studio-specific capabilities and safe message inputs match the pinned subclass.
+    proof: [studio-input-tests, oracle, studio-input-python]
+  - text: Configured response_schema loads and URL inputs fail without being fetched.
+    proof: [studio-input-config, studio-url-policy]
+  - text: The Studio helper's new seed selects its real adapter.
+    proof: [studio-input-seed]
+checks:
+  optional: [mutants]
+  commands:
+    - id: studio-input-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_chat::tests::input_cases/)'
+      why: Studio capability differences must be tested without substituting Vertex's list.
+    - id: studio-input-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/studio_chat_settings::/)'
+      why: response_schema support must reach the loaded Studio options.
+    - id: studio-url-policy
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_chat::tests::rejected_url/)'
+      why: Remote image and file branches must return the specified rejection without IO.
+    - id: studio-input-python
+      run: test -f tools/oracle/helpers/studio_chat_input.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Studio cases require an independently invoked subclass adapter.
+    - id: studio-input-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_chat_input*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_chat_input::/)'
+      why: Studio helper seeds must parse under their own externally tagged operation.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-chat-input/tts-audio.yaml
+  - tools/oracle/cases/helpers/studio-chat-input/plain-chat-parameters.yaml
+  - tools/oracle/cases/helpers/studio-chat-input/inherited-reasoning.yaml
+  - tools/oracle/cases/helpers/studio-chat-input/file-api-passthrough.yaml
+  - tools/oracle/cases/helpers/studio-chat-input/inline-image-detail.yaml
+  - tools/oracle/cases/helpers/studio-chat-input/missing-file-field.yaml
+deviations:
+  - what: Google AI Studio chat rejects ordinary remote media requiring download with HTTP 400, type invalid_request_error, the offending media field as param and code unsupported_remote_media; uploaded Gemini file URIs and inline data remain accepted.
+    why: Max has not decided request URL downloads; this task preserves the current no-fetch boundary instead of enabling Studio's download-and-inline behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L113-L173
+out_of_scope:
+  - API-key resolution and Studio model listing remain B035's service parts; shared generation mapping belongs to B1310.
+pitfalls:
+  - The tts capability test is a case-sensitive substring check, not a catalog-based audio capability lookup.
+  - Gemini Files API URLs are already uploaded resources and must bypass download rejection.
+budget: {max_changed_lines: 550, max_new_expects: 0}
+review_level: standard

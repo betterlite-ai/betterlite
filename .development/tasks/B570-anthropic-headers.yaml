@@ -12,8 +12,56 @@ description: >-
   L1783-L1797; _anthropic_model_entry L1800-L1815; create_anthropic_model_list_response L1818-L1844.
 
 
-  get_models here projects ModelInfo records from the local model catalog (chat/transformation.py:676 onward); the
-  AnthropicModelInfo.get_models network fetch is separately owned by B567.
+  create_anthropic_model_list_response serves Anthropic-format /v1/models callers in proxy_server.py L11592, L11711
+  and L11771. B567 owns AnthropicModelInfo.get_models network discovery; this task only projects supplied ModelInfo
+  records.
+
+
+  Named case contracts: default_native_version: Default anthropic-version to 2023-06-01 and accept/content-type
+  to application/json; a truthy explicit version overrides it. Prompt caching and PDF use alone add no beta. api_key_and_bearer:
+  Use B567 key/OAuth resolution, then ANTHROPIC_AUTH_TOKEN only when the resolved API key is None; native keys use
+  x-api-key unless the B567 custom-base bearer policy applies. oauth_beta_merge: A key starting sk-ant-oat sends
+  authorization: Bearer {key}, anthropic-dangerous-direct-browser-access: true and oauth-2025-04-20; merge caller
+  betas without duplicates. derived_beta_union: file_id adds files-api-2025-04-14 and code-execution-2025-05-22;
+  MCP adds mcp-client-2025-04-04; tool search, programmatic calls and input_examples each add advanced-tool-use-2025-11-20;
+  effort adds effort-2025-11-24; code execution adds code-execution-2025-08-25; skills adds skills-2025-10-02. Use
+  independently enabled flags so each implication can fail alone. vertex_web_search_beta: Vertex suppresses every
+  derived/user beta except web-search-2025-03-05 when web_search_tool_used is true; ordinary native web search alone
+  adds no beta. response_header_prefixes: Prefix every input response header with llm_provider-; additionally map
+  anthropic-ratelimit-requests-limit/remaining to x-ratelimit-limit/remaining-requests and anthropic-ratelimit-tokens-limit/remaining
+  to x-ratelimit-limit/remaining-tokens. catalog_model_list: Return every input model as type model with display_name
+  defaulting to id, max_input_tokens and max_tokens from max_output_tokens (nullable); has_more is false, first_id/last_id
+  are null for an empty list. listed_ids changes id and adds source_model, while display_names keys use the source
+  id. auth_missing_401: Neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN resolving raises AuthenticationError
+  401 for provider anthropic and the requested model; identify both environment variables in the missing-credential
+  diagnostic, comparing type/param/code but ignoring message wording. conversation_betas: Output-config history
+  adds mid-conversation-output-config-2026-07-01; display updates adds thinking-display-updates-2026-08-18; tool-change
+  history adds mid-conversation-tool-changes-2026-07-01; computer-tool beta comes from B568. catalog_created_at_default:
+  Resolve DEFAULT_MODEL_CREATED_AT_TIME from the same env var, default 1677610602, and convert to UTC ISO format
+  ending Z; invalid noninteger environment values fail config loading. header_merge_precedence: validate_environment
+  overlays generated headers over caller headers; api_base falls back to litellm_params.api_base only when None
+  and litellm_params.use_bearer_for_custom_base defaults false.
+
+
+  The Python beta construction uses a set. Both helper adapters project anthropic-beta to a sorted unique list before
+  comparison, retaining exact token spelling and all other headers; do not require comma ordering or pin PYTHONHASHSEED
+  to hide the nondeterminism. B567 owns ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN loading; reuse its named loader
+  tests.
+
+
+  Load use_bearer_for_custom_base, DEFAULT_MODEL_CREATED_AT_TIME through betterlite-config, with injected environment
+  lookup and the defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest anthropic_headers_config_cases; each named loads_<key> case invokes the real B002 loader, checks
+  explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  Write standalone Rust test anthropic_headers_credential_identity_isolation in betterlite-anthropic: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test anthropic_headers_secret_safe_failure in betterlite-anthropic: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-anthropic/src/headers.rs with adjacent tests under headers/. Keep each Rust module
@@ -31,10 +79,10 @@ description: >-
 
   Write rstest function headers_cases in betterlite-anthropic with these exact named cases (one per oracle file):
   default_native_version, api_key_and_bearer, oauth_beta_merge, derived_beta_union, vertex_web_search_beta, user_beta_preserved,
-  response_header_prefixes, catalog_model_list. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  response_header_prefixes, catalog_model_list, auth_missing_401, conversation_betas, catalog_created_at_default,
+  header_merge_precedence. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_headers* using HelperCase: kind: helper
@@ -49,9 +97,9 @@ description: >-
 
 
   Budget from 196 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 220 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 449 planned, 450 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 220 production lines, 240 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 60 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 665 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -67,6 +115,19 @@ scope:
   - tools/oracle/helpers/anthropic_headers.py
   - tools/oracle/cases/helpers/providers/anthropic-headers/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_headers*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/anthropic.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_headers.rs
+  - crates/betterlite-config/src/providers/anthropic/anthropic_headers/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/anthropic_headers_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic_headers*
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L951-L1120
@@ -75,28 +136,41 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1783-L1844
   why: Own process_anthropic_headers, _anthropic_model_entry, create_anthropic_model_list_response. Other functions
     in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1880-L1882
+  why: Model timestamp environment default.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L768-L786
+  why: Beta and OAuth literals.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11585-L11598
+  why: Call site for model-list projection; route ownership stays with its API task.
 dod:
-- text: 'default native version: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/default-native-version.yaml.'
+- text: 'default_native_version: Default anthropic-version to 2023-06-01 and accept/content-type to application/json;
+    a truthy explicit version overrides it. Prompt caching and PDF use alone add no beta.'
   proof:
   - case-default-native-version
   - oracle
   - helper-python
-- text: 'api key and bearer: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/api-key-and-bearer.yaml.'
+- text: 'api_key_and_bearer: Use B567 key/OAuth resolution, then ANTHROPIC_AUTH_TOKEN only when the resolved API
+    key is None; native keys use x-api-key unless the B567 custom-base bearer policy applies.'
   proof:
   - case-api-key-and-bearer
   - oracle
   - helper-python
-- text: 'oauth beta merge: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/oauth-beta-merge.yaml.'
+- text: 'oauth_beta_merge: A key starting sk-ant-oat sends authorization: Bearer {key}, anthropic-dangerous-direct-browser-access:
+    true and oauth-2025-04-20; merge caller betas without duplicates.'
   proof:
   - case-oauth-beta-merge
   - oracle
   - helper-python
-- text: 'derived beta union: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/derived-beta-union.yaml.'
+- text: 'derived_beta_union: file_id adds files-api-2025-04-14 and code-execution-2025-05-22; MCP adds mcp-client-2025-04-04;
+    tool search, programmatic calls and input_examples each add advanced-tool-use-2025-11-20; effort adds effort-2025-11-24;
+    code execution adds code-execution-2025-08-25; skills adds skills-2025-10-02. Use independently enabled flags
+    so each implication can fail alone.'
   proof:
   - case-derived-beta-union
   - oracle
   - helper-python
-- text: 'vertex web search beta: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/vertex-web-search-beta.yaml.'
+- text: 'vertex_web_search_beta: Vertex suppresses every derived/user beta except web-search-2025-03-05 when web_search_tool_used
+    is true; ordinary native web search alone adds no beta.'
   proof:
   - case-vertex-web-search-beta
   - oracle
@@ -106,13 +180,15 @@ dod:
   - case-user-beta-preserved
   - oracle
   - helper-python
-- text: >-
-    response header prefixes: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/response-header-prefixes.yaml.
+- text: 'response_header_prefixes: Prefix every input response header with llm_provider-; additionally map anthropic-ratelimit-requests-limit/remaining
+    to x-ratelimit-limit/remaining-requests and anthropic-ratelimit-tokens-limit/remaining to x-ratelimit-limit/remaining-tokens.'
   proof:
   - case-response-header-prefixes
   - oracle
   - helper-python
-- text: 'catalog model list: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/catalog-model-list.yaml.'
+- text: 'catalog_model_list: Return every input model as type model with display_name defaulting to id, max_input_tokens
+    and max_tokens from max_output_tokens (nullable); has_more is false, first_id/last_id are null for an empty
+    list. listed_ids changes id and adds source_model, while display_names keys use the source id.'
   proof:
   - case-catalog-model-list
   - oracle
@@ -121,47 +197,123 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'auth_missing_401: Neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN resolving raises AuthenticationError
+    401 for provider anthropic and the requested model; identify both environment variables in the missing-credential
+    diagnostic, comparing type/param/code but ignoring message wording.'
+  proof:
+  - case-auth-missing-401
+  - oracle
+  - helper-python
+- text: 'conversation_betas: Output-config history adds mid-conversation-output-config-2026-07-01; display updates
+    adds thinking-display-updates-2026-08-18; tool-change history adds mid-conversation-tool-changes-2026-07-01;
+    computer-tool beta comes from B568.'
+  proof:
+  - case-conversation-betas
+  - oracle
+  - helper-python
+- text: 'catalog_created_at_default: Resolve DEFAULT_MODEL_CREATED_AT_TIME from the same env var, default 1677610602,
+    and convert to UTC ISO format ending Z; invalid noninteger environment values fail config loading.'
+  proof:
+  - case-catalog-created-at-default
+  - oracle
+  - helper-python
+- text: 'header_merge_precedence: validate_environment overlays generated headers over caller headers; api_base
+    falls back to litellm_params.api_base only when None and litellm_params.use_bearer_for_custom_base defaults
+    false.'
+  proof:
+  - case-header-merge-precedence
+  - oracle
+  - helper-python
+- text: The real config loader resolves use_bearer_for_custom_base, including its default and precedence.
+  proof:
+  - config-use-bearer-for-custom-base
+- text: The real config loader resolves DEFAULT_MODEL_CREATED_AT_TIME, including its default and precedence.
+  proof:
+  - config-default-model-created-at-time
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-default-native-version
-    why: The default-native-version behavior is missing or differs from its pinned fixture.
+    why: Default anthropic-version to 2023-06-01 and accept/content-type to application/json; a truthy explicit
+      version overrides it. Prompt caching and PDF use alone add no beta.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_default_native_version$/)'
   - id: case-api-key-and-bearer
-    why: The api-key-and-bearer behavior is missing or differs from its pinned fixture.
+    why: Use B567 key/OAuth resolution, then ANTHROPIC_AUTH_TOKEN only when the resolved API key is None; native
+      keys use x-api-key unless the B567 custom-base bearer policy applies.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_api_key_and_bearer$/)'
   - id: case-oauth-beta-merge
-    why: The oauth-beta-merge behavior is missing or differs from its pinned fixture.
+    why: 'A key starting sk-ant-oat sends authorization: Bearer {key}, anthropic-dangerous-direct-browser-access:
+      true and oauth-2025-04-20; merge caller betas without duplicates.'
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_oauth_beta_merge$/)'
   - id: case-derived-beta-union
-    why: The derived-beta-union behavior is missing or differs from its pinned fixture.
+    why: file_id adds files-api-2025-04-14 and code-execution-2025-05-22; MCP adds mcp-client-2025-04-04; tool search,
+      programmatic calls and input_examples each add advanced-tool-use-2025-11-20; effort adds effort-2025-11-24;
+      code execution adds code-execution-2025-08-25; skills adds skills-2025-10-02. Use independently enabled flags
+      so each implication can fail alone.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_derived_beta_union$/)'
   - id: case-vertex-web-search-beta
-    why: The vertex-web-search-beta behavior is missing or differs from its pinned fixture.
+    why: Vertex suppresses every derived/user beta except web-search-2025-03-05 when web_search_tool_used is true;
+      ordinary native web search alone adds no beta.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_vertex_web_search_beta$/)'
   - id: case-user-beta-preserved
-    why: The user-beta-preserved behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-headers/user-beta-preserved.yaml.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_user_beta_preserved$/)'
   - id: case-response-header-prefixes
-    why: The response-header-prefixes behavior is missing or differs from its pinned fixture.
+    why: Prefix every input response header with llm_provider-; additionally map anthropic-ratelimit-requests-limit/remaining
+      to x-ratelimit-limit/remaining-requests and anthropic-ratelimit-tokens-limit/remaining to x-ratelimit-limit/remaining-tokens.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_response_header_prefixes$/)'
   - id: case-catalog-model-list
-    why: The catalog-model-list behavior is missing or differs from its pinned fixture.
+    why: Return every input model as type model with display_name defaulting to id, max_input_tokens and max_tokens
+      from max_output_tokens (nullable); has_more is false, first_id/last_id are null for an empty list. listed_ids
+      changes id and adds source_model, while display_names keys use the source id.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_catalog_model_list$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_headers.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_headers.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_headers*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_headers*")"
       && grep -lq 'anthropic_headers' tools/oracle/fuzz/corpus/helper_case/anthropic_headers* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_headers$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-auth-missing-401
+    why: Neither ANTHROPIC_API_KEY nor ANTHROPIC_AUTH_TOKEN resolving raises AuthenticationError 401 for provider
+      anthropic and the requested model; identify both environment variables in the missing-credential diagnostic,
+      comparing type/param/code but ignoring message wording.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_auth_missing_401$/)'
+  - id: case-conversation-betas
+    why: Output-config history adds mid-conversation-output-config-2026-07-01; display updates adds thinking-display-updates-2026-08-18;
+      tool-change history adds mid-conversation-tool-changes-2026-07-01; computer-tool beta comes from B568.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_conversation_betas$/)'
+  - id: case-catalog-created-at-default
+    why: Resolve DEFAULT_MODEL_CREATED_AT_TIME from the same env var, default 1677610602, and convert to UTC ISO
+      format ending Z; invalid noninteger environment values fail config loading.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_catalog_created_at_default$/)'
+  - id: case-header-merge-precedence
+    why: validate_environment overlays generated headers over caller headers; api_base falls back to litellm_params.api_base
+      only when None and litellm_params.use_bearer_for_custom_base defaults false.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::headers_cases::case_[0-9]+_header_merge_precedence$/)'
+  - id: config-use-bearer-for-custom-base
+    why: use_bearer_for_custom_base lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_headers_config_cases::case_[0-9]+_loads_use_bearer_for_custom_base$/)'
+  - id: config-default-model-created-at-time
+    why: DEFAULT_MODEL_CREATED_AT_TIME lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::anthropic_headers_config_cases::case_[0-9]+_loads_default_model_created_at_time$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_headers_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::anthropic_headers_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-headers/default-native-version.yaml
 - tools/oracle/cases/helpers/providers/anthropic-headers/api-key-and-bearer.yaml
@@ -171,122 +323,124 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-headers/user-beta-preserved.yaml
 - tools/oracle/cases/helpers/providers/anthropic-headers/response-header-prefixes.yaml
 - tools/oracle/cases/helpers/providers/anthropic-headers/catalog-model-list.yaml
+- tools/oracle/cases/helpers/providers/anthropic-headers/auth-missing-401.yaml
+- tools/oracle/cases/helpers/providers/anthropic-headers/conversation-betas.yaml
+- tools/oracle/cases/helpers/providers/anthropic-headers/catalog-created-at-default.yaml
+- tools/oracle/cases/helpers/providers/anthropic-headers/header-merge-precedence.yaml
 deviations: []
 out_of_scope:
 - B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106; supports_anthropic_cache_control
-  L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping L130-L134; _validated_claude_code_list
-  L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts L163-L178; _is_claude_code_subagent_billing_system
-  L181-L193; is_claude_code_one_shot_subagent_request L196-L210; eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set
-  L320-L335; AnthropicModelInfo.is_file_id_used L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347;
-  AnthropicModelInfo.is_mid_conversation_tool_change_used L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used
-  L361-L365; AnthropicModelInfo.is_mcp_server_used L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381;
-  AnthropicModelInfo.is_web_search_tool_used L383-L390; AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used
-  L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used L420-L444; AnthropicModelInfo.is_input_examples_used
-  L446-L472; AnthropicModelInfo.is_eager_input_streaming_used L474-L475; AnthropicModelInfo.is_code_execution_tool_used
-  L831-L844; AnthropicModelInfo.is_container_with_skills_used L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers
-  L862-L865; AnthropicModelInfo.get_computer_tool_beta_header L867-L884; AnthropicModelInfo.get_anthropic_beta_list
-  L886-L940 belong to B568; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params L478-L503; AnthropicModelInfo._apply_sampling_param
-  L506-L528; AnthropicModelInfo.forced_tool_use_unsupported L531-L532; AnthropicModelInfo.forced_tool_use_downgraded
-  L535-L552; AnthropicModelInfo._apply_forced_tool_choice L555-L567; AnthropicModelInfo._strip_version_suffix L570-L574;
-  AnthropicModelInfo._model_map_lookup_candidates L577-L614; AnthropicModelInfo._get_model_capability L617-L631;
-  AnthropicModelInfo._get_exact_model_capability L634-L641; AnthropicModelInfo.supports_fast_mode L644-L648; AnthropicModelInfo._get_provider_resolved_capability
-  L651-L668; AnthropicModelInfo._supports_model_capability L671-L693; AnthropicModelInfo._is_adaptive_thinking_model
-  L696-L705; AnthropicModelInfo._is_always_on_thinking_model L708-L714; AnthropicModelInfo._supports_legacy_thinking
-  L717-L724; AnthropicModelInfo.maybe_drop_disabled_thinking L727-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model
-  L747-L781; AnthropicModelInfo._legacy_budget_to_effort L784-L793; AnthropicModelInfo.is_effort_used L795-L829
-  belong to B688; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299; is_anthropic_invalid_thinking_block_error
-  L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346; _without_encrypted_reasoning_blocks L1349-L1360;
-  strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372; strip_thinking_blocks_from_anthropic_messages_request_dict
-  L1375-L1385; strip_empty_content_blocks_from_anthropic_messages L1388-L1428; _is_empty_text_block L1431-L1435;
-  is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block L1453-L1469; normalize_anthropic_tool_use_id
-  L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages L1504-L1526;
-  _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691; strip_provider_specific_fields_from_anthropic_messages
-  L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control L1707-L1712; _with_portable_cache_control_in_blocks
-  L1715-L1718; _with_portable_cache_control_in_content_block L1721-L1730; _with_portable_cache_control_in_message
-  L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748; _with_portable_cache_control_in_scoped_value
-  L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780 belong to B571; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _ReplayedSearchQuery L1529-L1532; _ReplayedWebSearchResult L1535-L1542;
-  _ReplayedWebSearchToolResultError L1545-L1549; _ReplayedWebSearchToolResult L1552-L1557; _ReplayedServerToolUse
-  L1560-L1565; _TextBlock L1568-L1570; _flattenable_web_search_tool_result L1577-L1588; _replayed_server_tool_use
-  L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block L1621-L1634; _flatten_web_search_results_in_message
-  L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages L1663-L1678 belong to B572; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; is_anthropic_oauth_key L225-L231;
-  resolve_used_client_oauth_token L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285;
-  AnthropicError.__init__ L310-L316; AnthropicModelInfo._make_api_key_auth_header L943-L949; AnthropicModelInfo.get_api_base
-  L1123-L1131; AnthropicModelInfo.get_api_key L1134-L1137; AnthropicModelInfo.get_auth_token L1140-L1148; AnthropicModelInfo.get_auth_header
-  L1151-L1170; AnthropicModelInfo.get_base_model L1173-L1174; AnthropicModelInfo.get_models L1176-L1200; AnthropicModelInfo.get_token_counter
-  L1202-L1213 belong to B567; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type L172-L181; AnthropicConfig.filter_anthropic_output_schema
-  L530-L665; AnthropicConfig.get_json_schema_from_pydantic_object L667-L670; AnthropicConfig._extract_json_schema_from_response_format
-  L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool
-  L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format L1656-L1682 belong to B574; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name L193-L202; _build_anthropic_tool_name_maps
-  L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L1000-L1048; AnthropicConfig._sanitize_tool_names_in_request
-  L1079-L1151 belong to B573; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
+- 'litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
   L393-L396; AnthropicConfig.get_cache_control_headers L672-L678; AnthropicConfig._build_request_tool_name_maps
   L1051-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165; AnthropicConfig._separate_deferred_tools L1167-L1183;
-  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320; AnthropicConfig.custom_llm_provider
-  L323-L324; AnthropicConfig._resolved_provider L327-L328; AnthropicConfig.get_config L331-L338; AnthropicConfig.get_max_tokens_for_model
-  L341-L354; AnthropicConfig._map_stop_sequences L1230-L1248; AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic
-  L1417-L1471; AnthropicConfig.map_openai_params L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128;
-  _valid_user_id L2795-L2808 belong to B576; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format L357-L384; AnthropicConfig._resolve_json_mode_non_streaming
-  L2130-L2160; AnthropicConfig.extract_response_content L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482;
-  AnthropicConfig._build_code_interpreter_results L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536;
-  AnthropicConfig._build_provider_specific_fields L2538-L2582; AnthropicConfig._convert_tool_response_to_message
-  L2762-L2785 belong to B578; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice L680-L721; AnthropicConfig._map_tool_helper
-  L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951; AnthropicConfig._map_tools L953-L997 belong
-  to B575; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata L1684-L1691; AnthropicConfig.translate_system_message
-  L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780; AnthropicConfig._ensure_beta_header L1782-L1801;
-  AnthropicConfig._ensure_context_management_beta_header L1803-L1837; AnthropicConfig.update_headers_with_optional_anthropic_beta
-  L1839-L1875; AnthropicConfig.inlines_remote_media L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894;
-  AnthropicConfig.transform_request L1896-L2080 belong to B577; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage L2256-L2263; AnthropicConfig._response_has_thinking_block
-  L2266-L2274; AnthropicConfig._build_completion_token_details L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens
-  L2309-L2315; AnthropicConfig.is_anthropic_usage_object L2318-L2330; AnthropicConfig._aggregate_cache_creation_token_details
-  L2333-L2346; AnthropicConfig._resolve_cache_creation_token_details L2349-L2361; AnthropicConfig.calculate_usage
-  L2363-L2467 belong to B579; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response L2584-L2688; AnthropicConfig.get_prefix_prompt
-  L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class L2787-L2792 belong
-  to B580; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level L399-L403; AnthropicConfig._validate_effort_for_model
-  L406-L415; AnthropicConfig._model_supports_effort_param L418-L431; AnthropicConfig._model_supports_speed_param
-  L434-L444; AnthropicConfig._maybe_drop_speed_param L447-L471; AnthropicConfig._raise_invalid_reasoning_effort
-  L474-L494; AnthropicConfig.get_supported_openai_params L496-L527; AnthropicConfig._map_reasoning_effort L1251-L1309;
-  AnthropicConfig.cap_thinking_budget_to_max_tokens L1312-L1326 belong to B569; reuse that implementation or its
-  injected typed boundary.
+  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320;
+  AnthropicConfig.custom_llm_provider L322-L324; AnthropicConfig._resolved_provider L326-L328; AnthropicConfig.get_config
+  L330-L338; AnthropicConfig.get_max_tokens_for_model L340-L354; AnthropicConfig._map_stop_sequences L1230-L1248;
+  AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic L1416-L1471;
+  _valid_user_id L2795-L2808 belong to B2201.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level
+  L398-L403; AnthropicConfig._validate_effort_for_model L405-L415; AnthropicConfig._model_supports_effort_param
+  L417-L431; AnthropicConfig._model_supports_speed_param L433-L444; AnthropicConfig._maybe_drop_speed_param L446-L471;
+  AnthropicConfig._raise_invalid_reasoning_effort L473-L494; AnthropicConfig.get_supported_openai_params L496-L527;
+  AnthropicConfig._map_reasoning_effort L1250-L1309; AnthropicConfig.cap_thinking_budget_to_max_tokens L1311-L1326
+  belong to B569.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name
+  L193-L202; _build_anthropic_tool_name_maps L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L999-L1048;
+  AnthropicConfig._sanitize_tool_names_in_request L1078-L1151 belong to B573.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type
+  L172-L181; AnthropicConfig.filter_anthropic_output_schema L529-L665; AnthropicConfig.get_json_schema_from_pydantic_object
+  L667-L670; AnthropicConfig._extract_json_schema_from_response_format L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format
+  L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format
+  L1656-L1682 belong to B574.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice
+  L680-L721; AnthropicConfig._map_tool_helper L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951;
+  AnthropicConfig._map_tools L953-L997 belong to B575.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.map_openai_params
+  L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128 belong to B576.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata
+  L1684-L1691; AnthropicConfig.translate_system_message L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780;
+  AnthropicConfig._ensure_beta_header L1782-L1801; AnthropicConfig._ensure_context_management_beta_header L1803-L1837;
+  AnthropicConfig.update_headers_with_optional_anthropic_beta L1839-L1875; AnthropicConfig.inlines_remote_media
+  L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894; AnthropicConfig.transform_request L1896-L2080
+  belong to B577.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format
+  L356-L384; AnthropicConfig._resolve_json_mode_non_streaming L2130-L2160; AnthropicConfig.extract_response_content
+  L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482; AnthropicConfig._build_code_interpreter_results
+  L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536; AnthropicConfig._build_provider_specific_fields
+  L2538-L2582; AnthropicConfig._convert_tool_response_to_message L2761-L2785 belong to B578.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage
+  L2255-L2263; AnthropicConfig._response_has_thinking_block L2265-L2274; AnthropicConfig._build_completion_token_details
+  L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens L2309-L2315; AnthropicConfig.is_anthropic_usage_object
+  L2317-L2330; AnthropicConfig._aggregate_cache_creation_token_details L2332-L2346; AnthropicConfig._resolve_cache_creation_token_details
+  L2348-L2361; AnthropicConfig.calculate_usage L2363-L2467 belong to B579.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response
+  L2584-L2688; AnthropicConfig.get_prefix_prompt L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class
+  L2787-L2792 belong to B580.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model
+  L386-L390; AnthropicConfig._is_opus_4_7_model L392-L396; AnthropicConfig.get_cache_control_headers L672-L678;
+  AnthropicConfig._build_request_tool_name_maps L1050-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165;
+  AnthropicConfig._separate_deferred_tools L1167-L1183; AnthropicConfig._expand_tool_references L1185-L1228 have
+  no caller at the pin; do not implement or add cases.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; AnthropicModelInfo._strip_version_suffix
+  L569-L574; AnthropicModelInfo._model_map_lookup_candidates L576-L614; AnthropicModelInfo._get_model_capability
+  L616-L631; AnthropicModelInfo._get_exact_model_capability L633-L641; AnthropicModelInfo.supports_fast_mode L643-L648
+  belong to B2216.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: is_anthropic_oauth_key L225-L231; resolve_used_client_oauth_token
+  L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285; AnthropicError.__init__
+  L310-L316; AnthropicModelInfo._make_api_key_auth_header L942-L949; AnthropicModelInfo.get_api_base L1122-L1131;
+  AnthropicModelInfo.get_api_key L1133-L1137; AnthropicModelInfo.get_auth_token L1139-L1148; AnthropicModelInfo.get_auth_header
+  L1150-L1170; AnthropicModelInfo.get_base_model L1172-L1174; AnthropicModelInfo.get_models L1176-L1200 belong to
+  B567.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106;
+  supports_anthropic_cache_control L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping
+  L130-L134; _validated_claude_code_list L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts
+  L163-L178; _is_claude_code_subagent_billing_system L181-L193; is_claude_code_one_shot_subagent_request L196-L210;
+  eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set L320-L335; AnthropicModelInfo.is_file_id_used
+  L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347; AnthropicModelInfo.is_mid_conversation_tool_change_used
+  L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used L361-L365; AnthropicModelInfo.is_mcp_server_used
+  L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381; AnthropicModelInfo.is_web_search_tool_used L383-L390;
+  AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used
+  L420-L444; AnthropicModelInfo.is_input_examples_used L446-L472; AnthropicModelInfo.is_eager_input_streaming_used
+  L474-L475; AnthropicModelInfo.is_code_execution_tool_used L831-L844; AnthropicModelInfo.is_container_with_skills_used
+  L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers L862-L865; AnthropicModelInfo.get_computer_tool_beta_header
+  L867-L884; AnthropicModelInfo.get_anthropic_beta_list L886-L940 belong to B568.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299;
+  is_anthropic_invalid_thinking_block_error L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346;
+  _without_encrypted_reasoning_blocks L1349-L1360; strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372;
+  strip_thinking_blocks_from_anthropic_messages_request_dict L1375-L1385; strip_empty_content_blocks_from_anthropic_messages
+  L1388-L1428; _is_empty_text_block L1431-L1435; is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block
+  L1453-L1469; normalize_anthropic_tool_use_id L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages
+  L1504-L1526; _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691;
+  strip_provider_specific_fields_from_anthropic_messages L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control
+  L1707-L1712; _with_portable_cache_control_in_blocks L1715-L1718; _with_portable_cache_control_in_content_block
+  L1721-L1730; _with_portable_cache_control_in_message L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748;
+  _with_portable_cache_control_in_scoped_value L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780
+  belong to B571.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: _flattenable_web_search_tool_result L1577-L1588;
+  _replayed_server_tool_use L1591-L1595; _render_web_search_results L1598-L1618; _rewrite_replayed_web_search_block
+  L1621-L1634; _flatten_web_search_results_in_message L1637-L1660; flatten_unencrypted_web_search_results_in_anthropic_messages
+  L1663-L1678 belong to B572.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_token_counter L1202-L1213
+  belong to B585.'
+- 'Function ownership inventory litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params
+  L477-L503; AnthropicModelInfo._apply_sampling_param L505-L528; AnthropicModelInfo.forced_tool_use_unsupported
+  L530-L532; AnthropicModelInfo.forced_tool_use_downgraded L534-L552; AnthropicModelInfo._apply_forced_tool_choice
+  L554-L567; AnthropicModelInfo._get_provider_resolved_capability L650-L668; AnthropicModelInfo._supports_model_capability
+  L670-L693; AnthropicModelInfo._is_adaptive_thinking_model L695-L705; AnthropicModelInfo._is_always_on_thinking_model
+  L707-L714; AnthropicModelInfo._supports_legacy_thinking L716-L724; AnthropicModelInfo.maybe_drop_disabled_thinking
+  L726-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model L746-L781; AnthropicModelInfo._legacy_budget_to_effort
+  L783-L793; AnthropicModelInfo.is_effort_used L795-L829 belong to B688.'
 pitfalls:
-- Preserve version/content/accept defaults, Vertex beta special cases and response header aliases.
+- anthropic-beta is joined from a Python set, so compare the token set without erasing spelling or membership differences.
+- An explicitly empty listed_ids replacement adds source_model but still falls back to the original id because the
+  two checks use is not None and truthiness.
+- A resolved empty API key is not None, so it blocks ANTHROPIC_AUTH_TOKEN fallback without necessarily producing
+  an authentication header.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

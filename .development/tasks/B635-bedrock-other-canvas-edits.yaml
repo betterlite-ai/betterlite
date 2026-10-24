@@ -16,7 +16,7 @@ description: >-
   L483-L495; get_bedrock_image_edit_config_for_model L498-L519.
 
 
-  Reuse BedrockModelInfo.get_base_model from B591 (litellm/llms/bedrock/common_utils.py); its implementation remains
+  Reuse BedrockModelInfo.get_base_model from B2203 (litellm/llms/bedrock/common_utils.py); its implementation remains
   with that prerequisite.
 
 
@@ -26,6 +26,65 @@ description: >-
 
   Reuse BedrockStabilityImageEditConfig._is_stability_edit_model from B637 (litellm/llms/bedrock/image_edit/stability_transformation.py);
   its implementation remains with that prerequisite.
+
+
+  Named case contracts: canvas_task_types: BACKGROUND_REMOVAL emits only taskType and backgroundRemovalParams.image,
+  ignoring text/mask/options. Explicit IMAGE_VARIATION emits imageVariationParams with images=[image],text and non-None
+  negativeText/similarityStrength even with a mask. OUTPAINTING emits outPaintingParams.image,text plus maskPrompt
+  when not None, otherwise maskImage, and non-None negativeText/outPaintingMode. INPAINTING or automatic routing
+  with either mask emits inPaintingParams.image,text plus maskPrompt before maskImage and non-None negativeText.
+  Otherwise automatic routing emits IMAGE_VARIATION. None, empty and whitespace-only taskType select automatic routing;
+  other nonempty values must equal INPAINTING after the earlier exact branches, with no trimming for equality. canvas_catalog_eligibility:
+  Falsey model is ineligible. Build ordered unique truthy candidate names: original model; for slash-containing
+  names its last segment and bedrock/{segment}; B2203 base model and bedrock/{base} when different; then _get_potential_model_names
+  fields combined_model_name,combined_stripped_model_name,stripped_model_name,split_model when strings. Swallow
+  exceptions independently from base-model and potential-name generation. Resolve each candidate through the shared
+  case-insensitive _get_model_cost_key and inspect raw B193 model_cost entry or empty mapping. Only supports_nova_canvas_image_edit
+  literally True qualifies; do not use get_model_info because it drops arbitrary catalog fields. A model spelling
+  alone does not grant eligibility. image_bytes_base64: _file_types_to_b64 rejects None with ValueError Nova Canvas
+  image edit requires an image input; base64-encode supplied bytes, retain strings unchanged without validation
+  or URL fetching, and adapt supplied file-like objects through B159 with seek(0) when available before reading.
+  B159 owns PathLike opening and other SDK byte conversions; HTTP uploads arrive as resolved bytes. image is converted
+  before mask and before task/prompt validation. tuple_file_rejection: A tuple FileTypes value raises ValueError
+  Nova Canvas image edit does not support tuple FileTypes. Pass a file-like object, bytes, or a base64-encoded string.
+  Apply the same conversion to non-None mask. A string path or URL is passed as a literal base64-string value, never
+  opened or downloaded by this provider. size_parse_fallback: Mapper copies options and always removes size. Only
+  a string containing x is split at the first x and converted to two integers; ValueError silently leaves existing
+  width/height unchanged, without a warning. Remove n and copy non-None value to numberOfImages. Request transform
+  copies options, removes size/width/height, and attempts the same fallback only when both dimensions are None.
+  One supplied dimension suppresses size fallback for both. Nested imageGenerationConfig is copied only if a dict;
+  non-None top-level width,height,numberOfImages,quality,cfgScale,seed override nested values. Include that config
+  only when nonempty and task is not BACKGROUND_REMOVAL. quality_map: Supported params in order are n,size,response_format,mask,negativeText,similarityStrength,cfgScale,seed,quality,taskType,maskPrompt,outPaintingMode,imageGenerationConfig.
+  Map hd/premium to premium, standard to standard, preserve every other non-None quality including auto. With truthy
+  drop_params remove unknown mapped keys except underscore-prefixed keys and width,height,numberOfImages,mask; without
+  it retain extras. Request building ultimately ignores unused options; it does not forward arbitrary unknown fields
+  into the final task body. response_format_warning: Remove response_format in the mapper. None and b64_json are
+  silent; every other value emits debug message Nova Canvas image edit ignores response_format=%s and returns base64
+  images, with the value. This is debug logging, not a warning. Do not add URL response mode. mask_versus_mask_prompt:
+  Convert a non-None mask even if maskPrompt or explicit IMAGE_VARIATION later makes it unused, preserving conversion
+  failure order. An explicit INPAINTING/OUTPAINTING with None or empty prompt raises ValueError Amazon Nova Canvas
+  {task_type} requires a text prompt. Pass a non-empty `prompt` in your request. Otherwise replace None/empty prompt
+  with one literal space; whitespace text is retained. Automatic mask-triggered INPAINTING accepts that substituted
+  space. Return body and an empty second mapping without mutating caller options. canvas_task_errors: OUTPAINTING
+  with neither mask raises ValueError OUTPAINTING requires either a mask image or a mask prompt. Pass mask=<file>
+  or maskPrompt=<str> in the request. Unsupported nonempty task type raises ValueError Unsupported Amazon Nova Canvas
+  taskType: {task_type!r}. Use BACKGROUND_REMOVAL, OUTPAINTING, IMAGE_VARIATION, INPAINTING, or omit taskType for
+  automatic routing (mask → INPAINTING, else IMAGE_VARIATION). INPAINTING without a mask raises ValueError Amazon
+  Nova Canvas INPAINTING requires either maskPrompt or maskImage (use OpenAI mask= for maskImage, or pass maskPrompt
+  in optional params). See https://docs.aws.amazon.com/nova/latest/userguide/image-gen-req-resp-structure.html.
+  Empty maskPrompt counts as present. canvas_edit_contract: use_multipart_form_data returns False. validate_environment
+  replaces None headers by an empty mapping and adds exact Content-Type=application/json only when that exact key
+  is absent, retaining differently cased keys and existing values. get_error_class delegates B682 preserving status/message/headers.
+  get_complete_url raises NotImplementedError Nova Canvas image edit URLs are built in BedrockImageEdit._prepare_request
+  (AWS runtime endpoint + model invoke path). Do not use get_complete_url for this config. Native execution uses
+  B638 instead. canvas_edit_selector: get_bedrock_image_edit_config_for_model tries B637 Stability detection first,
+  then Canvas raw-catalog eligibility, constructs the selected class using B2202 empty base initialization, otherwise
+  ValueError Unsupported Bedrock image-edit model: {model!r}. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit
+  in model_prices for this id. Exercise the same selection/error cases through B638.
+
+
+  Reuse B2217 _get_model_cost_key and B2219 _get_potential_model_names where called; shared metadata resolution
+  is below this provider, never B157.
 
 
   Implement crates/betterlite-bedrock/src/canvas_edits.rs with adjacent tests under canvas_edits/. Keep each Rust
@@ -43,10 +102,9 @@ description: >-
 
   Write rstest function canvas_edits_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   canvas_task_types, canvas_catalog_eligibility, image_bytes_base64, tuple_file_rejection, size_parse_fallback,
-  quality_map, response_format_warning, mask_versus_mask_prompt. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  quality_map, response_format_warning, mask_versus_mask_prompt, canvas_task_errors, canvas_edit_contract, canvas_edit_selector.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_edits* using HelperCase:
@@ -62,9 +120,9 @@ description: >-
 
 
   Budget from 347 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 365 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 594 planned, 600 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 315 production lines, 310 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 780 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -82,61 +140,85 @@ scope:
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_edits*
   lint_tables: false
 references:
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L41-L385
-  why: >-
-    Own _nova_canvas_task_body, _file_types_to_b64, _supports_nova_canvas_image_edit_from_model_cost, BedrockAmazonNovaCanvasImageEditConfig._is_nova_canvas_image_edit_model,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L41-L385
+  why: Own _nova_canvas_task_body, _file_types_to_b64, _supports_nova_canvas_image_edit_from_model_cost, BedrockAmazonNovaCanvasImageEditConfig._is_nova_canvas_image_edit_model,
     BedrockAmazonNovaCanvasImageEditConfig.get_error_class, BedrockAmazonNovaCanvasImageEditConfig.get_supported_openai_params,
     BedrockAmazonNovaCanvasImageEditConfig.map_openai_params, BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_request.
     Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L468-L519
-  why: >-
-    Own BedrockAmazonNovaCanvasImageEditConfig.use_multipart_form_data, BedrockAmazonNovaCanvasImageEditConfig.get_complete_url,
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py#L468-L519
+  why: Own BedrockAmazonNovaCanvasImageEditConfig.use_multipart_form_data, BedrockAmazonNovaCanvasImageEditConfig.get_complete_url,
     BedrockAmazonNovaCanvasImageEditConfig.validate_environment, get_bedrock_image_edit_config_for_model. Other
     functions in this file remain with the owners listed below.
 dod:
-- text: 'canvas task types: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/canvas-task-types.yaml.'
+- text: 'canvas_task_types: BACKGROUND_REMOVAL emits only taskType and backgroundRemovalParams.image, ignoring text/mask/options.
+    Explicit IMAGE_VARIATION emits imageVariationParams with images=[image],text and non-None negativeText/similarityStrength
+    even with a mask. OUTPAINTING emits outPaintingParams.image,text plus maskPrompt when not None, otherwise maskImage,
+    and non-None negativeText/outPaintingMode. INPAINTING or automatic routing with either mask emits inPaintingParams.image,text
+    plus maskPrompt before maskImage and non-None negativeText. Otherwise automatic routing emits IMAGE_VARIATION.
+    None, empty and whitespace-only taskType select automatic routing; other nonempty values must equal INPAINTING
+    after the earlier exact branches, with no trimming for equality.'
   proof:
   - case-canvas-task-types
   - oracle
   - helper-python
-- text: >-
-    canvas catalog eligibility: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/canvas-catalog-eligibility.yaml.
+- text: 'canvas_catalog_eligibility: Falsey model is ineligible. Build ordered unique truthy candidate names: original
+    model; for slash-containing names its last segment and bedrock/{segment}; B2203 base model and bedrock/{base}
+    when different; then _get_potential_model_names fields combined_model_name,combined_stripped_model_name,stripped_model_name,split_model
+    when strings. Swallow exceptions independently from base-model and potential-name generation. Resolve each candidate
+    through the shared case-insensitive _get_model_cost_key and inspect raw B193 model_cost entry or empty mapping.
+    Only supports_nova_canvas_image_edit literally True qualifies; do not use get_model_info because it drops arbitrary
+    catalog fields. A model spelling alone does not grant eligibility.'
   proof:
   - case-canvas-catalog-eligibility
   - oracle
   - helper-python
-- text: 'image bytes base64: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/image-bytes-base64.yaml.'
+- text: 'image_bytes_base64: _file_types_to_b64 rejects None with ValueError Nova Canvas image edit requires an
+    image input; base64-encode supplied bytes, retain strings unchanged without validation or URL fetching, and
+    adapt supplied file-like objects through B159 with seek(0) when available before reading. B159 owns PathLike
+    opening and other SDK byte conversions; HTTP uploads arrive as resolved bytes. image is converted before mask
+    and before task/prompt validation.'
   proof:
   - case-image-bytes-base64
   - oracle
   - helper-python
-- text: >-
-    tuple file rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/tuple-file-rejection.yaml.
+- text: 'tuple_file_rejection: A tuple FileTypes value raises ValueError Nova Canvas image edit does not support
+    tuple FileTypes. Pass a file-like object, bytes, or a base64-encoded string. Apply the same conversion to non-None
+    mask. A string path or URL is passed as a literal base64-string value, never opened or downloaded by this provider.'
   proof:
   - case-tuple-file-rejection
   - oracle
   - helper-python
-- text: >-
-    size parse fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/size-parse-fallback.yaml.
+- text: 'size_parse_fallback: Mapper copies options and always removes size. Only a string containing x is split
+    at the first x and converted to two integers; ValueError silently leaves existing width/height unchanged, without
+    a warning. Remove n and copy non-None value to numberOfImages. Request transform copies options, removes size/width/height,
+    and attempts the same fallback only when both dimensions are None. One supplied dimension suppresses size fallback
+    for both. Nested imageGenerationConfig is copied only if a dict; non-None top-level width,height,numberOfImages,quality,cfgScale,seed
+    override nested values. Include that config only when nonempty and task is not BACKGROUND_REMOVAL.'
   proof:
   - case-size-parse-fallback
   - oracle
   - helper-python
-- text: 'quality map: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/quality-map.yaml.'
+- text: 'quality_map: Supported params in order are n,size,response_format,mask,negativeText,similarityStrength,cfgScale,seed,quality,taskType,maskPrompt,outPaintingMode,imageGenerationConfig.
+    Map hd/premium to premium, standard to standard, preserve every other non-None quality including auto. With
+    truthy drop_params remove unknown mapped keys except underscore-prefixed keys and width,height,numberOfImages,mask;
+    without it retain extras. Request building ultimately ignores unused options; it does not forward arbitrary
+    unknown fields into the final task body.'
   proof:
   - case-quality-map
   - oracle
   - helper-python
-- text: >-
-    response format warning: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/response-format-warning.yaml.
+- text: 'response_format_warning: Remove response_format in the mapper. None and b64_json are silent; every other
+    value emits debug message Nova Canvas image edit ignores response_format=%s and returns base64 images, with
+    the value. This is debug logging, not a warning. Do not add URL response mode.'
   proof:
   - case-response-format-warning
   - oracle
   - helper-python
-- text: >-
-    mask versus mask prompt: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/mask-versus-mask-prompt.yaml.
+- text: 'mask_versus_mask_prompt: Convert a non-None mask even if maskPrompt or explicit IMAGE_VARIATION later makes
+    it unused, preserving conversion failure order. An explicit INPAINTING/OUTPAINTING with None or empty prompt
+    raises ValueError Amazon Nova Canvas {task_type} requires a text prompt. Pass a non-empty `prompt` in your request.
+    Otherwise replace None/empty prompt with one literal space; whitespace text is retained. Automatic mask-triggered
+    INPAINTING accepts that substituted space. Return body and an empty second mapping without mutating caller options.'
   proof:
   - case-mask-versus-mask-prompt
   - oracle
@@ -145,47 +227,129 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'canvas_task_errors: OUTPAINTING with neither mask raises ValueError OUTPAINTING requires either a mask
+    image or a mask prompt. Pass mask=<file> or maskPrompt=<str> in the request. Unsupported nonempty task type
+    raises ValueError Unsupported Amazon Nova Canvas taskType: {task_type!r}. Use BACKGROUND_REMOVAL, OUTPAINTING,
+    IMAGE_VARIATION, INPAINTING, or omit taskType for automatic routing (mask → INPAINTING, else IMAGE_VARIATION).
+    INPAINTING without a mask raises ValueError Amazon Nova Canvas INPAINTING requires either maskPrompt or maskImage
+    (use OpenAI mask= for maskImage, or pass maskPrompt in optional params). See https://docs.aws.amazon.com/nova/latest/userguide/image-gen-req-resp-structure.html.
+    Empty maskPrompt counts as present.'
+  proof:
+  - case-canvas-task-errors
+  - oracle
+  - helper-python
+- text: 'canvas_edit_contract: use_multipart_form_data returns False. validate_environment replaces None headers
+    by an empty mapping and adds exact Content-Type=application/json only when that exact key is absent, retaining
+    differently cased keys and existing values. get_error_class delegates B682 preserving status/message/headers.
+    get_complete_url raises NotImplementedError Nova Canvas image edit URLs are built in BedrockImageEdit._prepare_request
+    (AWS runtime endpoint + model invoke path). Do not use get_complete_url for this config. Native execution uses
+    B638 instead.'
+  proof:
+  - case-canvas-edit-contract
+  - oracle
+  - helper-python
+- text: 'canvas_edit_selector: get_bedrock_image_edit_config_for_model tries B637 Stability detection first, then
+    Canvas raw-catalog eligibility, constructs the selected class using B2202 empty base initialization, otherwise
+    ValueError Unsupported Bedrock image-edit model: {model!r}. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit
+    in model_prices for this id. Exercise the same selection/error cases through B638.'
+  proof:
+  - case-canvas-edit-selector
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-canvas-task-types
-    why: The canvas-task-types behavior is missing or differs from its pinned fixture.
+    why: BACKGROUND_REMOVAL emits only taskType and backgroundRemovalParams.image, ignoring text/mask/options. Explicit
+      IMAGE_VARIATION emits imageVariationParams with images=[image],text and non-None negativeText/similarityStrength
+      even with a mask. OUTPAINTING emits outPaintingParams.image,text plus maskPrompt when not None, otherwise
+      maskImage, and non-None negativeText/outPaintingMode. INPAINTING or automatic routing with either mask emits
+      inPaintingParams.image,text plus maskPrompt before maskImage and non-None negativeText. Otherwise automatic
+      routing emits IMAGE_VARIATION. None, empty and whitespace-only taskType select automatic routing; other nonempty
+      values must equal INPAINTING after the earlier exact branches, with no trimming for equality.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_canvas_task_types$/)'
   - id: case-canvas-catalog-eligibility
-    why: The canvas-catalog-eligibility behavior is missing or differs from its pinned fixture.
+    why: 'Falsey model is ineligible. Build ordered unique truthy candidate names: original model; for slash-containing
+      names its last segment and bedrock/{segment}; B2203 base model and bedrock/{base} when different; then _get_potential_model_names
+      fields combined_model_name,combined_stripped_model_name,stripped_model_name,split_model when strings. Swallow
+      exceptions independently from base-model and potential-name generation. Resolve each candidate through the
+      shared case-insensitive _get_model_cost_key and inspect raw B193 model_cost entry or empty mapping. Only supports_nova_canvas_image_edit
+      literally True qualifies; do not use get_model_info because it drops arbitrary catalog fields. A model spelling
+      alone does not grant eligibility.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_canvas_catalog_eligibility$/)'
   - id: case-image-bytes-base64
-    why: The image-bytes-base64 behavior is missing or differs from its pinned fixture.
+    why: _file_types_to_b64 rejects None with ValueError Nova Canvas image edit requires an image input; base64-encode
+      supplied bytes, retain strings unchanged without validation or URL fetching, and adapt supplied file-like
+      objects through B159 with seek(0) when available before reading. B159 owns PathLike opening and other SDK
+      byte conversions; HTTP uploads arrive as resolved bytes. image is converted before mask and before task/prompt
+      validation.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_image_bytes_base64$/)'
   - id: case-tuple-file-rejection
-    why: The tuple-file-rejection behavior is missing or differs from its pinned fixture.
+    why: A tuple FileTypes value raises ValueError Nova Canvas image edit does not support tuple FileTypes. Pass
+      a file-like object, bytes, or a base64-encoded string. Apply the same conversion to non-None mask. A string
+      path or URL is passed as a literal base64-string value, never opened or downloaded by this provider.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_tuple_file_rejection$/)'
   - id: case-size-parse-fallback
-    why: The size-parse-fallback behavior is missing or differs from its pinned fixture.
+    why: Mapper copies options and always removes size. Only a string containing x is split at the first x and converted
+      to two integers; ValueError silently leaves existing width/height unchanged, without a warning. Remove n and
+      copy non-None value to numberOfImages. Request transform copies options, removes size/width/height, and attempts
+      the same fallback only when both dimensions are None. One supplied dimension suppresses size fallback for
+      both. Nested imageGenerationConfig is copied only if a dict; non-None top-level width,height,numberOfImages,quality,cfgScale,seed
+      override nested values. Include that config only when nonempty and task is not BACKGROUND_REMOVAL.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_size_parse_fallback$/)'
   - id: case-quality-map
-    why: The quality-map behavior is missing or differs from its pinned fixture.
+    why: Supported params in order are n,size,response_format,mask,negativeText,similarityStrength,cfgScale,seed,quality,taskType,maskPrompt,outPaintingMode,imageGenerationConfig.
+      Map hd/premium to premium, standard to standard, preserve every other non-None quality including auto. With
+      truthy drop_params remove unknown mapped keys except underscore-prefixed keys and width,height,numberOfImages,mask;
+      without it retain extras. Request building ultimately ignores unused options; it does not forward arbitrary
+      unknown fields into the final task body.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_quality_map$/)'
   - id: case-response-format-warning
-    why: The response-format-warning behavior is missing or differs from its pinned fixture.
+    why: Remove response_format in the mapper. None and b64_json are silent; every other value emits debug message
+      Nova Canvas image edit ignores response_format=%s and returns base64 images, with the value. This is debug
+      logging, not a warning. Do not add URL response mode.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_response_format_warning$/)'
   - id: case-mask-versus-mask-prompt
-    why: The mask-versus-mask-prompt behavior is missing or differs from its pinned fixture.
+    why: Convert a non-None mask even if maskPrompt or explicit IMAGE_VARIATION later makes it unused, preserving
+      conversion failure order. An explicit INPAINTING/OUTPAINTING with None or empty prompt raises ValueError Amazon
+      Nova Canvas {task_type} requires a text prompt. Pass a non-empty `prompt` in your request. Otherwise replace
+      None/empty prompt with one literal space; whitespace text is retained. Automatic mask-triggered INPAINTING
+      accepts that substituted space. Return body and an empty second mapping without mutating caller options.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_mask_versus_mask_prompt$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_canvas_edits.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_canvas_edits.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_edits*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_edits*")"
       && grep -lq 'bedrock_other_canvas_edits' tools/oracle/fuzz/corpus/helper_case/bedrock_other_canvas_edits*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_canvas_edits$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-canvas-task-errors
+    why: 'OUTPAINTING with neither mask raises ValueError OUTPAINTING requires either a mask image or a mask prompt.
+      Pass mask=<file> or maskPrompt=<str> in the request. Unsupported nonempty task type raises ValueError Unsupported
+      Amazon Nova Canvas taskType: {task_type!r}. Use BACKGROUND_REMOVAL, OUTPAINTING, IMAGE_VARIATION, INPAINTING,
+      or omit taskType for automatic routing (mask → INPAINTING, else IMAGE_VARIATION). INPAINTING without a mask
+      raises ValueError Amazon Nova Canvas INPAINTING requires either maskPrompt or maskImage (use OpenAI mask=
+      for maskImage, or pass maskPrompt in optional params). See https://docs.aws.amazon.com/nova/latest/userguide/image-gen-req-resp-structure.html.
+      Empty maskPrompt counts as present.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_canvas_task_errors$/)'
+  - id: case-canvas-edit-contract
+    why: use_multipart_form_data returns False. validate_environment replaces None headers by an empty mapping and
+      adds exact Content-Type=application/json only when that exact key is absent, retaining differently cased keys
+      and existing values. get_error_class delegates B682 preserving status/message/headers. get_complete_url raises
+      NotImplementedError Nova Canvas image edit URLs are built in BedrockImageEdit._prepare_request (AWS runtime
+      endpoint + model invoke path). Do not use get_complete_url for this config. Native execution uses B638 instead.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_canvas_edit_contract$/)'
+  - id: case-canvas-edit-selector
+    why: 'get_bedrock_image_edit_config_for_model tries B637 Stability detection first, then Canvas raw-catalog
+      eligibility, constructs the selected class using B2202 empty base initialization, otherwise ValueError Unsupported
+      Bedrock image-edit model: {model!r}. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit
+      in model_prices for this id. Exercise the same selection/error cases through B638.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::canvas_edits_cases::case_[0-9]+_canvas_edit_selector$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/canvas-task-types.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/canvas-catalog-eligibility.yaml
@@ -195,19 +359,21 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/quality-map.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/response-format-warning.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/mask-versus-mask-prompt.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/canvas-task-errors.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/canvas-edit-contract.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-canvas-edits/canvas-edit-selector.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py: BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response
-  L387-L466 belong to B636; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py:
+  BedrockAmazonNovaCanvasImageEditConfig.transform_image_edit_response L387-L466 belong to B636.'
 pitfalls:
-- Preserve catalog-based edit eligibility, input byte/base64 handling, size parsing fallback and response_format
-  diagnostic.
+- A mask is converted before task selection, even when IMAGE_VARIATION will discard it.
+- Raw model_cost retains supports_nova_canvas_image_edit while the typed get_model_info projection does not.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

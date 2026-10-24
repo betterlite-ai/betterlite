@@ -1,0 +1,78 @@
+id: B1353
+title: Lyria predict and interactions audio synthesis
+description: >-
+  Add vertex_lyria for all 181 nonblank noncomment lines of VertexAILyriaTextToSpeechConfig.
+  Query B1306's Lyria catalog metadata; unknown models fail rather than borrowing TTS defaults.
+  Only response_format is advertised. Copy supplied options, reject non-None speed/instructions
+  or remove them when call drop_params or the B175-loaded litellm_settings.drop_params is true.
+  Validate response_format against supported_audio_formats with the same drop behavior and
+  return a voice only when it is a string. Strip one vertex_ai/ prefix. A missing configured
+  project is obtained through B1302; lyria_interactions uses B1369's collection URL at global
+  with a project-only mint callback, while lyria_predict uses the resolved location/default
+  and percent-encoded project/location/model segments. Request auth always overwrites Bearer,
+  x-goog-user-project and JSON content type. Predict sends one prompt instance and sample_count=1;
+  interactions sends model/input and adds an audio/wav response_format only for wav. Implement
+  decode_lyria_audio for bounded response JSON and permissive base64. Predict reads only its
+  first prediction, preferring truthy audioContent to bytesBase64Encoded. Interactions scans
+  steps or outputs, descends model_output content and retains the last truthy audio item's
+  data and MIME. Missing audio raises; MIME precedence is provider value, injected B1003 sniffer,
+  then audio/mpeg. Preserve upstream response status. Register lyria_speech cases
+  unsupported_speed_drop, format_catalog_rejection, predict_sample_count, global_interactions,
+  project_only_mint, first_prediction_audio and last_interaction_audio. Exercise token reuse
+  and header redaction with native fixtures; fuzz the decoder's JSON/base64 boundary.
+  Estimate 205 implementation, 160 tests, 115 oracle and 90 fuzz lines; cap 625.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_lyria}.rs
+    - crates/betterlite-vertex/src/vertex_lyria/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/lyria_audio.rs
+    - crates/betterlite-vertex/fuzz/corpus/lyria_audio/**
+    - tools/oracle/src/helpers/{mod,lyria_speech}.rs
+    - tools/oracle/helpers/{dispatch,lyria_speech}.py
+    - tools/oracle/cases/helpers/lyria-speech/**
+    - tools/oracle/fuzz/corpus/helper_case/lyria_speech*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/text_to_speech/transformation.py#L487-L676
+    why: Lyria metadata, two API dialects and differing audio selection rules.
+dod:
+  - text: Lyria selects its catalog-declared API and preserves format, project and audio ordering behavior.
+    proof: [lyria-tests, lyria-python, oracle]
+  - text: Malformed Lyria audio responses replay through a bounded production decoder.
+    proof: [lyria-audio-corpus]
+  - text: Lyria helper fixtures are included in the shared parser corpus.
+    proof: [lyria-seeds]
+checks:
+  optional: []
+  commands:
+    - id: lyria-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_lyria::/) - test(replays_the_lyria_audio_corpus)'
+      why: Predict and interactions paths must each assert URL, request and audio selection.
+    - id: lyria-python
+      run: test -f tools/oracle/helpers/lyria_speech.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Catalog-backed pure Lyria methods run with fixed credential and MIME inputs.
+    - id: lyria-audio-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/lyria_audio.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/lyria_audio)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_lyria_audio_corpus)'
+      why: Added prediction and interaction envelopes exercise the same audio decoder as production.
+    - id: lyria-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/lyria_speech*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::lyria_speech::/)'
+      why: The lyria_speech fixture variant is required alongside the provider implementation.
+oracle_cases:
+  - tools/oracle/cases/helpers/lyria-speech/unsupported-speed-drop.yaml
+  - tools/oracle/cases/helpers/lyria-speech/format-catalog-rejection.yaml
+  - tools/oracle/cases/helpers/lyria-speech/predict-sample-count.yaml
+  - tools/oracle/cases/helpers/lyria-speech/global-interactions.yaml
+  - tools/oracle/cases/helpers/lyria-speech/project-only-mint.yaml
+  - tools/oracle/cases/helpers/lyria-speech/first-prediction-audio.yaml
+  - tools/oracle/cases/helpers/lyria-speech/last-interaction-audio.yaml
+deviations: []
+out_of_scope:
+  - B1352 owns the inherited Cloud TTS methods outside dispatch_text_to_speech, which B033 composes.
+  - B1369 owns the interactions URL builder; B1306 owns Lyria metadata discovery and B175 owns the drop_params setting loader.
+pitfalls:
+  - Predict's sample_count uses an underscore and is always one.
+  - An interactions response selects its last audio item, while predict inspects its first prediction only.
+  - Resolving an interactions URL uses global even when a different Vertex location was configured.
+budget: {max_changed_lines: 625, max_new_expects: 1}
+review_level: security

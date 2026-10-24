@@ -16,6 +16,48 @@ description: >-
   L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket L754-L756.
 
 
+  Named case contracts: created_at_conversion: Create replies use B004 created conversion: None or unconvertible
+  values use the injected current integer time, numbers truncate toward zero and numeric strings convert through
+  the source numeric semantics. Missing created_at or malformed JSON raises OpenAIError with raw status/body diagnostic.
+  lax_response_validation: ValidationError logs debug and returns model_construct preserving fields; record raw
+  headers in hidden_params.headers and B206 processed headers in hidden_params.additional_headers. missing_error_code:
+  A dictionary error with missing or None code is copied and assigned unknown_error before event validation; non-None
+  codes and nondictionary errors survive unchanged. unknown_generic_event: Unknown types, response.reasoning_summary_*
+  and response.custom_tool_call_input.* events use GenericEvent preserving payload; response.shell_call.in_progress,
+  response.shell_call.completed and response.shell_call_output.done explicitly do likewise. last_terminal_wins:
+  Scan chunks in reverse and try completed, incomplete, failed validators; strip only an exact leading data: plus
+  space, skip ValueError and return the last valid terminal event or its response. non_native_streaming_model: Fake
+  streaming only when stream is exactly true, model is not None and supports_native_streaming returns exactly false;
+  catalog lookup exceptions log debug and return false. supports_native_websocket is always true. known_event_variants:
+  Use typed B1113 records for response.created/in_progress/completed/failed/incomplete; response.output_item.added/done;
+  response.content_part.added/done; response.output_text.delta/done and response.output_text.annotation.added; response.refusal.delta/done;
+  response.function_call_arguments.delta/done; response.file_search_call.in_progress/searching/completed; response.web_search_call.in_progress/searching/completed;
+  response.mcp_list_tools.in_progress/completed/failed; response.mcp_call.in_progress/completed/failed and response.mcp_call_arguments.delta/done;
+  image_generation.partial_image; and error. Invalid typed payloads log debug then use lax construction. responses_auth_headers:
+  Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY; setdefault Content-Type to
+  application/json and overwrite Authorization with Bearer {key}, including None. Only OPENAI may replace it with
+  B501 workload-identity token, using litellm_params.api_base. responses_base_url: Resolve api_base, litellm.api_base,
+  OPENAI_BASE_URL, OPENAI_API_BASE, https://api.openai.com/v1, trim trailing slashes and append /responses literally,
+  even if an existing endpoint/query is present.
+
+
+  Write standalone Rust test openai_response_events_credential_identity_isolation in betterlite-openai: Distinct
+  configured identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python
+  oracle case.
+
+
+  Write standalone Rust test openai_response_events_secret_safe_failure in betterlite-openai: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Public supports_* capability predicates called by this slice are owned by B2221, including native-streaming/schema
+  special defaults; reuse the named lower implementation rather than B157 or a copied catalog heuristic.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
   Implement crates/betterlite-openai/src/response_events.rs with adjacent tests under response_events/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -31,10 +73,9 @@ description: >-
 
   Write rstest function response_events_cases in betterlite-openai with these exact named cases (one per oracle
   file): created_at_conversion, lax_response_validation, missing_error_code, unknown_generic_event, completed_incomplete_failed,
-  last_terminal_wins, no_terminal_event, non_native_streaming_model. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  last_terminal_wins, no_terminal_event, non_native_streaming_model, known_event_variants, responses_auth_headers,
+  responses_base_url. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
+  transports. Existing API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_response_events* using HelperCase: kind:
@@ -52,9 +93,9 @@ description: >-
 
 
   Budget from 174 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 200 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 484 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 240 production lines, 220 behavior/config-test lines,
+  130 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 670 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -76,43 +117,45 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L558-L756
-  why: >-
-    Own OpenAIResponsesAPIConfig.transform_response_api_response, OpenAIResponsesAPIConfig.validate_environment,
+  why: Own OpenAIResponsesAPIConfig.transform_response_api_response, OpenAIResponsesAPIConfig.validate_environment,
     OpenAIResponsesAPIConfig.get_complete_url, OpenAIResponsesAPIConfig.transform_streaming_response, OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks,
     OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks, OpenAIResponsesAPIConfig.get_event_model_class,
     OpenAIResponsesAPIConfig.should_fake_stream, OpenAIResponsesAPIConfig.supports_native_websocket. Other functions
     in this file remain with the owners listed below.
 dod:
-- text: >-
-    created at conversion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/created-at-conversion.yaml.
+- text: 'created_at_conversion: Create replies use B004 created conversion: None or unconvertible values use the
+    injected current integer time, numbers truncate toward zero and numeric strings convert through the source numeric
+    semantics. Missing created_at or malformed JSON raises OpenAIError with raw status/body diagnostic.'
   proof:
   - case-created-at-conversion
   - oracle
   - helper-python
-- text: >-
-    lax response validation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/lax-response-validation.yaml.
+- text: 'lax_response_validation: ValidationError logs debug and returns model_construct preserving fields; record
+    raw headers in hidden_params.headers and B206 processed headers in hidden_params.additional_headers.'
   proof:
   - case-lax-response-validation
   - oracle
   - helper-python
-- text: 'missing error code: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/missing-error-code.yaml.'
+- text: 'missing_error_code: A dictionary error with missing or None code is copied and assigned unknown_error before
+    event validation; non-None codes and nondictionary errors survive unchanged.'
   proof:
   - case-missing-error-code
   - oracle
   - helper-python
-- text: >-
-    unknown generic event: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/unknown-generic-event.yaml.
+- text: 'unknown_generic_event: Unknown types, response.reasoning_summary_* and response.custom_tool_call_input.*
+    events use GenericEvent preserving payload; response.shell_call.in_progress, response.shell_call.completed and
+    response.shell_call_output.done explicitly do likewise.'
   proof:
   - case-unknown-generic-event
   - oracle
   - helper-python
-- text: >-
-    completed incomplete failed: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/completed-incomplete-failed.yaml.
+- text: 'completed incomplete failed: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/completed-incomplete-failed.yaml.'
   proof:
   - case-completed-incomplete-failed
   - oracle
   - helper-python
-- text: 'last terminal wins: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/last-terminal-wins.yaml.'
+- text: 'last_terminal_wins: Scan chunks in reverse and try completed, incomplete, failed validators; strip only
+    an exact leading data: plus space, skip ValueError and return the last valid terminal event or its response.'
   proof:
   - case-last-terminal-wins
   - oracle
@@ -122,8 +165,9 @@ dod:
   - case-no-terminal-event
   - oracle
   - helper-python
-- text: >-
-    non native streaming model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/non-native-streaming-model.yaml.
+- text: 'non_native_streaming_model: Fake streaming only when stream is exactly true, model is not None and supports_native_streaming
+    returns exactly false; catalog lookup exceptions log debug and return false. supports_native_websocket is always
+    true.'
   proof:
   - case-non-native-streaming-model
   - oracle
@@ -135,53 +179,110 @@ dod:
 - text: decode_response_event has newly committed malformed and boundary inputs replayed through production parsing.
   proof:
   - parser-corpus
+- text: 'known_event_variants: Use typed B1113 records for response.created/in_progress/completed/failed/incomplete;
+    response.output_item.added/done; response.content_part.added/done; response.output_text.delta/done and response.output_text.annotation.added;
+    response.refusal.delta/done; response.function_call_arguments.delta/done; response.file_search_call.in_progress/searching/completed;
+    response.web_search_call.in_progress/searching/completed; response.mcp_list_tools.in_progress/completed/failed;
+    response.mcp_call.in_progress/completed/failed and response.mcp_call_arguments.delta/done; image_generation.partial_image;
+    and error. Invalid typed payloads log debug then use lax construction.'
+  proof:
+  - case-known-event-variants
+  - oracle
+  - helper-python
+- text: 'responses_auth_headers: Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY;
+    setdefault Content-Type to application/json and overwrite Authorization with Bearer {key}, including None. Only
+    OPENAI may replace it with B501 workload-identity token, using litellm_params.api_base.'
+  proof:
+  - case-responses-auth-headers
+  - oracle
+  - helper-python
+- text: 'responses_base_url: Resolve api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE, https://api.openai.com/v1,
+    trim trailing slashes and append /responses literally, even if an existing endpoint/query is present.'
+  proof:
+  - case-responses-base-url
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-created-at-conversion
-    why: The created-at-conversion behavior is missing or differs from its pinned fixture.
+    why: 'Create replies use B004 created conversion: None or unconvertible values use the injected current integer
+      time, numbers truncate toward zero and numeric strings convert through the source numeric semantics. Missing
+      created_at or malformed JSON raises OpenAIError with raw status/body diagnostic.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_created_at_conversion$/)'
   - id: case-lax-response-validation
-    why: The lax-response-validation behavior is missing or differs from its pinned fixture.
+    why: ValidationError logs debug and returns model_construct preserving fields; record raw headers in hidden_params.headers
+      and B206 processed headers in hidden_params.additional_headers.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_lax_response_validation$/)'
   - id: case-missing-error-code
-    why: The missing-error-code behavior is missing or differs from its pinned fixture.
+    why: A dictionary error with missing or None code is copied and assigned unknown_error before event validation;
+      non-None codes and nondictionary errors survive unchanged.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_missing_error_code$/)'
   - id: case-unknown-generic-event
-    why: The unknown-generic-event behavior is missing or differs from its pinned fixture.
+    why: Unknown types, response.reasoning_summary_* and response.custom_tool_call_input.* events use GenericEvent
+      preserving payload; response.shell_call.in_progress, response.shell_call.completed and response.shell_call_output.done
+      explicitly do likewise.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_unknown_generic_event$/)'
   - id: case-completed-incomplete-failed
-    why: The completed-incomplete-failed behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/completed-incomplete-failed.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_completed_incomplete_failed$/)'
   - id: case-last-terminal-wins
-    why: The last-terminal-wins behavior is missing or differs from its pinned fixture.
+    why: 'Scan chunks in reverse and try completed, incomplete, failed validators; strip only an exact leading data:
+      plus space, skip ValueError and return the last valid terminal event or its response.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_last_terminal_wins$/)'
   - id: case-no-terminal-event
-    why: The no-terminal-event behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-events/no-terminal-event.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_no_terminal_event$/)'
   - id: case-non-native-streaming-model
-    why: The non-native-streaming-model behavior is missing or differs from its pinned fixture.
+    why: Fake streaming only when stream is exactly true, model is not None and supports_native_streaming returns
+      exactly false; catalog lookup exceptions log debug and return false. supports_native_websocket is always true.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_non_native_streaming_model$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_events.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_events.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_events*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_events*")"
       && grep -lq 'openai_response_events' tools/oracle/fuzz/corpus/helper_case/openai_response_events* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_response_events$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_events)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_events)"
       && grep -q 'decode_response_event' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_events.rs &&
       cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_events_corpus$/)'
+  - id: case-known-event-variants
+    why: Use typed B1113 records for response.created/in_progress/completed/failed/incomplete; response.output_item.added/done;
+      response.content_part.added/done; response.output_text.delta/done and response.output_text.annotation.added;
+      response.refusal.delta/done; response.function_call_arguments.delta/done; response.file_search_call.in_progress/searching/completed;
+      response.web_search_call.in_progress/searching/completed; response.mcp_list_tools.in_progress/completed/failed;
+      response.mcp_call.in_progress/completed/failed and response.mcp_call_arguments.delta/done; image_generation.partial_image;
+      and error. Invalid typed payloads log debug then use lax construction.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_known_event_variants$/)'
+  - id: case-responses-auth-headers
+    why: Resolve litellm_params.api_key, litellm.api_key, litellm.openai_key, OPENAI_API_KEY; setdefault Content-Type
+      to application/json and overwrite Authorization with Bearer {key}, including None. Only OPENAI may replace
+      it with B501 workload-identity token, using litellm_params.api_base.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_responses_auth_headers$/)'
+  - id: case-responses-base-url
+    why: Resolve api_base, litellm.api_base, OPENAI_BASE_URL, OPENAI_API_BASE, https://api.openai.com/v1, trim trailing
+      slashes and append /responses literally, even if an existing endpoint/query is present.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_events_cases::case_[0-9]+_responses_base_url$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_response_events_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::openai_response_events_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-events/created-at-conversion.yaml
 - tools/oracle/cases/helpers/providers/openai-response-events/lax-response-validation.yaml
@@ -191,43 +292,45 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-events/last-terminal-wins.yaml
 - tools/oracle/cases/helpers/providers/openai-response-events/no-terminal-event.yaml
 - tools/oracle/cases/helpers/providers/openai-response-events/non-native-streaming-model.yaml
+- tools/oracle/cases/helpers/providers/openai-response-events/known-event-variants.yaml
+- tools/oracle/cases/helpers/providers/openai-response-events/responses-auth-headers.yaml
+- tools/oracle/cases/helpers/providers/openai-response-events/responses-base-url.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_responses_api_request L283-L311;
-  OpenAIResponsesAPIConfig._prepared_input_and_tools L313-L328; OpenAIResponsesAPIConfig._tools_with_object_parameters
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models
+  L59-L72; _DeleteResponse.json L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body L95-L97; _json_object_body
+  L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider L106-L108; OpenAIResponsesAPIConfig.supports_native_file_search
+  L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model
+  L116-L126; OpenAIResponsesAPIConfig._model_map_lookup_name L128-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none
+  L132-L137; OpenAIResponsesAPIConfig._effort_resolves_to_none L139-L151; OpenAIResponsesAPIConfig._supports_reasoning_param
+  L153-L166; OpenAIResponsesAPIConfig._requests_reasoning_effort L168-L173; OpenAIResponsesAPIConfig._enforce_min_max_output_tokens
+  L175-L186; OpenAIResponsesAPIConfig.get_supported_openai_params L188-L205; OpenAIResponsesAPIConfig.map_openai_params
+  L207-L281 belong to B506.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_responses_api_request
+  L283-L311; OpenAIResponsesAPIConfig._prepared_input_and_tools L313-L328; OpenAIResponsesAPIConfig._tools_with_object_parameters
   L330-L341; OpenAIResponsesAPIConfig._tool_with_object_parameters L343-L359; OpenAIResponsesAPIConfig.remove_cache_control_flag_from_input_and_tools
   L361-L391; OpenAIResponsesAPIConfig._drop_foreign_tool_call_item_ids L393-L397; OpenAIResponsesAPIConfig._without_foreign_tool_call_item_id
-  L400-L408; OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai L410-L438; OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators
-  L441-L444; OpenAIResponsesAPIConfig._combinator_gate_model L447-L450; OpenAIResponsesAPIConfig._sanitized_tool_entry
-  L453-L477; OpenAIResponsesAPIConfig._sanitized_tools L480-L488; OpenAIResponsesAPIConfig._validate_input_param
-  L490-L518; OpenAIResponsesAPIConfig._handle_reasoning_item L520-L556 belong to B507; reuse that implementation
-  or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_delete_response_api_request
+  L399-L408; OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai L410-L438; OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators
+  L440-L444; OpenAIResponsesAPIConfig._combinator_gate_model L446-L450; OpenAIResponsesAPIConfig._sanitized_tool_entry
+  L452-L477; OpenAIResponsesAPIConfig._sanitized_tools L479-L488; OpenAIResponsesAPIConfig._validate_input_param
+  L490-L518; OpenAIResponsesAPIConfig._handle_reasoning_item L520-L556 belong to B507.'
+- 'Function ownership inventory litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_delete_response_api_request
   L761-L777; OpenAIResponsesAPIConfig.transform_delete_response_api_response L779-L791; OpenAIResponsesAPIConfig.transform_get_response_api_request
   L796-L812; OpenAIResponsesAPIConfig.transform_get_response_api_response L814-L832; OpenAIResponsesAPIConfig.transform_list_input_items_request
   L837-L862; OpenAIResponsesAPIConfig.transform_list_input_items_response L864-L872; OpenAIResponsesAPIConfig.transform_cancel_response_api_request
   L877-L893; OpenAIResponsesAPIConfig.transform_cancel_response_api_response L895-L914; OpenAIResponsesAPIConfig.transform_compact_response_api_request
-  L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models L60-L72; _DeleteResponse.json
-  L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body L95-L97; _json_object_body L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider
-  L107-L108; OpenAIResponsesAPIConfig.supports_native_file_search L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages
-  L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model L117-L126; OpenAIResponsesAPIConfig._model_map_lookup_name
-  L129-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none L133-L137; OpenAIResponsesAPIConfig._effort_resolves_to_none
-  L140-L151; OpenAIResponsesAPIConfig._supports_reasoning_param L154-L166; OpenAIResponsesAPIConfig._requests_reasoning_effort
-  L169-L173; OpenAIResponsesAPIConfig._enforce_min_max_output_tokens L176-L186; OpenAIResponsesAPIConfig.get_supported_openai_params
-  L188-L205; OpenAIResponsesAPIConfig.map_openai_params L207-L281 belong to B506; reuse that implementation or its
-  injected typed boundary.
+  L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509.'
 pitfalls:
-- Preserve the typed lax-validation outcome with a diagnostic when Python model_construct is used.
+- The event mapping omits reasoning-summary and custom-tool-input enums despite their presence in ResponsesAPIStreamEvents;
+  they intentionally reach GenericEvent.
+- Terminal parsing is strict and can ignore a malformed terminal event that transform_streaming_response would retain
+  through lax construction.
+- The Content-Type default checks exactly that casing, unlike the chat header helper that checks two spellings.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 675
   max_new_expects: 0
-review_level: standard
+review_level: security

@@ -15,6 +15,34 @@ description: >-
   L2363-L2467.
 
 
+  Named case contracts: cache_read_write_total: Without truthy iterations, top-level input/output numeric int/float
+  (including bool) truncate with int; None/falsey/nonnumeric strings become0. Add non-None cache_creation_input_tokens/cache_read_input_tokens
+  unconditionally to prompt, default0; emit both raw cache fields, cached_tokens/cache_creation_tokens and text_tokens=prompt
+  minus caches. total=prompt+completion. five_minute_one_hour_breakdown: Top-level cache_creation mapping becomes
+  detail with ephemeral_5m_input_tokens/ephemeral_1h_input_tokens values, missing fields None; nonmapping means
+  no detail. Do not infer a split from top-level creation total alone. iteration_usage_sum: Truthy iterations completely
+  replace top-level input/output/cache counts with per-iteration sums of get(key,0) or0, then add both cache sums
+  to prompt; empty iterations falls back to top-level. Iteration numeric strings are not handled by the top-level
+  numeric guard. Preserve original iterations in Usage. partial_iteration_detail: If any iteration cache_creation
+  is a mapping, sum int(value or0) across available 5m/1h breakdowns; sum all iteration creation totals; assign
+  max(total-detailed5m-detailed1h,0) to 5m, retaining 1h. Breakdown sum exceeding total is not reduced. No iteration
+  detail falls back to top-level breakdown. reported_thinking_capped: output_tokens_details must be mapping valid
+  as extra-allow AnthropicOutputTokensDetails with optional int thinking_tokens; invalid values ->None. Use sum
+  across iterations only when every iteration has a valid non-None count, else fallback top-level count. Clamp reported
+  as min(max(0,count),completion_tokens), text=completion-reasoning; retain source order even for malformed negative
+  totals. estimated_thinking_local: Only without reported count and with truthy reasoning_content call B196 token_counter(text,
+  count_response_tokens=True) without model; cap min(estimate,completion), then max0, set remaining text. Counter
+  errors propagate; no fallback zero/catch here. signed_thinking_without_count: Without reported/estimated count,
+  any mapping thinking/redacted_thinking block in list response.content yields reasoning_tokens=None,text_tokens=None.
+  Otherwise reasoning0/text=completion; empty content/nonlist does not signal thinking. tool_search_count_fallback:
+  Use non-None server_tool_use.web_search_requests/tool_search_requests verbatim, including0. Only missing/None
+  tool-search count scans response content for server_tool_use whose name contains case-sensitive tool_search; positive
+  count emits it, zero leaves None. Emit server_tool_use only when either count is non-None. speed_tier_geography:
+  usage.speed wins if string (including empty), otherwise use supplied speed; service_tier=get, inference_geo copies
+  when non-None. Anthropic usage discriminator requires input_tokens key, no prompt_tokens key, and at least one
+  cache_read_input_tokens/cache_creation_input_tokens key regardless of value.
+
+
   Implement crates/betterlite-anthropic/src/usage.rs with adjacent tests under usage/. Keep each Rust module at
   most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
   betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
@@ -31,9 +59,8 @@ description: >-
   Write rstest function usage_cases in betterlite-anthropic with these exact named cases (one per oracle file):
   cache_read_write_total, five_minute_one_hour_breakdown, iteration_usage_sum, partial_iteration_detail, reported_thinking_capped,
   estimated_thinking_local, signed_thinking_without_count, tool_search_count_fallback, speed_tier_geography. Each
-  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
-  use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_usage* using HelperCase: kind: helper
@@ -48,9 +75,9 @@ description: >-
 
 
   Budget from 192 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 220 production lines, 126 behavior/config-test lines,
-  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 462 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 240 production lines, 230 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 605 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-anthropic/Cargo.toml
@@ -73,56 +100,73 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L668-L680
   why: Reuse or declare the typed records and aliases consumed by this slice.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2256-L2467
-  why: >-
-    Own AnthropicConfig.thinking_tokens_from_usage, AnthropicConfig._response_has_thinking_block, AnthropicConfig._build_completion_token_details,
+  why: Own AnthropicConfig.thinking_tokens_from_usage, AnthropicConfig._response_has_thinking_block, AnthropicConfig._build_completion_token_details,
     AnthropicConfig._sum_iteration_thinking_tokens, AnthropicConfig.is_anthropic_usage_object, AnthropicConfig._aggregate_cache_creation_token_details,
     AnthropicConfig._resolve_cache_creation_token_details, AnthropicConfig.calculate_usage. Other functions in this
     file remain with the owners listed below.
 dod:
-- text: 'cache read write total: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/cache-read-write-total.yaml.'
+- text: 'cache_read_write_total: Without truthy iterations, top-level input/output numeric int/float (including
+    bool) truncate with int; None/falsey/nonnumeric strings become0. Add non-None cache_creation_input_tokens/cache_read_input_tokens
+    unconditionally to prompt, default0; emit both raw cache fields, cached_tokens/cache_creation_tokens and text_tokens=prompt
+    minus caches. total=prompt+completion.'
   proof:
   - case-cache-read-write-total
   - oracle
   - helper-python
-- text: >-
-    five minute one hour breakdown: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/five-minute-one-hour-breakdown.yaml.
+- text: 'five_minute_one_hour_breakdown: Top-level cache_creation mapping becomes detail with ephemeral_5m_input_tokens/ephemeral_1h_input_tokens
+    values, missing fields None; nonmapping means no detail. Do not infer a split from top-level creation total
+    alone.'
   proof:
   - case-five-minute-one-hour-breakdown
   - oracle
   - helper-python
-- text: 'iteration usage sum: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/iteration-usage-sum.yaml.'
+- text: 'iteration_usage_sum: Truthy iterations completely replace top-level input/output/cache counts with per-iteration
+    sums of get(key,0) or0, then add both cache sums to prompt; empty iterations falls back to top-level. Iteration
+    numeric strings are not handled by the top-level numeric guard. Preserve original iterations in Usage.'
   proof:
   - case-iteration-usage-sum
   - oracle
   - helper-python
-- text: 'partial iteration detail: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/partial-iteration-detail.yaml.'
+- text: 'partial_iteration_detail: If any iteration cache_creation is a mapping, sum int(value or0) across available
+    5m/1h breakdowns; sum all iteration creation totals; assign max(total-detailed5m-detailed1h,0) to 5m, retaining
+    1h. Breakdown sum exceeding total is not reduced. No iteration detail falls back to top-level breakdown.'
   proof:
   - case-partial-iteration-detail
   - oracle
   - helper-python
-- text: 'reported thinking capped: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/reported-thinking-capped.yaml.'
+- text: 'reported_thinking_capped: output_tokens_details must be mapping valid as extra-allow AnthropicOutputTokensDetails
+    with optional int thinking_tokens; invalid values ->None. Use sum across iterations only when every iteration
+    has a valid non-None count, else fallback top-level count. Clamp reported as min(max(0,count),completion_tokens),
+    text=completion-reasoning; retain source order even for malformed negative totals.'
   proof:
   - case-reported-thinking-capped
   - oracle
   - helper-python
-- text: 'estimated thinking local: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/estimated-thinking-local.yaml.'
+- text: 'estimated_thinking_local: Only without reported count and with truthy reasoning_content call B196 token_counter(text,
+    count_response_tokens=True) without model; cap min(estimate,completion), then max0, set remaining text. Counter
+    errors propagate; no fallback zero/catch here.'
   proof:
   - case-estimated-thinking-local
   - oracle
   - helper-python
-- text: >-
-    signed thinking without count: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/signed-thinking-without-count.yaml.
+- text: 'signed_thinking_without_count: Without reported/estimated count, any mapping thinking/redacted_thinking
+    block in list response.content yields reasoning_tokens=None,text_tokens=None. Otherwise reasoning0/text=completion;
+    empty content/nonlist does not signal thinking.'
   proof:
   - case-signed-thinking-without-count
   - oracle
   - helper-python
-- text: >-
-    tool search count fallback: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/tool-search-count-fallback.yaml.
+- text: 'tool_search_count_fallback: Use non-None server_tool_use.web_search_requests/tool_search_requests verbatim,
+    including0. Only missing/None tool-search count scans response content for server_tool_use whose name contains
+    case-sensitive tool_search; positive count emits it, zero leaves None. Emit server_tool_use only when either
+    count is non-None.'
   proof:
   - case-tool-search-count-fallback
   - oracle
   - helper-python
-- text: 'speed tier geography: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-usage/speed-tier-geography.yaml.'
+- text: 'speed_tier_geography: usage.speed wins if string (including empty), otherwise use supplied speed; service_tier=get,
+    inference_geo copies when non-None. Anthropic usage discriminator requires input_tokens key, no prompt_tokens
+    key, and at least one cache_read_input_tokens/cache_creation_input_tokens key regardless of value.'
   proof:
   - case-speed-tier-geography
   - oracle
@@ -135,42 +179,60 @@ checks:
   - mutants
   commands:
   - id: case-cache-read-write-total
-    why: The cache-read-write-total behavior is missing or differs from its pinned fixture.
+    why: Without truthy iterations, top-level input/output numeric int/float (including bool) truncate with int;
+      None/falsey/nonnumeric strings become0. Add non-None cache_creation_input_tokens/cache_read_input_tokens unconditionally
+      to prompt, default0; emit both raw cache fields, cached_tokens/cache_creation_tokens and text_tokens=prompt
+      minus caches. total=prompt+completion.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_cache_read_write_total$/)'
   - id: case-five-minute-one-hour-breakdown
-    why: The five-minute-one-hour-breakdown behavior is missing or differs from its pinned fixture.
+    why: Top-level cache_creation mapping becomes detail with ephemeral_5m_input_tokens/ephemeral_1h_input_tokens
+      values, missing fields None; nonmapping means no detail. Do not infer a split from top-level creation total
+      alone.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_five_minute_one_hour_breakdown$/)'
   - id: case-iteration-usage-sum
-    why: The iteration-usage-sum behavior is missing or differs from its pinned fixture.
+    why: Truthy iterations completely replace top-level input/output/cache counts with per-iteration sums of get(key,0)
+      or0, then add both cache sums to prompt; empty iterations falls back to top-level. Iteration numeric strings
+      are not handled by the top-level numeric guard. Preserve original iterations in Usage.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_iteration_usage_sum$/)'
   - id: case-partial-iteration-detail
-    why: The partial-iteration-detail behavior is missing or differs from its pinned fixture.
+    why: If any iteration cache_creation is a mapping, sum int(value or0) across available 5m/1h breakdowns; sum
+      all iteration creation totals; assign max(total-detailed5m-detailed1h,0) to 5m, retaining 1h. Breakdown sum
+      exceeding total is not reduced. No iteration detail falls back to top-level breakdown.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_partial_iteration_detail$/)'
   - id: case-reported-thinking-capped
-    why: The reported-thinking-capped behavior is missing or differs from its pinned fixture.
+    why: output_tokens_details must be mapping valid as extra-allow AnthropicOutputTokensDetails with optional int
+      thinking_tokens; invalid values ->None. Use sum across iterations only when every iteration has a valid non-None
+      count, else fallback top-level count. Clamp reported as min(max(0,count),completion_tokens), text=completion-reasoning;
+      retain source order even for malformed negative totals.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_reported_thinking_capped$/)'
   - id: case-estimated-thinking-local
-    why: The estimated-thinking-local behavior is missing or differs from its pinned fixture.
+    why: Only without reported count and with truthy reasoning_content call B196 token_counter(text, count_response_tokens=True)
+      without model; cap min(estimate,completion), then max0, set remaining text. Counter errors propagate; no fallback
+      zero/catch here.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_estimated_thinking_local$/)'
   - id: case-signed-thinking-without-count
-    why: The signed-thinking-without-count behavior is missing or differs from its pinned fixture.
+    why: Without reported/estimated count, any mapping thinking/redacted_thinking block in list response.content
+      yields reasoning_tokens=None,text_tokens=None. Otherwise reasoning0/text=completion; empty content/nonlist
+      does not signal thinking.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_signed_thinking_without_count$/)'
   - id: case-tool-search-count-fallback
-    why: The tool-search-count-fallback behavior is missing or differs from its pinned fixture.
+    why: Use non-None server_tool_use.web_search_requests/tool_search_requests verbatim, including0. Only missing/None
+      tool-search count scans response content for server_tool_use whose name contains case-sensitive tool_search;
+      positive count emits it, zero leaves None. Emit server_tool_use only when either count is non-None.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_tool_search_count_fallback$/)'
   - id: case-speed-tier-geography
-    why: The speed-tier-geography behavior is missing or differs from its pinned fixture.
+    why: usage.speed wins if string (including empty), otherwise use supplied speed; service_tier=get, inference_geo
+      copies when non-None. Anthropic usage discriminator requires input_tokens key, no prompt_tokens key, and at
+      least one cache_read_input_tokens/cache_creation_input_tokens key regardless of value.
     run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::usage_cases::case_[0-9]+_speed_tier_geography$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_usage.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_usage.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_usage*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_usage*")"
       && grep -lq 'anthropic_usage' tools/oracle/fuzz/corpus/helper_case/anthropic_usage* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_usage$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -190,58 +252,58 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type L172-L181; AnthropicConfig.filter_anthropic_output_schema
-  L530-L665; AnthropicConfig.get_json_schema_from_pydantic_object L667-L670; AnthropicConfig._extract_json_schema_from_response_format
-  L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool
-  L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format L1656-L1682 belong to B574; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name L193-L202; _build_anthropic_tool_name_maps
-  L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L1000-L1048; AnthropicConfig._sanitize_tool_names_in_request
-  L1079-L1151 belong to B573; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
+- 'litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
   L393-L396; AnthropicConfig.get_cache_control_headers L672-L678; AnthropicConfig._build_request_tool_name_maps
   L1051-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165; AnthropicConfig._separate_deferred_tools L1167-L1183;
-  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320; AnthropicConfig.custom_llm_provider
-  L323-L324; AnthropicConfig._resolved_provider L327-L328; AnthropicConfig.get_config L331-L338; AnthropicConfig.get_max_tokens_for_model
-  L341-L354; AnthropicConfig._map_stop_sequences L1230-L1248; AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic
-  L1417-L1471; AnthropicConfig.map_openai_params L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128;
-  _valid_user_id L2795-L2808 belong to B576; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format L357-L384; AnthropicConfig._resolve_json_mode_non_streaming
-  L2130-L2160; AnthropicConfig.extract_response_content L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482;
-  AnthropicConfig._build_code_interpreter_results L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536;
-  AnthropicConfig._build_provider_specific_fields L2538-L2582; AnthropicConfig._convert_tool_response_to_message
-  L2762-L2785 belong to B578; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice L680-L721; AnthropicConfig._map_tool_helper
-  L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951; AnthropicConfig._map_tools L953-L997 belong
-  to B575; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata L1684-L1691; AnthropicConfig.translate_system_message
-  L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780; AnthropicConfig._ensure_beta_header L1782-L1801;
-  AnthropicConfig._ensure_context_management_beta_header L1803-L1837; AnthropicConfig.update_headers_with_optional_anthropic_beta
-  L1839-L1875; AnthropicConfig.inlines_remote_media L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894;
-  AnthropicConfig.transform_request L1896-L2080 belong to B577; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response L2584-L2688; AnthropicConfig.get_prefix_prompt
-  L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class L2787-L2792 belong
-  to B580; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level L399-L403; AnthropicConfig._validate_effort_for_model
-  L406-L415; AnthropicConfig._model_supports_effort_param L418-L431; AnthropicConfig._model_supports_speed_param
-  L434-L444; AnthropicConfig._maybe_drop_speed_param L447-L471; AnthropicConfig._raise_invalid_reasoning_effort
-  L474-L494; AnthropicConfig.get_supported_openai_params L496-L527; AnthropicConfig._map_reasoning_effort L1251-L1309;
-  AnthropicConfig.cap_thinking_budget_to_max_tokens L1312-L1326 belong to B569; reuse that implementation or its
-  injected typed boundary.
+  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320;
+  AnthropicConfig.custom_llm_provider L322-L324; AnthropicConfig._resolved_provider L326-L328; AnthropicConfig.get_config
+  L330-L338; AnthropicConfig.get_max_tokens_for_model L340-L354; AnthropicConfig._map_stop_sequences L1230-L1248;
+  AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic L1416-L1471;
+  _valid_user_id L2795-L2808 belong to B2201.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level
+  L398-L403; AnthropicConfig._validate_effort_for_model L405-L415; AnthropicConfig._model_supports_effort_param
+  L417-L431; AnthropicConfig._model_supports_speed_param L433-L444; AnthropicConfig._maybe_drop_speed_param L446-L471;
+  AnthropicConfig._raise_invalid_reasoning_effort L473-L494; AnthropicConfig.get_supported_openai_params L496-L527;
+  AnthropicConfig._map_reasoning_effort L1250-L1309; AnthropicConfig.cap_thinking_budget_to_max_tokens L1311-L1326
+  belong to B569.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name
+  L193-L202; _build_anthropic_tool_name_maps L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L999-L1048;
+  AnthropicConfig._sanitize_tool_names_in_request L1078-L1151 belong to B573.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type
+  L172-L181; AnthropicConfig.filter_anthropic_output_schema L529-L665; AnthropicConfig.get_json_schema_from_pydantic_object
+  L667-L670; AnthropicConfig._extract_json_schema_from_response_format L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format
+  L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format
+  L1656-L1682 belong to B574.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice
+  L680-L721; AnthropicConfig._map_tool_helper L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951;
+  AnthropicConfig._map_tools L953-L997 belong to B575.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.map_openai_params
+  L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128 belong to B576.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata
+  L1684-L1691; AnthropicConfig.translate_system_message L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780;
+  AnthropicConfig._ensure_beta_header L1782-L1801; AnthropicConfig._ensure_context_management_beta_header L1803-L1837;
+  AnthropicConfig.update_headers_with_optional_anthropic_beta L1839-L1875; AnthropicConfig.inlines_remote_media
+  L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894; AnthropicConfig.transform_request L1896-L2080
+  belong to B577.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format
+  L356-L384; AnthropicConfig._resolve_json_mode_non_streaming L2130-L2160; AnthropicConfig.extract_response_content
+  L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482; AnthropicConfig._build_code_interpreter_results
+  L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536; AnthropicConfig._build_provider_specific_fields
+  L2538-L2582; AnthropicConfig._convert_tool_response_to_message L2761-L2785 belong to B578.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response
+  L2584-L2688; AnthropicConfig.get_prefix_prompt L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class
+  L2787-L2792 belong to B580.'
+- 'Function ownership inventory litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model
+  L386-L390; AnthropicConfig._is_opus_4_7_model L392-L396; AnthropicConfig.get_cache_control_headers L672-L678;
+  AnthropicConfig._build_request_tool_name_maps L1050-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165;
+  AnthropicConfig._separate_deferred_tools L1167-L1183; AnthropicConfig._expand_tool_references L1185-L1228 have
+  no caller at the pin; do not implement or add cases.'
 pitfalls:
-- Use checked integer arithmetic and exact decimal parsing for source numeric truncation, never floats.
+- Incomplete iteration thinking detail falls back to the top-level count, but partial cache-creation detail is aggregated
+  and filled as 5m.
+- An explicit server_tool_use.tool_search_requests=0 suppresses content-derived counting.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: standard

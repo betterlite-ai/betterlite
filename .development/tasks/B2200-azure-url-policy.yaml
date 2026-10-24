@@ -1,0 +1,376 @@
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+checks:
+  commands:
+  - id: case-credential-precedence
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_credential_precedence$/)'
+    why: get_azure_credentials resolves base from api_base, litellm.api_base, AZURE_API_BASE; version from api_version,
+      litellm.api_version, AZURE_API_VERSION; key from api_key, litellm.api_key, litellm.azure_key, AZURE_OPENAI_API_KEY,
+      AZURE_API_KEY. Each chain uses truthiness and may return None; this helper does not apply the SDK version
+      default.
+  - id: case-deployment-base-url
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_deployment_base_url$/)'
+    why: select_azure_base_url_or_endpoint moves a non-None azure_endpoint containing /openai/deployments anywhere
+      in the string to base_url and deletes azure_endpoint, overriding an existing base_url; other values remain
+      unchanged.
+  - id: case-v1-latest-preview
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_v1_latest_preview$/)'
+    why: Only exact v1/latest/preview count as v1; None, different case and dated versions do not. _get_base_azure_url
+      chooses truthy mapping api_version then default_api_version and inserts /v1 after /openai only when /openai/v1
+      is absent.
+  - id: case-query-api-version-wins
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_query_api_version_wins$/)'
+    why: _get_base_azure_url resolves explicit/global/AZURE_API_BASE and raises ValueError api_base is required
+      for Azure AI Studio. Please set the api_base parameter. Passed `api_base=None` when unresolved. Copy original
+      URL query to a dict (duplicates collapse); an existing api-version wins even when empty. Otherwise add the
+      selected truthy version.
+  - id: case-append-route-once
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_append_route_once$/)'
+    why: When route is absent as a substring of the whole api_base, call B668 _add_path_to_api_base to merge overlapping
+      path segments; if present anywhere (including query) skip append. Reapply original query values after the
+      v1 rewrite.
+  - id: helper-python
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_urls.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+  - id: helper-case-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_urls*")"
+      && grep -lq 'azure_urls' tools/oracle/fuzz/corpus/helper_case/azure_urls* && cargo nextest run --locked -p
+      betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_urls$/)' && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+  - id: config-azure-api-base
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_urls_config_cases::case_[0-9]+_loads_azure_api_base$/)'
+      && grep -lq 'AZURE_API_BASE' crates/betterlite-config/fuzz/corpus/config_yaml/azure_urls*
+    why: The AZURE_API_BASE setting is not loaded with its required defaults and precedence.
+  - id: config-azure-openai-api-key
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_urls_config_cases::case_[0-9]+_loads_azure_openai_api_key$/)'
+      && grep -lq 'AZURE_OPENAI_API_KEY' crates/betterlite-config/fuzz/corpus/config_yaml/azure_urls*
+    why: The AZURE_OPENAI_API_KEY setting is not loaded with its required defaults and precedence.
+  - id: config-azure-api-key
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_urls_config_cases::case_[0-9]+_loads_azure_api_key$/)'
+      && grep -lq 'AZURE_API_KEY' crates/betterlite-config/fuzz/corpus/config_yaml/azure_urls*
+    why: The AZURE_API_KEY setting is not loaded with its required defaults and precedence.
+  - id: config-azure-api-version
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_urls_config_cases::case_[0-9]+_loads_azure_api_version$/)'
+      && grep -lq 'AZURE_API_VERSION' crates/betterlite-config/fuzz/corpus/config_yaml/azure_urls*
+    why: The AZURE_API_VERSION setting is not loaded with its required defaults and precedence.
+  - id: config-unknown-key
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_urls_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+    why: The extension silently accepts unrelated unsupported configuration.
+  - id: config-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_urls*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: New operation-specific config seeds are absent or do not replay through B002.
+  - id: credential-identity-isolation
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_urls_credential_identity_isolation$/)'
+    why: The credential identity isolation invariant has no passing production test.
+  - id: secret-safe-failure
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_urls_secret_safe_failure$/)'
+    why: The secret safe failure invariant has no passing production test.
+  - id: case-azure-header-selection
+    why: _base_validate_azure_environment returns immediately when the exact key api-key exists, including empty;
+      otherwise it resolves the key chain and sets api-key when truthy. Only if no key resolves call B529 get_azure_ad_token
+      and overwrite Authorization with Bearer <token> when truthy; existing differently-cased API-Key does not suppress
+      lookup.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_azure_header_selection$/)'
+  - id: case-azure-env-none-vs-empty
+    why: _resolve_env_var uses an explicit mapping value whenever not None, including empty string; only missing/None
+      falls back to os.getenv. Exercise tenant_id/client_id/client_secret/azure_username/azure_password/azure_scope
+      through the shared B529 loader inputs.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_azure_env_none_vs_empty$/)'
+  - id: case-v1-image-resource-reset
+    why: get_azure_v1_image_url returns None for dated versions. For v1/latest/preview remove the path from its
+      first /openai onward and remove every api-version query entry, retain other queries, then use _get_base_azure_url
+      with the chosen new version and images route.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::endpoints_cases::case_[0-9]+_v1_image_resource_reset$/)'
+  optional:
+  - mutants
+description: >-
+  Implement AzureUrlPolicy and the credential input projections below SDK client selection. Own exact route/version/query
+  composition and api-key header precedence for all Azure callers. Load deployment api_base/api_key/api_version
+  and their environment/global fallback chains; B529 owns token acquisition, and B531 owns client construction and
+  caches.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/common_utils.py:
+  select_azure_base_url_or_endpoint L287-L296; BaseAzureLLM._base_validate_azure_environment L752-L778; BaseAzureLLM._get_base_azure_url
+  L780-L830; BaseAzureLLM.get_azure_v1_image_url L832-L856; BaseAzureLLM._is_azure_v1_api_version L858-L862; BaseAzureLLM._resolve_env_var
+  L864-L876; get_azure_credentials L885-L904.
+
+
+  Named case contracts: credential_precedence: get_azure_credentials resolves base from api_base, litellm.api_base,
+  AZURE_API_BASE; version from api_version, litellm.api_version, AZURE_API_VERSION; key from api_key, litellm.api_key,
+  litellm.azure_key, AZURE_OPENAI_API_KEY, AZURE_API_KEY. Each chain uses truthiness and may return None; this helper
+  does not apply the SDK version default. deployment_base_url: select_azure_base_url_or_endpoint moves a non-None
+  azure_endpoint containing /openai/deployments anywhere in the string to base_url and deletes azure_endpoint, overriding
+  an existing base_url; other values remain unchanged. v1_latest_preview: Only exact v1/latest/preview count as
+  v1; None, different case and dated versions do not. _get_base_azure_url chooses truthy mapping api_version then
+  default_api_version and inserts /v1 after /openai only when /openai/v1 is absent. query_api_version_wins: _get_base_azure_url
+  resolves explicit/global/AZURE_API_BASE and raises ValueError api_base is required for Azure AI Studio. Please
+  set the api_base parameter. Passed `api_base=None` when unresolved. Copy original URL query to a dict (duplicates
+  collapse); an existing api-version wins even when empty. Otherwise add the selected truthy version. append_route_once:
+  When route is absent as a substring of the whole api_base, call B668 _add_path_to_api_base to merge overlapping
+  path segments; if present anywhere (including query) skip append. Reapply original query values after the v1 rewrite.
+  azure_header_selection: _base_validate_azure_environment returns immediately when the exact key api-key exists,
+  including empty; otherwise it resolves the key chain and sets api-key when truthy. Only if no key resolves call
+  B529 get_azure_ad_token and overwrite Authorization with Bearer <token> when truthy; existing differently-cased
+  API-Key does not suppress lookup. azure_env_none_vs_empty: _resolve_env_var uses an explicit mapping value whenever
+  not None, including empty string; only missing/None falls back to os.getenv. Exercise tenant_id/client_id/client_secret/azure_username/azure_password/azure_scope
+  through the shared B529 loader inputs. v1_image_resource_reset: get_azure_v1_image_url returns None for dated
+  versions. For v1/latest/preview remove the path from its first /openai onward and remove every api-version query
+  entry, retain other queries, then use _get_base_azure_url with the chosen new version and images route.
+
+
+  Implement crates/betterlite-azure/src/azure_urls.rs with adjacent tests under endpoints/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation azure_urls in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function endpoints_cases in betterlite-azure with these exact named cases (one per oracle file):
+  credential_precedence, deployment_base_url, v1_latest_preview, query_api_version_wins, append_route_once, azure_header_selection,
+  azure_env_none_vs_empty, v1_image_resource_reset. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_urls* using HelperCase: kind: helper and
+  the externally tagged azure_urls variant inside call. Do not put the Python stdin operation field in a HelperCase.
+  Add oracle test helper_seeds_select_azure_urls that parses every prefixed seed with the production HelperCase
+  parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/azure/urls.rs
+  and its loader wiring: AZURE_API_BASE, AZURE_OPENAI_API_KEY, AZURE_API_KEY, AZURE_API_VERSION. Module-level settings
+  enter litellm_settings; deployment settings enter litellm_params; environment lookup is injected. Keep the defaults
+  and precedence specified above and in the linked branches; existing key owners remain unchanged. Write config
+  rstest azure_urls_config_cases with named cases loads_azure_api_base, loads_azure_openai_api_key, loads_azure_api_key,
+  loads_azure_api_version, plus rejects_unrelated_key. Each loads case calls the real config loader with that key
+  and asserts the resolved value, default, precedence and secret redaction where applicable. Seed B002 config_yaml
+  with new azure_urls* files for every key; reuse its parser/fuzz target.
+
+
+  The owned credential boundary also has separate Rust cases credential_identity_isolation (two distinct configured
+  identities cannot reuse the other identity/header/cache entry) and secret_safe_failure (the owned failure path
+  and Debug do not expose fixture secrets). Exercise the credential inputs this slice actually handles; do not invent
+  a cache for a stateless header mapper.
+
+
+  Write standalone azure_urls_credential_identity_isolation in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Write standalone azure_urls_secret_safe_failure in betterlite-azure for this Rust-specific invariant; it is not
+  a Python oracle case.
+
+
+  Budget from 122 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 145 production lines, 220 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 45 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 540 planned, 550 maximum changed lines.
+deviations: []
+dod:
+- proof:
+  - case-credential-precedence
+  - oracle
+  - helper-python
+  text: 'credential_precedence: get_azure_credentials resolves base from api_base, litellm.api_base, AZURE_API_BASE;
+    version from api_version, litellm.api_version, AZURE_API_VERSION; key from api_key, litellm.api_key, litellm.azure_key,
+    AZURE_OPENAI_API_KEY, AZURE_API_KEY. Each chain uses truthiness and may return None; this helper does not apply
+    the SDK version default.'
+- proof:
+  - case-deployment-base-url
+  - oracle
+  - helper-python
+  text: 'deployment_base_url: select_azure_base_url_or_endpoint moves a non-None azure_endpoint containing /openai/deployments
+    anywhere in the string to base_url and deletes azure_endpoint, overriding an existing base_url; other values
+    remain unchanged.'
+- proof:
+  - case-v1-latest-preview
+  - oracle
+  - helper-python
+  text: 'v1_latest_preview: Only exact v1/latest/preview count as v1; None, different case and dated versions do
+    not. _get_base_azure_url chooses truthy mapping api_version then default_api_version and inserts /v1 after /openai
+    only when /openai/v1 is absent.'
+- proof:
+  - case-query-api-version-wins
+  - oracle
+  - helper-python
+  text: 'query_api_version_wins: _get_base_azure_url resolves explicit/global/AZURE_API_BASE and raises ValueError
+    api_base is required for Azure AI Studio. Please set the api_base parameter. Passed `api_base=None` when unresolved.
+    Copy original URL query to a dict (duplicates collapse); an existing api-version wins even when empty. Otherwise
+    add the selected truthy version.'
+- proof:
+  - case-append-route-once
+  - oracle
+  - helper-python
+  text: 'append_route_once: When route is absent as a substring of the whole api_base, call B668 _add_path_to_api_base
+    to merge overlapping path segments; if present anywhere (including query) skip append. Reapply original query
+    values after the v1 rewrite.'
+- proof:
+  - helper-case-corpus
+  text: New azure_urls seeds parse as the intended call variant and replay through the shared production parser.
+- proof:
+  - config-azure-api-base
+  - config-corpus
+  text: AZURE_API_BASE is accepted by the config loader with the documented default and precedence.
+- proof:
+  - config-azure-openai-api-key
+  - config-corpus
+  text: AZURE_OPENAI_API_KEY is accepted by the config loader with the documented default and precedence.
+- proof:
+  - config-azure-api-key
+  - config-corpus
+  text: AZURE_API_KEY is accepted by the config loader with the documented default and precedence.
+- proof:
+  - config-azure-api-version
+  - config-corpus
+  text: AZURE_API_VERSION is accepted by the config loader with the documented default and precedence.
+- proof:
+  - config-unknown-key
+  text: Unrelated unsupported config still fails with its complete field path.
+- proof:
+  - credential-identity-isolation
+  text: credential identity isolation holds at this task’s owned boundary.
+- proof:
+  - secret-safe-failure
+  text: secret safe failure holds at this task’s owned boundary.
+- text: 'azure_header_selection: _base_validate_azure_environment returns immediately when the exact key api-key
+    exists, including empty; otherwise it resolves the key chain and sets api-key when truthy. Only if no key resolves
+    call B529 get_azure_ad_token and overwrite Authorization with Bearer <token> when truthy; existing differently-cased
+    API-Key does not suppress lookup.'
+  proof:
+  - case-azure-header-selection
+  - oracle
+  - helper-python
+- text: 'azure_env_none_vs_empty: _resolve_env_var uses an explicit mapping value whenever not None, including empty
+    string; only missing/None falls back to os.getenv. Exercise tenant_id/client_id/client_secret/azure_username/azure_password/azure_scope
+    through the shared B529 loader inputs.'
+  proof:
+  - case-azure-env-none-vs-empty
+  - oracle
+  - helper-python
+- text: 'v1_image_resource_reset: get_azure_v1_image_url returns None for dated versions. For v1/latest/preview
+    remove the path from its first /openai onward and remove every api-version query entry, retain other queries,
+    then use _get_base_azure_url with the chosen new version and images route.'
+  proof:
+  - case-v1-image-resource-reset
+  - oracle
+  - helper-python
+id: B2200
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-urls/credential-precedence.yaml
+- tools/oracle/cases/helpers/providers/azure-urls/deployment-base-url.yaml
+- tools/oracle/cases/helpers/providers/azure-urls/v1-latest-preview.yaml
+- tools/oracle/cases/helpers/providers/azure-urls/query-api-version-wins.yaml
+- tools/oracle/cases/helpers/providers/azure-urls/append-route-once.yaml
+- tools/oracle/cases/helpers/providers/azure-urls/azure-header-selection.yaml
+- tools/oracle/cases/helpers/providers/azure-urls/azure-env-none-vs-empty.yaml
+- tools/oracle/cases/helpers/providers/azure-urls/v1-image-resource-reset.yaml
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- 'litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
+  that implementation or its injected typed boundary.'
+- 'litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
+  belong to B534; reuse that implementation or its injected typed boundary.'
+- 'litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request L845-L971; AzureChatCompletion.make_sync_azure_httpx_request
+  L973-L1088 belong to B535; reuse that implementation or its injected typed boundary.'
+- 'litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
+  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
+  injected typed boundary.'
+- 'litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech L1362-L1426; AzureChatCompletion.async_audio_speech
+  L1428-L1471; AzureChatCompletion.get_headers L1473-L1540 belong to B537; reuse that implementation or its injected
+  typed boundary.'
+- 'litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.completion L196-L389;
+  AzureChatCompletion.acompletion L391-L498 belong to B533; reuse that implementation or its injected typed boundary.'
+- 'litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming L577-L652
+  belong to B685; reuse that implementation or its injected typed boundary.'
+- 'litellm/llms/azure/azure.py: AzureChatCompletion.make_sync_azure_openai_chat_completion_request L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request
+  L164-L194 belong to B505; the shared wrappers are prerequisites of both B533 and B685.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: process_azure_headers L66-L78; _cached_azure_ad_token_refresh_provider
+  L99-L101; get_azure_ad_token L299-L411; _resolve_azure_ad_token L418-L424; get_azure_request_auth_headers L427-L439;
+  redact_azure_auth_headers L442-L446 belong to B529.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: get_azure_ad_token_from_oidc L199-L284 belong
+  to B530.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: BaseAzureLLM.get_azure_openai_client L480-L600;
+  BaseAzureLLM.initialize_azure_sdk_client L602-L696; BaseAzureLLM._init_azure_client_for_cloudflare_ai_gateway
+  L698-L750 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: AzureOpenAIError.__init__ L47-L63; _cached_entra_id_token_provider
+  L81-L96; get_azure_ad_token_from_entra_id L104-L157 belong to B673.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: get_azure_ad_token_from_username_password L160-L196
+  belong to B675.'
+- 'Function ownership inventory litellm/llms/azure/common_utils.py: BaseAzureLLM._try_get_default_azure_credential_provider
+  L450-L478 belong to B677.'
+pitfalls:
+- The generic Azure path helper tests route membership against the whole URL string, so a matching query substring
+  can suppress path append.
+- Header preservation is exact-case api-key here, unlike B529 get_azure_request_auth_headers.
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L287-L296
+  why: Select SDK endpoint versus deployment base.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L753-L904
+  why: Own header validation, URL/version helpers, None-aware env lookup and resolved credential records.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L287-L296
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L752-L778
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L780-L830
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L832-L856
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L858-L862
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L864-L876
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L885-L904
+  why: Owned function body checked against the pinned checkout.
+review_level: security
+scope:
+  lint_tables: false
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/azure_urls.rs
+  - crates/betterlite-azure/src/azure_urls/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_urls.rs
+  - tools/oracle/src/helpers/azure_urls/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_urls.py
+  - tools/oracle/cases/helpers/providers/azure-urls/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_urls*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/urls.rs
+  - crates/betterlite-config/src/providers/azure/urls/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_urls_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_urls*
+title: Azure URL and credential input policy

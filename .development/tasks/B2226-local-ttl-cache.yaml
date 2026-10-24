@@ -1,0 +1,344 @@
+id: B2226
+title: Shared local TTL cache primitives
+description: >-
+  Move shared bounded local-cache primitives below Azure token/AWS credential consumers and router storage. Inject
+  clocks and typed values; B390 owns routing value types and batch/increment adapters, while B125 owns Redis composition.
+  Provider caches use the memory-only DualCache branch, never router storage or the HTTP client pool.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/caching/in_memory_cache.py:
+  InMemoryCache.__init__ L32-L54; check_value_size L56-L91; _is_key_expired L93-L97; _remove_key L99-L104; evict_cache
+  L106-L141; allow_ttl_override L148-L156; set_cache L158-L177; evict_element_if_expired L200-L209; get_cache L211-L221;
+  delete_cache L268-L269. litellm/caching/dual_cache.py: local constructor fields L98-L100 and L106-L106; set_cache
+  local-tier/error branches L150-L157 and L161-L162; get_cache local-tier/error branches L185-L199 and L211-L216.
+
+
+  Named case contracts: cache_defaults: max_size_in_memory defaults 200 and only explicit None restores 200; zero
+  disables insertion and negative values retain the source failure behavior. default_ttl uses value or 600 seconds.
+  max_size_per_item uses value or MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB (integer environment default 1024), with
+  the constructor default itself 1024. State begins with empty value/expiry maps and heap; inject the wall-clock
+  source. expiry_and_overwrite: Reads expire only when now is strictly greater than expiry; equality remains readable.
+  Insertion first prunes heap roots whose expiry no longer matches the map, then roots with expiry <= now, then
+  evicts earliest expirations until live length is below capacity, even when overwriting an existing key. Equal
+  expiries break ties by key ordering. Missing/outdated heap state can raise and the DualCache wrapper handles it.
+  nonrefreshing_ttl: After capacity eviction and size acceptance store the value. Set a new expiry only when the
+  previous TTL is absent or strictly before now; an unexpired overwrite retains its original expiry and ignores
+  a requested new TTL. Supplied ttl=0/negative is used, while absent/None uses default_ttl. Delete removes both
+  maps but leaves the heap entry for lazy pruning. Failed value-size admission occurs after eviction and can therefore
+  evict an item without storing a replacement. value_size_policy: The Python oracle fast-paths bool/int/float/string
+  when len(str(value)) is strictly below max_size_per_item times the loaded KiB constant; bytes use sys.getsizeof/1024
+  <= cap, then __sizeof__ is tried before BaseModel/datetime/JSON fallback. Size-check exceptions reject without
+  insertion. Native cache values use the bounded canonical-size policy stated in deviations, with opaque credential/client
+  handles charged by an internal typed size projection, never a caller-supplied HTTP size. cached_json_projection:
+  On a cache hit attempt JSON parsing of the stored value; if it succeeds return the parsed value (including None/False/0),
+  otherwise return the original object/value. A missing or expired key returns None. Use decode_cached_json only
+  for stored string/byte payloads and keep typed credential handles out of JSON conversion. dual_local_defaults_errors:
+  For the no-Redis branch, use a supplied truthy memory cache or create the default. default_in_memory_ttl uses
+  truthy constructor value then litellm.default_in_memory_ttl (None by default). Only when ttl is absent and that
+  setting is non-None add it; an explicit ttl=None bypasses the override and reaches the memory default. set_cache
+  catches failures and emits its verbose event; get_cache catches failures, logs LiteLLM Cache: exception in get_cache
+  and returns None. A cached False/0 is a hit, but None is treated as absent. Apply B187 redaction to get cache:
+  cache result: {value} and error events.
+
+
+  Load MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB, default_in_memory_ttl through betterlite-config, with injected environment
+  lookup and the defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest local_ttl_cache_config_cases; each named loads_<key> case invokes the real B002 loader, checks
+  explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB parses an integer and malformed input fails the loader; default_in_memory_ttl
+  is the global litellm_settings value and defaults None. Do not add provider-specific copies of either setting.
+
+
+  Write standalone Rust test local_ttl_cache_credential_identity_isolation in betterlite-context: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test local_ttl_cache_secret_safe_failure in betterlite-context: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Outside-byte boundary: decode_cached_json consumes bounded stored string/byte JSON values, returning parsed value
+  or original-value fallback in crates/betterlite-context/src/local_ttl_cache.rs or its scoped child module. Use
+  that production decoder from the request path, Rust oracle adapter and cargo-fuzz target crates/betterlite-context/fuzz/fuzz_targets/cached_json.rs.
+  Add valid, malformed, truncated and boundary corpus inputs and adjacent test replays_the_cached_json_corpus that
+  checks outcome categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Implement crates/betterlite-context/src/local_ttl_cache.rs with adjacent tests under local_ttl_cache/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation local_ttl_cache in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function local_ttl_cache_cases in betterlite-context with these exact named cases (one per oracle
+  file): cache_defaults, expiry_and_overwrite, nonrefreshing_ttl, value_size_policy, cached_json_projection, dual_local_defaults_errors.
+  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing
+  API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/local_ttl_cache* using HelperCase: kind: helper
+  and the externally tagged local_ttl_cache variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_local_ttl_cache that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
+
+
+  Budget from 156 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 230 production lines, 265 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 65 parser target/replay lines, 40 config/loader lines and 35 module/dispatch/shared-seed
+  wiring lines; 745 planned, 750 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/lib.rs
+  - crates/betterlite-context/src/error.rs
+  - crates/betterlite-context/src/local_ttl_cache.rs
+  - crates/betterlite-context/src/local_ttl_cache/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/local_ttl_cache.rs
+  - tools/oracle/src/helpers/local_ttl_cache/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/local_ttl_cache.py
+  - tools/oracle/cases/helpers/providers/local-ttl-cache/**
+  - tools/oracle/fuzz/corpus/helper_case/local_ttl_cache*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/shared.rs
+  - crates/betterlite-config/src/providers/shared/local_ttl_cache.rs
+  - crates/betterlite-config/src/providers/shared/local_ttl_cache/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/local_ttl_cache_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/local_ttl_cache*
+  - crates/betterlite-context/fuzz/Cargo.toml
+  - crates/betterlite-context/fuzz/fuzz_targets/cached_json.rs
+  - crates/betterlite-context/fuzz/corpus/cached_json/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L32-L54
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L56-L91
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L93-L97
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L99-L104
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L106-L141
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L148-L156
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L158-L177
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L200-L209
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L211-L221
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L268-L269
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L98-L100
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L106-L106
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L150-L157
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L161-L162
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L185-L199
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L211-L216
+  why: Owned function body checked against the pinned checkout.
+dod:
+- text: New local_ttl_cache seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: 'cache_defaults: max_size_in_memory defaults 200 and only explicit None restores 200; zero disables insertion
+    and negative values retain the source failure behavior. default_ttl uses value or 600 seconds. max_size_per_item
+    uses value or MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB (integer environment default 1024), with the constructor
+    default itself 1024. State begins with empty value/expiry maps and heap; inject the wall-clock source.'
+  proof:
+  - case-cache-defaults
+  - oracle
+  - helper-python
+- text: 'expiry_and_overwrite: Reads expire only when now is strictly greater than expiry; equality remains readable.
+    Insertion first prunes heap roots whose expiry no longer matches the map, then roots with expiry <= now, then
+    evicts earliest expirations until live length is below capacity, even when overwriting an existing key. Equal
+    expiries break ties by key ordering. Missing/outdated heap state can raise and the DualCache wrapper handles
+    it.'
+  proof:
+  - case-expiry-and-overwrite
+  - oracle
+  - helper-python
+- text: 'nonrefreshing_ttl: After capacity eviction and size acceptance store the value. Set a new expiry only when
+    the previous TTL is absent or strictly before now; an unexpired overwrite retains its original expiry and ignores
+    a requested new TTL. Supplied ttl=0/negative is used, while absent/None uses default_ttl. Delete removes both
+    maps but leaves the heap entry for lazy pruning. Failed value-size admission occurs after eviction and can therefore
+    evict an item without storing a replacement.'
+  proof:
+  - case-nonrefreshing-ttl
+  - oracle
+  - helper-python
+- text: 'value_size_policy: The Python oracle fast-paths bool/int/float/string when len(str(value)) is strictly
+    below max_size_per_item times the loaded KiB constant; bytes use sys.getsizeof/1024 <= cap, then __sizeof__
+    is tried before BaseModel/datetime/JSON fallback. Size-check exceptions reject without insertion. Native cache
+    values use the bounded canonical-size policy stated in deviations, with opaque credential/client handles charged
+    by an internal typed size projection, never a caller-supplied HTTP size.'
+  proof:
+  - case-value-size-policy
+  - oracle
+  - helper-python
+- text: 'cached_json_projection: On a cache hit attempt JSON parsing of the stored value; if it succeeds return
+    the parsed value (including None/False/0), otherwise return the original object/value. A missing or expired
+    key returns None. Use decode_cached_json only for stored string/byte payloads and keep typed credential handles
+    out of JSON conversion.'
+  proof:
+  - case-cached-json-projection
+  - oracle
+  - helper-python
+- text: 'dual_local_defaults_errors: For the no-Redis branch, use a supplied truthy memory cache or create the default.
+    default_in_memory_ttl uses truthy constructor value then litellm.default_in_memory_ttl (None by default). Only
+    when ttl is absent and that setting is non-None add it; an explicit ttl=None bypasses the override and reaches
+    the memory default. set_cache catches failures and emits its verbose event; get_cache catches failures, logs
+    LiteLLM Cache: exception in get_cache and returns None. A cached False/0 is a hit, but None is treated as absent.
+    Apply B187 redaction to get cache: cache result: {value} and error events.'
+  proof:
+  - case-dual-local-defaults-errors
+  - oracle
+  - helper-python
+- text: The real config loader resolves MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB, including its default and precedence.
+  proof:
+  - config-max-size-per-item-in-memory-cache-in-kb
+- text: The real config loader resolves default_in_memory_ttl, including its default and precedence.
+  proof:
+  - config-default-in-memory-ttl
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+- text: decode_cached_json has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/local_ttl_cache.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/local_ttl_cache*")"
+      && grep -lq 'local_ttl_cache' tools/oracle/fuzz/corpus/helper_case/local_ttl_cache* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_local_ttl_cache$/)' && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-cache-defaults
+    why: max_size_in_memory defaults 200 and only explicit None restores 200; zero disables insertion and negative
+      values retain the source failure behavior. default_ttl uses value or 600 seconds. max_size_per_item uses value
+      or MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB (integer environment default 1024), with the constructor default
+      itself 1024. State begins with empty value/expiry maps and heap; inject the wall-clock source.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_cases::case_[0-9]+_cache_defaults$/)'
+  - id: case-expiry-and-overwrite
+    why: Reads expire only when now is strictly greater than expiry; equality remains readable. Insertion first
+      prunes heap roots whose expiry no longer matches the map, then roots with expiry <= now, then evicts earliest
+      expirations until live length is below capacity, even when overwriting an existing key. Equal expiries break
+      ties by key ordering. Missing/outdated heap state can raise and the DualCache wrapper handles it.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_cases::case_[0-9]+_expiry_and_overwrite$/)'
+  - id: case-nonrefreshing-ttl
+    why: After capacity eviction and size acceptance store the value. Set a new expiry only when the previous TTL
+      is absent or strictly before now; an unexpired overwrite retains its original expiry and ignores a requested
+      new TTL. Supplied ttl=0/negative is used, while absent/None uses default_ttl. Delete removes both maps but
+      leaves the heap entry for lazy pruning. Failed value-size admission occurs after eviction and can therefore
+      evict an item without storing a replacement.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_cases::case_[0-9]+_nonrefreshing_ttl$/)'
+  - id: case-value-size-policy
+    why: The Python oracle fast-paths bool/int/float/string when len(str(value)) is strictly below max_size_per_item
+      times the loaded KiB constant; bytes use sys.getsizeof/1024 <= cap, then __sizeof__ is tried before BaseModel/datetime/JSON
+      fallback. Size-check exceptions reject without insertion. Native cache values use the bounded canonical-size
+      policy stated in deviations, with opaque credential/client handles charged by an internal typed size projection,
+      never a caller-supplied HTTP size.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_cases::case_[0-9]+_value_size_policy$/)'
+  - id: case-cached-json-projection
+    why: On a cache hit attempt JSON parsing of the stored value; if it succeeds return the parsed value (including
+      None/False/0), otherwise return the original object/value. A missing or expired key returns None. Use decode_cached_json
+      only for stored string/byte payloads and keep typed credential handles out of JSON conversion.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_cases::case_[0-9]+_cached_json_projection$/)'
+  - id: case-dual-local-defaults-errors
+    why: 'For the no-Redis branch, use a supplied truthy memory cache or create the default. default_in_memory_ttl
+      uses truthy constructor value then litellm.default_in_memory_ttl (None by default). Only when ttl is absent
+      and that setting is non-None add it; an explicit ttl=None bypasses the override and reaches the memory default.
+      set_cache catches failures and emits its verbose event; get_cache catches failures, logs LiteLLM Cache: exception
+      in get_cache and returns None. A cached False/0 is a hit, but None is treated as absent. Apply B187 redaction
+      to get cache: cache result: {value} and error events.'
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_cases::case_[0-9]+_dual_local_defaults_errors$/)'
+  - id: config-max-size-per-item-in-memory-cache-in-kb
+    why: MAX_SIZE_PER_ITEM_IN_MEMORY_CACHE_IN_KB lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::local_ttl_cache_config_cases::case_[0-9]+_loads_max_size_per_item_in_memory_cache_in_kb$/)'
+  - id: config-default-in-memory-ttl
+    why: default_in_memory_ttl lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::local_ttl_cache_config_cases::case_[0-9]+_loads_default_in_memory_ttl$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/::local_ttl_cache_secret_safe_failure$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-context/fuzz/corpus/cached_json)"
+      && grep -q 'decode_cached_json' crates/betterlite-context/fuzz/fuzz_targets/cached_json.rs && cargo nextest
+      run --locked -p betterlite-context --no-tests=fail -E 'test(/::replays_the_cached_json_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/local-ttl-cache/cache-defaults.yaml
+- tools/oracle/cases/helpers/providers/local-ttl-cache/expiry-and-overwrite.yaml
+- tools/oracle/cases/helpers/providers/local-ttl-cache/nonrefreshing-ttl.yaml
+- tools/oracle/cases/helpers/providers/local-ttl-cache/value-size-policy.yaml
+- tools/oracle/cases/helpers/providers/local-ttl-cache/cached-json-projection.yaml
+- tools/oracle/cases/helpers/providers/local-ttl-cache/dual-local-defaults-errors.yaml
+deviations:
+- what: Typed native cache values use bounded canonical serialized size (opaque internal credential handles use
+    their typed size charge), rather than Python object-layout __sizeof__. Keys are limited to 1024 bytes and serialized
+    values to 1 MiB. Eviction or rejection can occur at a different boundary for the same Python object. Cache debug
+    events redact values and credentials.
+  why: Carry the existing B390 bounded native value policy down to its shared owner and obey credential-redaction
+    rules without reproducing Python heap layout.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L56-L91
+out_of_scope:
+- InMemoryCache async wrappers, pipelines, sets, batch reads, increments, flush/disconnect and remaining TTL/oldest-key
+  helpers stay B390/B391. DualCache Redis construction, LimitedSizeOrderedDict and Redis read/write/backfill branches
+  remain B125; only its no-Redis provider-cache path is owned here. Cache logging is an injected redacted event
+  sink; no Redis transport is called by this task.
+- 'Function ownership inventory litellm/caching/in_memory_cache.py: InMemoryCache.async_get_cache L238-L239; InMemoryCache.async_batch_get_cache
+  L241-L246; InMemoryCache.async_increment L248-L249; InMemoryCache.async_increment_pipeline L251-L258; InMemoryCache.flush_cache
+  L260-L263; InMemoryCache.disconnect L265-L266; InMemoryCache.async_get_ttl L271-L275; InMemoryCache.async_get_oldest_n_keys
+  L277-L283 belong to B125.'
+- 'Function ownership inventory litellm/caching/in_memory_cache.py: InMemoryCache.async_set_cache L179-L180; InMemoryCache.async_set_cache_pipeline
+  L182-L187; InMemoryCache.async_set_cache_sadd L189-L198; InMemoryCache.batch_get_cache L223-L228; InMemoryCache.increment_cache
+  L230-L236 belong to B390.'
+pitfalls:
+- An insertion can evict an existing entry before discovering that the replacement is too large.
+- Read expiry uses > while insertion pruning uses <=.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

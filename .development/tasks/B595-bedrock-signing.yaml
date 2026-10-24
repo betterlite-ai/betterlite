@@ -12,7 +12,45 @@ description: >-
   BaseAWSLLM._get_boto_credentials_from_optional_params L1520-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params
   L1528-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params L1536-L1568; BaseAWSLLM.get_request_headers
   L1571-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655; BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post
-  L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws L1770-L1779.
+  L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws L1770-L1779. litellm/llms/bedrock/common_utils.py:
+  CommonBatchFilesUtils.sign_aws_request L1906-L1963.
+
+
+  Named case contracts: signed_header_allowlist: Case-insensitive signing filter keeps non-None host,content-type,date,x-amz-date,x-amz-security-token,x-amz-content-sha256,x-amz-algorithm,x-amz-credential,x-amz-signedheaders,x-amz-signature
+  and every x-amz-/x-amzn- prefix, retaining original spelling; drop unrelated headers only from signature calculation.
+  computed_header_replacement: After SigV4 signing reattach all non-None original headers except case-insensitive
+  authorization,x-amz-date,x-amz-security-token,date. Forwarded headers survive unsigned; computed signature/session
+  token must not be overwritten by stale incoming values. Use fixed time/credentials and actual serialized bytes
+  for botocore/Rust comparison. bearer_skips_sts: get_request_headers uses B590 api_key/env bearer only when supports_bearer_token=true;
+  bearer sets canonical Authorization=Bearer <token>, POST with unchanged supplied body and no SigV4 or extra_headers
+  override. _sign_request bearer branch also sets canonical Content-Type=application/json even if a differently
+  cased key exists, returns json.dumps bytes and skips auth validation/region lookup/pops entirely. explicit_non_aws_auth_override:
+  get_request_headers override only exact extra_headers.Authorization, when not starting AWS4-HMAC-SHA256; lowercase
+  key ignored. _sign_request instead takes the first non-None Authorization case-insensitively from its headers,
+  overriding SigV4 unless it starts AWS4-HMAC-SHA256. Empty string overrides; prefix check is case-sensitive. Keep
+  these distinct call paths in sibling cases. empty_credentials_error: SigV4 get_request_headers with credentialsNone
+  raises NoCredentialsError; preserve dependency error message Unable to locate credentials without inventing HTTP
+  status/type/param here. Python missing boto3 is oracle-environment failure Missing boto3 to call bedrock. Run
+  'pip install boto3'. (generic helper substitutes service_name), not a runtime Rust package-install requirement.
+  body_bytes_match_signature: get_request_headers signs servicebedrock with supplied str/bytes unchanged. _sign_request
+  supports bedrock,sagemaker,bedrock-agentcore,s3vectors,aws-external-anthropic, POST api_base, json.dumps default
+  spacing/Unicode escapes, preserving body-byte equivalence. It adds Content-Type=application/json only if no case-insensitive
+  content-type key exists, so an existing key with None suppresses insertion. stream/fake_stream unused. sign_aws_json_post
+  signs supplied serialized body and all supplied headers directly, no allowlist or bearer override. auth_inputs_pop_even_bearer:
+  Resolve region B591 then pop aws_region_name, pop/validate B590 auth keys, then pop aws_bedrock_runtime_endpoint.
+  A non-None bearer_token including empty returns target with credentialsNone and skips B594 acquisition, but not
+  region/auth validation or pops. A malformed auth field still fails even on this bearer target branch. signing_off_loop:
+  run_aws_signing preserves context and all arguments/results/errors through the dedicated16-worker aws-signing
+  executor. sign_request_off_loop_if_aws offloads only SignsRequestsWithAWS configs; other callbacks run inline
+  and once. Rust equivalent uses bounded blocking work and preserves request tracing/identity; cancellation must
+  not expose another request credentials. batch_service_signing: CommonBatchFilesUtils.sign_aws_request gets B591
+  region with model empty string, validates optional_params as AwsAuthParams, then resolves B594 credentials. Uppercase
+  method default POST. GET always uses empty-string data and no initial headers, ignoring supplied data; every other
+  method JSON-dumps dict data or retains other data and starts Content-Type=application/json. Sign through standard
+  SigV4Auth (not S3SigV4Auth) using supplied service_name, region and endpoint, then return prepared headers and
+  original selected request_data encoded UTF-8 only when it was a string. No bearer shortcut, S3-specific credentials,
+  KMS header or non-LLM signing-region rewrite is applied. Python missing-import message is Missing boto3 to call
+  bedrock. Run 'pip install boto3'.; reuse the compiled Rust signing library.
 
 
   Implement crates/betterlite-bedrock/src/signing.rs with adjacent tests under signing/. Keep each Rust module at
@@ -30,10 +68,10 @@ description: >-
 
   Write rstest function signing_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   fixed_clock_sigv4, session_token_signature, signed_header_allowlist, computed_header_replacement, bearer_skips_sts,
-  explicit_non_aws_auth_override, empty_credentials_error, body_bytes_match_signature. Each case exercises its named
-  outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy
-  and assert both client response and captured upstream request. Existing API tasks retain route registration; this
-  task must not register a duplicate axum route.
+  explicit_non_aws_auth_override, empty_credentials_error, body_bytes_match_signature, auth_inputs_pop_even_bearer,
+  signing_off_loop, batch_service_signing. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_signing* using HelperCase: kind: helper
@@ -61,10 +99,10 @@ description: >-
   is not a Python oracle case.
 
 
-  Budget from 214 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 240 production lines, 147 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 499 planned, 500 maximum changed lines.
+  Budget from 261 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 310 production lines, 315 behavior/config-test lines,
+  130 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 780 planned, 800 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -87,11 +125,12 @@ references:
 - url: https://docs.rs/aws-sigv4/latest/aws_sigv4/http_request/
   why: Maintained SigV4 HTTP signing over exact already-serialized body bytes.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1520-L1779
-  why: >-
-    Own BaseAWSLLM._get_boto_credentials_from_optional_params, BaseAWSLLM._get_boto_credentials_from_optional_params,
+  why: Own BaseAWSLLM._get_boto_credentials_from_optional_params, BaseAWSLLM._get_boto_credentials_from_optional_params,
     BaseAWSLLM._get_boto_credentials_from_optional_params, BaseAWSLLM.get_request_headers, BaseAWSLLM._filter_headers_for_aws_signature,
     BaseAWSLLM._sign_request, sign_aws_json_post, run_aws_signing, sign_request_off_loop_if_aws. Other functions
     in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L1906-L1963
+  why: Own CommonBatchFilesUtils.sign_aws_request with its direct callers below higher composition.
 dod:
 - text: 'fixed clock sigv4: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/fixed-clock-sigv4.yaml.'
   proof:
@@ -103,35 +142,50 @@ dod:
   - case-session-token-signature
   - oracle
   - helper-python
-- text: 'signed header allowlist: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/signed-header-allowlist.yaml.'
+- text: 'signed_header_allowlist: Case-insensitive signing filter keeps non-None host,content-type,date,x-amz-date,x-amz-security-token,x-amz-content-sha256,x-amz-algorithm,x-amz-credential,x-amz-signedheaders,x-amz-signature
+    and every x-amz-/x-amzn- prefix, retaining original spelling; drop unrelated headers only from signature calculation.'
   proof:
   - case-signed-header-allowlist
   - oracle
   - helper-python
-- text: >-
-    computed header replacement: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/computed-header-replacement.yaml.
+- text: 'computed_header_replacement: After SigV4 signing reattach all non-None original headers except case-insensitive
+    authorization,x-amz-date,x-amz-security-token,date. Forwarded headers survive unsigned; computed signature/session
+    token must not be overwritten by stale incoming values. Use fixed time/credentials and actual serialized bytes
+    for botocore/Rust comparison.'
   proof:
   - case-computed-header-replacement
   - oracle
   - helper-python
-- text: 'bearer skips sts: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/bearer-skips-sts.yaml.'
+- text: 'bearer_skips_sts: get_request_headers uses B590 api_key/env bearer only when supports_bearer_token=true;
+    bearer sets canonical Authorization=Bearer <token>, POST with unchanged supplied body and no SigV4 or extra_headers
+    override. _sign_request bearer branch also sets canonical Content-Type=application/json even if a differently
+    cased key exists, returns json.dumps bytes and skips auth validation/region lookup/pops entirely.'
   proof:
   - case-bearer-skips-sts
   - oracle
   - helper-python
-- text: >-
-    explicit non aws auth override: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/explicit-non-aws-auth-override.yaml.
+- text: 'explicit_non_aws_auth_override: get_request_headers override only exact extra_headers.Authorization, when
+    not starting AWS4-HMAC-SHA256; lowercase key ignored. _sign_request instead takes the first non-None Authorization
+    case-insensitively from its headers, overriding SigV4 unless it starts AWS4-HMAC-SHA256. Empty string overrides;
+    prefix check is case-sensitive. Keep these distinct call paths in sibling cases.'
   proof:
   - case-explicit-non-aws-auth-override
   - oracle
   - helper-python
-- text: 'empty credentials error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/empty-credentials-error.yaml.'
+- text: 'empty_credentials_error: SigV4 get_request_headers with credentialsNone raises NoCredentialsError; preserve
+    dependency error message Unable to locate credentials without inventing HTTP status/type/param here. Python
+    missing boto3 is oracle-environment failure Missing boto3 to call bedrock. Run ''pip install boto3''. (generic
+    helper substitutes service_name), not a runtime Rust package-install requirement.'
   proof:
   - case-empty-credentials-error
   - oracle
   - helper-python
-- text: >-
-    body bytes match signature: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/body-bytes-match-signature.yaml.
+- text: 'body_bytes_match_signature: get_request_headers signs servicebedrock with supplied str/bytes unchanged.
+    _sign_request supports bedrock,sagemaker,bedrock-agentcore,s3vectors,aws-external-anthropic, POST api_base,
+    json.dumps default spacing/Unicode escapes, preserving body-byte equivalence. It adds Content-Type=application/json
+    only if no case-insensitive content-type key exists, so an existing key with None suppresses insertion. stream/fake_stream
+    unused. sign_aws_json_post signs supplied serialized body and all supplied headers directly, no allowlist or
+    bearer override.'
   proof:
   - case-body-bytes-match-signature
   - oracle
@@ -145,44 +199,86 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'auth_inputs_pop_even_bearer: Resolve region B591 then pop aws_region_name, pop/validate B590 auth keys,
+    then pop aws_bedrock_runtime_endpoint. A non-None bearer_token including empty returns target with credentialsNone
+    and skips B594 acquisition, but not region/auth validation or pops. A malformed auth field still fails even
+    on this bearer target branch.'
+  proof:
+  - case-auth-inputs-pop-even-bearer
+  - oracle
+  - helper-python
+- text: 'signing_off_loop: run_aws_signing preserves context and all arguments/results/errors through the dedicated16-worker
+    aws-signing executor. sign_request_off_loop_if_aws offloads only SignsRequestsWithAWS configs; other callbacks
+    run inline and once. Rust equivalent uses bounded blocking work and preserves request tracing/identity; cancellation
+    must not expose another request credentials.'
+  proof:
+  - case-signing-off-loop
+  - oracle
+  - helper-python
+- text: 'batch_service_signing: CommonBatchFilesUtils.sign_aws_request gets B591 region with model empty string,
+    validates optional_params as AwsAuthParams, then resolves B594 credentials. Uppercase method default POST. GET
+    always uses empty-string data and no initial headers, ignoring supplied data; every other method JSON-dumps
+    dict data or retains other data and starts Content-Type=application/json. Sign through standard SigV4Auth (not
+    S3SigV4Auth) using supplied service_name, region and endpoint, then return prepared headers and original selected
+    request_data encoded UTF-8 only when it was a string. No bearer shortcut, S3-specific credentials, KMS header
+    or non-LLM signing-region rewrite is applied. Python missing-import message is Missing boto3 to call bedrock.
+    Run ''pip install boto3''.; reuse the compiled Rust signing library.'
+  proof:
+  - case-batch-service-signing
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-fixed-clock-sigv4
-    why: The fixed-clock-sigv4 behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/fixed-clock-sigv4.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_fixed_clock_sigv4$/)'
   - id: case-session-token-signature
-    why: The session-token-signature behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-signing/session-token-signature.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_session_token_signature$/)'
   - id: case-signed-header-allowlist
-    why: The signed-header-allowlist behavior is missing or differs from its pinned fixture.
+    why: Case-insensitive signing filter keeps non-None host,content-type,date,x-amz-date,x-amz-security-token,x-amz-content-sha256,x-amz-algorithm,x-amz-credential,x-amz-signedheaders,x-amz-signature
+      and every x-amz-/x-amzn- prefix, retaining original spelling; drop unrelated headers only from signature calculation.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_signed_header_allowlist$/)'
   - id: case-computed-header-replacement
-    why: The computed-header-replacement behavior is missing or differs from its pinned fixture.
+    why: After SigV4 signing reattach all non-None original headers except case-insensitive authorization,x-amz-date,x-amz-security-token,date.
+      Forwarded headers survive unsigned; computed signature/session token must not be overwritten by stale incoming
+      values. Use fixed time/credentials and actual serialized bytes for botocore/Rust comparison.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_computed_header_replacement$/)'
   - id: case-bearer-skips-sts
-    why: The bearer-skips-sts behavior is missing or differs from its pinned fixture.
+    why: get_request_headers uses B590 api_key/env bearer only when supports_bearer_token=true; bearer sets canonical
+      Authorization=Bearer <token>, POST with unchanged supplied body and no SigV4 or extra_headers override. _sign_request
+      bearer branch also sets canonical Content-Type=application/json even if a differently cased key exists, returns
+      json.dumps bytes and skips auth validation/region lookup/pops entirely.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_bearer_skips_sts$/)'
   - id: case-explicit-non-aws-auth-override
-    why: The explicit-non-aws-auth-override behavior is missing or differs from its pinned fixture.
+    why: get_request_headers override only exact extra_headers.Authorization, when not starting AWS4-HMAC-SHA256;
+      lowercase key ignored. _sign_request instead takes the first non-None Authorization case-insensitively from
+      its headers, overriding SigV4 unless it starts AWS4-HMAC-SHA256. Empty string overrides; prefix check is case-sensitive.
+      Keep these distinct call paths in sibling cases.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_explicit_non_aws_auth_override$/)'
   - id: case-empty-credentials-error
-    why: The empty-credentials-error behavior is missing or differs from its pinned fixture.
+    why: SigV4 get_request_headers with credentialsNone raises NoCredentialsError; preserve dependency error message
+      Unable to locate credentials without inventing HTTP status/type/param here. Python missing boto3 is oracle-environment
+      failure Missing boto3 to call bedrock. Run 'pip install boto3'. (generic helper substitutes service_name),
+      not a runtime Rust package-install requirement.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_empty_credentials_error$/)'
   - id: case-body-bytes-match-signature
-    why: The body-bytes-match-signature behavior is missing or differs from its pinned fixture.
+    why: get_request_headers signs servicebedrock with supplied str/bytes unchanged. _sign_request supports bedrock,sagemaker,bedrock-agentcore,s3vectors,aws-external-anthropic,
+      POST api_base, json.dumps default spacing/Unicode escapes, preserving body-byte equivalence. It adds Content-Type=application/json
+      only if no case-insensitive content-type key exists, so an existing key with None suppresses insertion. stream/fake_stream
+      unused. sign_aws_json_post signs supplied serialized body and all supplied headers directly, no allowlist
+      or bearer override.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_body_bytes_match_signature$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_signing.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_signing.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_signing*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_signing*")"
       && grep -lq 'bedrock_signing' tools/oracle/fuzz/corpus/helper_case/bedrock_signing* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_signing$/)' && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -192,6 +288,27 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_signing_secret_safe_failure$/)'
+  - id: case-auth-inputs-pop-even-bearer
+    why: Resolve region B591 then pop aws_region_name, pop/validate B590 auth keys, then pop aws_bedrock_runtime_endpoint.
+      A non-None bearer_token including empty returns target with credentialsNone and skips B594 acquisition, but
+      not region/auth validation or pops. A malformed auth field still fails even on this bearer target branch.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_auth_inputs_pop_even_bearer$/)'
+  - id: case-signing-off-loop
+    why: run_aws_signing preserves context and all arguments/results/errors through the dedicated16-worker aws-signing
+      executor. sign_request_off_loop_if_aws offloads only SignsRequestsWithAWS configs; other callbacks run inline
+      and once. Rust equivalent uses bounded blocking work and preserves request tracing/identity; cancellation
+      must not expose another request credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_signing_off_loop$/)'
+  - id: case-batch-service-signing
+    why: CommonBatchFilesUtils.sign_aws_request gets B591 region with model empty string, validates optional_params
+      as AwsAuthParams, then resolves B594 credentials. Uppercase method default POST. GET always uses empty-string
+      data and no initial headers, ignoring supplied data; every other method JSON-dumps dict data or retains other
+      data and starts Content-Type=application/json. Sign through standard SigV4Auth (not S3SigV4Auth) using supplied
+      service_name, region and endpoint, then return prepared headers and original selected request_data encoded
+      UTF-8 only when it was a string. No bearer shortcut, S3-specific credentials, KMS header or non-LLM signing-region
+      rewrite is applied. Python missing-import message is Missing boto3 to call bedrock. Run 'pip install boto3'.;
+      reuse the compiled Rust signing library.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::signing_cases::case_[0-9]+_batch_service_signing$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-signing/fixed-clock-sigv4.yaml
 - tools/oracle/cases/helpers/providers/bedrock-signing/session-token-signature.yaml
@@ -201,46 +318,105 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-signing/explicit-non-aws-auth-override.yaml
 - tools/oracle/cases/helpers/providers/bedrock-signing/empty-credentials-error.yaml
 - tools/oracle/cases/helpers/providers/bedrock-signing/body-bytes-match-signature.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/auth-inputs-pop-even-bearer.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/signing-off-loop.yaml
+- tools/oracle/cases/helpers/providers/bedrock-signing/batch-service-signing.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L346-L510; BaseAWSLLM.resolve_credentials L512-L525;
-  BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
-  L1258-L1390 belong to B594; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn L538-L560; BaseAWSLLM._get_provider_from_model_path
-  L563-L580; BaseAWSLLM.get_bedrock_invoke_provider L583-L616; BaseAWSLLM.get_bedrock_model_id L619-L667; BaseAWSLLM._get_model_id_from_model_with_spec
-  L670-L678; BaseAWSLLM.encode_model_id L681-L689; BaseAWSLLM.get_bedrock_embedding_provider L692-L730; BaseAWSLLM._get_aws_region_name
-  L732-L790; BaseAWSLLM._validate_aws_region_name L793-L804; BaseAWSLLM._parse_sts_region_from_endpoint L807-L815;
-  BaseAWSLLM._resolve_sts_region L818-L828; BaseAWSLLM._build_sts_client_kwargs L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls
-  L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499; BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong
-  to B591; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name L875-L910; BaseAWSLLM._is_already_running_as_role
-  L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214 belong to B592; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience L972-L988; BaseAWSLLM._auth_with_web_identity_token
-  L991-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155; BaseAWSLLM._handle_irsa_same_account L1157-L1191
-  belong to B593; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params L81-L97; build_web_identity_session_policy
-  L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194; AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__
-  L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key L273-L279; BaseAWSLLM._get_or_set_cached_credentials
-  L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L314-L319; BaseAWSLLM._is_auth_with_aws_role L322-L323;
-  BaseAWSLLM._is_auth_with_aws_profile L326-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple L330-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key
-  L338-L343; BaseAWSLLM._auth_with_aws_profile L1393-L1402; BaseAWSLLM._auth_with_aws_session_token L1405-L1423;
-  BaseAWSLLM._auth_with_access_key_and_secret_key L1426-L1448; BaseAWSLLM._auth_with_env_vars L1451-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials
-  L1463-L1469 belong to B590; reuse that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: _canonical_aws_session_tags L61-L71; _assume_role_params
+  L81-L97; build_web_identity_session_policy L155-L168; pop_aws_auth_params L171-L176; bedrock_bearer_token L192-L194;
+  AwsAuthError.__init__ L203-L208; BaseAWSLLM.__init__ L240-L256; BaseAWSLLM._get_ssl_verify L258-L271; BaseAWSLLM.get_cache_key
+  L273-L279; BaseAWSLLM._get_or_set_cached_credentials L281-L311; BaseAWSLLM._is_auth_with_web_identity_token L313-L319;
+  BaseAWSLLM._is_auth_with_aws_role L321-L323; BaseAWSLLM._is_auth_with_aws_profile L325-L327; BaseAWSLLM._is_auth_with_aws_session_token_tuple
+  L329-L335; BaseAWSLLM._is_auth_with_access_key_and_secret_key L337-L343; BaseAWSLLM._auth_with_aws_profile L1392-L1402;
+  BaseAWSLLM._auth_with_aws_session_token L1404-L1423; BaseAWSLLM._auth_with_access_key_and_secret_key L1425-L1448;
+  BaseAWSLLM._auth_with_env_vars L1450-L1460; BaseAWSLLM._get_default_ttl_for_boto3_credentials L1462-L1469 belong
+  to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn
+  L538-L560; BaseAWSLLM._get_provider_from_model_path L562-L580; BaseAWSLLM.get_bedrock_invoke_provider L582-L616;
+  BaseAWSLLM.get_bedrock_model_id L618-L667; BaseAWSLLM._get_model_id_from_model_with_spec L669-L678; BaseAWSLLM.encode_model_id
+  L680-L689; BaseAWSLLM.get_bedrock_embedding_provider L691-L730; BaseAWSLLM._get_aws_region_name L732-L790; BaseAWSLLM._validate_aws_region_name
+  L792-L804; BaseAWSLLM._parse_sts_region_from_endpoint L806-L815; BaseAWSLLM._resolve_sts_region L817-L828; BaseAWSLLM._build_sts_client_kwargs
+  L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499;
+  BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong to B591.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name
+  L874-L910; BaseAWSLLM._is_already_running_as_role L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214
+  belong to B592.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience
+  L971-L988; BaseAWSLLM._auth_with_web_identity_token L990-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155;
+  BaseAWSLLM._handle_irsa_same_account L1157-L1191 belong to B593.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L345-L510; BaseAWSLLM.resolve_credentials
+  L512-L525; BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
+  L1257-L1390 belong to B594.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: s3_static_key_pair L132-L140 belong to B590.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
+  _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
+  L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
+  L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
+  L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
+  bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
+  L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
+  normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- >-
-  Preserve exact serialized bytes, service/region, signing-header filtering, computed header replacement, session
-  token and the source explicit non-AWS Authorization override.
+- The two auth-override functions differ in header lookup casing; sharing one override predicate changes behavior.
+- Bearer _sign_request bypasses validation entirely, while bearer _get_boto_credentials_from_optional_params still
+  validates and removes AWS parameters.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

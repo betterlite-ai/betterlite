@@ -17,6 +17,45 @@ description: >-
   prerequisite.
 
 
+  Named case contracts: new_thread_run_flow: For sync and async, falsey thread_id creates a thread; the empty dict
+  is sent as no request body, not JSON {}. Create thread/message/run accept only 200 or 201; status/list accept
+  only 200. GET sends no body; POST serializes only truthy payloads. existing_thread_message_flow: Reuse a truthy
+  thread_id; post every user/system message as role=user in order, preserve explicit content=None, default only
+  missing content to empty string, and skip assistant/tool roles. Run body has assistant_id plus instructions only
+  when the key exists, including None/empty. failed_cancelled_expired_run: failed/cancelled/expired raise AzureAIAgentsError
+  500 with Run <status>: <last_error.message>, default Unknown error only for absent fields. Other/missing statuses
+  continue polling. nonexpected_status: Preserve response status and the B559 error projection with operation prefixes
+  Failed to create thread, Failed to add message, Failed to create run, Failed to get run status, Failed to get
+  messages; no later request occurs after failure. sixty_polls_408: completed immediately stops polling and fetches
+  messages; otherwise perform exactly 60 polls and 60 one-second sleeps then AzureAIAgentsError 408 Run timed out
+  waiting for completion. Use an injected clock, never a real-minute oracle wait. agent_entra_forced_scope: Only
+  api_key=None invokes B529 after copying litellm_params and overriding azure_scope=https://ai.azure.com/.default;
+  empty string bypasses resolution. Preserve the input mapping. agent_token_missing_value_error: If resolution remains
+  None, ValueError text is api_key (Azure AD token) is required for Azure Foundry Agents. Either pass api_key directly,
+  or set AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET environment variables for Service Principal auth.
+  Manual token: az account get-access-token --resource 'https://ai.azure.com'. dispatch_and_client_defaults: Truthy
+  acompletion plus truthy stream chooses B561 native async SSE; sync ignores stream and runs normal polling. None
+  client creates B173 sync/azure_ai async transport with ssl_verify from litellm_params, default None; a supplied
+  client is reused. timeout is never passed to these GET/POST calls.
+
+
+  Use B561 reply construction and streaming dispatch and B559 URL/auth/error preparation directly. Cancellation
+  is a Rust transport ownership invariant, not a terminal status supplied by this source.
+
+
+  Write standalone Rust test agent_runs_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test agent_runs_secret_safe_failure in betterlite-foundry: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2202. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-foundry/src/agent_runs.rs with adjacent tests under agent_runs/. Keep each Rust module
   at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
   imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
@@ -31,10 +70,9 @@ description: >-
 
 
   Write rstest function agent_runs_cases in betterlite-foundry with these exact named cases (one per oracle file):
-  new_thread_run_flow, existing_thread_message_flow, completed_run, failed_cancelled_expired_run, poll_limit, run_cancellation,
-  nonexpected_status, sixty_polls_408, timeout_does_not_change_poll_count, agent_entra_forced_scope, agent_token_missing_value_error.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  new_thread_run_flow, existing_thread_message_flow, failed_cancelled_expired_run, nonexpected_status, sixty_polls_408,
+  agent_entra_forced_scope, agent_token_missing_value_error, dispatch_and_client_defaults. Each case exercises its
+  named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
   route registration; this task must not register a duplicate axum route.
 
 
@@ -66,9 +104,9 @@ description: >-
 
 
   Budget from 273 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 295 production lines, 174 behavior/config-test lines,
-  99 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 648 planned, 650 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 245 production lines, 220 behavior/config-test lines,
+  115 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 605 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -90,68 +128,55 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L302-L549
-  why: >-
-    Own AzureAIAgentsHandler.completion, AzureAIAgentsHandler._execute_agent_flow_sync, AzureAIAgentsHandler.acompletion,
+  why: Own AzureAIAgentsHandler.completion, AzureAIAgentsHandler._execute_agent_flow_sync, AzureAIAgentsHandler.acompletion,
     AzureAIAgentsHandler._execute_agent_flow_async. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L310-L397
   why: Own AzureAIAgentsConfig.completion. Other functions in this file remain with the owners listed below.
 dod:
-- text: 'new thread run flow: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/new-thread-run-flow.yaml.'
+- text: 'new_thread_run_flow: For sync and async, falsey thread_id creates a thread; the empty dict is sent as no
+    request body, not JSON {}. Create thread/message/run accept only 200 or 201; status/list accept only 200. GET
+    sends no body; POST serializes only truthy payloads.'
   proof:
   - case-new-thread-run-flow
   - oracle
   - helper-python
-- text: >-
-    existing thread message flow: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/existing-thread-message-flow.yaml.
+- text: 'existing_thread_message_flow: Reuse a truthy thread_id; post every user/system message as role=user in
+    order, preserve explicit content=None, default only missing content to empty string, and skip assistant/tool
+    roles. Run body has assistant_id plus instructions only when the key exists, including None/empty.'
   proof:
   - case-existing-thread-message-flow
   - oracle
   - helper-python
-- text: 'completed run: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/completed-run.yaml.'
-  proof:
-  - case-completed-run
-  - oracle
-  - helper-python
-- text: >-
-    failed cancelled expired run: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/failed-cancelled-expired-run.yaml.
+- text: 'failed_cancelled_expired_run: failed/cancelled/expired raise AzureAIAgentsError 500 with Run <status>:
+    <last_error.message>, default Unknown error only for absent fields. Other/missing statuses continue polling.'
   proof:
   - case-failed-cancelled-expired-run
   - oracle
   - helper-python
-- text: 'poll limit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/poll-limit.yaml.'
-  proof:
-  - case-poll-limit
-  - oracle
-  - helper-python
-- text: 'run cancellation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/run-cancellation.yaml.'
-  proof:
-  - case-run-cancellation
-  - oracle
-  - helper-python
-- text: 'nonexpected status: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/nonexpected-status.yaml.'
+- text: 'nonexpected_status: Preserve response status and the B559 error projection with operation prefixes Failed
+    to create thread, Failed to add message, Failed to create run, Failed to get run status, Failed to get messages;
+    no later request occurs after failure.'
   proof:
   - case-nonexpected-status
   - oracle
   - helper-python
-- text: 'sixty polls 408: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/sixty-polls-408.yaml.'
+- text: 'sixty_polls_408: completed immediately stops polling and fetches messages; otherwise perform exactly 60
+    polls and 60 one-second sleeps then AzureAIAgentsError 408 Run timed out waiting for completion. Use an injected
+    clock, never a real-minute oracle wait.'
   proof:
   - case-sixty-polls-408
   - oracle
   - helper-python
-- text: >-
-    timeout does not change poll count: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/timeout-does-not-change-poll-count.yaml.
-  proof:
-  - case-timeout-does-not-change-poll-count
-  - oracle
-  - helper-python
-- text: >-
-    agent entra forced scope: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/agent-entra-forced-scope.yaml.
+- text: 'agent_entra_forced_scope: Only api_key=None invokes B529 after copying litellm_params and overriding azure_scope=https://ai.azure.com/.default;
+    empty string bypasses resolution. Preserve the input mapping.'
   proof:
   - case-agent-entra-forced-scope
   - oracle
   - helper-python
-- text: >-
-    agent token missing value error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-agent-runs/agent-token-missing-value-error.yaml.
+- text: 'agent_token_missing_value_error: If resolution remains None, ValueError text is api_key (Azure AD token)
+    is required for Azure Foundry Agents. Either pass api_key directly, or set AZURE_TENANT_ID, AZURE_CLIENT_ID,
+    and AZURE_CLIENT_SECRET environment variables for Service Principal auth. Manual token: az account get-access-token
+    --resource ''https://ai.azure.com''.'
   proof:
   - case-agent-token-missing-value-error
   - oracle
@@ -169,111 +194,122 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'dispatch_and_client_defaults: Truthy acompletion plus truthy stream chooses B561 native async SSE; sync
+    ignores stream and runs normal polling. None client creates B173 sync/azure_ai async transport with ssl_verify
+    from litellm_params, default None; a supplied client is reused. timeout is never passed to these GET/POST calls.'
+  proof:
+  - case-dispatch-and-client-defaults
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-new-thread-run-flow
-    why: The new-thread-run-flow behavior is missing or differs from its pinned fixture.
+    why: For sync and async, falsey thread_id creates a thread; the empty dict is sent as no request body, not JSON
+      {}. Create thread/message/run accept only 200 or 201; status/list accept only 200. GET sends no body; POST
+      serializes only truthy payloads.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_new_thread_run_flow$/)'
   - id: case-existing-thread-message-flow
-    why: The existing-thread-message-flow behavior is missing or differs from its pinned fixture.
+    why: Reuse a truthy thread_id; post every user/system message as role=user in order, preserve explicit content=None,
+      default only missing content to empty string, and skip assistant/tool roles. Run body has assistant_id plus
+      instructions only when the key exists, including None/empty.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_existing_thread_message_flow$/)'
-  - id: case-completed-run
-    why: The completed-run behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_completed_run$/)'
   - id: case-failed-cancelled-expired-run
-    why: The failed-cancelled-expired-run behavior is missing or differs from its pinned fixture.
+    why: 'failed/cancelled/expired raise AzureAIAgentsError 500 with Run <status>: <last_error.message>, default
+      Unknown error only for absent fields. Other/missing statuses continue polling.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_failed_cancelled_expired_run$/)'
-  - id: case-poll-limit
-    why: The poll-limit behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_poll_limit$/)'
-  - id: case-run-cancellation
-    why: The run-cancellation behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_run_cancellation$/)'
   - id: case-nonexpected-status
-    why: The nonexpected-status behavior is missing or differs from its pinned fixture.
+    why: Preserve response status and the B559 error projection with operation prefixes Failed to create thread,
+      Failed to add message, Failed to create run, Failed to get run status, Failed to get messages; no later request
+      occurs after failure.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_nonexpected_status$/)'
   - id: case-sixty-polls-408
-    why: The sixty-polls-408 behavior is missing or differs from its pinned fixture.
+    why: completed immediately stops polling and fetches messages; otherwise perform exactly 60 polls and 60 one-second
+      sleeps then AzureAIAgentsError 408 Run timed out waiting for completion. Use an injected clock, never a real-minute
+      oracle wait.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_sixty_polls_408$/)'
-  - id: case-timeout-does-not-change-poll-count
-    why: The timeout-does-not-change-poll-count behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_timeout_does_not_change_poll_count$/)'
   - id: case-agent-entra-forced-scope
-    why: The agent-entra-forced-scope behavior is missing or differs from its pinned fixture.
+    why: Only api_key=None invokes B529 after copying litellm_params and overriding azure_scope=https://ai.azure.com/.default;
+      empty string bypasses resolution. Preserve the input mapping.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_agent_entra_forced_scope$/)'
   - id: case-agent-token-missing-value-error
-    why: The agent-token-missing-value-error behavior is missing or differs from its pinned fixture.
+    why: 'If resolution remains None, ValueError text is api_key (Azure AD token) is required for Azure Foundry
+      Agents. Either pass api_key directly, or set AZURE_TENANT_ID, AZURE_CLIENT_ID, and AZURE_CLIENT_SECRET environment
+      variables for Service Principal auth. Manual token: az account get-access-token --resource ''https://ai.azure.com''.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_agent_token_missing_value_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_runs.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_agent_runs.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_runs*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_agent_runs*")"
       && grep -lq 'foundry_agent_runs' tools/oracle/fuzz/corpus/helper_case/foundry_agent_runs* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_agent_runs$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_agent_runs)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_agent_runs)"
       && grep -q 'decode_agent_run_status' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_agent_runs.rs &&
       cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_agent_runs_corpus$/)'
+  - id: case-dispatch-and-client-defaults
+    why: Truthy acompletion plus truthy stream chooses B561 native async SSE; sync ignores stream and runs normal
+      polling. None client creates B173 sync/azure_ai async transport with ssl_verify from litellm_params, default
+      None; a supplied client is reused. timeout is never passed to these GET/POST calls.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_cases::case_[0-9]+_dispatch_and_client_defaults$/)'
   - id: credential-identity-isolation
-    why: The credential identity isolation invariant has no passing production test.
-    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_agent_runs_credential_identity_isolation$/)'
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_credential_identity_isolation$/)'
   - id: secret-safe-failure
-    why: The secret safe failure invariant has no passing production test.
-    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::foundry_agent_runs_secret_safe_failure$/)'
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::agent_runs_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-agent-runs/new-thread-run-flow.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-runs/existing-thread-message-flow.yaml
-- tools/oracle/cases/helpers/providers/foundry-agent-runs/completed-run.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-runs/failed-cancelled-expired-run.yaml
-- tools/oracle/cases/helpers/providers/foundry-agent-runs/poll-limit.yaml
-- tools/oracle/cases/helpers/providers/foundry-agent-runs/run-cancellation.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-runs/nonexpected-status.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-runs/sixty-polls-408.yaml
-- tools/oracle/cases/helpers/providers/foundry-agent-runs/timeout-does-not-change-poll-count.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-runs/agent-entra-forced-scope.yaml
 - tools/oracle/cases/helpers/providers/foundry-agent-runs/agent-token-missing-value-error.yaml
+- tools/oracle/cases/helpers/providers/foundry-agent-runs/dispatch-and-client-defaults.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler._extract_content_from_messages L158-L175; AzureAIAgentsHandler._transform_annotations
-  L177-L210; AzureAIAgentsHandler._build_model_response L212-L256; AzureAIAgentsHandler.acompletion_stream L554-L620;
-  AzureAIAgentsHandler._process_sse_stream L622-L710 belong to B561; reuse that implementation or its injected typed
-  boundary.
-- >-
-  litellm/llms/azure_ai/agents/handler.py: _SyncAgentRequest.__call__ L106-L106; _AsyncAgentRequest.__call__ L110-L112;
-  AzureAIAgentsHandler.__init__ L122-L123; AzureAIAgentsHandler._build_thread_url L131-L132; AzureAIAgentsHandler._build_messages_url
+- 'litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.is_azure_ai_agents_route L81-L87 have no
+  caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/azure_ai/agents/handler.py: _SyncAgentRequest.__call__ L106-L106; _AsyncAgentRequest.__call__
+  L110-L112; AzureAIAgentsHandler.__init__ L122-L123; AzureAIAgentsHandler._build_thread_url L131-L132; AzureAIAgentsHandler._build_messages_url
   L134-L136; AzureAIAgentsHandler._build_runs_url L138-L140; AzureAIAgentsHandler._build_run_status_url L142-L145;
   AzureAIAgentsHandler._build_list_messages_url L147-L149; AzureAIAgentsHandler._build_create_thread_and_run_url
   L151-L153; AzureAIAgentsHandler._prepare_completion_params L258-L289; AzureAIAgentsHandler._check_response L291-L297
-  belong to B559; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.__init__ L77-L78; AzureAIAgentsConfig.get_agent_id_from_model
-  L90-L102; AzureAIAgentsConfig._get_openai_compatible_provider_info L104-L120; AzureAIAgentsConfig.get_supported_openai_params
-  L122-L126; AzureAIAgentsConfig.map_openai_params L128-L138; AzureAIAgentsConfig._get_api_version L140-L142; AzureAIAgentsConfig.get_complete_url
-  L144-L172; AzureAIAgentsConfig._get_agent_id L174-L185; AzureAIAgentsConfig.transform_request L187-L234; AzureAIAgentsConfig.validate_environment
-  L236-L261; AzureAIAgentsConfig.get_error_class L263-L264; AzureAIAgentsConfig.should_fake_stream L266-L275; AzureAIAgentsConfig.has_custom_stream_wrapper
-  L278-L280; AzureAIAgentsConfig.supports_stream_param_in_request_body L283-L287; AzureAIAgentsConfig.transform_response
-  L289-L307 belong to B559; reuse that implementation or its injected typed boundary.
-- 'litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.is_azure_ai_agents_route L81-L87 have no
-  caller at the pin; do not port them.'
+  belong to B559.'
+- 'Function ownership inventory litellm/llms/azure_ai/agents/handler.py: AzureAIAgentsHandler._extract_content_from_messages
+  L158-L175; AzureAIAgentsHandler._transform_annotations L177-L210; AzureAIAgentsHandler._build_model_response L212-L256;
+  AzureAIAgentsHandler.acompletion_stream L554-L620; AzureAIAgentsHandler._process_sse_stream L622-L710 belong to
+  B561.'
+- 'Function ownership inventory litellm/llms/azure_ai/agents/transformation.py: AzureAIAgentsConfig.__init__ L77-L78;
+  AzureAIAgentsConfig.is_azure_ai_agents_route L80-L87; AzureAIAgentsConfig.get_agent_id_from_model L89-L102; AzureAIAgentsConfig._get_openai_compatible_provider_info
+  L104-L120; AzureAIAgentsConfig.get_supported_openai_params L122-L126; AzureAIAgentsConfig.map_openai_params L128-L138;
+  AzureAIAgentsConfig._get_api_version L140-L142; AzureAIAgentsConfig.get_complete_url L144-L172; AzureAIAgentsConfig._get_agent_id
+  L174-L185; AzureAIAgentsConfig.transform_request L187-L234; AzureAIAgentsConfig.validate_environment L236-L261;
+  AzureAIAgentsConfig.get_error_class L263-L264; AzureAIAgentsConfig.should_fake_stream L266-L275; AzureAIAgentsConfig.has_custom_stream_wrapper
+  L277-L280; AzureAIAgentsConfig.supports_stream_param_in_request_body L282-L287; AzureAIAgentsConfig.transform_response
+  L289-L307 belong to B559.'
 pitfalls:
-- The poll loop is 60 attempts at one second; the timeout argument does not shorten that count.
+- The last unsuccessful poll also sleeps before the for/else raises 408.
+- The empty thread-creation mapping becomes no POST body because the closure tests truthiness.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: security

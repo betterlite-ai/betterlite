@@ -7,14 +7,13 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/image_generation/image_handler.py:
-  BedrockImageGeneration.get_config_class L66-L74; BedrockImageGeneration.image_generation L76-L139; BedrockImageGeneration.async_image_generation
-  L141-L188; BedrockImageGeneration._extract_headers_from_optional_params L190-L203; BedrockImageGeneration._prepare_request
-  L205-L292; BedrockImageGeneration._get_request_body L294-L310; BedrockImageGeneration._transform_response_dict_to_openai_response
-  L312-L345.
+  BedrockImageGeneration.image_generation L76-L139; BedrockImageGeneration.async_image_generation L141-L188; BedrockImageGeneration._extract_headers_from_optional_params
+  L190-L203; BedrockImageGeneration._prepare_request L205-L292; BedrockImageGeneration._get_request_body L294-L310;
+  BedrockImageGeneration._transform_response_dict_to_openai_response L312-L345.
 
 
-  Reuse the existing image reply decoder from the image-generation result owner; this slice adds no parallel JSON
-  parser.
+  Decode the provider-specific JSON reply at this HTTP boundary before delegating B633 record transformations; the
+  OpenAI image reply decoder expects a different body shape.
 
 
   Reuse AmazonNovaCanvasConfig._is_nova_model from B633 (litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py);
@@ -27,6 +26,53 @@ description: >-
 
   Reuse AmazonTitanImageGenerationConfig._is_titan_model from B633 (litellm/llms/bedrock/image_generation/amazon_titan_transformation.py);
   its implementation remains with that prerequisite.
+
+
+  Named case contracts: image_family_dispatch: Use B633 get_config_class in both request and response paths: Titan
+  substring first, Nova second, Stability 3 third, otherwise Stability 1. The same original model selects both transformations
+  even when optional model_id changes the invoked deployment. Convert its request TypedDict to a plain mapping and
+  preserve all B633 mutation/error behavior. image_runtime_url: Prepare before selecting sync/async transport. Call
+  B595 _get_boto_credentials_from_optional_params with original options/model and B590 bedrock_bearer_token(api_key),
+  B591 get_bedrock_invoke_provider, then B591 get_bedrock_model_id. Select the B591 proxy_endpoint_url, unlike B631
+  embeddings, and append /model/{modelId}/invoke without stripping an existing slash. Keep that endpoint_url as
+  the transport target even if prepared.url differs. signed_json_body: Build B633 body before header extraction,
+  serialize once as UTF-8 JSON bytes, and sign those bytes through B595 get_request_headers with default Content-Type=application/json
+  overlaid by extra_headers. Use returned headers but transport prepared_request.endpoint_url/body. B249 pre_call
+  input=prompt, api_key empty, and additional_args contains complete_input_dict,api_base=proxy_endpoint_url,headers.
+  Test B595 bearer and explicit non-AWS Authorization precedence on this call path. extra_headers_outside_body:
+  After the body has already been built and serialized, pop guardrailIdentifier and guardrailVersion from the mutated
+  options and add x-amz-bedrock-guardrail-identifier and x-amz-bedrock-guardrail-version for non-None values, including
+  empty strings; these headers override identical extra-header keys. Because extraction is late, Stability 1/3 and
+  Nova may retain these fields in the already-built body, while Titan ignores them. Assert both body and headers
+  rather than claiming guardrail fields are always removed from the body. base64_image_result: After successful
+  transport, if logging_obj is non-None B249 post_call gets prompt, empty api_key, raw response.text and complete_input_dict;
+  debug logs raw model_response: %s with response text. decode_bedrock_image_reply parses JSON. JSON null raises
+  ValueError Error in response object format, got None; malformed JSON propagates its decoder error. B633 transformation
+  mutates data on the supplied model_response; ignore its return value and return the original response record.
+  Preserve ordered base64 results even when response_format requests URL. image_http_error: Both transport paths
+  raise_for_status, translate HTTPStatusError to B682 BedrockError preserving status,text,headers,response, and
+  timeout to status408 message Timeout error occurred. Other transport failures and downstream decoder/transform
+  errors propagate without that translation; failed HTTP responses do not run post_call here. image_transport_selection:
+  Only aimg_generation literally True selects async. Sync accepts only an HTTPHandler or creates B173 default client
+  without passing the timeout argument; async receives only a matching AsyncHTTPHandler and otherwise creates B173
+  BEDROCK client with params timeout, including None. Preparation/signing runs before this async dispatch and is
+  shared with sync. Compatible supplied clients retain their own timeout behavior.
+
+
+  Outside-byte boundary: decode_bedrock_image_reply consumes Bedrock image-generation HTTP response JSON bytes,
+  including JSON null and nonobject values in crates/betterlite-bedrock/src/image_call.rs or its scoped child module.
+  Use that production decoder from the request path, Rust oracle adapter and cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_image_reply.rs.
+  Add valid, malformed, truncated and boundary corpus inputs and adjacent test replays_the_bedrock_image_reply_corpus
+  that checks outcome categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Write standalone Rust test image_call_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test image_call_secret_safe_failure in betterlite-bedrock: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-bedrock/src/image_call.rs with adjacent tests under image_call/. Keep each Rust module
@@ -43,10 +89,10 @@ description: >-
 
 
   Write rstest function image_call_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  image_family_dispatch, image_runtime_url, signed_json_body, extra_headers_outside_body, base64_image_result, image_http_error.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  image_family_dispatch, image_runtime_url, signed_json_body, extra_headers_outside_body, base64_image_result, image_http_error,
+  image_transport_selection. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call* using HelperCase: kind:
@@ -56,15 +102,14 @@ description: >-
   shared corpus.
 
 
-  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
-  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
-  needed, is B002.
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
 
 
-  Budget from 246 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 270 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 473 planned, 475 maximum changed lines.
+  Budget from 237 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 240 production lines, 270 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 705 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -80,43 +125,65 @@ scope:
   - tools/oracle/helpers/bedrock_other_image_call.py
   - tools/oracle/cases/helpers/providers/bedrock-other-image-call/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_image_reply.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_image_reply/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_generation/image_handler.py#L66-L345
-  why: >-
-    Own BedrockImageGeneration.get_config_class, BedrockImageGeneration.image_generation, BedrockImageGeneration.async_image_generation,
+  why: Own BedrockImageGeneration.get_config_class, BedrockImageGeneration.image_generation, BedrockImageGeneration.async_image_generation,
     BedrockImageGeneration._extract_headers_from_optional_params, BedrockImageGeneration._prepare_request, BedrockImageGeneration._get_request_body,
     BedrockImageGeneration._transform_response_dict_to_openai_response. Other functions in this file remain with
     the owners listed below.
 dod:
-- text: >-
-    image family dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-family-dispatch.yaml.
+- text: 'image_family_dispatch: Use B633 get_config_class in both request and response paths: Titan substring first,
+    Nova second, Stability 3 third, otherwise Stability 1. The same original model selects both transformations
+    even when optional model_id changes the invoked deployment. Convert its request TypedDict to a plain mapping
+    and preserve all B633 mutation/error behavior.'
   proof:
   - case-image-family-dispatch
   - oracle
   - helper-python
-- text: 'image runtime url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-runtime-url.yaml.'
+- text: 'image_runtime_url: Prepare before selecting sync/async transport. Call B595 _get_boto_credentials_from_optional_params
+    with original options/model and B590 bedrock_bearer_token(api_key), B591 get_bedrock_invoke_provider, then B591
+    get_bedrock_model_id. Select the B591 proxy_endpoint_url, unlike B631 embeddings, and append /model/{modelId}/invoke
+    without stripping an existing slash. Keep that endpoint_url as the transport target even if prepared.url differs.'
   proof:
   - case-image-runtime-url
   - oracle
   - helper-python
-- text: 'signed json body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/signed-json-body.yaml.'
+- text: 'signed_json_body: Build B633 body before header extraction, serialize once as UTF-8 JSON bytes, and sign
+    those bytes through B595 get_request_headers with default Content-Type=application/json overlaid by extra_headers.
+    Use returned headers but transport prepared_request.endpoint_url/body. B249 pre_call input=prompt, api_key empty,
+    and additional_args contains complete_input_dict,api_base=proxy_endpoint_url,headers. Test B595 bearer and explicit
+    non-AWS Authorization precedence on this call path.'
   proof:
   - case-signed-json-body
   - oracle
   - helper-python
-- text: >-
-    extra headers outside body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/extra-headers-outside-body.yaml.
+- text: 'extra_headers_outside_body: After the body has already been built and serialized, pop guardrailIdentifier
+    and guardrailVersion from the mutated options and add x-amz-bedrock-guardrail-identifier and x-amz-bedrock-guardrail-version
+    for non-None values, including empty strings; these headers override identical extra-header keys. Because extraction
+    is late, Stability 1/3 and Nova may retain these fields in the already-built body, while Titan ignores them.
+    Assert both body and headers rather than claiming guardrail fields are always removed from the body.'
   proof:
   - case-extra-headers-outside-body
   - oracle
   - helper-python
-- text: 'base64 image result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/base64-image-result.yaml.'
+- text: 'base64_image_result: After successful transport, if logging_obj is non-None B249 post_call gets prompt,
+    empty api_key, raw response.text and complete_input_dict; debug logs raw model_response: %s with response text.
+    decode_bedrock_image_reply parses JSON. JSON null raises ValueError Error in response object format, got None;
+    malformed JSON propagates its decoder error. B633 transformation mutates data on the supplied model_response;
+    ignore its return value and return the original response record. Preserve ordered base64 results even when response_format
+    requests URL.'
   proof:
   - case-base64-image-result
   - oracle
   - helper-python
-- text: 'image http error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-http-error.yaml.'
+- text: 'image_http_error: Both transport paths raise_for_status, translate HTTPStatusError to B682 BedrockError
+    preserving status,text,headers,response, and timeout to status408 message Timeout error occurred. Other transport
+    failures and downstream decoder/transform errors propagate without that translation; failed HTTP responses do
+    not run post_call here.'
   proof:
   - case-image-http-error
   - oracle
@@ -125,41 +192,94 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'image_transport_selection: Only aimg_generation literally True selects async. Sync accepts only an HTTPHandler
+    or creates B173 default client without passing the timeout argument; async receives only a matching AsyncHTTPHandler
+    and otherwise creates B173 BEDROCK client with params timeout, including None. Preparation/signing runs before
+    this async dispatch and is shared with sync. Compatible supplied clients retain their own timeout behavior.'
+  proof:
+  - case-image-transport-selection
+  - oracle
+  - helper-python
+- text: decode_bedrock_image_reply has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-image-family-dispatch
-    why: The image-family-dispatch behavior is missing or differs from its pinned fixture.
+    why: 'Use B633 get_config_class in both request and response paths: Titan substring first, Nova second, Stability
+      3 third, otherwise Stability 1. The same original model selects both transformations even when optional model_id
+      changes the invoked deployment. Convert its request TypedDict to a plain mapping and preserve all B633 mutation/error
+      behavior.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_family_dispatch$/)'
   - id: case-image-runtime-url
-    why: The image-runtime-url behavior is missing or differs from its pinned fixture.
+    why: Prepare before selecting sync/async transport. Call B595 _get_boto_credentials_from_optional_params with
+      original options/model and B590 bedrock_bearer_token(api_key), B591 get_bedrock_invoke_provider, then B591
+      get_bedrock_model_id. Select the B591 proxy_endpoint_url, unlike B631 embeddings, and append /model/{modelId}/invoke
+      without stripping an existing slash. Keep that endpoint_url as the transport target even if prepared.url differs.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_runtime_url$/)'
   - id: case-signed-json-body
-    why: The signed-json-body behavior is missing or differs from its pinned fixture.
+    why: Build B633 body before header extraction, serialize once as UTF-8 JSON bytes, and sign those bytes through
+      B595 get_request_headers with default Content-Type=application/json overlaid by extra_headers. Use returned
+      headers but transport prepared_request.endpoint_url/body. B249 pre_call input=prompt, api_key empty, and additional_args
+      contains complete_input_dict,api_base=proxy_endpoint_url,headers. Test B595 bearer and explicit non-AWS Authorization
+      precedence on this call path.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_signed_json_body$/)'
   - id: case-extra-headers-outside-body
-    why: The extra-headers-outside-body behavior is missing or differs from its pinned fixture.
+    why: After the body has already been built and serialized, pop guardrailIdentifier and guardrailVersion from
+      the mutated options and add x-amz-bedrock-guardrail-identifier and x-amz-bedrock-guardrail-version for non-None
+      values, including empty strings; these headers override identical extra-header keys. Because extraction is
+      late, Stability 1/3 and Nova may retain these fields in the already-built body, while Titan ignores them.
+      Assert both body and headers rather than claiming guardrail fields are always removed from the body.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_extra_headers_outside_body$/)'
   - id: case-base64-image-result
-    why: The base64-image-result behavior is missing or differs from its pinned fixture.
+    why: 'After successful transport, if logging_obj is non-None B249 post_call gets prompt, empty api_key, raw
+      response.text and complete_input_dict; debug logs raw model_response: %s with response text. decode_bedrock_image_reply
+      parses JSON. JSON null raises ValueError Error in response object format, got None; malformed JSON propagates
+      its decoder error. B633 transformation mutates data on the supplied model_response; ignore its return value
+      and return the original response record. Preserve ordered base64 results even when response_format requests
+      URL.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_base64_image_result$/)'
   - id: case-image-http-error
-    why: The image-http-error behavior is missing or differs from its pinned fixture.
+    why: Both transport paths raise_for_status, translate HTTPStatusError to B682 BedrockError preserving status,text,headers,response,
+      and timeout to status408 message Timeout error occurred. Other transport failures and downstream decoder/transform
+      errors propagate without that translation; failed HTTP responses do not run post_call here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_http_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_call.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_call.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call*")"
       && grep -lq 'bedrock_other_image_call' tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_image_call$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-image-transport-selection
+    why: Only aimg_generation literally True selects async. Sync accepts only an HTTPHandler or creates B173 default
+      client without passing the timeout argument; async receives only a matching AsyncHTTPHandler and otherwise
+      creates B173 BEDROCK client with params timeout, including None. Preparation/signing runs before this async
+      dispatch and is shared with sync. Compatible supplied clients retain their own timeout behavior.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_cases::case_[0-9]+_image_transport_selection$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_image_reply)"
+      && grep -q 'decode_bedrock_image_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_image_reply.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_image_reply_corpus$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_call_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-family-dispatch.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-runtime-url.yaml
@@ -167,16 +287,22 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-image-call/extra-headers-outside-body.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-call/base64-image-result.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-http-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-call/image-transport-selection.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
+- 'litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.get_config_class L66-L74 is B633,
+  below image execution and pricing callers.'
+- 'Function ownership inventory litellm/llms/bedrock/image_generation/image_handler.py: BedrockImageGeneration.get_config_class
+  L65-L74 belong to B633.'
 pitfalls:
-- Preserve extra-header extraction, model-family selection, optional params and upstream status; do not introduce
-  file downloads to return URL mode.
+- Guardrail options are popped after body serialization, so a header can also remain in the payload.
+- The synchronous fallback client ignores this method's timeout argument, while the asynchronous fallback client
+  receives it.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 725
   max_new_expects: 0
-review_level: standard
+review_level: security

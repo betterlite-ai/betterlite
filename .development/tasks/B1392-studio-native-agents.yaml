@@ -1,0 +1,91 @@
+id: B1392
+title: Prepare Studio native agent lifecycle calls and normalize results
+description: >-
+  Implement studio_agents for gemini/agents/transformation.py, whose 236 nonblank
+  noncomment lines define create/list/get/delete/list-versions behavior. Export provider-local
+  StudioAgent and page/delete records with typed id/name and explicit provider extensions;
+  B141 will bind these to its agent registry contracts. Build B1331's resolved base plus
+  /v1beta/agents, directly concatenating name and /versions for item operations as the source
+  does. Do not invent additional native methods. Copy caller headers, force Content-Type
+  application/json, and refuse a truthy litellm_params.api_base without a truthy explicit
+  api_key before any environment fallback. Otherwise use B1331 explicit/GOOGLE_API_KEY/
+  GEMINI_API_KEY precedence and require a key before setting x-goog-api-key. Keep secrets
+  out of printable errors. Create forwards name plus only non-None base_agent, instructions
+  and base_environment; false/empty values survive, every other deployment field is omitted.
+  The unused _LITELLM_INTERNAL_KEYS constant is not a forwarding algorithm.
+  Check 200 <= status < 300 before all response parsing, preserving upstream body/status/
+  headers in GeminiError on failure. decode_studio_agent_payload parses bounded JSON for
+  the selected operation. Invalid JSON create warns and falls back to id=request-name;
+  invalid JSON get uses the same fallback without that warning. Missing id defaults to
+  request-name and missing name defaults to id, but present null values are not replaced.
+  Preserve provider extra fields. List and versions use empty pages on invalid JSON,
+  mapping agents or agentVersions and nextPageToken to native page fields; valid JSON
+  of the wrong shape still fails. Pagination sends only truthy page_size/page_token as
+  pageSize/pageToken, with no automatic paging. Any successful delete synthesizes the
+  requested name and deleted=true without reading its body. Helper studio_agents cases
+  custom_base_requires_explicit_key, create_allowlist, empty_native_values,
+  absent_versus_null_identity, malformed_create_warning, malformed_get_fallback,
+  malformed_list_empty, zero_pagination_omitted, versions_field and successful_empty_delete
+  cover pure header/record projections. Add key_context_isolation and status_before_decode
+  native tests. Budget 270 implementation, 180 tests, 100 adapters and 90 fuzz/seed lines
+  within 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_agents}.rs
+    - crates/betterlite-vertex/src/studio_agents/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/studio_agent_payload.rs
+    - crates/betterlite-vertex/fuzz/corpus/studio_agent_payload/**
+    - tools/oracle/src/helpers/{mod,studio_agents}.rs
+    - tools/oracle/helpers/{dispatch,studio_agents}.py
+    - tools/oracle/cases/helpers/studio-agents/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_agents*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/agents/transformation.py#L1-L294
+    why: Native Agents API auth rule, operation targets, body allowlist and response fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L346-L403
+    why: Future B141 facade shape preserves nullable identity and extra provider fields.
+dod:
+  - text: Studio agent preparation prevents environment-key fallback on custom bases and forwards only native create fields.
+    proof: [studio-agent-tests, studio-agent-python, oracle]
+  - text: Lifecycle results preserve operation-specific malformed-body fallback and absent-versus-null identity behavior.
+    proof: [studio-agent-tests, studio-agent-python, oracle]
+  - text: Native agent JSON and helper envelopes are exercised by newly added production-decoder seeds.
+    proof: [studio-agent-corpus, studio-agent-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-agent-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_agents::/) - test(replays_the_studio_agent_payload_corpus)'
+      why: Named cases independently cover secret routing, status order and per-operation record defaults.
+    - id: studio-agent-python
+      run: test -f tools/oracle/helpers/studio_agents.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python invokes pinned preparation/projection methods with explicit key settings and fixture HTTP responses.
+    - id: studio-agent-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_agent_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_agent_payload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_agent_payload_corpus)'
+      why: decode_studio_agent_payload distinguishes invalid JSON fallback from wrong-shaped valid JSON.
+    - id: studio-agent-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_agents*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_agents::/)'
+      why: Shared parser tests require the call.studio_agents variant on every new envelope.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-agents/custom-base-requires-explicit-key.yaml
+  - tools/oracle/cases/helpers/studio-agents/create-allowlist.yaml
+  - tools/oracle/cases/helpers/studio-agents/empty-native-values.yaml
+  - tools/oracle/cases/helpers/studio-agents/absent-versus-null-identity.yaml
+  - tools/oracle/cases/helpers/studio-agents/malformed-create-warning.yaml
+  - tools/oracle/cases/helpers/studio-agents/malformed-get-fallback.yaml
+  - tools/oracle/cases/helpers/studio-agents/malformed-list-empty.yaml
+  - tools/oracle/cases/helpers/studio-agents/zero-pagination-omitted.yaml
+  - tools/oracle/cases/helpers/studio-agents/versions-field.yaml
+  - tools/oracle/cases/helpers/studio-agents/successful-empty-delete.yaml
+deviations: []
+out_of_scope:
+  - B141 owns agent proxy routes, persistence and identity permissions; this task supplies native provider records without registering routes.
+  - _LITELLM_INTERNAL_KEYS has no caller at the pin; create uses the explicit three-key allowlist instead.
+pitfalls:
+  - A valid JSON array does not receive the malformed-JSON fallback used by create/get.
+  - Custom api_base rejects a missing explicit key even if a process-wide Gemini key is configured.
+  - Deleting with HTTP 204 succeeds despite the source comment describing HTTP 200.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

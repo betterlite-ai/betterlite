@@ -19,6 +19,28 @@ description: >-
   parser.
 
 
+  Named case contracts: n_size_format_user: Supported list is n,size,response_format,user, but mapping updates optional_params
+  with every non_default_params entry and lets the new entry win; the transform emits data={image: supplied image,
+  **options}, without adding model. omitted_default_fields: Pop max_retries with literal default 2, choose provider
+  config with model or empty string and provider OPENAI, and honor litellm_params.async_call default false. Reuse
+  a supplied client; otherwise pass api_key,base_url,http_client=client_session,timeout,max_retries,organization
+  to SDK construction. provider_error: Both sync/async wrap failures as B668 OpenAIError using status_code or 500,
+  text or str(error), headers from the exception or its response; they do not keep an unrelated exception class.
+  variation_missing_config_data: Missing config or a false data field raises ValueError at the inner seam and is
+  wrapped as OpenAIError 500 by image_variations, with a diagnostic identifying the missing provider/data. variation_reply_identity:
+  Both send with_raw_response.create_variation, parse ImageResponse, and return the provider transform result unchanged;
+  the transform receives a synthetic status-200 GET https://litellm.ai response, so do not invent forwarding of
+  actual response headers.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
+  The shared image-variation config tag selector belongs to B2230. This OpenAI execution branch supplies provider
+  OPENAI and reuses its own OpenAIImageVariationConfig; it does not import the upper SDK factory.
+
+
   Implement crates/betterlite-openai/src/image_variations.rs with adjacent tests under image_variations/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -33,10 +55,10 @@ description: >-
 
 
   Write rstest function image_variations_cases in betterlite-openai with these exact named cases (one per oracle
-  file): variation_image_part, n_size_format_user, omitted_default_fields, provider_error, binary_file_descriptor.
-  Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP
-  cases use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
-  route registration; this task must not register a duplicate axum route.
+  file): variation_image_part, n_size_format_user, omitted_default_fields, provider_error, binary_file_descriptor,
+  variation_missing_config_data, variation_reply_identity. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_image_variations* using HelperCase: kind:
@@ -52,9 +74,9 @@ description: >-
 
 
   Budget from 245 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 270 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 460 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 290 production lines, 150 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 570 planned, 575 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
@@ -73,38 +95,40 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L21-L227
-  why: >-
-    Own OpenAIImageVariationsHandler.get_sync_client, OpenAIImageVariationsHandler.get_async_client, OpenAIImageVariationsHandler.async_image_variations,
+  why: Own OpenAIImageVariationsHandler.get_sync_client, OpenAIImageVariationsHandler.get_async_client, OpenAIImageVariationsHandler.async_image_variations,
     OpenAIImageVariationsHandler.image_variations. Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/transformation.py#L19-L81
-  why: >-
-    Own OpenAIImageVariationConfig.get_supported_openai_params, OpenAIImageVariationConfig.map_openai_params, OpenAIImageVariationConfig.transform_request_image_variation,
-    OpenAIImageVariationConfig.async_transform_response_image_variation, OpenAIImageVariationConfig.transform_response_image_variation,
-    OpenAIImageVariationConfig.get_error_class. Other functions in this file remain with the owners listed below.
+  why: Own OpenAIImageVariationConfig.get_supported_openai_params, OpenAIImageVariationConfig.map_openai_params,
+    OpenAIImageVariationConfig.transform_request_image_variation, OpenAIImageVariationConfig.async_transform_response_image_variation,
+    OpenAIImageVariationConfig.transform_response_image_variation, OpenAIImageVariationConfig.get_error_class. Other
+    functions in this file remain with the owners listed below.
 dod:
 - text: 'variation image part: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/variation-image-part.yaml.'
   proof:
   - case-variation-image-part
   - oracle
   - helper-python
-- text: 'n size format user: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/n-size-format-user.yaml.'
+- text: 'n_size_format_user: Supported list is n,size,response_format,user, but mapping updates optional_params
+    with every non_default_params entry and lets the new entry win; the transform emits data={image: supplied image,
+    **options}, without adding model.'
   proof:
   - case-n-size-format-user
   - oracle
   - helper-python
-- text: >-
-    omitted default fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/omitted-default-fields.yaml.
+- text: 'omitted_default_fields: Pop max_retries with literal default 2, choose provider config with model or empty
+    string and provider OPENAI, and honor litellm_params.async_call default false. Reuse a supplied client; otherwise
+    pass api_key,base_url,http_client=client_session,timeout,max_retries,organization to SDK construction.'
   proof:
   - case-omitted-default-fields
   - oracle
   - helper-python
-- text: 'provider error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/provider-error.yaml.'
+- text: 'provider_error: Both sync/async wrap failures as B668 OpenAIError using status_code or 500, text or str(error),
+    headers from the exception or its response; they do not keep an unrelated exception class.'
   proof:
   - case-provider-error
   - oracle
   - helper-python
-- text: >-
-    binary file descriptor: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/binary-file-descriptor.yaml.
+- text: 'binary file descriptor: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/binary-file-descriptor.yaml.'
   proof:
   - case-binary-file-descriptor
   - oracle
@@ -113,44 +137,71 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'variation_missing_config_data: Missing config or a false data field raises ValueError at the inner seam
+    and is wrapped as OpenAIError 500 by image_variations, with a diagnostic identifying the missing provider/data.'
+  proof:
+  - case-variation-missing-config-data
+  - oracle
+  - helper-python
+- text: 'variation_reply_identity: Both send with_raw_response.create_variation, parse ImageResponse, and return
+    the provider transform result unchanged; the transform receives a synthetic status-200 GET https://litellm.ai
+    response, so do not invent forwarding of actual response headers.'
+  proof:
+  - case-variation-reply-identity
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-variation-image-part
-    why: The variation-image-part behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/variation-image-part.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_variation_image_part$/)'
   - id: case-n-size-format-user
-    why: The n-size-format-user behavior is missing or differs from its pinned fixture.
+    why: 'Supported list is n,size,response_format,user, but mapping updates optional_params with every non_default_params
+      entry and lets the new entry win; the transform emits data={image: supplied image, **options}, without adding
+      model.'
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_n_size_format_user$/)'
   - id: case-omitted-default-fields
-    why: The omitted-default-fields behavior is missing or differs from its pinned fixture.
+    why: Pop max_retries with literal default 2, choose provider config with model or empty string and provider
+      OPENAI, and honor litellm_params.async_call default false. Reuse a supplied client; otherwise pass api_key,base_url,http_client=client_session,timeout,max_retries,organization
+      to SDK construction.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_omitted_default_fields$/)'
   - id: case-provider-error
-    why: The provider-error behavior is missing or differs from its pinned fixture.
+    why: Both sync/async wrap failures as B668 OpenAIError using status_code or 500, text or str(error), headers
+      from the exception or its response; they do not keep an unrelated exception class.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_provider_error$/)'
   - id: case-binary-file-descriptor
-    why: The binary-file-descriptor behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-image-variations/binary-file-descriptor.yaml.
     run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_binary_file_descriptor$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_image_variations.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_image_variations.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_image_variations*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_image_variations*")"
       && grep -lq 'openai_image_variations' tools/oracle/fuzz/corpus/helper_case/openai_image_variations* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_image_variations$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-variation-missing-config-data
+    why: Missing config or a false data field raises ValueError at the inner seam and is wrapped as OpenAIError
+      500 by image_variations, with a diagnostic identifying the missing provider/data.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_variation_missing_config_data$/)'
+  - id: case-variation-reply-identity
+    why: Both send with_raw_response.create_variation, parse ImageResponse, and return the provider transform result
+      unchanged; the transform receives a synthetic status-200 GET https://litellm.ai response, so do not invent
+      forwarding of actual response headers.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::image_variations_cases::case_[0-9]+_variation_reply_identity$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-image-variations/variation-image-part.yaml
 - tools/oracle/cases/helpers/providers/openai-image-variations/n-size-format-user.yaml
 - tools/oracle/cases/helpers/providers/openai-image-variations/omitted-default-fields.yaml
 - tools/oracle/cases/helpers/providers/openai-image-variations/provider-error.yaml
 - tools/oracle/cases/helpers/providers/openai-image-variations/binary-file-descriptor.yaml
+- tools/oracle/cases/helpers/providers/openai-image-variations/variation-missing-config-data.yaml
+- tools/oracle/cases/helpers/providers/openai-image-variations/variation-reply-identity.yaml
 deviations: []
 out_of_scope:
 - B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -158,9 +209,12 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve omission of SDK defaults and caller-supplied upload metadata; do not expose a new public endpoint in
-  this provider slice.
+- The method accepts a model but transform_request_image_variation does not include it unless optional_params does.
+- The async handler calls the synchronous transform_response_image_variation; its async-named counterpart is not
+  selected by this path.
+- headers are passed to logging/transform preparation, not injected into create_variation as extra_headers by this
+  handler.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 575
   max_new_expects: 0
 review_level: standard

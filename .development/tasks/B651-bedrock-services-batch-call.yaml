@@ -1,8 +1,8 @@
 id: B651
-title: Bedrock batch retrieval cancellation and output reads
+title: Bedrock batch status and cancellation calls
 description: >-
-  Execute cancel, async-invoke status and model-invocation-job status operations with authorized S3 result reads.
-  Preserve ARN extraction, regional control-plane paths, result body conversion and request counts. This provider
+  Execute cancel, async-invoke status and model-invocation-job status operations. Return predicted result identifiers
+  without any S3 list or read. Preserve the distinct generic-config and native-handler status mappings. This provider
   call does not spawn the B086 batch scheduler.
 
 
@@ -13,6 +13,44 @@ description: >-
 
   Reuse BedrockBatchesConfig.__init__ from B649 (litellm/llms/bedrock/batches/transformation.py); its implementation
   remains with that prerequisite.
+
+
+  Named case contracts: cancel_model_job: Resolve region truthy explicit aws_region_name, then B650 ARN extraction,
+  then literal us-east-1. Construct AwsAuthParams from the ten explicitly named credential arguments and call B594
+  resolve_credentials via B649 config; arbitrary kwargs are ignored. Construct boto3 bedrock client with resolved
+  access/secret/token, region and B650 signature_version=v4. Call stop_model_invocation_job(jobIdentifier=batch_id),
+  then fetch current model-job status; do not synthesize cancelled or poll to terminal completion. retrieve_async_status:
+  Call B632 _get_async_invoke_status with unchanged ARN, explicit region,logging and kwargs via B693 embedding constructor.
+  Status is passed through without normalization; only exact lowercase completed/failed affect counts (total1,completed/failed0or1).
+  Preserve missing required key errors and final LiteLLMBatch validation for uppercase/unknown statuses. id invocationArn,created_at
+  submitTime,in_progress_at lastModifiedTime,completed_at optional endTime regardless of status,failed_at endTime
+  only lowercase failed. Metadata output_file_id from nested s3Uri,failure_message falsey->empty,model_arn modelArn.
+  endpoint /v1/embeddings,input_file_id empty,completion_window24h; output_file_id is metadata only. Native Rust
+  uses async calls instead of Python thread/event-loop machinery without changing these results. retrieve_model_job_status:
+  Resolve region and credentials as cancel, with AwsAuthParams.model_validate(kwargs) ignoring unknown fields. Call
+  get_model_invocation_job(jobIdentifier=batch_id) on bedrock control plane; accept a bare job id. Map Submitted/Validating/Scheduled
+  to validating, InProgress in_progress, Stopping cancelling,Stopped cancelled,Completed/PartiallyCompleted completed,Failed
+  failed,Expired expired; unknown/missing -> in_progress silently. Scheduled and unknown differ deliberately from
+  B649/B650 generic-config mappings. cancel_idempotent_errors: On botocore ClientError only ValidationException
+  or ConflictException triggers a status lookup. Return that result only for cancelling,cancelled,completed,failed,expired;
+  any other status rethrows the original error. Other error codes rethrow without lookup. The same stop_model_invocation_job
+  operation is used even for an async-invoke-looking ID; there is no separate async cancellation branch. completed_output_prediction:
+  Use response.jobArn default batch_id, B650 final job-id extraction and prediction from input/output nested URIs.
+  Never list/read S3, including foreign buckets or completed jobs. output_file_id is predicted URI only for completed
+  status, otherwiseNone; failed prediction staysNone, never falls back to a prefix. Metadata model_arn,job_arn,job_name,failure_message,input_s3_uri,output_s3_uri,output_file_uri
+  use empty string for missing/falsey values as source .get/or specify. handler_counts_and_timestamps: Use B650
+  numeric/datetime _to_epoch and record-count helpers. created_at from submitTime or0,in_progress_at lastModifiedTime;
+  endTime becomes completed_at/failed_at/cancelled_at/expired_at only for corresponding mapped status. endpoint
+  /v1/chat/completions,completion_window24h,input_file_id input URI. Preserve all B650 counts/bool/malformed-time
+  cases here. logging_and_sdk_failures: When logging exists, B249 pre_call input=batch_id,api_key empty,complete_input_dict
+  jobIdentifier and API base using bare job id when available; post_call captures provider response. SDK errors
+  propagate. Oracle replaces boto3 client at its constructor seam and captures service/method/credentials/arguments;
+  production Rust uses native HTTP/SigV4 prerequisites with matched AWS operation paths. Missing Python boto3/botocore
+  import errors are SDK packaging only, owned B159, not a Rust installation instruction.
+
+
+  Direct constructor/helper prerequisites used by this slice: B590. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-bedrock/src/batch_call.rs with adjacent tests under batch_call/. Keep each Rust module
@@ -29,10 +67,10 @@ description: >-
 
 
   Write rstest function batch_call_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  cancel_model_job, cancel_async_invoke, retrieve_async_status, retrieve_model_job_status, completed_output_read,
-  failed_job_errors, foreign_output_bucket. Each case exercises its named outcome independently; use stable supplied
-  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
-  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  cancel_model_job, retrieve_async_status, retrieve_model_job_status, cancel_idempotent_errors, completed_output_prediction,
+  handler_counts_and_timestamps, logging_and_sdk_failures. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_call* using HelperCase:
@@ -62,9 +100,9 @@ description: >-
 
 
   Budget from 224 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 250 production lines, 138 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 496 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 285 production lines, 300 behavior/config-test lines,
+  125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 740 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -83,48 +121,37 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/batches/handler.py#L115-L406
-  why: >-
-    Own BedrockBatchesHandler.cancel_batch, BedrockBatchesHandler._handle_async_invoke_status, BedrockBatchesHandler._handle_model_invocation_job_status.
+  why: Own BedrockBatchesHandler.cancel_batch, BedrockBatchesHandler._handle_async_invoke_status, BedrockBatchesHandler._handle_model_invocation_job_status.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: 'cancel model job: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-call/cancel-model-job.yaml.'
+- text: 'cancel_model_job: Resolve region truthy explicit aws_region_name, then B650 ARN extraction, then literal
+    us-east-1. Construct AwsAuthParams from the ten explicitly named credential arguments and call B594 resolve_credentials
+    via B649 config; arbitrary kwargs are ignored. Construct boto3 bedrock client with resolved access/secret/token,
+    region and B650 signature_version=v4. Call stop_model_invocation_job(jobIdentifier=batch_id), then fetch current
+    model-job status; do not synthesize cancelled or poll to terminal completion.'
   proof:
   - case-cancel-model-job
   - oracle
   - helper-python
-- text: >-
-    cancel async invoke: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-call/cancel-async-invoke.yaml.
-  proof:
-  - case-cancel-async-invoke
-  - oracle
-  - helper-python
-- text: >-
-    retrieve async status: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-call/retrieve-async-status.yaml.
+- text: 'retrieve_async_status: Call B632 _get_async_invoke_status with unchanged ARN, explicit region,logging and
+    kwargs via B693 embedding constructor. Status is passed through without normalization; only exact lowercase
+    completed/failed affect counts (total1,completed/failed0or1). Preserve missing required key errors and final
+    LiteLLMBatch validation for uppercase/unknown statuses. id invocationArn,created_at submitTime,in_progress_at
+    lastModifiedTime,completed_at optional endTime regardless of status,failed_at endTime only lowercase failed.
+    Metadata output_file_id from nested s3Uri,failure_message falsey->empty,model_arn modelArn. endpoint /v1/embeddings,input_file_id
+    empty,completion_window24h; output_file_id is metadata only. Native Rust uses async calls instead of Python
+    thread/event-loop machinery without changing these results.'
   proof:
   - case-retrieve-async-status
   - oracle
   - helper-python
-- text: >-
-    retrieve model job status: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-call/retrieve-model-job-status.yaml.
+- text: 'retrieve_model_job_status: Resolve region and credentials as cancel, with AwsAuthParams.model_validate(kwargs)
+    ignoring unknown fields. Call get_model_invocation_job(jobIdentifier=batch_id) on bedrock control plane; accept
+    a bare job id. Map Submitted/Validating/Scheduled to validating, InProgress in_progress, Stopping cancelling,Stopped
+    cancelled,Completed/PartiallyCompleted completed,Failed failed,Expired expired; unknown/missing -> in_progress
+    silently. Scheduled and unknown differ deliberately from B649/B650 generic-config mappings.'
   proof:
   - case-retrieve-model-job-status
-  - oracle
-  - helper-python
-- text: >-
-    completed output read: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-call/completed-output-read.yaml.
-  proof:
-  - case-completed-output-read
-  - oracle
-  - helper-python
-- text: 'failed job errors: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-call/failed-job-errors.yaml.'
-  proof:
-  - case-failed-job-errors
-  - oracle
-  - helper-python
-- text: >-
-    foreign output bucket: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-batch-call/foreign-output-bucket.yaml.
-  proof:
-  - case-foreign-output-bucket
   - oracle
   - helper-python
 - text: New bedrock_services_batch_call seeds parse as the intended call variant and replay through the shared production
@@ -137,41 +164,76 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'cancel_idempotent_errors: On botocore ClientError only ValidationException or ConflictException triggers
+    a status lookup. Return that result only for cancelling,cancelled,completed,failed,expired; any other status
+    rethrows the original error. Other error codes rethrow without lookup. The same stop_model_invocation_job operation
+    is used even for an async-invoke-looking ID; there is no separate async cancellation branch.'
+  proof:
+  - case-cancel-idempotent-errors
+  - oracle
+  - helper-python
+- text: 'completed_output_prediction: Use response.jobArn default batch_id, B650 final job-id extraction and prediction
+    from input/output nested URIs. Never list/read S3, including foreign buckets or completed jobs. output_file_id
+    is predicted URI only for completed status, otherwiseNone; failed prediction staysNone, never falls back to
+    a prefix. Metadata model_arn,job_arn,job_name,failure_message,input_s3_uri,output_s3_uri,output_file_uri use
+    empty string for missing/falsey values as source .get/or specify.'
+  proof:
+  - case-completed-output-prediction
+  - oracle
+  - helper-python
+- text: 'handler_counts_and_timestamps: Use B650 numeric/datetime _to_epoch and record-count helpers. created_at
+    from submitTime or0,in_progress_at lastModifiedTime; endTime becomes completed_at/failed_at/cancelled_at/expired_at
+    only for corresponding mapped status. endpoint /v1/chat/completions,completion_window24h,input_file_id input
+    URI. Preserve all B650 counts/bool/malformed-time cases here.'
+  proof:
+  - case-handler-counts-and-timestamps
+  - oracle
+  - helper-python
+- text: 'logging_and_sdk_failures: When logging exists, B249 pre_call input=batch_id,api_key empty,complete_input_dict
+    jobIdentifier and API base using bare job id when available; post_call captures provider response. SDK errors
+    propagate. Oracle replaces boto3 client at its constructor seam and captures service/method/credentials/arguments;
+    production Rust uses native HTTP/SigV4 prerequisites with matched AWS operation paths. Missing Python boto3/botocore
+    import errors are SDK packaging only, owned B159, not a Rust installation instruction.'
+  proof:
+  - case-logging-and-sdk-failures
+  - oracle
+  - helper-python
 checks:
   optional:
   - mutants
   commands:
   - id: case-cancel-model-job
-    why: The cancel-model-job behavior is missing or differs from its pinned fixture.
+    why: Resolve region truthy explicit aws_region_name, then B650 ARN extraction, then literal us-east-1. Construct
+      AwsAuthParams from the ten explicitly named credential arguments and call B594 resolve_credentials via B649
+      config; arbitrary kwargs are ignored. Construct boto3 bedrock client with resolved access/secret/token, region
+      and B650 signature_version=v4. Call stop_model_invocation_job(jobIdentifier=batch_id), then fetch current
+      model-job status; do not synthesize cancelled or poll to terminal completion.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_cancel_model_job$/)'
-  - id: case-cancel-async-invoke
-    why: The cancel-async-invoke behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_cancel_async_invoke$/)'
   - id: case-retrieve-async-status
-    why: The retrieve-async-status behavior is missing or differs from its pinned fixture.
+    why: Call B632 _get_async_invoke_status with unchanged ARN, explicit region,logging and kwargs via B693 embedding
+      constructor. Status is passed through without normalization; only exact lowercase completed/failed affect
+      counts (total1,completed/failed0or1). Preserve missing required key errors and final LiteLLMBatch validation
+      for uppercase/unknown statuses. id invocationArn,created_at submitTime,in_progress_at lastModifiedTime,completed_at
+      optional endTime regardless of status,failed_at endTime only lowercase failed. Metadata output_file_id from
+      nested s3Uri,failure_message falsey->empty,model_arn modelArn. endpoint /v1/embeddings,input_file_id empty,completion_window24h;
+      output_file_id is metadata only. Native Rust uses async calls instead of Python thread/event-loop machinery
+      without changing these results.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_retrieve_async_status$/)'
   - id: case-retrieve-model-job-status
-    why: The retrieve-model-job-status behavior is missing or differs from its pinned fixture.
+    why: Resolve region and credentials as cancel, with AwsAuthParams.model_validate(kwargs) ignoring unknown fields.
+      Call get_model_invocation_job(jobIdentifier=batch_id) on bedrock control plane; accept a bare job id. Map
+      Submitted/Validating/Scheduled to validating, InProgress in_progress, Stopping cancelling,Stopped cancelled,Completed/PartiallyCompleted
+      completed,Failed failed,Expired expired; unknown/missing -> in_progress silently. Scheduled and unknown differ
+      deliberately from B649/B650 generic-config mappings.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_retrieve_model_job_status$/)'
-  - id: case-completed-output-read
-    why: The completed-output-read behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_completed_output_read$/)'
-  - id: case-failed-job-errors
-    why: The failed-job-errors behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_failed_job_errors$/)'
-  - id: case-foreign-output-bucket
-    why: The foreign-output-bucket behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_foreign_output_bucket$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_call.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_batch_call.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_call*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_call*")"
       && grep -lq 'bedrock_services_batch_call' tools/oracle/fuzz/corpus/helper_case/bedrock_services_batch_call*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_batch_call$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -181,27 +243,57 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_services_batch_call_secret_safe_failure$/)'
+  - id: case-cancel-idempotent-errors
+    why: On botocore ClientError only ValidationException or ConflictException triggers a status lookup. Return
+      that result only for cancelling,cancelled,completed,failed,expired; any other status rethrows the original
+      error. Other error codes rethrow without lookup. The same stop_model_invocation_job operation is used even
+      for an async-invoke-looking ID; there is no separate async cancellation branch.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_cancel_idempotent_errors$/)'
+  - id: case-completed-output-prediction
+    why: Use response.jobArn default batch_id, B650 final job-id extraction and prediction from input/output nested
+      URIs. Never list/read S3, including foreign buckets or completed jobs. output_file_id is predicted URI only
+      for completed status, otherwiseNone; failed prediction staysNone, never falls back to a prefix. Metadata model_arn,job_arn,job_name,failure_message,input_s3_uri,output_s3_uri,output_file_uri
+      use empty string for missing/falsey values as source .get/or specify.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_completed_output_prediction$/)'
+  - id: case-handler-counts-and-timestamps
+    why: Use B650 numeric/datetime _to_epoch and record-count helpers. created_at from submitTime or0,in_progress_at
+      lastModifiedTime; endTime becomes completed_at/failed_at/cancelled_at/expired_at only for corresponding mapped
+      status. endpoint /v1/chat/completions,completion_window24h,input_file_id input URI. Preserve all B650 counts/bool/malformed-time
+      cases here.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_handler_counts_and_timestamps$/)'
+  - id: case-logging-and-sdk-failures
+    why: When logging exists, B249 pre_call input=batch_id,api_key empty,complete_input_dict jobIdentifier and API
+      base using bare job id when available; post_call captures provider response. SDK errors propagate. Oracle
+      replaces boto3 client at its constructor seam and captures service/method/credentials/arguments; production
+      Rust uses native HTTP/SigV4 prerequisites with matched AWS operation paths. Missing Python boto3/botocore
+      import errors are SDK packaging only, owned B159, not a Rust installation instruction.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::batch_call_cases::case_[0-9]+_logging_and_sdk_failures$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-call/cancel-model-job.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/cancel-async-invoke.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-call/retrieve-async-status.yaml
 - tools/oracle/cases/helpers/providers/bedrock-services-batch-call/retrieve-model-job-status.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/completed-output-read.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/failed-job-errors.yaml
-- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/foreign-output-bucket.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/cancel-idempotent-errors.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/completed-output-prediction.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/handler-counts-and-timestamps.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-batch-call/logging-and-sdk-failures.yaml
 deviations: []
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/batches/handler.py: _sigv4_config L36-L39; _extract_region_from_bedrock_arn L42-L50; _extract_job_id_from_arn
-  L53-L57; _predict_output_file_uri L60-L79; _record_counts_from_response L82-L92; _to_epoch L95-L102 belong to
-  B650; reuse that implementation or its injected typed boundary.
+- No S3 result reads occur in handler.py L115-L406. B645/B646 own generic content request/reply behavior and B1030
+  composes downloads. Python boto3 import failures are B159 packaging scope; no enterprise-managed batch hook is
+  installed here.
+- 'Function ownership inventory litellm/llms/bedrock/batches/handler.py: _sigv4_config L36-L39; _extract_region_from_bedrock_arn
+  L42-L50; _extract_job_id_from_arn L53-L57; _predict_output_file_uri L60-L79; _record_counts_from_response L82-L92;
+  _to_epoch L95-L102 belong to B650.'
 pitfalls:
-- Preserve ARN extraction, regional control-plane paths, result body conversion and request counts.
+- The handler comment claims its status table mirrors creation, but Scheduled is validating here and in_progress
+  in the generic config.
+- Cancellation tolerates only two AWS error codes, and only after a terminal-or-cancelling status lookup confirms
+  idempotence.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

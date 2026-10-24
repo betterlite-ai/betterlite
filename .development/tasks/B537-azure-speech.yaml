@@ -1,15 +1,46 @@
 id: B537
 title: Azure OpenAI speech transport
 description: >-
-  Add Azure speech dispatch between OpenAI deployment audio/speech and native cognitive speech. Own the OpenAI-compatible
-  binary execution path and auth header extraction; native SSML synthesis lives in native_speech. Keep response
-  streams owned through cancellation.
+  Add the Azure speech execution and native-AVA dispatch methods selected by B025. Own the OpenAI-compatible binary
+  execution path and auth header extraction; native SSML synthesis lives in native_speech. Keep response streams
+  owned through cancellation.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/azure.py: AzureChatCompletion.audio_speech
   L1362-L1426; AzureChatCompletion.async_audio_speech L1428-L1471; AzureChatCompletion.get_headers L1473-L1540.
   litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig.dispatch_text_to_speech L62-L134;
   AzureAVATextToSpeechConfig.get_supported_openai_params L136-L143.
+
+
+  Named case contracts: native_speech_selection: AVA dispatch resolves base from explicit, litellm_params_dict.api_base,
+  litellm.api_base, AZURE_API_BASE; key from explicit, params.api_key, litellm.api_key, litellm.azure_key, AZURE_OPENAI_API_KEY,
+  AZURE_API_KEY. String voice is unchanged; dict voice uses name or None; other values become None. Update params
+  with resolved credentials and call the B1083/B1084 speech handler with provider=azure, client=None and _is_async=aspeech.
+  binary_speech_body: audio_speech pops optional max_retries default 2, overwriting the argument, but neither retries
+  nor timeout/organization/separate token arguments are forwarded to SDK construction or speech.create; B531 gets
+  litellm_params. Forward model/voice/input and remaining options, then wrap response.response as HttpxBinaryResponseContent.
+  Propagate SDK failures unchanged in both modes. azure_speech_supported_params: AVA advertises only voice,response_format,speed;
+  SSML kwargs style/styledegree/role are handled by B538. B190 speech_request_body omits extra_headers in logging
+  but the SDK call retains them. azure_rate_limit_probe: get_headers is a live B157 utils.get_api_headers caller,
+  not speech auth extraction. It always sends chat.completions.with_raw_response.create, defaults messages only
+  when None to [{role:user,content:Hey}], and returns only non-None x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens
+  and x-ms-region. azure_probe_cloudflare: Probe selects Cloudflare by gateway.ai.cloudflare.com substring, appends
+  /<model> and sends model=None; other bases use azure_endpoint and raise Exception model is not set for None model
+  except mode=image_generation. Missing completion/headers raises Exception invalid completion response; upstream
+  failures propagate.
+
+
+  Write standalone Rust test azure_speech_credential_identity_isolation in betterlite-azure: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test azure_speech_secret_safe_failure in betterlite-azure: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
 
 
   Implement crates/betterlite-azure/src/speech.rs with adjacent tests under speech/. Keep each Rust module at most
@@ -26,10 +57,10 @@ description: >-
 
 
   Write rstest function speech_cases in betterlite-azure with these exact named cases (one per oracle file): openai_audio_speech_path,
-  v1_audio_speech, native_speech_selection, speech_ad_token_header, binary_speech_body. Each case exercises its
-  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  v1_audio_speech, native_speech_selection, binary_speech_body, azure_speech_supported_params, azure_rate_limit_probe,
+  azure_probe_cloudflare. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. Existing API tasks retain route registration; this task must not register a duplicate axum
+  route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_speech* using HelperCase: kind: helper
@@ -44,9 +75,9 @@ description: >-
 
 
   Budget from 228 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 250 production lines, 90 behavior/config-test lines,
-  75 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 440 planned, 450 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 255 production lines, 220 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 610 planned, 625 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -65,12 +96,10 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L1362-L1540
-  why: >-
-    Own AzureChatCompletion.audio_speech, AzureChatCompletion.async_audio_speech, AzureChatCompletion.get_headers.
+  why: Own AzureChatCompletion.audio_speech, AzureChatCompletion.async_audio_speech, AzureChatCompletion.get_headers.
     Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L62-L143
-  why: >-
-    Own AzureAVATextToSpeechConfig.dispatch_text_to_speech, AzureAVATextToSpeechConfig.get_supported_openai_params.
+  why: Own AzureAVATextToSpeechConfig.dispatch_text_to_speech, AzureAVATextToSpeechConfig.get_supported_openai_params.
     Other functions in this file remain with the owners listed below.
 dod:
 - text: 'openai audio speech path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-speech/openai-audio-speech-path.yaml.'
@@ -83,17 +112,18 @@ dod:
   - case-v1-audio-speech
   - oracle
   - helper-python
-- text: 'native speech selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-speech/native-speech-selection.yaml.'
+- text: 'native_speech_selection: AVA dispatch resolves base from explicit, litellm_params_dict.api_base, litellm.api_base,
+    AZURE_API_BASE; key from explicit, params.api_key, litellm.api_key, litellm.azure_key, AZURE_OPENAI_API_KEY,
+    AZURE_API_KEY. String voice is unchanged; dict voice uses name or None; other values become None. Update params
+    with resolved credentials and call the B1083/B1084 speech handler with provider=azure, client=None and _is_async=aspeech.'
   proof:
   - case-native-speech-selection
   - oracle
   - helper-python
-- text: 'speech ad token header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-speech/speech-ad-token-header.yaml.'
-  proof:
-  - case-speech-ad-token-header
-  - oracle
-  - helper-python
-- text: 'binary speech body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-speech/binary-speech-body.yaml.'
+- text: 'binary_speech_body: audio_speech pops optional max_retries default 2, overwriting the argument, but neither
+    retries nor timeout/organization/separate token arguments are forwarded to SDK construction or speech.create;
+    B531 gets litellm_params. Forward model/voice/input and remaining options, then wrap response.response as HttpxBinaryResponseContent.
+    Propagate SDK failures unchanged in both modes.'
   proof:
   - case-binary-speech-body
   - oracle
@@ -101,86 +131,129 @@ dod:
 - text: New azure_speech seeds parse as the intended call variant and replay through the shared production parser.
   proof:
   - helper-case-corpus
+- text: 'azure_speech_supported_params: AVA advertises only voice,response_format,speed; SSML kwargs style/styledegree/role
+    are handled by B538. B190 speech_request_body omits extra_headers in logging but the SDK call retains them.'
+  proof:
+  - case-azure-speech-supported-params
+  - oracle
+  - helper-python
+- text: 'azure_rate_limit_probe: get_headers is a live B157 utils.get_api_headers caller, not speech auth extraction.
+    It always sends chat.completions.with_raw_response.create, defaults messages only when None to [{role:user,content:Hey}],
+    and returns only non-None x-ratelimit-remaining-requests, x-ratelimit-remaining-tokens and x-ms-region.'
+  proof:
+  - case-azure-rate-limit-probe
+  - oracle
+  - helper-python
+- text: 'azure_probe_cloudflare: Probe selects Cloudflare by gateway.ai.cloudflare.com substring, appends /<model>
+    and sends model=None; other bases use azure_endpoint and raise Exception model is not set for None model except
+    mode=image_generation. Missing completion/headers raises Exception invalid completion response; upstream failures
+    propagate.'
+  proof:
+  - case-azure-probe-cloudflare
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-openai-audio-speech-path
-    why: The openai-audio-speech-path behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-speech/openai-audio-speech-path.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_openai_audio_speech_path$/)'
   - id: case-v1-audio-speech
-    why: The v1-audio-speech behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-speech/v1-audio-speech.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_v1_audio_speech$/)'
   - id: case-native-speech-selection
-    why: The native-speech-selection behavior is missing or differs from its pinned fixture.
+    why: AVA dispatch resolves base from explicit, litellm_params_dict.api_base, litellm.api_base, AZURE_API_BASE;
+      key from explicit, params.api_key, litellm.api_key, litellm.azure_key, AZURE_OPENAI_API_KEY, AZURE_API_KEY.
+      String voice is unchanged; dict voice uses name or None; other values become None. Update params with resolved
+      credentials and call the B1083/B1084 speech handler with provider=azure, client=None and _is_async=aspeech.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_native_speech_selection$/)'
-  - id: case-speech-ad-token-header
-    why: The speech-ad-token-header behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_speech_ad_token_header$/)'
   - id: case-binary-speech-body
-    why: The binary-speech-body behavior is missing or differs from its pinned fixture.
+    why: audio_speech pops optional max_retries default 2, overwriting the argument, but neither retries nor timeout/organization/separate
+      token arguments are forwarded to SDK construction or speech.create; B531 gets litellm_params. Forward model/voice/input
+      and remaining options, then wrap response.response as HttpxBinaryResponseContent. Propagate SDK failures unchanged
+      in both modes.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_binary_speech_body$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_speech.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_speech.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_speech*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_speech*")"
       && grep -lq 'azure_speech' tools/oracle/fuzz/corpus/helper_case/azure_speech* && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_speech$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-azure-speech-supported-params
+    why: AVA advertises only voice,response_format,speed; SSML kwargs style/styledegree/role are handled by B538.
+      B190 speech_request_body omits extra_headers in logging but the SDK call retains them.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_azure_speech_supported_params$/)'
+  - id: case-azure-rate-limit-probe
+    why: get_headers is a live B157 utils.get_api_headers caller, not speech auth extraction. It always sends chat.completions.with_raw_response.create,
+      defaults messages only when None to [{role:user,content:Hey}], and returns only non-None x-ratelimit-remaining-requests,
+      x-ratelimit-remaining-tokens and x-ms-region.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_azure_rate_limit_probe$/)'
+  - id: case-azure-probe-cloudflare
+    why: Probe selects Cloudflare by gateway.ai.cloudflare.com substring, appends /<model> and sends model=None;
+      other bases use azure_endpoint and raise Exception model is not set for None model except mode=image_generation.
+      Missing completion/headers raises Exception invalid completion response; upstream failures propagate.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::speech_cases::case_[0-9]+_azure_probe_cloudflare$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_speech_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_speech_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-speech/openai-audio-speech-path.yaml
 - tools/oracle/cases/helpers/providers/azure-speech/v1-audio-speech.yaml
 - tools/oracle/cases/helpers/providers/azure-speech/native-speech-selection.yaml
-- tools/oracle/cases/helpers/providers/azure-speech/speech-ad-token-header.yaml
 - tools/oracle/cases/helpers/providers/azure-speech/binary-speech-body.yaml
+- tools/oracle/cases/helpers/providers/azure-speech/azure-speech-supported-params.yaml
+- tools/oracle/cases/helpers/providers/azure-speech/azure-rate-limit-probe.yaml
+- tools/oracle/cases/helpers/providers/azure-speech/azure-probe-cloudflare.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
-  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697; reuse
-  that implementation or its injected typed boundary.
-- 'litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding L744-L843
-  belong to B534; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request L845-L971; AzureChatCompletion.make_sync_azure_httpx_request
-  L973-L1088 belong to B535; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140; AzureChatCompletion.aimage_generation
-  L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to B536; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.make_sync_azure_openai_chat_completion_request
-  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L165-L194; AzureChatCompletion.completion
-  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming L577-L652
-  belong to B685; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig._convert_speed_to_azure_rate L145-L161;
-  AzureAVATextToSpeechConfig._build_express_as_element L163-L194; AzureAVATextToSpeechConfig._get_voice_language
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_sync_azure_openai_chat_completion_request
+  L140-L162; AzureChatCompletion.make_azure_openai_chat_completion_request L164-L194 belong to B505.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: _check_dynamic_azure_params L115-L133 belong to B531.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.__init__ L137-L138; AzureChatCompletion.completion
+  L196-L389; AzureChatCompletion.acompletion L391-L498 belong to B533.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.aembedding L654-L742; AzureChatCompletion.embedding
+  L744-L843 belong to B534.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.make_async_azure_httpx_request
+  L845-L971; AzureChatCompletion.make_sync_azure_httpx_request L973-L1088 belong to B535.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.create_azure_base_url L1090-L1140;
+  AzureChatCompletion.aimage_generation L1142-L1226; AzureChatCompletion.image_generation L1228-L1360 belong to
+  B536.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureChatCompletion.streaming L500-L575; AzureChatCompletion.async_streaming
+  L577-L652 belong to B685.'
+- 'Function ownership inventory litellm/llms/azure/azure.py: AzureOpenAIAssistantsAPIConfig.__init__ L66-L69; AzureOpenAIAssistantsAPIConfig.get_supported_openai_create_message_params
+  L71-L77; AzureOpenAIAssistantsAPIConfig.map_openai_params_create_message_params L79-L112 belong to B697.'
+- 'Function ownership inventory litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig._convert_speed_to_azure_rate
+  L145-L161; AzureAVATextToSpeechConfig._build_express_as_element L163-L194; AzureAVATextToSpeechConfig._get_voice_language
   L196-L223; AzureAVATextToSpeechConfig.map_openai_params L225-L280; AzureAVATextToSpeechConfig.validate_environment
   L282-L311; AzureAVATextToSpeechConfig.get_complete_url L313-L349; AzureAVATextToSpeechConfig._is_cognitive_services_endpoint
   L351-L353; AzureAVATextToSpeechConfig._is_tts_endpoint L355-L357; AzureAVATextToSpeechConfig._extract_region_from_hostname
   L359-L369; AzureAVATextToSpeechConfig._build_tts_url L371-L375; AzureAVATextToSpeechConfig.is_ssml_input L377-L383;
   AzureAVATextToSpeechConfig.transform_text_to_speech_request L385-L478; AzureAVATextToSpeechConfig.transform_text_to_speech_response
-  L480-L495 belong to B538; reuse that implementation or its injected typed boundary.
+  L480-L495 belong to B538.'
 pitfalls:
-- Keep response streams owned through cancellation.
+- get_headers performs an actual chat probe even for image_generation mode; replacing it with a header-only local
+  function changes its observable traffic.
+- AVA dispatch extracts a voice dictionary name but map_openai_params in B538 accepts string voices only.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 625
   max_new_expects: 0
-review_level: standard
+review_level: security

@@ -1,0 +1,74 @@
+id: B1314
+title: Gemini candidate choices and content filtering
+description: >-
+  Build gemini_candidates using B1313 part projections and B1323 metadata. Own L1313-L1329,
+  L1630-L1696, L1919-L1981, L1997-L2032 and L2189-L2370 of the Gemini configuration, about
+  300 nonblank noncomment lines. A candidate without both content and finishReason is skipped;
+  otherwise retain its supplied index or enumeration index. Audio initially sets content=None,
+  but later text can replace it. Carry images, reasoning, thinking blocks, annotations, native
+  finish reason and both thought_signatures/server_side_tool_invocations in their source fields.
+  Accept an injected FinishReasonMapper supplied by B031 from B206, with function_call before tool_calls before native
+  reason, default stop. Streaming choices contain the source's narrower Delta fields and
+  reconstruct reasoning from thinking blocks only when reasoning_content is absent. Keep the
+  cumulative tool index across candidates. Prompt blocks and the first candidate's flagged
+  reasons yield a single assistant content=None/content_filter choice; their usage path copies
+  prompt/candidates/total directly instead of invoking normal usage enrichment. The flagged set
+  is SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, SPII, IMAGE_SAFETY and
+  IMAGE_PROHIBITED_CONTENT. Prompt-level streaming detection tests presence of blockReason.
+  Register helper gemini_candidates with skipped_metadata_candidate, explicit_index, audio_plus_text,
+  function_finish_precedence, streaming_reasoning_fallback, first_candidate_safety and prompt_block.
+  Reserve 310 code, 190 tests and 150 adapter lines, staying below 700 changed lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_candidates}.rs
+    - crates/betterlite-vertex/src/gemini_candidates/**
+    - tools/oracle/src/helpers/{mod,gemini_candidates}.rs
+    - tools/oracle/helpers/{dispatch,gemini_candidates}.py
+    - tools/oracle/cases/helpers/gemini-candidates/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_candidates*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1313-L1339
+    why: Flagged native finish reasons and the unused mapping accessor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1630-L1696
+    why: The two nonstreaming blocked-response paths copy raw usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1919-L2032
+    why: Finish selection, prompt filtering and streamed choice fields; usage counters are B1322.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2189-L2370
+    why: Ordered part assembly and different complete versus streamed choices.
+dod:
+  - text: Candidate selection, filtered responses and finish precedence match the pinned transformations.
+    proof: [candidate-tests, candidate-python, oracle]
+  - text: Candidate fixture decoding reaches complete and streamed projection modes.
+    proof: [candidate-seeds]
+checks:
+  optional: []
+  commands:
+    - id: candidate-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_candidates::/) - test(replays_)'
+      why: Assertions must observe skipped candidates and raw blocked-response usage.
+    - id: candidate-python
+      run: test -f tools/oracle/helpers/gemini_candidates.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter compares actual Choices and StreamingChoices representations.
+    - id: candidate-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_candidates*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_candidates::/)'
+      why: New helper records must select the candidate call tag.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-candidates/skipped-metadata-candidate.yaml
+  - tools/oracle/cases/helpers/gemini-candidates/explicit-index.yaml
+  - tools/oracle/cases/helpers/gemini-candidates/audio-plus-text.yaml
+  - tools/oracle/cases/helpers/gemini-candidates/function-finish-precedence.yaml
+  - tools/oracle/cases/helpers/gemini-candidates/streaming-reasoning-fallback.yaml
+  - tools/oracle/cases/helpers/gemini-candidates/first-candidate-safety.yaml
+  - tools/oracle/cases/helpers/gemini-candidates/prompt-block.yaml
+deviations: []
+out_of_scope:
+  - get_finish_reason_mapping at L1332-L1339 has no caller at the pin and receives no implementation or cases.
+  - B1313/B1322/B1323 own parts, accounting and metadata; B1326 owns the envelope, B1315 streaming and B1316 transport/translate_exception_str.
+  - B1305/B1308-B1310 own the configuration methods before these response methods; B206 owns the common finish mapper, injected by B031 to avoid a leaf-to-core dependency.
+pitfalls:
+  - A safety reason on a later candidate does not trigger the first-candidate early return.
+  - The streamed Delta does not automatically acquire every field emitted in a complete Message.
+  - Native function calls override a simultaneous native STOP finish reason.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: standard

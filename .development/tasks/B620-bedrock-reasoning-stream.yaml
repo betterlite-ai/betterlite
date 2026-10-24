@@ -1,7 +1,7 @@
 id: B620
 title: Bedrock runtime reasoning-tag and choice decoding
 description: >-
-  Add ReasoningTagState for runtime models that emit think tags inside visible content. Preserve partial opening/closing
+  Add ReasoningTagState for runtime models that emit <reasoning> tags inside visible content. Preserve partial opening/closing
   tags across chunks, prefix flush at EOF and simultaneous reasoning/text deltas. The parameter refusal tables are
   metadata supplied to runtime request preparation.
 
@@ -16,12 +16,51 @@ description: >-
   L450-L487.
 
 
-  Reuse split_bedrock_region_path from B591 (litellm/llms/bedrock/common_utils.py); its implementation remains with
-  that prerequisite.
+  Reuse split_bedrock_region_path from B2203 (litellm/llms/bedrock/common_utils.py); its implementation remains
+  with that prerequisite.
 
 
   Reuse bedrock_model_is_openai_gpt from B598 (litellm/llms/bedrock/common_utils.py); its implementation remains
   with that prerequisite.
+
+
+  Named case contracts: tag_split_every_byte: In reasoning phase, emit text up to the first </reasoning>; retain
+  only the longest trailing proper prefix of that close tag between fragments. Crossing the close enters after_close,
+  discards all leading Unicode whitespace from subsequent fragments until nonwhitespace content arrives, then emits
+  all later text unchanged. Test every split boundary of both tags and multibyte text without splitting a Unicode
+  scalar inside the string parser. Nested/repeated tags after the first close remain visible content. reasoning_and_text:
+  After B504 parent chunk parsing, maintain an independent splitter per choice.index, processing duplicate indexes
+  sequentially. A finish_reason other than None, including empty string, flushes that choice. Append nonempty extracted
+  reasoning to existing delta.reasoning_content (falsey existing value becomes empty). Set delta.content when extracted
+  content is nonempty or original delta.content is not None, preserving None for a content-less delta. Keep all
+  other chunk fields and unrelated choices unchanged. unterminated_tag_flush: flush always clears pending and enters
+  content. Pending text in reasoning phase is emitted as reasoning; pending text in every other phase is emitted
+  as content. A partial opening tag at EOF is visible; a partial closing tag at EOF remains reasoning. _split_streamed_content
+  treats None content as empty, feeds before flushing, and flushes only for finished=True; repeated flushes emit
+  nothing. plain_text_prefix: ReasoningTagSplitter starts phase=start,pending=empty. Only exact <reasoning> at offset
+  zero starts reasoning; buffer partial opening prefixes across fragments. Any mismatch emits the full pending prefix
+  plus current text as content and permanently enters content. Leading whitespace and <think> therefore remain visible.
+  Empty fragments preserve pending state. non_string_effort: Missing or None reasoning_effort and every string produce
+  an empty malformed set. Every other value, including bool,number,list,dict, produces {reasoning_effort}. For B598
+  GPT-family models, unless the raw effort is exactly none, refuse the intersection of present input keys with temperature,top_p,frequency_penalty,presence_penalty,logprobs,top_logprobs,
+  even when their values are None. Non-GPT models and explicit none return no reasoning-active refusals. model_refused_fields:
+  Normalize model through B2203 split_bedrock_region_path. Match case-sensitive substrings and union all matching
+  families: openai.gpt-oss refuses logit_bias; xai. refuses frequency_penalty,presence_penalty. xai. also refuses
+  string reasoning_effort=none; no other effort string is refused by this table. _without_params copies all fields
+  except the supplied set; without_refused_reasoning_effort returns the original mapping unless a string exactly
+  matches a refused value, then removes only reasoning_effort. buffered_thinking_split: Call B038 parent buffered
+  response conversion, then B206 set_provider_response_headers_in_hidden_params before inspecting choices. Preserve
+  raw headers under _hidden_params.headers; additional_headers combines processed B206 response headers with any
+  existing mapping values winning. For every nonstream Choices whose message.content is a string, run the same splitter
+  with finished=True; append nonempty reasoning to existing reasoning_content, and always assign the returned visible
+  content. Empty reasoning becomes None but its matched tags and post-close whitespace still disappear in this runtime
+  path, unlike B616. Preserve nonstring content and streaming choices unchanged.
+
+
+  decode_reasoning_delta is the production incremental tag decoder over already decoded UTF-8 string fragments;
+  B504/B038 own transport/SSE/JSON decoding. Its fuzz target converts input to valid Unicode fragments at the shared
+  byte boundary and exercises the actual state machine, including partial tags and EOF, without installing a second
+  response JSON decoder. Raw invalid UTF-8 remains the prerequisite decoder's error.
 
 
   Implement crates/betterlite-bedrock/src/reasoning_stream.rs with adjacent tests under reasoning_stream/. Keep
@@ -40,9 +79,8 @@ description: >-
   Write rstest function reasoning_stream_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): tag_split_every_byte, reasoning_and_text, unterminated_tag_flush, plain_text_prefix, non_string_effort,
   model_refused_fields, buffered_thinking_split. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_reasoning_stream* using HelperCase: kind:
@@ -60,9 +98,9 @@ description: >-
 
 
   Budget from 164 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 190 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 461 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 230 production lines, 245 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 665 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -84,51 +122,74 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L68-L240
-  why: >-
-    Own chat_completions_params_refused_for, chat_completions_params_refused_while_reasoning, _without_params, chat_completions_reasoning_efforts_refused_for,
-    without_refused_reasoning_effort, non_string_reasoning_effort, _held_close_tag_prefix, ReasoningTagSplitter.feed,
-    ReasoningTagSplitter._feed_start, ReasoningTagSplitter._feed_reasoning, ReasoningTagSplitter.flush, _split_streamed_content,
-    split_reasoning_tag, BedrockRuntimeChatCompletionsStreamingHandler.__init__, BedrockRuntimeChatCompletionsStreamingHandler.chunk_parser.
-    Other functions in this file remain with the owners listed below.
+  why: Own chat_completions_params_refused_for, chat_completions_params_refused_while_reasoning, _without_params,
+    chat_completions_reasoning_efforts_refused_for, without_refused_reasoning_effort, non_string_reasoning_effort,
+    _held_close_tag_prefix, ReasoningTagSplitter.feed, ReasoningTagSplitter._feed_start, ReasoningTagSplitter._feed_reasoning,
+    ReasoningTagSplitter.flush, _split_streamed_content, split_reasoning_tag, BedrockRuntimeChatCompletionsStreamingHandler.__init__,
+    BedrockRuntimeChatCompletionsStreamingHandler.chunk_parser. Other functions in this file remain with the owners
+    listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/chat_completions/transformation.py#L450-L487
   why: Own AmazonBedrockRuntimeChatCompletionsConfig.transform_response. Other functions in this file remain with
     the owners listed below.
 dod:
-- text: >-
-    tag split every byte: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/tag-split-every-byte.yaml.
+- text: 'tag_split_every_byte: In reasoning phase, emit text up to the first </reasoning>; retain only the longest
+    trailing proper prefix of that close tag between fragments. Crossing the close enters after_close, discards
+    all leading Unicode whitespace from subsequent fragments until nonwhitespace content arrives, then emits all
+    later text unchanged. Test every split boundary of both tags and multibyte text without splitting a Unicode
+    scalar inside the string parser. Nested/repeated tags after the first close remain visible content.'
   proof:
   - case-tag-split-every-byte
   - oracle
   - helper-python
-- text: 'reasoning and text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/reasoning-and-text.yaml.'
+- text: 'reasoning_and_text: After B504 parent chunk parsing, maintain an independent splitter per choice.index,
+    processing duplicate indexes sequentially. A finish_reason other than None, including empty string, flushes
+    that choice. Append nonempty extracted reasoning to existing delta.reasoning_content (falsey existing value
+    becomes empty). Set delta.content when extracted content is nonempty or original delta.content is not None,
+    preserving None for a content-less delta. Keep all other chunk fields and unrelated choices unchanged.'
   proof:
   - case-reasoning-and-text
   - oracle
   - helper-python
-- text: >-
-    unterminated tag flush: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/unterminated-tag-flush.yaml.
+- text: 'unterminated_tag_flush: flush always clears pending and enters content. Pending text in reasoning phase
+    is emitted as reasoning; pending text in every other phase is emitted as content. A partial opening tag at EOF
+    is visible; a partial closing tag at EOF remains reasoning. _split_streamed_content treats None content as empty,
+    feeds before flushing, and flushes only for finished=True; repeated flushes emit nothing.'
   proof:
   - case-unterminated-tag-flush
   - oracle
   - helper-python
-- text: 'plain text prefix: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/plain-text-prefix.yaml.'
+- text: 'plain_text_prefix: ReasoningTagSplitter starts phase=start,pending=empty. Only exact <reasoning> at offset
+    zero starts reasoning; buffer partial opening prefixes across fragments. Any mismatch emits the full pending
+    prefix plus current text as content and permanently enters content. Leading whitespace and <think> therefore
+    remain visible. Empty fragments preserve pending state.'
   proof:
   - case-plain-text-prefix
   - oracle
   - helper-python
-- text: 'non string effort: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/non-string-effort.yaml.'
+- text: 'non_string_effort: Missing or None reasoning_effort and every string produce an empty malformed set. Every
+    other value, including bool,number,list,dict, produces {reasoning_effort}. For B598 GPT-family models, unless
+    the raw effort is exactly none, refuse the intersection of present input keys with temperature,top_p,frequency_penalty,presence_penalty,logprobs,top_logprobs,
+    even when their values are None. Non-GPT models and explicit none return no reasoning-active refusals.'
   proof:
   - case-non-string-effort
   - oracle
   - helper-python
-- text: >-
-    model refused fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/model-refused-fields.yaml.
+- text: 'model_refused_fields: Normalize model through B2203 split_bedrock_region_path. Match case-sensitive substrings
+    and union all matching families: openai.gpt-oss refuses logit_bias; xai. refuses frequency_penalty,presence_penalty.
+    xai. also refuses string reasoning_effort=none; no other effort string is refused by this table. _without_params
+    copies all fields except the supplied set; without_refused_reasoning_effort returns the original mapping unless
+    a string exactly matches a refused value, then removes only reasoning_effort.'
   proof:
   - case-model-refused-fields
   - oracle
   - helper-python
-- text: >-
-    buffered thinking split: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-reasoning-stream/buffered-thinking-split.yaml.
+- text: 'buffered_thinking_split: Call B038 parent buffered response conversion, then B206 set_provider_response_headers_in_hidden_params
+    before inspecting choices. Preserve raw headers under _hidden_params.headers; additional_headers combines processed
+    B206 response headers with any existing mapping values winning. For every nonstream Choices whose message.content
+    is a string, run the same splitter with finished=True; append nonempty reasoning to existing reasoning_content,
+    and always assign the returned visible content. Empty reasoning becomes None but its matched tags and post-close
+    whitespace still disappear in this runtime path, unlike B616. Preserve nonstring content and streaming choices
+    unchanged.'
   proof:
   - case-buffered-thinking-split
   - oracle
@@ -145,43 +206,67 @@ checks:
   - mutants
   commands:
   - id: case-tag-split-every-byte
-    why: The tag-split-every-byte behavior is missing or differs from its pinned fixture.
+    why: In reasoning phase, emit text up to the first </reasoning>; retain only the longest trailing proper prefix
+      of that close tag between fragments. Crossing the close enters after_close, discards all leading Unicode whitespace
+      from subsequent fragments until nonwhitespace content arrives, then emits all later text unchanged. Test every
+      split boundary of both tags and multibyte text without splitting a Unicode scalar inside the string parser.
+      Nested/repeated tags after the first close remain visible content.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_tag_split_every_byte$/)'
   - id: case-reasoning-and-text
-    why: The reasoning-and-text behavior is missing or differs from its pinned fixture.
+    why: After B504 parent chunk parsing, maintain an independent splitter per choice.index, processing duplicate
+      indexes sequentially. A finish_reason other than None, including empty string, flushes that choice. Append
+      nonempty extracted reasoning to existing delta.reasoning_content (falsey existing value becomes empty). Set
+      delta.content when extracted content is nonempty or original delta.content is not None, preserving None for
+      a content-less delta. Keep all other chunk fields and unrelated choices unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_reasoning_and_text$/)'
   - id: case-unterminated-tag-flush
-    why: The unterminated-tag-flush behavior is missing or differs from its pinned fixture.
+    why: flush always clears pending and enters content. Pending text in reasoning phase is emitted as reasoning;
+      pending text in every other phase is emitted as content. A partial opening tag at EOF is visible; a partial
+      closing tag at EOF remains reasoning. _split_streamed_content treats None content as empty, feeds before flushing,
+      and flushes only for finished=True; repeated flushes emit nothing.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_unterminated_tag_flush$/)'
   - id: case-plain-text-prefix
-    why: The plain-text-prefix behavior is missing or differs from its pinned fixture.
+    why: ReasoningTagSplitter starts phase=start,pending=empty. Only exact <reasoning> at offset zero starts reasoning;
+      buffer partial opening prefixes across fragments. Any mismatch emits the full pending prefix plus current
+      text as content and permanently enters content. Leading whitespace and <think> therefore remain visible. Empty
+      fragments preserve pending state.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_plain_text_prefix$/)'
   - id: case-non-string-effort
-    why: The non-string-effort behavior is missing or differs from its pinned fixture.
+    why: Missing or None reasoning_effort and every string produce an empty malformed set. Every other value, including
+      bool,number,list,dict, produces {reasoning_effort}. For B598 GPT-family models, unless the raw effort is exactly
+      none, refuse the intersection of present input keys with temperature,top_p,frequency_penalty,presence_penalty,logprobs,top_logprobs,
+      even when their values are None. Non-GPT models and explicit none return no reasoning-active refusals.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_non_string_effort$/)'
   - id: case-model-refused-fields
-    why: The model-refused-fields behavior is missing or differs from its pinned fixture.
+    why: 'Normalize model through B2203 split_bedrock_region_path. Match case-sensitive substrings and union all
+      matching families: openai.gpt-oss refuses logit_bias; xai. refuses frequency_penalty,presence_penalty. xai.
+      also refuses string reasoning_effort=none; no other effort string is refused by this table. _without_params
+      copies all fields except the supplied set; without_refused_reasoning_effort returns the original mapping unless
+      a string exactly matches a refused value, then removes only reasoning_effort.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_model_refused_fields$/)'
   - id: case-buffered-thinking-split
-    why: The buffered-thinking-split behavior is missing or differs from its pinned fixture.
+    why: Call B038 parent buffered response conversion, then B206 set_provider_response_headers_in_hidden_params
+      before inspecting choices. Preserve raw headers under _hidden_params.headers; additional_headers combines
+      processed B206 response headers with any existing mapping values winning. For every nonstream Choices whose
+      message.content is a string, run the same splitter with finished=True; append nonempty reasoning to existing
+      reasoning_content, and always assign the returned visible content. Empty reasoning becomes None but its matched
+      tags and post-close whitespace still disappear in this runtime path, unlike B616. Preserve nonstring content
+      and streaming choices unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::reasoning_stream_cases::case_[0-9]+_buffered_thinking_split$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_reasoning_stream.py)" && uv run
-      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_reasoning_stream.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_reasoning_stream*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_reasoning_stream*")"
       && grep -lq 'bedrock_reasoning_stream' tools/oracle/fuzz/corpus/helper_case/bedrock_reasoning_stream* && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_reasoning_stream$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_reasoning_stream)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_reasoning_stream)"
       && grep -q 'decode_reasoning_delta' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_reasoning_stream.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_reasoning_stream_corpus$/)'
 oracle_cases:
@@ -198,19 +283,19 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/chat_completions/transformation.py: with_max_completion_tokens L243-L258; AmazonBedrockRuntimeChatCompletionsConfig.__init__
-  L262-L264; AmazonBedrockRuntimeChatCompletionsConfig.custom_llm_provider L267-L268; AmazonBedrockRuntimeChatCompletionsConfig.uses_async_transform_request
-  L271-L272; AmazonBedrockRuntimeChatCompletionsConfig.get_error_class L274-L280; AmazonBedrockRuntimeChatCompletionsConfig.validate_environment
-  L282-L300; AmazonBedrockRuntimeChatCompletionsConfig.get_complete_url L302-L329; AmazonBedrockRuntimeChatCompletionsConfig._params_with_region_from_path
-  L331-L337; AmazonBedrockRuntimeChatCompletionsConfig.sign_request L339-L360; AmazonBedrockRuntimeChatCompletionsConfig.map_openai_params
-  L362-L405; AmazonBedrockRuntimeChatCompletionsConfig._inference_params L407-L414; AmazonBedrockRuntimeChatCompletionsConfig.transform_request
-  L416-L431; AmazonBedrockRuntimeChatCompletionsConfig.async_transform_request L433-L448; AmazonBedrockRuntimeChatCompletionsConfig.get_supported_openai_params
-  L489-L502; AmazonBedrockRuntimeChatCompletionsConfig.get_model_response_iterator L504-L514 belong to B619; reuse
-  that implementation or its injected typed boundary.
+- 'Function ownership inventory litellm/llms/bedrock/chat/chat_completions/transformation.py: with_max_completion_tokens
+  L243-L258; AmazonBedrockRuntimeChatCompletionsConfig.__init__ L262-L264; AmazonBedrockRuntimeChatCompletionsConfig.custom_llm_provider
+  L266-L268; AmazonBedrockRuntimeChatCompletionsConfig.uses_async_transform_request L270-L272; AmazonBedrockRuntimeChatCompletionsConfig.get_error_class
+  L274-L280; AmazonBedrockRuntimeChatCompletionsConfig.validate_environment L282-L300; AmazonBedrockRuntimeChatCompletionsConfig.get_complete_url
+  L302-L329; AmazonBedrockRuntimeChatCompletionsConfig._params_with_region_from_path L331-L337; AmazonBedrockRuntimeChatCompletionsConfig.sign_request
+  L339-L360; AmazonBedrockRuntimeChatCompletionsConfig.map_openai_params L362-L405; AmazonBedrockRuntimeChatCompletionsConfig._inference_params
+  L407-L414; AmazonBedrockRuntimeChatCompletionsConfig.transform_request L416-L431; AmazonBedrockRuntimeChatCompletionsConfig.async_transform_request
+  L433-L448; AmazonBedrockRuntimeChatCompletionsConfig.get_supported_openai_params L489-L502; AmazonBedrockRuntimeChatCompletionsConfig.get_model_response_iterator
+  L504-L514 belong to B619.'
 pitfalls:
-- Preserve partial opening/closing tags across chunks, prefix flush at EOF and simultaneous reasoning/text deltas.
+- Runtime tag splitting removes an empty reasoning block, while the Moonshot caller preserves it.
+- A missing reasoning_effort still activates the GPT reasoning-parameter refusal set.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: standard

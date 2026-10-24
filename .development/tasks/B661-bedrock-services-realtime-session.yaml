@@ -9,16 +9,48 @@ description: >-
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/realtime/transformation.py:
-  BedrockRealtimeConfig.__init__ L83-L124; BedrockRealtimeConfig.get_error_class L126-L132; BedrockRealtimeConfig.validate_environment
-  L134-L136; BedrockRealtimeConfig.get_complete_url L138-L140; BedrockRealtimeConfig.requires_session_configuration
-  L142-L144; BedrockRealtimeConfig.session_configuration_request L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format
-  L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate L216-L233; BedrockRealtimeConfig.transform_session_update_event
-  L235-L356; BedrockRealtimeConfig._session_object L670-L682; BedrockRealtimeConfig.session_created_event L684-L694;
-  BedrockRealtimeConfig.session_updated_event L696-L707.
+  BedrockContentEnd and usage record defaults L47-L71; BedrockRealtimeConfig.__init__ L83-L124; BedrockRealtimeConfig.get_error_class
+  L126-L132; BedrockRealtimeConfig.validate_environment L134-L136; BedrockRealtimeConfig.get_complete_url L138-L140;
+  BedrockRealtimeConfig.requires_session_configuration L142-L144; BedrockRealtimeConfig.session_configuration_request
+  L146-L190; BedrockRealtimeConfig._transform_tools_to_bedrock_format L192-L214; BedrockRealtimeConfig._map_audio_format_to_sample_rate
+  L216-L233; BedrockRealtimeConfig.transform_session_update_event L235-L356; BedrockRealtimeConfig._session_object
+  L670-L682; BedrockRealtimeConfig.session_created_event L684-L694; BedrockRealtimeConfig.session_updated_event
+  L696-L707.
 
 
   Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
   that prerequisite.
+
+
+  Named case contracts: default_session_configuration: Constructor allocates three independent UUID strings prompt_name,content_name,audio_content_name;
+  prompt_started/client_audio_streamed=False; user transcript activeFalse,generation_stageNone,item_idNone,bufferempty,cumulative/reported
+  usage all0 including nested input/output speechTokens/textTokens. Defaults max_tokens1024,top_p0.9,temperature0.7,voice
+  matthew; output24000/input16000Hz,16bits,1channel,encoding base64,audioType SPEECH,mediaType audio/lpcm; textMedia
+  text/plain. No environment inputs. session_configuration_request returns one JSON marker object with session_start.event.sessionStart.inferenceConfiguration
+  maxTokens/topP/temperature and prompt_start.event.promptStart containing promptName,textOutputConfiguration,audioOutputConfiguration.
+  It does NOT set prompt_started. session_update_options: session defaults{}. By key presence update max_response_output_tokens,temperature,voice
+  evenNone/empty; top_p is ignored and stays0.9. Preserve existing values for absent keys. Always emit serialized
+  sessionStart then promptStart and set prompt_started=True before optional instruction frames. Repeated updates
+  restart using SAME prompt_name, without closing prior prompt or resetting audio/transcript/usage state. Unknown
+  session fields ignored; no implied validation of max token or temperature ranges. pcm16_input_output_rates: Exact
+  pcm16 maps output24000/input16000. Unknown format values, includingNone, use the same defaults. Format changes
+  only sample rate; mediaType remains audio/lpcm and bit width16. g711_rates: g711_ulaw and g711_alaw set sample
+  rate8000 for input/output but do not convert encoding or replace audio/lpcm media type; preserve this source wire
+  shape. explicit_sample_rate: After audio-format mapping, explicit output_sample_rate_hertz/input_sample_rate_hertz
+  override by key presence, even0/None. Input rate affects later B662 audio content, not promptStart output configuration.
+  tool_configuration: Only truthy tools list adds toolUseOutputConfiguration.mediaType application/json and toolConfiguration.tools.
+  Keep only entries with type=function, read nested function default{}, name/description defaultempty, inputSchema.json
+  = json.dumps(parameters default{}), including explicitnull. Unsupported types silently ignored; a truthy list
+  of only unsupported types still adds empty tools config. Flattened Realtime function definitions without nested
+  function do not supply their top-level name/parameters here. system_instructions: Truthy instructions adds three
+  frames after session/prompt starts: contentStart with fresh UUID,typeTEXT,interactiveFalse,roleSYSTEM,textInputConfiguration.mediaType
+  text/plain; textInput same prompt/content names and supplied instructions unchanged; contentEnd same names. Empty/None
+  instructions adds no frames. Model argument has no effect on these serialized configurations. created_updated_events:
+  _session_object id=logging.litellm_trace_id,modalities default[text,audio] only whenNone,explicit[] retained;
+  include model only whenstr andnotNone,includingempty. session.created/session.updated event_id is bare UUID string
+  with no event_ prefix. Created uses defaultmodalities; updateduses suppliedmodalities. These acks do not echo
+  temperature/voice/tool settings. requires_session_configuration=True,get_complete_url returns api_base or empty,validate_environment
+  returns headers; error factory B682 unchanged.
 
 
   Implement crates/betterlite-bedrock/src/realtime_session.rs with adjacent tests under realtime_session/. Keep
@@ -37,9 +69,8 @@ description: >-
   Write rstest function realtime_session_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): default_session_configuration, session_update_options, pcm16_input_output_rates, g711_rates, explicit_sample_rate,
   tool_configuration, system_instructions, created_updated_events. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_session* using HelperCase:
@@ -54,10 +85,10 @@ description: >-
   needed, is B002.
 
 
-  Budget from 248 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 270 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 499 planned, 500 maximum changed lines.
+  Budget from 263 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 275 production lines, 295 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 710 planned, 725 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -76,60 +107,75 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L83-L356
-  why: >-
-    Own BedrockRealtimeConfig.__init__, BedrockRealtimeConfig.get_error_class, BedrockRealtimeConfig.validate_environment,
+  why: Own BedrockRealtimeConfig.__init__, BedrockRealtimeConfig.get_error_class, BedrockRealtimeConfig.validate_environment,
     BedrockRealtimeConfig.get_complete_url, BedrockRealtimeConfig.requires_session_configuration, BedrockRealtimeConfig.session_configuration_request,
     BedrockRealtimeConfig._transform_tools_to_bedrock_format, BedrockRealtimeConfig._map_audio_format_to_sample_rate,
     BedrockRealtimeConfig.transform_session_update_event. Other functions in this file remain with the owners listed
     below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L670-L707
-  why: >-
-    Own BedrockRealtimeConfig._session_object, BedrockRealtimeConfig.session_created_event, BedrockRealtimeConfig.session_updated_event.
+  why: Own BedrockRealtimeConfig._session_object, BedrockRealtimeConfig.session_created_event, BedrockRealtimeConfig.session_updated_event.
     Other functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    default session configuration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/default-session-configuration.yaml.
+- text: 'default_session_configuration: Constructor allocates three independent UUID strings prompt_name,content_name,audio_content_name;
+    prompt_started/client_audio_streamed=False; user transcript activeFalse,generation_stageNone,item_idNone,bufferempty,cumulative/reported
+    usage all0 including nested input/output speechTokens/textTokens. Defaults max_tokens1024,top_p0.9,temperature0.7,voice
+    matthew; output24000/input16000Hz,16bits,1channel,encoding base64,audioType SPEECH,mediaType audio/lpcm; textMedia
+    text/plain. No environment inputs. session_configuration_request returns one JSON marker object with session_start.event.sessionStart.inferenceConfiguration
+    maxTokens/topP/temperature and prompt_start.event.promptStart containing promptName,textOutputConfiguration,audioOutputConfiguration.
+    It does NOT set prompt_started.'
   proof:
   - case-default-session-configuration
   - oracle
   - helper-python
-- text: >-
-    session update options: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/session-update-options.yaml.
+- text: 'session_update_options: session defaults{}. By key presence update max_response_output_tokens,temperature,voice
+    evenNone/empty; top_p is ignored and stays0.9. Preserve existing values for absent keys. Always emit serialized
+    sessionStart then promptStart and set prompt_started=True before optional instruction frames. Repeated updates
+    restart using SAME prompt_name, without closing prior prompt or resetting audio/transcript/usage state. Unknown
+    session fields ignored; no implied validation of max token or temperature ranges.'
   proof:
   - case-session-update-options
   - oracle
   - helper-python
-- text: >-
-    pcm16 input output rates: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/pcm16-input-output-rates.yaml.
+- text: 'pcm16_input_output_rates: Exact pcm16 maps output24000/input16000. Unknown format values, includingNone,
+    use the same defaults. Format changes only sample rate; mediaType remains audio/lpcm and bit width16.'
   proof:
   - case-pcm16-input-output-rates
   - oracle
   - helper-python
-- text: 'g711 rates: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/g711-rates.yaml.'
+- text: 'g711_rates: g711_ulaw and g711_alaw set sample rate8000 for input/output but do not convert encoding or
+    replace audio/lpcm media type; preserve this source wire shape.'
   proof:
   - case-g711-rates
   - oracle
   - helper-python
-- text: >-
-    explicit sample rate: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/explicit-sample-rate.yaml.
+- text: 'explicit_sample_rate: After audio-format mapping, explicit output_sample_rate_hertz/input_sample_rate_hertz
+    override by key presence, even0/None. Input rate affects later B662 audio content, not promptStart output configuration.'
   proof:
   - case-explicit-sample-rate
   - oracle
   - helper-python
-- text: >-
-    tool configuration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/tool-configuration.yaml.
+- text: 'tool_configuration: Only truthy tools list adds toolUseOutputConfiguration.mediaType application/json and
+    toolConfiguration.tools. Keep only entries with type=function, read nested function default{}, name/description
+    defaultempty, inputSchema.json = json.dumps(parameters default{}), including explicitnull. Unsupported types
+    silently ignored; a truthy list of only unsupported types still adds empty tools config. Flattened Realtime
+    function definitions without nested function do not supply their top-level name/parameters here.'
   proof:
   - case-tool-configuration
   - oracle
   - helper-python
-- text: >-
-    system instructions: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/system-instructions.yaml.
+- text: 'system_instructions: Truthy instructions adds three frames after session/prompt starts: contentStart with
+    fresh UUID,typeTEXT,interactiveFalse,roleSYSTEM,textInputConfiguration.mediaType text/plain; textInput same
+    prompt/content names and supplied instructions unchanged; contentEnd same names. Empty/None instructions adds
+    no frames. Model argument has no effect on these serialized configurations.'
   proof:
   - case-system-instructions
   - oracle
   - helper-python
-- text: >-
-    created updated events: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-realtime-session/created-updated-events.yaml.
+- text: 'created_updated_events: _session_object id=logging.litellm_trace_id,modalities default[text,audio] only
+    whenNone,explicit[] retained; include model only whenstr andnotNone,includingempty. session.created/session.updated
+    event_id is bare UUID string with no event_ prefix. Created uses defaultmodalities; updateduses suppliedmodalities.
+    These acks do not echo temperature/voice/tool settings. requires_session_configuration=True,get_complete_url
+    returns api_base or empty,validate_environment returns headers; error factory B682 unchanged.'
   proof:
   - case-created-updated-events
   - oracle
@@ -143,39 +189,60 @@ checks:
   - mutants
   commands:
   - id: case-default-session-configuration
-    why: The default-session-configuration behavior is missing or differs from its pinned fixture.
+    why: Constructor allocates three independent UUID strings prompt_name,content_name,audio_content_name; prompt_started/client_audio_streamed=False;
+      user transcript activeFalse,generation_stageNone,item_idNone,bufferempty,cumulative/reported usage all0 including
+      nested input/output speechTokens/textTokens. Defaults max_tokens1024,top_p0.9,temperature0.7,voice matthew;
+      output24000/input16000Hz,16bits,1channel,encoding base64,audioType SPEECH,mediaType audio/lpcm; textMedia
+      text/plain. No environment inputs. session_configuration_request returns one JSON marker object with session_start.event.sessionStart.inferenceConfiguration
+      maxTokens/topP/temperature and prompt_start.event.promptStart containing promptName,textOutputConfiguration,audioOutputConfiguration.
+      It does NOT set prompt_started.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_default_session_configuration$/)'
   - id: case-session-update-options
-    why: The session-update-options behavior is missing or differs from its pinned fixture.
+    why: session defaults{}. By key presence update max_response_output_tokens,temperature,voice evenNone/empty;
+      top_p is ignored and stays0.9. Preserve existing values for absent keys. Always emit serialized sessionStart
+      then promptStart and set prompt_started=True before optional instruction frames. Repeated updates restart
+      using SAME prompt_name, without closing prior prompt or resetting audio/transcript/usage state. Unknown session
+      fields ignored; no implied validation of max token or temperature ranges.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_session_update_options$/)'
   - id: case-pcm16-input-output-rates
-    why: The pcm16-input-output-rates behavior is missing or differs from its pinned fixture.
+    why: Exact pcm16 maps output24000/input16000. Unknown format values, includingNone, use the same defaults. Format
+      changes only sample rate; mediaType remains audio/lpcm and bit width16.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_pcm16_input_output_rates$/)'
   - id: case-g711-rates
-    why: The g711-rates behavior is missing or differs from its pinned fixture.
+    why: g711_ulaw and g711_alaw set sample rate8000 for input/output but do not convert encoding or replace audio/lpcm
+      media type; preserve this source wire shape.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_g711_rates$/)'
   - id: case-explicit-sample-rate
-    why: The explicit-sample-rate behavior is missing or differs from its pinned fixture.
+    why: After audio-format mapping, explicit output_sample_rate_hertz/input_sample_rate_hertz override by key presence,
+      even0/None. Input rate affects later B662 audio content, not promptStart output configuration.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_explicit_sample_rate$/)'
   - id: case-tool-configuration
-    why: The tool-configuration behavior is missing or differs from its pinned fixture.
+    why: Only truthy tools list adds toolUseOutputConfiguration.mediaType application/json and toolConfiguration.tools.
+      Keep only entries with type=function, read nested function default{}, name/description defaultempty, inputSchema.json
+      = json.dumps(parameters default{}), including explicitnull. Unsupported types silently ignored; a truthy list
+      of only unsupported types still adds empty tools config. Flattened Realtime function definitions without nested
+      function do not supply their top-level name/parameters here.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_tool_configuration$/)'
   - id: case-system-instructions
-    why: The system-instructions behavior is missing or differs from its pinned fixture.
+    why: 'Truthy instructions adds three frames after session/prompt starts: contentStart with fresh UUID,typeTEXT,interactiveFalse,roleSYSTEM,textInputConfiguration.mediaType
+      text/plain; textInput same prompt/content names and supplied instructions unchanged; contentEnd same names.
+      Empty/None instructions adds no frames. Model argument has no effect on these serialized configurations.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_system_instructions$/)'
   - id: case-created-updated-events
-    why: The created-updated-events behavior is missing or differs from its pinned fixture.
+    why: _session_object id=logging.litellm_trace_id,modalities default[text,audio] only whenNone,explicit[] retained;
+      include model only whenstr andnotNone,includingempty. session.created/session.updated event_id is bare UUID
+      string with no event_ prefix. Created uses defaultmodalities; updateduses suppliedmodalities. These acks do
+      not echo temperature/voice/tool settings. requires_session_configuration=True,get_complete_url returns api_base
+      or empty,validate_environment returns headers; error factory B682 unchanged.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::realtime_session_cases::case_[0-9]+_created_updated_events$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_session.py)"
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_realtime_session.py)"
       && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_session*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_session*")"
       && grep -lq 'bedrock_services_realtime_session' tools/oracle/fuzz/corpus/helper_case/bedrock_services_realtime_session*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_realtime_session$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -194,33 +261,28 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_input_audio_buffer_append_event
   L358-L423; BedrockRealtimeConfig.transform_input_audio_buffer_commit_event L425-L450; BedrockRealtimeConfig.transform_conversation_item_create_event
   L452-L518; BedrockRealtimeConfig.transform_response_create_event L520-L566; BedrockRealtimeConfig._response_trigger_audio_messages
   L568-L583; BedrockRealtimeConfig.transform_response_cancel_event L585-L597; BedrockRealtimeConfig.session_close_messages
   L599-L626; BedrockRealtimeConfig.transform_realtime_request L628-L668; BedrockRealtimeConfig.transform_conversation_item_create_tool_result_event
-  L1212-L1273 belong to B662; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event L709-L820;
-  BedrockRealtimeConfig._parse_generation_stage L823-L831; BedrockRealtimeConfig._current_user_item_id L833-L837;
-  BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event L849-L852;
-  BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
+  L1212-L1273 belong to B662.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_content_start_event
+  L709-L820; BedrockRealtimeConfig._parse_generation_stage L822-L831; BedrockRealtimeConfig._current_user_item_id
+  L833-L837; BedrockRealtimeConfig.transform_user_speech_event L839-L847; BedrockRealtimeConfig.transform_usage_event
+  L849-L852; BedrockRealtimeConfig.transform_user_transcript_event L895-L907; BedrockRealtimeConfig.user_transcript_completed_events
   L909-L922; BedrockRealtimeConfig.transform_text_output_event L924-L964; BedrockRealtimeConfig.transform_audio_output_event
-  L966-L999 belong to B663; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta L854-L875; BedrockRealtimeConfig.leftover_usage_done_events
-  L877-L893; BedrockRealtimeConfig.transform_content_end_event L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event
-  L1103-L1127; BedrockRealtimeConfig._response_done_events L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event
-  L1159-L1210 belong to B664; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response L1275-L1415
-  belong to B665; reuse that implementation or its injected typed boundary.
+  L966-L999 belong to B663.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig._take_usage_delta
+  L854-L875; BedrockRealtimeConfig.leftover_usage_done_events L877-L893; BedrockRealtimeConfig.transform_content_end_event
+  L1001-L1101; BedrockRealtimeConfig.transform_prompt_end_event L1103-L1127; BedrockRealtimeConfig._response_done_events
+  L1129-L1157; BedrockRealtimeConfig.transform_tool_use_event L1159-L1210 belong to B664.'
+- 'Function ownership inventory litellm/llms/bedrock/realtime/transformation.py: BedrockRealtimeConfig.transform_realtime_response
+  L1275-L1415 belong to B665.'
 pitfalls:
-- >-
-  Defaults are max_tokens=1024, top_p=0.9, temperature=0.7, voice=matthew, output sample rate=24000 Hz and input=16000
-  Hz; both use 16-bit mono base64 SPEECH audio/lpcm and text uses text/plain.
+- The initial configuration marker does not set prompt_started, whereas session.update does.
+- G.711 changes only the declared sample rate; the provider body still declares audio/lpcm and 16-bit samples.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 725
   max_new_expects: 0
 review_level: standard

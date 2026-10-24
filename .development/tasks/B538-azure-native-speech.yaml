@@ -2,8 +2,8 @@ id: B538
 title: Azure native SSML synthesis
 description: >-
   Add NativeSpeechRequest and typed SSML construction, preserving voice language, speed-to-rate conversion, style/styledegree/role,
-  output formats and region hostname detection. Compare an XML writer crate before constructing SSML; validate supplied
-  SSML as bounded bytes with the same accepted shape and no external entity/network resolution. Stream binary results
+  output formats and region hostname detection. Compare an XML writer with the source literal builder; preserve
+  its exact string construction and raw-input pass-through, without adding XML validation. Stream binary results
   with configured deadlines.
 
 
@@ -17,8 +17,43 @@ description: >-
   L385-L478; AzureAVATextToSpeechConfig.transform_text_to_speech_response L480-L495.
 
 
-  SSML construction receives typed text/options and XML-escapes values; if passing raw ssml_body through unchanged,
-  do not add an XML parser merely to validate it.
+  SSML construction receives typed text/options and XML-escapes only the input text; if passing raw ssml_body through
+  unchanged, do not add an XML parser merely to validate it.
+
+
+  Named case contracts: plain_text_ssml_escaping: For generated SSML replace &,<,>,double quote,single quote in
+  that order with &amp;,&lt;,&gt;,&quot;,&apos;. Preserve the pinned newlines/indentation and single-quoted attributes
+  around speak/voice/prosody; do not escape rate/voice/lang/style attributes differently. speed_rate_boundaries:
+  Convert speed with int((speed-1.0)*100), truncating toward zero, then signed decimal percent: 1.0 gives +0%, 2
+  gives +100%, 0.5 gives -50%. Do not clamp to the 0.25..4 docstring range. Absent/None speed adds no mapped rate;
+  request assembly defaults missing rate to 0%. voice_language: Only a truthy explicit lang adds xml:lang to voice;
+  never infer language from its name. The root speak always has version=1.0, xmlns=http://www.w3.org/2001/10/synthesis
+  and xml:lang=en-US, regardless of voice/lang. style_role_element: Copy style/styledegree/role/lang only when present
+  in kwargs. Truthy style/styledegree/role wrap prosody in mstts:express-as with attributes in that order and add
+  xmlns:mstts=https://www.w3.org/2001/mstts; absent/falsy values do neither. Attribute values are interpolated literally,
+  without escaping or validation, as at the pin. existing_ssml: Any case-sensitive substring <speak> or <speak plus
+  a space triggers unchanged ssml_body, even if not at the start or invalid XML. Set X-Microsoft-OutputFormat before
+  the passthrough; no parser or entity resolution runs. cognitive_to_tts_endpoint: Missing None api_base raises
+  ValueError with the Azure AVA required-base diagnostic and both domain examples. Trim trailing slashes; exact
+  api.cognitive.microsoft.com or its dot suffix converts to https://<region>.tts.speech.microsoft.com/cognitiveservices/v1,
+  dropping original scheme/path/query. TTS domains retain the string if it ends /cognitiveservices/v1, otherwise
+  append it; custom bases always append that path. response_format_header: Map mp3/aac/flac to audio-24khz-48kbitrate-mono-mp3,
+  opus to ogg-48khz-16bit-mono-opus, wav to riff-24khz-16bit-mono-pcm, pcm to raw-24khz-16bit-mono-pcm; unknown
+  formats pass through. Missing response_format defaults MP3. Request overwrites X-Microsoft-OutputFormat with mapped
+  output_format, using MP3 only when the key is absent. native_voice_map: Map alloy=en-US-JennyNeural, echo=en-US-GuyNeural,
+  fable=en-GB-RyanNeural, onyx=en-US-DavisNeural, nova=en-US-AmberNeural, shimmer=en-US-AriaNeural; other strings
+  pass through, non-strings map to None. Request assembly falls back from falsy voice to en-US-AriaNeural. native_speech_headers:
+  Copy caller headers; a truthy api_key overwrites Ocp-Apim-Subscription-Key, then overwrite Content-Type=application/ssml+xml
+  and User-Agent=litellm. No token is generated here; binary response simply wraps raw_response.
+
+
+  Write standalone Rust test azure_native_speech_credential_identity_isolation in betterlite-azure: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test azure_native_speech_secret_safe_failure in betterlite-azure: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-azure/src/native_speech.rs with adjacent tests under native_speech/. Keep each Rust
@@ -36,10 +71,9 @@ description: >-
 
   Write rstest function native_speech_cases in betterlite-azure with these exact named cases (one per oracle file):
   plain_text_ssml_escaping, speed_rate_boundaries, voice_language, style_role_element, existing_ssml, cognitive_to_tts_endpoint,
-  response_format_header, binary_native_speech. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
-  axum route.
+  response_format_header, binary_native_speech, native_voice_map, native_speech_headers. Each case exercises its
+  named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_native_speech* using HelperCase: kind:
@@ -55,9 +89,9 @@ description: >-
 
 
   Budget from 252 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 275 production lines, 117 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 504 planned, 525 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 280 production lines, 235 behavior/config-test lines,
+  110 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 650 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-azure/Cargo.toml
@@ -78,47 +112,64 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L145-L495
-  why: >-
-    Own AzureAVATextToSpeechConfig._convert_speed_to_azure_rate, AzureAVATextToSpeechConfig._build_express_as_element,
+  why: Own AzureAVATextToSpeechConfig._convert_speed_to_azure_rate, AzureAVATextToSpeechConfig._build_express_as_element,
     AzureAVATextToSpeechConfig._get_voice_language, AzureAVATextToSpeechConfig.map_openai_params, AzureAVATextToSpeechConfig.validate_environment,
     AzureAVATextToSpeechConfig.get_complete_url, AzureAVATextToSpeechConfig._is_cognitive_services_endpoint, AzureAVATextToSpeechConfig._is_tts_endpoint,
     AzureAVATextToSpeechConfig._extract_region_from_hostname, AzureAVATextToSpeechConfig._build_tts_url, AzureAVATextToSpeechConfig.is_ssml_input,
     AzureAVATextToSpeechConfig.transform_text_to_speech_request, AzureAVATextToSpeechConfig.transform_text_to_speech_response.
     Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/text_to_speech/transformation.py#L37-L60
+  why: Exact voice, output-format, endpoint and default constants.
 dod:
-- text: >-
-    plain text ssml escaping: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/plain-text-ssml-escaping.yaml.
+- text: 'plain_text_ssml_escaping: For generated SSML replace &,<,>,double quote,single quote in that order with
+    &amp;,&lt;,&gt;,&quot;,&apos;. Preserve the pinned newlines/indentation and single-quoted attributes around
+    speak/voice/prosody; do not escape rate/voice/lang/style attributes differently.'
   proof:
   - case-plain-text-ssml-escaping
   - oracle
   - helper-python
-- text: 'speed rate boundaries: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/speed-rate-boundaries.yaml.'
+- text: 'speed_rate_boundaries: Convert speed with int((speed-1.0)*100), truncating toward zero, then signed decimal
+    percent: 1.0 gives +0%, 2 gives +100%, 0.5 gives -50%. Do not clamp to the 0.25..4 docstring range. Absent/None
+    speed adds no mapped rate; request assembly defaults missing rate to 0%.'
   proof:
   - case-speed-rate-boundaries
   - oracle
   - helper-python
-- text: 'voice language: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/voice-language.yaml.'
+- text: 'voice_language: Only a truthy explicit lang adds xml:lang to voice; never infer language from its name.
+    The root speak always has version=1.0, xmlns=http://www.w3.org/2001/10/synthesis and xml:lang=en-US, regardless
+    of voice/lang.'
   proof:
   - case-voice-language
   - oracle
   - helper-python
-- text: 'style role element: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/style-role-element.yaml.'
+- text: 'style_role_element: Copy style/styledegree/role/lang only when present in kwargs. Truthy style/styledegree/role
+    wrap prosody in mstts:express-as with attributes in that order and add xmlns:mstts=https://www.w3.org/2001/mstts;
+    absent/falsy values do neither. Attribute values are interpolated literally, without escaping or validation,
+    as at the pin.'
   proof:
   - case-style-role-element
   - oracle
   - helper-python
-- text: 'existing ssml: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/existing-ssml.yaml.'
+- text: 'existing_ssml: Any case-sensitive substring <speak> or <speak plus a space triggers unchanged ssml_body,
+    even if not at the start or invalid XML. Set X-Microsoft-OutputFormat before the passthrough; no parser or entity
+    resolution runs.'
   proof:
   - case-existing-ssml
   - oracle
   - helper-python
-- text: >-
-    cognitive to tts endpoint: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/cognitive-to-tts-endpoint.yaml.
+- text: 'cognitive_to_tts_endpoint: Missing None api_base raises ValueError with the Azure AVA required-base diagnostic
+    and both domain examples. Trim trailing slashes; exact api.cognitive.microsoft.com or its dot suffix converts
+    to https://<region>.tts.speech.microsoft.com/cognitiveservices/v1, dropping original scheme/path/query. TTS
+    domains retain the string if it ends /cognitiveservices/v1, otherwise append it; custom bases always append
+    that path.'
   proof:
   - case-cognitive-to-tts-endpoint
   - oracle
   - helper-python
-- text: 'response format header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/response-format-header.yaml.'
+- text: 'response_format_header: Map mp3/aac/flac to audio-24khz-48kbitrate-mono-mp3, opus to ogg-48khz-16bit-mono-opus,
+    wav to riff-24khz-16bit-mono-pcm, pcm to raw-24khz-16bit-mono-pcm; unknown formats pass through. Missing response_format
+    defaults MP3. Request overwrites X-Microsoft-OutputFormat with mapped output_format, using MP3 only when the
+    key is absent.'
   proof:
   - case-response-format-header
   - oracle
@@ -132,47 +183,95 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'native_voice_map: Map alloy=en-US-JennyNeural, echo=en-US-GuyNeural, fable=en-GB-RyanNeural, onyx=en-US-DavisNeural,
+    nova=en-US-AmberNeural, shimmer=en-US-AriaNeural; other strings pass through, non-strings map to None. Request
+    assembly falls back from falsy voice to en-US-AriaNeural.'
+  proof:
+  - case-native-voice-map
+  - oracle
+  - helper-python
+- text: 'native_speech_headers: Copy caller headers; a truthy api_key overwrites Ocp-Apim-Subscription-Key, then
+    overwrite Content-Type=application/ssml+xml and User-Agent=litellm. No token is generated here; binary response
+    simply wraps raw_response.'
+  proof:
+  - case-native-speech-headers
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-plain-text-ssml-escaping
-    why: The plain-text-ssml-escaping behavior is missing or differs from its pinned fixture.
+    why: For generated SSML replace &,<,>,double quote,single quote in that order with &amp;,&lt;,&gt;,&quot;,&apos;.
+      Preserve the pinned newlines/indentation and single-quoted attributes around speak/voice/prosody; do not escape
+      rate/voice/lang/style attributes differently.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_plain_text_ssml_escaping$/)'
   - id: case-speed-rate-boundaries
-    why: The speed-rate-boundaries behavior is missing or differs from its pinned fixture.
+    why: 'Convert speed with int((speed-1.0)*100), truncating toward zero, then signed decimal percent: 1.0 gives
+      +0%, 2 gives +100%, 0.5 gives -50%. Do not clamp to the 0.25..4 docstring range. Absent/None speed adds no
+      mapped rate; request assembly defaults missing rate to 0%.'
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_speed_rate_boundaries$/)'
   - id: case-voice-language
-    why: The voice-language behavior is missing or differs from its pinned fixture.
+    why: Only a truthy explicit lang adds xml:lang to voice; never infer language from its name. The root speak
+      always has version=1.0, xmlns=http://www.w3.org/2001/10/synthesis and xml:lang=en-US, regardless of voice/lang.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_voice_language$/)'
   - id: case-style-role-element
-    why: The style-role-element behavior is missing or differs from its pinned fixture.
+    why: Copy style/styledegree/role/lang only when present in kwargs. Truthy style/styledegree/role wrap prosody
+      in mstts:express-as with attributes in that order and add xmlns:mstts=https://www.w3.org/2001/mstts; absent/falsy
+      values do neither. Attribute values are interpolated literally, without escaping or validation, as at the
+      pin.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_style_role_element$/)'
   - id: case-existing-ssml
-    why: The existing-ssml behavior is missing or differs from its pinned fixture.
+    why: Any case-sensitive substring <speak> or <speak plus a space triggers unchanged ssml_body, even if not at
+      the start or invalid XML. Set X-Microsoft-OutputFormat before the passthrough; no parser or entity resolution
+      runs.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_existing_ssml$/)'
   - id: case-cognitive-to-tts-endpoint
-    why: The cognitive-to-tts-endpoint behavior is missing or differs from its pinned fixture.
+    why: Missing None api_base raises ValueError with the Azure AVA required-base diagnostic and both domain examples.
+      Trim trailing slashes; exact api.cognitive.microsoft.com or its dot suffix converts to https://<region>.tts.speech.microsoft.com/cognitiveservices/v1,
+      dropping original scheme/path/query. TTS domains retain the string if it ends /cognitiveservices/v1, otherwise
+      append it; custom bases always append that path.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_cognitive_to_tts_endpoint$/)'
   - id: case-response-format-header
-    why: The response-format-header behavior is missing or differs from its pinned fixture.
+    why: Map mp3/aac/flac to audio-24khz-48kbitrate-mono-mp3, opus to ogg-48khz-16bit-mono-opus, wav to riff-24khz-16bit-mono-pcm,
+      pcm to raw-24khz-16bit-mono-pcm; unknown formats pass through. Missing response_format defaults MP3. Request
+      overwrites X-Microsoft-OutputFormat with mapped output_format, using MP3 only when the key is absent.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_response_format_header$/)'
   - id: case-binary-native-speech
-    why: The binary-native-speech behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-native-speech/binary-native-speech.yaml.
     run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_binary_native_speech$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_native_speech.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_native_speech.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_native_speech*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_native_speech*")"
       && grep -lq 'azure_native_speech' tools/oracle/fuzz/corpus/helper_case/azure_native_speech* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_native_speech$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-native-voice-map
+    why: Map alloy=en-US-JennyNeural, echo=en-US-GuyNeural, fable=en-GB-RyanNeural, onyx=en-US-DavisNeural, nova=en-US-AmberNeural,
+      shimmer=en-US-AriaNeural; other strings pass through, non-strings map to None. Request assembly falls back
+      from falsy voice to en-US-AriaNeural.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_native_voice_map$/)'
+  - id: case-native-speech-headers
+    why: Copy caller headers; a truthy api_key overwrites Ocp-Apim-Subscription-Key, then overwrite Content-Type=application/ssml+xml
+      and User-Agent=litellm. No token is generated here; binary response simply wraps raw_response.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::native_speech_cases::case_[0-9]+_native_speech_headers$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_native_speech_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_native_speech_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-native-speech/plain-text-ssml-escaping.yaml
 - tools/oracle/cases/helpers/providers/azure-native-speech/speed-rate-boundaries.yaml
@@ -182,19 +281,21 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/azure-native-speech/cognitive-to-tts-endpoint.yaml
 - tools/oracle/cases/helpers/providers/azure-native-speech/response-format-header.yaml
 - tools/oracle/cases/helpers/providers/azure-native-speech/binary-native-speech.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/native-voice-map.yaml
+- tools/oracle/cases/helpers/providers/azure-native-speech/native-speech-headers.yaml
 deviations: []
 out_of_scope:
 - B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig.dispatch_text_to_speech L62-L134;
-  AzureAVATextToSpeechConfig.get_supported_openai_params L136-L143 belong to B537; reuse that implementation or
-  its injected typed boundary.
+- 'Function ownership inventory litellm/llms/azure/text_to_speech/transformation.py: AzureAVATextToSpeechConfig.dispatch_text_to_speech
+  L62-L134; AzureAVATextToSpeechConfig.get_supported_openai_params L136-L143 belong to B537.'
 pitfalls:
-- Escape caller text in generated SSML while preserving explicit ssml_body input and X-Microsoft-OutputFormat.
+- A generic XML serializer would escape source attribute values and normalize whitespace, changing the pinned SSML
+  request.
+- The SSML detector accepts a matching substring in arbitrary text and is not an XML validity check.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 650
   max_new_expects: 0
-review_level: standard
+review_level: security

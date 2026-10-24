@@ -1,0 +1,79 @@
+id: B1348
+title: Imagen edit references, masks and recursive file inputs
+description: >-
+  Build vertex_imagen_edit around the 263 nonblank noncomment lines outside B1345's resolver
+  trio. This adapter accepts n, size and mask; it maps size but deliberately does not put
+  aspectRatio in the final request. Require project and location even with a custom base,
+  append the full v1 Google model :predict path, and use image credential fallback for auth.
+  Require an image and a non-None prompt, allowing an empty prompt. Reference images keep
+  their original one-based list indexes after None entries are skipped; the mask gets
+  len(references)+1, even when that collides with an earlier referenceId. Emit raw and mask
+  referenceType values, MASK_MODE_USER_PROVIDED and exact decimal dilation 0.03. Parameters
+  contain sampleCount default 1, EDIT_MODE_INPAINT_INSERTION, baseSteps 50, guidanceScale 7.5
+  and seed null. The request is serialized JSON with no multipart files. Implement a typed
+  ImagenFileInput projection of B1128 records: sequence first non-None member; dictionary
+  data/bytes/content priority with permissive base64 strings and fallback after decode errors;
+  path recursion; bytes, bytearray and file-like reads; explicit rejection of plain strings
+  and filesystem paths. Restore cursors for seekable streams, preserve current position when
+  tell fails, and UTF-8 encode a generic stream's text result. Reuse B1307's resolved
+  DEFAULT_MAX_RECURSE_DEPTH=100 and enforce depth greater than the limit. Name the base64
+  decoder decode_imagen_edit_input and fuzz nested input projections and invalid padding.
+  Reuse B1346's response decoder, replacing images with predictions whose bytesBase64Encoded
+  key exists. The vertex_imagen_edit helper compares mask_id_gap, empty_prompt, ignored_size,
+  custom_host_resource_path, tuple_filename_rejected, base64_key_fallback and depth_boundary.
+  Reserve 300 implementation, 190 tests, 120 adapters and 100 fuzz lines within 775.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_imagen_edit}.rs
+    - crates/betterlite-vertex/src/vertex_imagen_edit/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/imagen_edit_input.rs
+    - crates/betterlite-vertex/fuzz/corpus/imagen_edit_input/**
+    - tools/oracle/src/helpers/{mod,vertex_imagen_edit}.rs
+    - tools/oracle/helpers/{dispatch,vertex_imagen_edit}.py
+    - tools/oracle/cases/helpers/vertex-imagen-edit/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_imagen_edit*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L31-L351
+    why: Reference numbering, fixed inpainting parameters and heterogeneous byte-reader precedence.
+dod:
+  - text: Imagen edit requests retain mask numbering, input rejection and fixed prediction parameters.
+    proof: [imagen-edit-tests, imagen-edit-reference, oracle]
+  - text: Recursive image input decoding stays bounded across malformed base64 and nested wrappers.
+    proof: [imagen-edit-replay]
+  - text: Imagen edit fixture additions exercise the new call tag.
+    proof: [imagen-edit-helper-seeds]
+checks:
+  optional: []
+  commands:
+    - id: imagen-edit-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_imagen_edit::/) - test(replays_the_imagen_edit_input_corpus)'
+      why: Each file-input branch and the mask collision case must be asserted independently.
+    - id: imagen-edit-reference
+      run: test -f tools/oracle/helpers/vertex_imagen_edit.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: In-memory Python file projections expose the exact reference reader semantics.
+    - id: imagen-edit-replay
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/imagen_edit_input.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/imagen_edit_input)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_imagen_edit_input_corpus)'
+      why: The byte decoder must reject over-depth inputs without unbounded recursion.
+    - id: imagen-edit-helper-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_imagen_edit*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_imagen_edit::/)'
+      why: Shared HelperCase decoding recognizes the new Imagen edit records.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-imagen-edit/mask-id-gap.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-edit/empty-prompt.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-edit/ignored-size.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-edit/custom-host-resource-path.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-edit/tuple-filename-rejected.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-edit/base64-key-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-edit/depth-boundary.yaml
+deviations: []
+out_of_scope:
+  - The three _resolve_vertex_* methods at L69-L94 remain B1345's responsibility; this task owns all other methods in this edit file.
+  - B999 provides operation execution and B1349 supplies configuration selection.
+pitfalls:
+  - A filename-first tuple fails at its first non-None string rather than trying its byte member.
+  - A dictionary path field recurses into a path rejection and does not open a file.
+  - The mapped aspectRatio is unused by transform_image_edit_request at this pin.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

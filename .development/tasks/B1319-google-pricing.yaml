@@ -1,0 +1,77 @@
+id: B1319
+title: Google character pricing and grounded-request charges
+description: >-
+  Implement google_pricing in betterlite-vertex, owning all functions in vertex_ai/cost_calculator.py,
+  vertex_ai/gemini/cost_calculator.py and gemini/cost_calculator.py (211+20+85 nonblank noncomment
+  lines). Accept B193 model records and an injected GenericTokenPricing delegate; B068 later
+  supplies its shared calculator, avoiding a provider dependency on the pricing coordinator.
+  Route Vertex partner substrings claude/llama/mistral/jamba/codestral/gemma, embeddings and
+  gemini-2 to token pricing; other routes select character pricing. Preserve strict >128000
+  thresholds and the source's unusual characters*4 comparison. Above-threshold output character
+  cost multiplies completion_tokens, not completion_characters. Missing character rates log and
+  fall back independently for input/output; exempt exactly gemini-1.0-pro, gemini-pro and gemini-2
+  from dynamic character pricing. Token thresholds test input and output counts independently.
+  Apply the resolved regional multiplier once; pass service_tier only where the source delegates.
+  The delegate also supplies generic cost and regional-uplift primitives owned by B068.
+  Search grounding defaults to 0.035, uses search_context_cost_per_query.search_context_size_medium,
+  and chooses prompt-detail counts before server_tool_use by truthiness. web_search_billing_unit
+  defaults per_prompt, with per_query charging every query. Maps defaults to 0.014/query or
+  0.025/prompt, accepts an explicit zero price and returns zero for absent/nonpositive counts.
+  Use checked decimals throughout. Compare helper google_pricing cases character_threshold,
+  output_token_multiplier, independent_fallback, token_output_threshold, regional_once,
+  search_detail_zero_fallback, maps_zero_rate and maps_per_prompt. Budget 310 arithmetic/policy,
+  180 tests and 140 reference adapters, capped at 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,google_pricing}.rs
+    - crates/betterlite-vertex/src/google_pricing/**
+    - tools/oracle/src/helpers/{mod,google_pricing}.rs
+    - tools/oracle/helpers/{dispatch,google_pricing}.py
+    - tools/oracle/cases/helpers/google-pricing/**
+    - tools/oracle/fuzz/corpus/helper_case/google_pricing*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/cost_calculator.py#L29-L251
+    why: Character/token selection, thresholds, fallback order and regional uplift.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/cost_calculator.py#L13-L109
+    why: Studio token delegation and Search/Maps charging defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/cost_calculator.py#L14-L28
+    why: Vertex uses the same Search billing calculation as Studio.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_cost_calc/utils.py#L146-L160
+    why: The shared usage lookup and strict 128000 boundary supplied by the delegate.
+dod:
+  - text: Google pricing preserves character quirks, independent fallbacks and grounding billing units.
+    proof: [pricing-tests, pricing-python, oracle]
+  - text: Newly added pricing fixture calls exercise decimal production arithmetic.
+    proof: [pricing-seeds]
+checks:
+  optional: []
+  commands:
+    - id: pricing-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_pricing::/) - test(replays_)'
+      why: Boundary cases distinguish source arithmetic from intuitive but incompatible corrections.
+    - id: pricing-python
+      run: test -f tools/oracle/helpers/google_pricing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Fixture model records and pricing delegates isolate these exact source functions.
+    - id: pricing-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_pricing*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_pricing::/)'
+      why: Pricing seeds must use the registered call tag and typed decimal inputs.
+oracle_cases:
+  - tools/oracle/cases/helpers/google-pricing/character-threshold.yaml
+  - tools/oracle/cases/helpers/google-pricing/output-token-multiplier.yaml
+  - tools/oracle/cases/helpers/google-pricing/independent-fallback.yaml
+  - tools/oracle/cases/helpers/google-pricing/token-output-threshold.yaml
+  - tools/oracle/cases/helpers/google-pricing/regional-once.yaml
+  - tools/oracle/cases/helpers/google-pricing/search-detail-zero-fallback.yaml
+  - tools/oracle/cases/helpers/google-pricing/maps-zero-rate.yaml
+  - tools/oracle/cases/helpers/google-pricing/maps-per-prompt.yaml
+deviations: []
+out_of_scope:
+  - B068 owns generic_cost_per_token, regional-uplift resolution and global cost routing; this leaf accepts their typed results/callback.
+  - B1322 counts grounding requests from provider responses; this task only charges the supplied usage.
+pitfalls:
+  - The high-context character comparison multiplies by four even though the adjacent comment suggests a different conversion.
+  - The character output high-context branch bills completion_tokens against a character rate.
+  - A configured Maps rate of zero must not fall through to the published default price.
+budget: {max_changed_lines: 700, max_new_expects: 0}
+review_level: security

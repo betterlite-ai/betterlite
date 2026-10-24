@@ -1,14 +1,42 @@
 id: B632
 title: Bedrock asynchronous embedding job status
 description: >-
-  Add AsyncEmbeddingStatus retrieval for signed invocation ARN/status and configured S3 outputs, preserving provider-native
-  job metadata and result selection. Consume the S3 authorization primitive from the file-service split, never fetch
-  arbitrary URLs embedded in a job response. Forward status and explicitly bounded reads without creating an unowned
-  polling task.
+  Add one signed GetAsyncInvoke request and return its decoded status body unchanged. This helper does not poll,
+  inspect job state, authorize output buckets or read S3 objects; B651 owns output retrieval. Preserve the exact
+  URL, status check, logging and failure behavior below.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/embed/embedding.py:
   BedrockEmbedding._get_async_invoke_status L587-L667.
+
+
+  Named case contracts: async_invoke_status_url: Resolve B591 get_runtime_endpoint with api_base=None, kwargs.aws_bedrock_runtime_endpoint
+  and the explicit aws_region_name argument; ignore the returned proxy endpoint. Strip trailing endpoint slashes
+  and append /async-invoke/{quote(invocation_arn,safe=empty)} using B171 encoding. Start Content-Type=application/json.
+  Inside B595 run_aws_signing, call B693 _load_credentials(kwargs) without a bearer, then B693 _sign_get_request
+  with the explicit method region, ignoring the region returned by credential loading. No api_key bearer shortcut
+  is applied. status_body_passthrough: Use the B173 async BEDROCK client with no per-call timeout/client override
+  and GET the prepared URL/headers. Only status exactly 200 returns decode_async_embedding_status(response bytes).
+  Preserve arbitrary parsed JSON, including InProgress,Completed,Failed states, unknown keys, malformed metadata
+  shapes, nonobject JSON and any S3 URI without fetching it. Empty/malformed JSON propagates a decoder error. Job
+  failure in a 200 body is not converted into an exception. status_http_failure: Every non-200 status, including
+  other successful statuses such as 201/204, raises generic Exception Failed to get async invoke status: {status_code}
+  - {response.text}. Transport and signing failures propagate unchanged; no 408 or BedrockError conversion is added
+  here. Log the received response before testing its status. status_logging: When logging_obj is supplied, use B249
+  _get_masked_headers for the curl-only view, retaining iteration order. Construct request_str with two leading
+  newlines, GET Request Sent from LiteLLM:, then curl -X GET plus backslash-newline, prepared URL plus backslash-newline,
+  space-joined -H '{key}: {value}' fragments and a final newline. pre_call input is invocation_arn, api_key empty,
+  and additional_args contains complete_input_dict={invocation_arn},api_base,headers,request_str. post_call uses
+  the raw HTTP response and complete_input_dict. With no logging object, neither callback nor header masking runs.
+
+
+  Write standalone Rust test embedding_jobs_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test embedding_jobs_secret_safe_failure in betterlite-bedrock: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-bedrock/src/embedding_jobs.rs with adjacent tests under embedding_jobs/. Keep each
@@ -25,10 +53,9 @@ description: >-
 
 
   Write rstest function embedding_jobs_cases in betterlite-bedrock with these exact named cases (one per oracle
-  file): async_invoke_status_url, in_progress_status, completed_output_location, failed_job, configured_s3_output_read,
-  foreign_output_bucket. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  file): async_invoke_status_url, status_body_passthrough, status_http_failure, status_logging. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_jobs* using HelperCase:
@@ -46,9 +73,9 @@ description: >-
 
 
   Budget from 60 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
-  SDK overloads share an async implementation): 95 production lines, 99 behavior/config-test lines, 79 combined
+  SDK overloads share an async implementation): 115 production lines, 190 behavior/config-test lines, 80 combined
   Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 353 planned, 400 maximum changed lines.
+  wiring lines; 465 planned, 475 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -73,39 +100,14 @@ references:
   why: Own BedrockEmbedding._get_async_invoke_status. Other functions in this file remain with the owners listed
     below.
 dod:
-- text: >-
-    async invoke status url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/async-invoke-status-url.yaml.
+- text: 'async_invoke_status_url: Resolve B591 get_runtime_endpoint with api_base=None, kwargs.aws_bedrock_runtime_endpoint
+    and the explicit aws_region_name argument; ignore the returned proxy endpoint. Strip trailing endpoint slashes
+    and append /async-invoke/{quote(invocation_arn,safe=empty)} using B171 encoding. Start Content-Type=application/json.
+    Inside B595 run_aws_signing, call B693 _load_credentials(kwargs) without a bearer, then B693 _sign_get_request
+    with the explicit method region, ignoring the region returned by credential loading. No api_key bearer shortcut
+    is applied.'
   proof:
   - case-async-invoke-status-url
-  - oracle
-  - helper-python
-- text: >-
-    in progress status: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/in-progress-status.yaml.
-  proof:
-  - case-in-progress-status
-  - oracle
-  - helper-python
-- text: >-
-    completed output location: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/completed-output-location.yaml.
-  proof:
-  - case-completed-output-location
-  - oracle
-  - helper-python
-- text: 'failed job: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/failed-job.yaml.'
-  proof:
-  - case-failed-job
-  - oracle
-  - helper-python
-- text: >-
-    configured s3 output read: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/configured-s3-output-read.yaml.
-  proof:
-  - case-configured-s3-output-read
-  - oracle
-  - helper-python
-- text: >-
-    foreign output bucket: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/foreign-output-bucket.yaml.
-  proof:
-  - case-foreign-output-bucket
   - oracle
   - helper-python
 - text: New bedrock_other_embedding_jobs seeds parse as the intended call variant and replay through the shared
@@ -116,75 +118,118 @@ dod:
     parsing.
   proof:
   - parser-corpus
+- text: 'status_body_passthrough: Use the B173 async BEDROCK client with no per-call timeout/client override and
+    GET the prepared URL/headers. Only status exactly 200 returns decode_async_embedding_status(response bytes).
+    Preserve arbitrary parsed JSON, including InProgress,Completed,Failed states, unknown keys, malformed metadata
+    shapes, nonobject JSON and any S3 URI without fetching it. Empty/malformed JSON propagates a decoder error.
+    Job failure in a 200 body is not converted into an exception.'
+  proof:
+  - case-status-body-passthrough
+  - oracle
+  - helper-python
+- text: 'status_http_failure: Every non-200 status, including other successful statuses such as 201/204, raises
+    generic Exception Failed to get async invoke status: {status_code} - {response.text}. Transport and signing
+    failures propagate unchanged; no 408 or BedrockError conversion is added here. Log the received response before
+    testing its status.'
+  proof:
+  - case-status-http-failure
+  - oracle
+  - helper-python
+- text: 'status_logging: When logging_obj is supplied, use B249 _get_masked_headers for the curl-only view, retaining
+    iteration order. Construct request_str with two leading newlines, GET Request Sent from LiteLLM:, then curl
+    -X GET plus backslash-newline, prepared URL plus backslash-newline, space-joined -H ''{key}: {value}'' fragments
+    and a final newline. pre_call input is invocation_arn, api_key empty, and additional_args contains complete_input_dict={invocation_arn},api_base,headers,request_str.
+    post_call uses the raw HTTP response and complete_input_dict. With no logging object, neither callback nor header
+    masking runs.'
+  proof:
+  - case-status-logging
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-async-invoke-status-url
-    why: The async-invoke-status-url behavior is missing or differs from its pinned fixture.
+    why: Resolve B591 get_runtime_endpoint with api_base=None, kwargs.aws_bedrock_runtime_endpoint and the explicit
+      aws_region_name argument; ignore the returned proxy endpoint. Strip trailing endpoint slashes and append /async-invoke/{quote(invocation_arn,safe=empty)}
+      using B171 encoding. Start Content-Type=application/json. Inside B595 run_aws_signing, call B693 _load_credentials(kwargs)
+      without a bearer, then B693 _sign_get_request with the explicit method region, ignoring the region returned
+      by credential loading. No api_key bearer shortcut is applied.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_async_invoke_status_url$/)'
-  - id: case-in-progress-status
-    why: The in-progress-status behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_in_progress_status$/)'
-  - id: case-completed-output-location
-    why: The completed-output-location behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_completed_output_location$/)'
-  - id: case-failed-job
-    why: The failed-job behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_failed_job$/)'
-  - id: case-configured-s3-output-read
-    why: The configured-s3-output-read behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_configured_s3_output_read$/)'
-  - id: case-foreign-output-bucket
-    why: The foreign-output-bucket behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_foreign_output_bucket$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_embedding_jobs.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_embedding_jobs.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_jobs*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_jobs*")"
       && grep -lq 'bedrock_other_embedding_jobs' tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_jobs*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_embedding_jobs$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_embedding_jobs)"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_other_embedding_jobs)"
       && grep -q 'decode_async_embedding_status' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_other_embedding_jobs.rs
       && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_other_embedding_jobs_corpus$/)'
+  - id: case-status-body-passthrough
+    why: Use the B173 async BEDROCK client with no per-call timeout/client override and GET the prepared URL/headers.
+      Only status exactly 200 returns decode_async_embedding_status(response bytes). Preserve arbitrary parsed JSON,
+      including InProgress,Completed,Failed states, unknown keys, malformed metadata shapes, nonobject JSON and
+      any S3 URI without fetching it. Empty/malformed JSON propagates a decoder error. Job failure in a 200 body
+      is not converted into an exception.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_status_body_passthrough$/)'
+  - id: case-status-http-failure
+    why: 'Every non-200 status, including other successful statuses such as 201/204, raises generic Exception Failed
+      to get async invoke status: {status_code} - {response.text}. Transport and signing failures propagate unchanged;
+      no 408 or BedrockError conversion is added here. Log the received response before testing its status.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_status_http_failure$/)'
+  - id: case-status-logging
+    why: 'When logging_obj is supplied, use B249 _get_masked_headers for the curl-only view, retaining iteration
+      order. Construct request_str with two leading newlines, GET Request Sent from LiteLLM:, then curl -X GET plus
+      backslash-newline, prepared URL plus backslash-newline, space-joined -H ''{key}: {value}'' fragments and a
+      final newline. pre_call input is invocation_arn, api_key empty, and additional_args contains complete_input_dict={invocation_arn},api_base,headers,request_str.
+      post_call uses the raw HTTP response and complete_input_dict. With no logging object, neither callback nor
+      header masking runs.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_cases::case_[0-9]+_status_logging$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_jobs_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/async-invoke-status-url.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/in-progress-status.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/completed-output-location.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/failed-job.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/configured-s3-output-read.yaml
-- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/foreign-output-bucket.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/status-body-passthrough.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/status-http-failure.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-embedding-jobs/status-logging.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/embed/embedding.py: _sign_get_request L51-L62; BedrockEmbedding._load_credentials L67-L71;
-  BedrockEmbedding._load_credentials L74-L78; BedrockEmbedding._load_credentials L80-L106; BedrockEmbedding._make_sync_call
-  L111-L142; BedrockEmbedding._make_async_call L144-L176; BedrockEmbedding._transform_response L178-L252 belong
-  to B693; reuse that implementation or its injected typed boundary.
 - 'litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding.async_embeddings L108-L109 have no caller at the pin;
   do not port them.'
-- >-
-  litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._single_func_embeddings L254-L320; BedrockEmbedding._async_single_func_embeddings
-  L322-L391; BedrockEmbedding.embeddings L393-L585 belong to B631; reuse that implementation or its injected typed
-  boundary.
+- S3 output authorization, downloads and result retrieval are B651; _get_async_invoke_status never calls them.
+- 'Function ownership inventory litellm/llms/bedrock/embed/embedding.py: BedrockEmbedding._single_func_embeddings
+  L254-L320; BedrockEmbedding._async_single_func_embeddings L322-L391; BedrockEmbedding.embeddings L393-L585 belong
+  to B631.'
+- 'Function ownership inventory litellm/llms/bedrock/embed/embedding.py: _sign_get_request L51-L62; BedrockEmbedding._load_credentials
+  L66-L71; BedrockEmbedding._load_credentials L73-L78; BedrockEmbedding._load_credentials L80-L106; BedrockEmbedding.async_embeddings
+  L108-L109; BedrockEmbedding._make_sync_call L111-L142; BedrockEmbedding._make_async_call L144-L176; BedrockEmbedding._transform_response
+  L178-L252 belong to B693.'
 pitfalls:
-- Consume the S3 authorization primitive from the file-service split, never fetch arbitrary URLs embedded in a job
-  response.
+- The region used to sign GetAsyncInvoke is the explicit method argument, even if credential loading resolved another
+  region.
+- A Failed job returned with HTTP 200 is a successful status lookup, not a transport exception.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 475
   max_new_expects: 0
-review_level: standard
+review_level: security

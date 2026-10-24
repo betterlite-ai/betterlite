@@ -14,6 +14,48 @@ description: >-
   L241-L317; AmazonNovaEmbeddingConfig._transform_async_invoke_response L319-L353.
 
 
+  Named case contracts: nova_default_purpose_dimensions: The constructor is a no-op; supported params contain only
+  dimensions, which maps to embedding_dimension. Build schemaVersion=nova-multimodal-embed-v1 and taskType SINGLE_EMBEDDING
+  or SEGMENTED_EMBEDDING according to async_invoke_route. Copy inference params, remove output_s3_uri, then dimensions
+  wins over embedding_dimension and overwrites embeddingDimension; when dimensions wins, leave a simultaneous embedding_dimension
+  untouched. Insert embeddingPurpose=GENERIC_INDEX and embeddingDimension=3072 only when keys are absent, preserving
+  explicit None and falsey values. Preserve other inference keys in singleEmbeddingParams or segmentedEmbeddingParams.
+  nova_text_image_audio_video: When none of text,image,video,audio is present, plain strings including https URLs
+  become text.value with truncationMode=END; s3:// strings become text.source.s3Location.uri with truncationMode=END.
+  Lowercase image/,video/,audio/ MIME prefixes create that modality with format equal to the lowercased second slash
+  component and source.bytes holding the untouched payload; unknown MIME types become text containing the entire
+  original data URL. No base64 decoding or network access occurs. nova_data_url_jpg: parse_nova_data_url requires
+  a case-sensitive data: prefix and a comma; otherwise raise ValueError Invalid data URL format: {first_50_characters}...
+  or Invalid data URL format (missing comma): {first_50_characters}.... Split only the first comma, strip data:,
+  and take metadata before the first semicolon, without requiring ;base64. Preserve all remaining commas in payload.
+  Only image format jpg is rewritten to jpeg; accept an empty format/payload and arbitrary payload bytes represented
+  as text. nova_explicit_media_input: Presence of any text,image,video,audio key suppresses input inference even
+  when its value is None, and multiple explicitly supplied modalities are retained. Do not parse a malformed data
+  URL in this branch or validate S3 descriptors. nova_async_output_s3_required: Async mode alone creates segmentedEmbeddingParams;
+  wrap only when model_id is truthy. Percent-decode the model using B171 URI decoding, and only if it then starts
+  async_invoke/ remove every occurrence of that substring. Require a truthy output_s3_uri whose stripped value is
+  nonempty, else ValueError output_s3_uri is required for async invoke requests. Preserve surrounding whitespace
+  and non-S3 strings when nonempty. Emit modelId,modelInput,outputDataConfig.s3OutputDataConfig.s3Uri. The removed
+  inference output_s3_uri never substitutes for the argument. nova_result_index_token_estimate: For each response,
+  an embeddings list takes precedence over direct embedding, including an empty list; skip entries lacking embedding.
+  Otherwise use direct embedding if present; ignore responses with neither. Flatten retained vectors to contiguous
+  indices/object=embedding/model unchanged. Estimate each listed vector from truncatedCharLength//4 by key presence,
+  otherwise len(embedding)//4; direct vectors always use length. Preserve malformed field errors rather than inventing
+  token validation. Usage prompt_tokens and total_tokens equal the sum; completion_tokens uses the shared Usage
+  default. Count image key presence in batch singleEmbeddingParams, falling back to segmentedEmbeddingParams only
+  when the first key is absent, without unwrapping modelInput. Include image_count details only when positive. nova_invocation_arn:
+  Async replies always contain one index-0 object=embedding with an empty vector and zero prompt/total usage. Store
+  response.get(invocationArn, empty string) in HiddenParams._invocation_arn, preserving explicit None, and preserve
+  model. Do not expose an invented embedding_job_id object string.
+
+
+  Outside-byte boundary: parse_nova_data_url consumes untrusted data-URL text from an embedding request, preserving
+  source string slicing and first-comma splitting in crates/betterlite-bedrock/src/nova_embeddings.rs or its scoped
+  child module. Use that production decoder from the request path, Rust oracle adapter and cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/nova_data_url.rs.
+  Add valid, malformed, truncated and boundary corpus inputs and adjacent test replays_the_nova_data_url_corpus
+  that checks outcome categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
   Implement crates/betterlite-bedrock/src/nova_embeddings.rs with adjacent tests under nova_embeddings/. Keep each
   Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
   leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -30,9 +72,8 @@ description: >-
   Write rstest function nova_embeddings_cases in betterlite-bedrock with these exact named cases (one per oracle
   file): nova_default_purpose_dimensions, nova_text_image_audio_video, nova_data_url_jpg, nova_explicit_media_input,
   nova_async_output_s3_required, nova_result_index_token_estimate, nova_invocation_arn. Each case exercises its
-  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
-  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
-  this task must not register a duplicate axum route.
+  named outcome independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings* using HelperCase:
@@ -42,15 +83,14 @@ description: >-
   seeds; then replay the shared corpus.
 
 
-  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
-  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
-  needed, is B002.
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
 
 
   Budget from 236 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 260 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 476 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 230 production lines, 255 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 50 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 665 planned, 675 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -66,52 +106,78 @@ scope:
   - tools/oracle/helpers/bedrock_other_nova_embeddings.py
   - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/nova_data_url.rs
+  - crates/betterlite-bedrock/fuzz/corpus/nova_data_url/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/amazon_nova_transformation.py#L35-L353
-  why: >-
-    Own AmazonNovaEmbeddingConfig.__init__, AmazonNovaEmbeddingConfig.get_supported_openai_params, AmazonNovaEmbeddingConfig.map_openai_params,
+  why: Own AmazonNovaEmbeddingConfig.__init__, AmazonNovaEmbeddingConfig.get_supported_openai_params, AmazonNovaEmbeddingConfig.map_openai_params,
     AmazonNovaEmbeddingConfig._parse_data_url, AmazonNovaEmbeddingConfig._transform_request, AmazonNovaEmbeddingConfig._wrap_async_invoke_request,
     AmazonNovaEmbeddingConfig._transform_response, AmazonNovaEmbeddingConfig._transform_async_invoke_response. Other
     functions in this file remain with the owners listed below.
 dod:
-- text: >-
-    nova default purpose dimensions: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-default-purpose-dimensions.yaml.
+- text: 'nova_default_purpose_dimensions: The constructor is a no-op; supported params contain only dimensions,
+    which maps to embedding_dimension. Build schemaVersion=nova-multimodal-embed-v1 and taskType SINGLE_EMBEDDING
+    or SEGMENTED_EMBEDDING according to async_invoke_route. Copy inference params, remove output_s3_uri, then dimensions
+    wins over embedding_dimension and overwrites embeddingDimension; when dimensions wins, leave a simultaneous
+    embedding_dimension untouched. Insert embeddingPurpose=GENERIC_INDEX and embeddingDimension=3072 only when keys
+    are absent, preserving explicit None and falsey values. Preserve other inference keys in singleEmbeddingParams
+    or segmentedEmbeddingParams.'
   proof:
   - case-nova-default-purpose-dimensions
   - oracle
   - helper-python
-- text: >-
-    nova text image audio video: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-text-image-audio-video.yaml.
+- text: 'nova_text_image_audio_video: When none of text,image,video,audio is present, plain strings including https
+    URLs become text.value with truncationMode=END; s3:// strings become text.source.s3Location.uri with truncationMode=END.
+    Lowercase image/,video/,audio/ MIME prefixes create that modality with format equal to the lowercased second
+    slash component and source.bytes holding the untouched payload; unknown MIME types become text containing the
+    entire original data URL. No base64 decoding or network access occurs.'
   proof:
   - case-nova-text-image-audio-video
   - oracle
   - helper-python
-- text: 'nova data url jpg: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-data-url-jpg.yaml.'
+- text: 'nova_data_url_jpg: parse_nova_data_url requires a case-sensitive data: prefix and a comma; otherwise raise
+    ValueError Invalid data URL format: {first_50_characters}... or Invalid data URL format (missing comma): {first_50_characters}....
+    Split only the first comma, strip data:, and take metadata before the first semicolon, without requiring ;base64.
+    Preserve all remaining commas in payload. Only image format jpg is rewritten to jpeg; accept an empty format/payload
+    and arbitrary payload bytes represented as text.'
   proof:
   - case-nova-data-url-jpg
   - oracle
   - helper-python
-- text: >-
-    nova explicit media input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-explicit-media-input.yaml.
+- text: 'nova_explicit_media_input: Presence of any text,image,video,audio key suppresses input inference even when
+    its value is None, and multiple explicitly supplied modalities are retained. Do not parse a malformed data URL
+    in this branch or validate S3 descriptors.'
   proof:
   - case-nova-explicit-media-input
   - oracle
   - helper-python
-- text: >-
-    nova async output s3 required: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-async-output-s3-required.yaml.
+- text: 'nova_async_output_s3_required: Async mode alone creates segmentedEmbeddingParams; wrap only when model_id
+    is truthy. Percent-decode the model using B171 URI decoding, and only if it then starts async_invoke/ remove
+    every occurrence of that substring. Require a truthy output_s3_uri whose stripped value is nonempty, else ValueError
+    output_s3_uri is required for async invoke requests. Preserve surrounding whitespace and non-S3 strings when
+    nonempty. Emit modelId,modelInput,outputDataConfig.s3OutputDataConfig.s3Uri. The removed inference output_s3_uri
+    never substitutes for the argument.'
   proof:
   - case-nova-async-output-s3-required
   - oracle
   - helper-python
-- text: >-
-    nova result index token estimate: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-result-index-token-estimate.yaml.
+- text: 'nova_result_index_token_estimate: For each response, an embeddings list takes precedence over direct embedding,
+    including an empty list; skip entries lacking embedding. Otherwise use direct embedding if present; ignore responses
+    with neither. Flatten retained vectors to contiguous indices/object=embedding/model unchanged. Estimate each
+    listed vector from truncatedCharLength//4 by key presence, otherwise len(embedding)//4; direct vectors always
+    use length. Preserve malformed field errors rather than inventing token validation. Usage prompt_tokens and
+    total_tokens equal the sum; completion_tokens uses the shared Usage default. Count image key presence in batch
+    singleEmbeddingParams, falling back to segmentedEmbeddingParams only when the first key is absent, without unwrapping
+    modelInput. Include image_count details only when positive.'
   proof:
   - case-nova-result-index-token-estimate
   - oracle
   - helper-python
-- text: >-
-    nova invocation arn: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-invocation-arn.yaml.
+- text: 'nova_invocation_arn: Async replies always contain one index-0 object=embedding with an empty vector and
+    zero prompt/total usage. Store response.get(invocationArn, empty string) in HiddenParams._invocation_arn, preserving
+    explicit None, and preserve model. Do not expose an invented embedding_job_id object string.'
   proof:
   - case-nova-invocation-arn
   - oracle
@@ -120,44 +186,78 @@ dod:
     production parser.
   proof:
   - helper-case-corpus
+- text: parse_nova_data_url has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
 checks:
   optional:
   - mutants
   commands:
   - id: case-nova-default-purpose-dimensions
-    why: The nova-default-purpose-dimensions behavior is missing or differs from its pinned fixture.
+    why: The constructor is a no-op; supported params contain only dimensions, which maps to embedding_dimension.
+      Build schemaVersion=nova-multimodal-embed-v1 and taskType SINGLE_EMBEDDING or SEGMENTED_EMBEDDING according
+      to async_invoke_route. Copy inference params, remove output_s3_uri, then dimensions wins over embedding_dimension
+      and overwrites embeddingDimension; when dimensions wins, leave a simultaneous embedding_dimension untouched.
+      Insert embeddingPurpose=GENERIC_INDEX and embeddingDimension=3072 only when keys are absent, preserving explicit
+      None and falsey values. Preserve other inference keys in singleEmbeddingParams or segmentedEmbeddingParams.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_default_purpose_dimensions$/)'
   - id: case-nova-text-image-audio-video
-    why: The nova-text-image-audio-video behavior is missing or differs from its pinned fixture.
+    why: When none of text,image,video,audio is present, plain strings including https URLs become text.value with
+      truncationMode=END; s3:// strings become text.source.s3Location.uri with truncationMode=END. Lowercase image/,video/,audio/
+      MIME prefixes create that modality with format equal to the lowercased second slash component and source.bytes
+      holding the untouched payload; unknown MIME types become text containing the entire original data URL. No
+      base64 decoding or network access occurs.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_text_image_audio_video$/)'
   - id: case-nova-data-url-jpg
-    why: The nova-data-url-jpg behavior is missing or differs from its pinned fixture.
+    why: 'parse_nova_data_url requires a case-sensitive data: prefix and a comma; otherwise raise ValueError Invalid
+      data URL format: {first_50_characters}... or Invalid data URL format (missing comma): {first_50_characters}....
+      Split only the first comma, strip data:, and take metadata before the first semicolon, without requiring ;base64.
+      Preserve all remaining commas in payload. Only image format jpg is rewritten to jpeg; accept an empty format/payload
+      and arbitrary payload bytes represented as text.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_data_url_jpg$/)'
   - id: case-nova-explicit-media-input
-    why: The nova-explicit-media-input behavior is missing or differs from its pinned fixture.
+    why: Presence of any text,image,video,audio key suppresses input inference even when its value is None, and
+      multiple explicitly supplied modalities are retained. Do not parse a malformed data URL in this branch or
+      validate S3 descriptors.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_explicit_media_input$/)'
   - id: case-nova-async-output-s3-required
-    why: The nova-async-output-s3-required behavior is missing or differs from its pinned fixture.
+    why: Async mode alone creates segmentedEmbeddingParams; wrap only when model_id is truthy. Percent-decode the
+      model using B171 URI decoding, and only if it then starts async_invoke/ remove every occurrence of that substring.
+      Require a truthy output_s3_uri whose stripped value is nonempty, else ValueError output_s3_uri is required
+      for async invoke requests. Preserve surrounding whitespace and non-S3 strings when nonempty. Emit modelId,modelInput,outputDataConfig.s3OutputDataConfig.s3Uri.
+      The removed inference output_s3_uri never substitutes for the argument.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_async_output_s3_required$/)'
   - id: case-nova-result-index-token-estimate
-    why: The nova-result-index-token-estimate behavior is missing or differs from its pinned fixture.
+    why: For each response, an embeddings list takes precedence over direct embedding, including an empty list;
+      skip entries lacking embedding. Otherwise use direct embedding if present; ignore responses with neither.
+      Flatten retained vectors to contiguous indices/object=embedding/model unchanged. Estimate each listed vector
+      from truncatedCharLength//4 by key presence, otherwise len(embedding)//4; direct vectors always use length.
+      Preserve malformed field errors rather than inventing token validation. Usage prompt_tokens and total_tokens
+      equal the sum; completion_tokens uses the shared Usage default. Count image key presence in batch singleEmbeddingParams,
+      falling back to segmentedEmbeddingParams only when the first key is absent, without unwrapping modelInput.
+      Include image_count details only when positive.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_result_index_token_estimate$/)'
   - id: case-nova-invocation-arn
-    why: The nova-invocation-arn behavior is missing or differs from its pinned fixture.
+    why: Async replies always contain one index-0 object=embedding with an empty vector and zero prompt/total usage.
+      Store response.get(invocationArn, empty string) in HiddenParams._invocation_arn, preserving explicit None,
+      and preserve model. Do not expose an invented embedding_job_id object string.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::nova_embeddings_cases::case_[0-9]+_nova_invocation_arn$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_nova_embeddings.py)" &&
-      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_nova_embeddings.py)"
+      && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*")"
       && grep -lq 'bedrock_other_nova_embeddings' tools/oracle/fuzz/corpus/helper_case/bedrock_other_nova_embeddings*
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_nova_embeddings$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/nova_data_url)"
+      && grep -q 'parse_nova_data_url' crates/betterlite-bedrock/fuzz/fuzz_targets/nova_data_url.rs && cargo nextest
+      run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_nova_data_url_corpus$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-default-purpose-dimensions.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-nova-embeddings/nova-text-image-audio-video.yaml
@@ -173,9 +273,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Add NovaEmbeddingRequest/Reply with SINGLE_EMBEDDING and SEGMENTED_EMBEDDING variants, default embeddingPurpose=GENERIC_INDEX
-  and embeddingDimension=3072.
+- An explicitly present empty embeddings list suppresses a direct embedding in the same Nova response.
+- An output_s3_uri inside inference parameters is removed but never used as the async wrapper argument.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 675
   max_new_expects: 0
 review_level: standard

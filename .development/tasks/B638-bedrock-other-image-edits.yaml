@@ -12,8 +12,9 @@ description: >-
   L296-L331.
 
 
-  Reuse the existing image reply decoder from the image-generation result owner; this slice adds no parallel JSON
-  parser.
+  Reuse B634 decode_bedrock_image_reply for the outer JSON parse and null check, then call B636/B637 provider response
+  transformations and their production decoders. Do not introduce a parallel parser. The double parse and its error
+  precedence are observable.
 
 
   Reuse BedrockAmazonNovaCanvasImageEditConfig._is_nova_canvas_image_edit_model from B635 (litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py);
@@ -22,6 +23,45 @@ description: >-
 
   Reuse BedrockStabilityImageEditConfig._is_stability_edit_model from B637 (litellm/llms/bedrock/image_edit/stability_transformation.py);
   its implementation remains with that prerequisite.
+
+
+  Named case contracts: canvas_edit_dispatch: get_config_class tries B637 Stability substring detection first, then
+  B635 Canvas raw-catalog eligibility, matching B635 get_bedrock_image_edit_config_for_model. Instantiate via B2202
+  empty initializer and pass only image[0] for a nonempty image list, otherwise None, along with prompt, original
+  selected model, mutated optional_params and empty litellm_params/headers mappings. Ignore the transform's second
+  return value and convert its body to a plain mapping. B635 owns all Canvas task/mask behavior. stability_edit_dispatch:
+  The same first-image-only dispatch calls B637 for Stability; it does not fan out n or multiple image entries.
+  Unlike Canvas, Stability permits no image and can return an empty image result. Preserve those family differences
+  and the same mixed-marker selection priority as the standalone selector. edit_signed_request: Prepare before choosing
+  transport: B595 credentials from original options/model with B590 bearer token, then B591 invoke-provider and
+  model-ID resolution, then B591 proxy endpoint plus /model/{modelId}/invoke without trimming a slash. Build body,
+  serialize once to UTF-8 JSON, merge default Content-Type=application/json with extra_headers, and sign exact bytes
+  through B595. Send the stored endpoint_url/body with prepared headers even if prepared.url differs. B249 pre_call
+  uses prompt, empty api_key and complete_input_dict/api_base/headers. Reuse B634 signing and bearer/non-AWS Authorization
+  cases; this edit path has no guardrail-header extraction. unknown_edit_model: No recognized Stability pattern
+  or Canvas catalog flag raises ValueError Unsupported Bedrock image-edit model: {model!r}. Use a stability.* image-edit
+  model id or add supports_nova_canvas_image_edit in model_prices for this id. Use the identical case through B635
+  selector; do not fall back to generic image generation. edit_result_projection: After successful transport, optional
+  B249 post_call records prompt, empty api_key, response.text and complete_input_dict; debug raw model_response:
+  %s with text. B634 outer JSON decoder runs first, with JSON null -> ValueError Error in response object format,
+  got None. Then select/instantiate the family again and pass the original raw response to B636/B637, which decodes
+  again. Discard the initially supplied model_response and return the family's fresh response, preserving its error
+  and cost behavior. The outer malformed-JSON error wins over the family-specific parse wrapper. edit_http_error:
+  Both sync and async paths call raise_for_status; HTTPStatusError becomes B682 BedrockError with response status,text,headers,response;
+  timeout becomes status408 Timeout error occurred. Other failures pass unchanged. No response logging or family
+  transform occurs after a transport error. Reuse B634 matching cases. edit_transport_selection: Only aimage_edit
+  literally True selects async. Sync uses a matching HTTPHandler or B173 default client without passing timeout.
+  Async uses a matching AsyncHTTPHandler or B173 BEDROCK client with params timeout, including None. Preserve the
+  same client-selection/timeout cases as B634; body preparation and signing occur before async selection.
+
+
+  Write standalone Rust test image_edit_call_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test image_edit_call_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
 
 
   Implement crates/betterlite-bedrock/src/image_edits.rs with adjacent tests under image_edits/. Keep each Rust
@@ -39,9 +79,9 @@ description: >-
 
   Write rstest function image_edits_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   canvas_edit_dispatch, stability_edit_dispatch, edit_signed_request, unknown_edit_model, edit_result_projection,
-  edit_http_error. Each case exercises its named outcome independently; use stable supplied clocks/IDs and fixture
-  transports. HTTP cases use the booted proxy and assert both client response and captured upstream request. Existing
-  API tasks retain route registration; this task must not register a duplicate axum route.
+  edit_http_error, edit_transport_selection. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register a
+  duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_edits* using HelperCase:
@@ -57,9 +97,9 @@ description: >-
 
 
   Budget from 245 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 270 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 473 planned, 475 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 220 production lines, 245 behavior/config-test lines,
+  100 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 595 planned, 600 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -78,40 +118,58 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/image_edit/handler.py#L58-L331
-  why: >-
-    Own BedrockImageEdit.get_config_class, BedrockImageEdit.image_edit, BedrockImageEdit.async_image_edit, BedrockImageEdit._prepare_request,
+  why: Own BedrockImageEdit.get_config_class, BedrockImageEdit.image_edit, BedrockImageEdit.async_image_edit, BedrockImageEdit._prepare_request,
     BedrockImageEdit._get_request_body, BedrockImageEdit._transform_response_dict_to_openai_response. Other functions
     in this file remain with the owners listed below.
 dod:
-- text: >-
-    canvas edit dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-edits/canvas-edit-dispatch.yaml.
+- text: 'canvas_edit_dispatch: get_config_class tries B637 Stability substring detection first, then B635 Canvas
+    raw-catalog eligibility, matching B635 get_bedrock_image_edit_config_for_model. Instantiate via B2202 empty
+    initializer and pass only image[0] for a nonempty image list, otherwise None, along with prompt, original selected
+    model, mutated optional_params and empty litellm_params/headers mappings. Ignore the transform''s second return
+    value and convert its body to a plain mapping. B635 owns all Canvas task/mask behavior.'
   proof:
   - case-canvas-edit-dispatch
   - oracle
   - helper-python
-- text: >-
-    stability edit dispatch: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-edits/stability-edit-dispatch.yaml.
+- text: 'stability_edit_dispatch: The same first-image-only dispatch calls B637 for Stability; it does not fan out
+    n or multiple image entries. Unlike Canvas, Stability permits no image and can return an empty image result.
+    Preserve those family differences and the same mixed-marker selection priority as the standalone selector.'
   proof:
   - case-stability-edit-dispatch
   - oracle
   - helper-python
-- text: 'edit signed request: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-edits/edit-signed-request.yaml.'
+- text: 'edit_signed_request: Prepare before choosing transport: B595 credentials from original options/model with
+    B590 bearer token, then B591 invoke-provider and model-ID resolution, then B591 proxy endpoint plus /model/{modelId}/invoke
+    without trimming a slash. Build body, serialize once to UTF-8 JSON, merge default Content-Type=application/json
+    with extra_headers, and sign exact bytes through B595. Send the stored endpoint_url/body with prepared headers
+    even if prepared.url differs. B249 pre_call uses prompt, empty api_key and complete_input_dict/api_base/headers.
+    Reuse B634 signing and bearer/non-AWS Authorization cases; this edit path has no guardrail-header extraction.'
   proof:
   - case-edit-signed-request
   - oracle
   - helper-python
-- text: 'unknown edit model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-edits/unknown-edit-model.yaml.'
+- text: 'unknown_edit_model: No recognized Stability pattern or Canvas catalog flag raises ValueError Unsupported
+    Bedrock image-edit model: {model!r}. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit
+    in model_prices for this id. Use the identical case through B635 selector; do not fall back to generic image
+    generation.'
   proof:
   - case-unknown-edit-model
   - oracle
   - helper-python
-- text: >-
-    edit result projection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-edits/edit-result-projection.yaml.
+- text: 'edit_result_projection: After successful transport, optional B249 post_call records prompt, empty api_key,
+    response.text and complete_input_dict; debug raw model_response: %s with text. B634 outer JSON decoder runs
+    first, with JSON null -> ValueError Error in response object format, got None. Then select/instantiate the family
+    again and pass the original raw response to B636/B637, which decodes again. Discard the initially supplied model_response
+    and return the family''s fresh response, preserving its error and cost behavior. The outer malformed-JSON error
+    wins over the family-specific parse wrapper.'
   proof:
   - case-edit-result-projection
   - oracle
   - helper-python
-- text: 'edit http error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-image-edits/edit-http-error.yaml.'
+- text: 'edit_http_error: Both sync and async paths call raise_for_status; HTTPStatusError becomes B682 BedrockError
+    with response status,text,headers,response; timeout becomes status408 Timeout error occurred. Other failures
+    pass unchanged. No response logging or family transform occurs after a transport error. Reuse B634 matching
+    cases.'
   proof:
   - case-edit-http-error
   - oracle
@@ -120,41 +178,85 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'edit_transport_selection: Only aimage_edit literally True selects async. Sync uses a matching HTTPHandler
+    or B173 default client without passing timeout. Async uses a matching AsyncHTTPHandler or B173 BEDROCK client
+    with params timeout, including None. Preserve the same client-selection/timeout cases as B634; body preparation
+    and signing occur before async selection.'
+  proof:
+  - case-edit-transport-selection
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-canvas-edit-dispatch
-    why: The canvas-edit-dispatch behavior is missing or differs from its pinned fixture.
+    why: get_config_class tries B637 Stability substring detection first, then B635 Canvas raw-catalog eligibility,
+      matching B635 get_bedrock_image_edit_config_for_model. Instantiate via B2202 empty initializer and pass only
+      image[0] for a nonempty image list, otherwise None, along with prompt, original selected model, mutated optional_params
+      and empty litellm_params/headers mappings. Ignore the transform's second return value and convert its body
+      to a plain mapping. B635 owns all Canvas task/mask behavior.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_canvas_edit_dispatch$/)'
   - id: case-stability-edit-dispatch
-    why: The stability-edit-dispatch behavior is missing or differs from its pinned fixture.
+    why: The same first-image-only dispatch calls B637 for Stability; it does not fan out n or multiple image entries.
+      Unlike Canvas, Stability permits no image and can return an empty image result. Preserve those family differences
+      and the same mixed-marker selection priority as the standalone selector.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_stability_edit_dispatch$/)'
   - id: case-edit-signed-request
-    why: The edit-signed-request behavior is missing or differs from its pinned fixture.
+    why: 'Prepare before choosing transport: B595 credentials from original options/model with B590 bearer token,
+      then B591 invoke-provider and model-ID resolution, then B591 proxy endpoint plus /model/{modelId}/invoke without
+      trimming a slash. Build body, serialize once to UTF-8 JSON, merge default Content-Type=application/json with
+      extra_headers, and sign exact bytes through B595. Send the stored endpoint_url/body with prepared headers
+      even if prepared.url differs. B249 pre_call uses prompt, empty api_key and complete_input_dict/api_base/headers.
+      Reuse B634 signing and bearer/non-AWS Authorization cases; this edit path has no guardrail-header extraction.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_edit_signed_request$/)'
   - id: case-unknown-edit-model
-    why: The unknown-edit-model behavior is missing or differs from its pinned fixture.
+    why: 'No recognized Stability pattern or Canvas catalog flag raises ValueError Unsupported Bedrock image-edit
+      model: {model!r}. Use a stability.* image-edit model id or add supports_nova_canvas_image_edit in model_prices
+      for this id. Use the identical case through B635 selector; do not fall back to generic image generation.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_unknown_edit_model$/)'
   - id: case-edit-result-projection
-    why: The edit-result-projection behavior is missing or differs from its pinned fixture.
+    why: 'After successful transport, optional B249 post_call records prompt, empty api_key, response.text and complete_input_dict;
+      debug raw model_response: %s with text. B634 outer JSON decoder runs first, with JSON null -> ValueError Error
+      in response object format, got None. Then select/instantiate the family again and pass the original raw response
+      to B636/B637, which decodes again. Discard the initially supplied model_response and return the family''s
+      fresh response, preserving its error and cost behavior. The outer malformed-JSON error wins over the family-specific
+      parse wrapper.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_edit_result_projection$/)'
   - id: case-edit-http-error
-    why: The edit-http-error behavior is missing or differs from its pinned fixture.
+    why: Both sync and async paths call raise_for_status; HTTPStatusError becomes B682 BedrockError with response
+      status,text,headers,response; timeout becomes status408 Timeout error occurred. Other failures pass unchanged.
+      No response logging or family transform occurs after a transport error. Reuse B634 matching cases.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_edit_http_error$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_edits.py)" && uv
-      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
-      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_image_edits.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_edits*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_edits*")"
       && grep -lq 'bedrock_other_image_edits' tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_edits* &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_image_edits$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-edit-transport-selection
+    why: Only aimage_edit literally True selects async. Sync uses a matching HTTPHandler or B173 default client
+      without passing timeout. Async uses a matching AsyncHTTPHandler or B173 BEDROCK client with params timeout,
+      including None. Preserve the same client-selection/timeout cases as B634; body preparation and signing occur
+      before async selection.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edits_cases::case_[0-9]+_edit_transport_selection$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edit_call_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::image_edit_call_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-image-edits/canvas-edit-dispatch.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-edits/stability-edit-dispatch.yaml
@@ -162,6 +264,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-other-image-edits/unknown-edit-model.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-edits/edit-result-projection.yaml
 - tools/oracle/cases/helpers/providers/bedrock-other-image-edits/edit-http-error.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-image-edits/edit-transport-selection.yaml
 deviations: []
 out_of_scope:
 - B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -169,8 +272,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve family-specific payload/media types and explicit unsupported edit model outcomes.
+- The execution layer decodes once before the family transform decodes again, changing malformed-JSON error priority.
+- Only the first input image reaches the selected provider config.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
-review_level: standard
+review_level: security

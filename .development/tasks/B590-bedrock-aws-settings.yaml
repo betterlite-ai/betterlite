@@ -24,6 +24,60 @@ description: >-
   and automatic SDK environment loading. SDK-owned profile parsing is not a new betterlite byte parser.
 
 
+  Named case contracts: session_tags_canonical: None remains None; accept sequence/tuple of dicts with required
+  string Key/Value via AwsSessionTag adapter, ignoring extra tag fields as source validation does. Stable-sort by
+  Key, preserve duplicate Keys and their relative order, retain empty strings. Invalid entries raise ValueError
+  with Invalid 'aws_session_tags' value. Expected a list of {'Key': <str>, 'Value': <str>} dicts, e.g. [{'Key':
+  'team', 'Value': 'genai'}]. Got: <repr>. Validate before signing. assume_role_parameter_presence: Always emit
+  RoleArn and RoleSessionName. ExternalId is omitted only for None, so empty string survives. Tags is omitted for
+  None/empty sequence, otherwise canonical tuple retained. No invented default session name here. web_identity_policy:
+  Emit Version=2012-10-17 and four ordered Allow statements, each Resource=* and Condition.Bool.aws:SecureTransport="true".
+  Sid BedrockLiteLLM actions bedrock:InvokeModel,InvokeModelWithResponseStream,CountTokens,Rerank,Retrieve,ListKnowledgeBases,InvokeAgent,ApplyGuardrail,GetGuardrail,ListGuardrails
+  (each bedrock: prefix); Sid BedrockAgentCoreLiteLLM actions bedrock-agentcore:InvokeAgentRuntime,InvokeAgentRuntimeForUser,InvokeGateway;
+  Sid ClaudePlatformLiteLLM actions aws-external-anthropic:CreateInference,CreateBatchInference,CancelBatchInference,DeleteBatchInference,CountTokens,Get*,List*;
+  Sid BedrockMantleLiteLLM action bedrock-mantle:CreateInference. Preserve exact order and capitalization. auth_parameters_popped_before_validation:
+  Pop aws_access_key_id,aws_secret_access_key,aws_session_token,aws_session_name,aws_profile_name,aws_role_name,aws_web_identity_token,aws_sts_endpoint,aws_external_id,aws_session_tags
+  from optional_params, supplying None for missing; aws_region_name and aws_bedrock_runtime_endpoint remain. AwsAuthParams
+  is frozen and ignores extras; invalid typed strings fail after all keys were popped. Preserve this mutation order.
+  bearer_presence_not_truthiness: api_key wins whenever non-None including empty; only None reads AWS_BEARER_TOKEN_BEDROCK
+  via resolved B682 settings. Convert selected falsey string to None. Blank explicit api_key suppresses a configured
+  env token; whitespace survives. Bearer and SigV4 credentials are separate. credential_cache_key_and_bound: Share
+  one in-process IAM cache across instances, maximum1000 entries,64 striped single-flight fetch locks. Key is SHA256
+  of sorted-key JSON of all passed credential parameters including ssl_verify; session name/tags/endpoint/identity
+  differences isolate entries. On truthy hit return; falsey hit fetches. Write fetched credentials with supplied
+  TTL even None; ambient default600 seconds delegates B2226 in-memory cache. Concurrent same-key misses perform
+  one fetch; exceptions do not cache a successful identity. local_credential_sources: Profile passes profile_name
+  to SDK Session then get_credentials, no TTL; explicit access/secret/session token creates Credentials directly,
+  no TTL. Static access+secret+region uses SDK Session and get_credentials with3540-second TTL; ambient uses SDK
+  Session() with TTLNone. Profiles/session-token triples bypass the cache in B594, not this helper. SDK absence/failures
+  propagate; do not synthesize credentials. auth_selector_presence: Web identity requires token,role,session name
+  all non-None; role/profile predicates test non-None, session triple tests all three non-None, static branch requires
+  access/secret/region non-None. Empty strings count present at these selection predicates; s3_static_key_pair separately
+  requires both nonempty strings and returns None otherwise. aws_auth_error_projection: AwsAuthError preserves supplied
+  status/message, request POST https://us-west-2.console.aws.amazon.com/bedrock, response with same status/request
+  and no invented param/code. get_ssl_verify delegates B172 TLS policy including bool or custom CA path.
+
+
+  The constructor exposes aws_access_key_id,aws_secret_access_key,aws_session_token,aws_region_name,aws_session_name,aws_profile_name,aws_role_name,aws_web_identity_token,aws_sts_endpoint,aws_bedrock_runtime_endpoint,aws_external_id,aws_session_tags
+  as authentication parameter names. Settings are B682; secret-reference resolution is B187, credential selectors
+  are B594, TLS resolution B172 and shared memory cache B173. No provider request or HTTP oracle is owned here.
+
+
+  Load s3_access_key_id, s3_secret_access_key through betterlite-config, with injected environment lookup and the
+  defaults/precedence stated here. Deployment inputs use litellm_params and global inputs use litellm_settings.
+  Add config rstest bedrock_aws_settings_config_cases; each named loads_<key> case invokes the real B002 loader,
+  checks explicit values and defaults, and adds config_yaml parser seeds. Reject unrelated keys.
+
+
+  The shared s3_static_key_pair reads exact s3_access_key_id and s3_secret_access_key, each default None. Both must
+  be nonempty strings; whitespace is retained. It has no S3-specific environment fallback. B594 owns credential
+  construction from this pair and callers reuse these two loader cases.
+
+
+  The memory-only DualCache get/set path is B2226, below this provider; the provider-specific cache key, credential
+  lifetime and single-flight policy stay here. B173 remains the outbound HTTP/client pool only.
+
+
   Implement crates/betterlite-bedrock/src/aws_settings.rs with adjacent tests under aws_settings/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -39,10 +93,11 @@ description: >-
 
   Write rstest function aws_settings_cases in betterlite-bedrock with these exact named cases (one per oracle file):
   static_key_pair, session_token_triple, profile_precedence, default_native_chain, canonical_session_tags, credential_cache_expiry,
-  bearer_token_empty_versus_absent, auth_params_removed_from_body. Each case exercises its named outcome independently;
-  use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client
-  response and captured upstream request. Existing API tasks retain route registration; this task must not register
-  a duplicate axum route.
+  bearer_token_empty_versus_absent, auth_params_removed_from_body, session_tags_canonical, assume_role_parameter_presence,
+  web_identity_policy, auth_parameters_popped_before_validation, bearer_presence_not_truthiness, credential_cache_key_and_bound,
+  local_credential_sources, auth_selector_presence, aws_auth_error_projection. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_aws_settings* using HelperCase: kind:
@@ -72,9 +127,9 @@ description: >-
 
 
   Budget from 209 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 235 production lines, 147 behavior/config-test lines,
-  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 494 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 265 production lines, 235 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 100 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 735 planned, 750 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -92,6 +147,19 @@ scope:
   - tools/oracle/helpers/bedrock_aws_settings.py
   - tools/oracle/cases/helpers/providers/bedrock-aws-settings/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_aws_settings*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/bedrock.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_aws_settings.rs
+  - crates/betterlite-config/src/providers/bedrock/bedrock_aws_settings/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/bedrock_aws_settings_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/bedrock_aws_settings*
   lint_tables: false
 references:
 - url: https://docs.rs/aws-config/latest/aws_config/
@@ -100,18 +168,15 @@ references:
   why: Own _canonical_aws_session_tags, _assume_role_params. Other functions in this file remain with the owners
     listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L155-L208
-  why: >-
-    Own build_web_identity_session_policy, pop_aws_auth_params, bedrock_bearer_token, AwsAuthError.__init__. Other
-    functions in this file remain with the owners listed below.
+  why: Own build_web_identity_session_policy, pop_aws_auth_params, bedrock_bearer_token, AwsAuthError.__init__.
+    Other functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L240-L343
-  why: >-
-    Own BaseAWSLLM.__init__, BaseAWSLLM._get_ssl_verify, BaseAWSLLM.get_cache_key, BaseAWSLLM._get_or_set_cached_credentials,
+  why: Own BaseAWSLLM.__init__, BaseAWSLLM._get_ssl_verify, BaseAWSLLM.get_cache_key, BaseAWSLLM._get_or_set_cached_credentials,
     BaseAWSLLM._is_auth_with_web_identity_token, BaseAWSLLM._is_auth_with_aws_role, BaseAWSLLM._is_auth_with_aws_profile,
     BaseAWSLLM._is_auth_with_aws_session_token_tuple, BaseAWSLLM._is_auth_with_access_key_and_secret_key. Other
     functions in this file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1393-L1469
-  why: >-
-    Own BaseAWSLLM._auth_with_aws_profile, BaseAWSLLM._auth_with_aws_session_token, BaseAWSLLM._auth_with_access_key_and_secret_key,
+  why: Own BaseAWSLLM._auth_with_aws_profile, BaseAWSLLM._auth_with_aws_session_token, BaseAWSLLM._auth_with_access_key_and_secret_key,
     BaseAWSLLM._auth_with_env_vars, BaseAWSLLM._get_default_ttl_for_boto3_credentials. Other functions in this file
     remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/common_utils.py#L132-L140
@@ -137,26 +202,22 @@ dod:
   - case-default-native-chain
   - oracle
   - helper-python
-- text: >-
-    canonical session tags: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/canonical-session-tags.yaml.
+- text: 'canonical session tags: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/canonical-session-tags.yaml.'
   proof:
   - case-canonical-session-tags
   - oracle
   - helper-python
-- text: >-
-    credential cache expiry: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/credential-cache-expiry.yaml.
+- text: 'credential cache expiry: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/credential-cache-expiry.yaml.'
   proof:
   - case-credential-cache-expiry
   - oracle
   - helper-python
-- text: >-
-    bearer token empty versus absent: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/bearer-token-empty-versus-absent.yaml.
+- text: 'bearer token empty versus absent: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/bearer-token-empty-versus-absent.yaml.'
   proof:
   - case-bearer-token-empty-versus-absent
   - oracle
   - helper-python
-- text: >-
-    auth params removed from body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-params-removed-from-body.yaml.
+- text: 'auth params removed from body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-params-removed-from-body.yaml.'
   proof:
   - case-auth-params-removed-from-body
   - oracle
@@ -171,44 +232,120 @@ dod:
 - text: secret safe failure holds at this task’s owned boundary.
   proof:
   - secret-safe-failure
+- text: 'session_tags_canonical: None remains None; accept sequence/tuple of dicts with required string Key/Value
+    via AwsSessionTag adapter, ignoring extra tag fields as source validation does. Stable-sort by Key, preserve
+    duplicate Keys and their relative order, retain empty strings. Invalid entries raise ValueError with Invalid
+    ''aws_session_tags'' value. Expected a list of {''Key'': <str>, ''Value'': <str>} dicts, e.g. [{''Key'': ''team'',
+    ''Value'': ''genai''}]. Got: <repr>. Validate before signing.'
+  proof:
+  - case-session-tags-canonical
+  - oracle
+  - helper-python
+- text: 'assume_role_parameter_presence: Always emit RoleArn and RoleSessionName. ExternalId is omitted only for
+    None, so empty string survives. Tags is omitted for None/empty sequence, otherwise canonical tuple retained.
+    No invented default session name here.'
+  proof:
+  - case-assume-role-parameter-presence
+  - oracle
+  - helper-python
+- text: 'web_identity_policy: Emit Version=2012-10-17 and four ordered Allow statements, each Resource=* and Condition.Bool.aws:SecureTransport="true".
+    Sid BedrockLiteLLM actions bedrock:InvokeModel,InvokeModelWithResponseStream,CountTokens,Rerank,Retrieve,ListKnowledgeBases,InvokeAgent,ApplyGuardrail,GetGuardrail,ListGuardrails
+    (each bedrock: prefix); Sid BedrockAgentCoreLiteLLM actions bedrock-agentcore:InvokeAgentRuntime,InvokeAgentRuntimeForUser,InvokeGateway;
+    Sid ClaudePlatformLiteLLM actions aws-external-anthropic:CreateInference,CreateBatchInference,CancelBatchInference,DeleteBatchInference,CountTokens,Get*,List*;
+    Sid BedrockMantleLiteLLM action bedrock-mantle:CreateInference. Preserve exact order and capitalization.'
+  proof:
+  - case-web-identity-policy
+  - oracle
+  - helper-python
+- text: 'auth_parameters_popped_before_validation: Pop aws_access_key_id,aws_secret_access_key,aws_session_token,aws_session_name,aws_profile_name,aws_role_name,aws_web_identity_token,aws_sts_endpoint,aws_external_id,aws_session_tags
+    from optional_params, supplying None for missing; aws_region_name and aws_bedrock_runtime_endpoint remain. AwsAuthParams
+    is frozen and ignores extras; invalid typed strings fail after all keys were popped. Preserve this mutation
+    order.'
+  proof:
+  - case-auth-parameters-popped-before-validation
+  - oracle
+  - helper-python
+- text: 'bearer_presence_not_truthiness: api_key wins whenever non-None including empty; only None reads AWS_BEARER_TOKEN_BEDROCK
+    via resolved B682 settings. Convert selected falsey string to None. Blank explicit api_key suppresses a configured
+    env token; whitespace survives. Bearer and SigV4 credentials are separate.'
+  proof:
+  - case-bearer-presence-not-truthiness
+  - oracle
+  - helper-python
+- text: 'credential_cache_key_and_bound: Share one in-process IAM cache across instances, maximum1000 entries,64
+    striped single-flight fetch locks. Key is SHA256 of sorted-key JSON of all passed credential parameters including
+    ssl_verify; session name/tags/endpoint/identity differences isolate entries. On truthy hit return; falsey hit
+    fetches. Write fetched credentials with supplied TTL even None; ambient default600 seconds delegates B2226 in-memory
+    cache. Concurrent same-key misses perform one fetch; exceptions do not cache a successful identity.'
+  proof:
+  - case-credential-cache-key-and-bound
+  - oracle
+  - helper-python
+- text: 'local_credential_sources: Profile passes profile_name to SDK Session then get_credentials, no TTL; explicit
+    access/secret/session token creates Credentials directly, no TTL. Static access+secret+region uses SDK Session
+    and get_credentials with3540-second TTL; ambient uses SDK Session() with TTLNone. Profiles/session-token triples
+    bypass the cache in B594, not this helper. SDK absence/failures propagate; do not synthesize credentials.'
+  proof:
+  - case-local-credential-sources
+  - oracle
+  - helper-python
+- text: 'auth_selector_presence: Web identity requires token,role,session name all non-None; role/profile predicates
+    test non-None, session triple tests all three non-None, static branch requires access/secret/region non-None.
+    Empty strings count present at these selection predicates; s3_static_key_pair separately requires both nonempty
+    strings and returns None otherwise.'
+  proof:
+  - case-auth-selector-presence
+  - oracle
+  - helper-python
+- text: 'aws_auth_error_projection: AwsAuthError preserves supplied status/message, request POST https://us-west-2.console.aws.amazon.com/bedrock,
+    response with same status/request and no invented param/code. get_ssl_verify delegates B172 TLS policy including
+    bool or custom CA path.'
+  proof:
+  - case-aws-auth-error-projection
+  - oracle
+  - helper-python
+- text: The real config loader resolves s3_access_key_id, including its default and precedence.
+  proof:
+  - config-s3-access-key-id
+- text: The real config loader resolves s3_secret_access_key, including its default and precedence.
+  proof:
+  - config-s3-secret-access-key
 checks:
   optional:
   - mutants
   commands:
   - id: case-static-key-pair
-    why: The static-key-pair behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/static-key-pair.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_static_key_pair$/)'
   - id: case-session-token-triple
-    why: The session-token-triple behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/session-token-triple.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_session_token_triple$/)'
   - id: case-profile-precedence
-    why: The profile-precedence behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/profile-precedence.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_profile_precedence$/)'
   - id: case-default-native-chain
-    why: The default-native-chain behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/default-native-chain.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_default_native_chain$/)'
   - id: case-canonical-session-tags
-    why: The canonical-session-tags behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/canonical-session-tags.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_canonical_session_tags$/)'
   - id: case-credential-cache-expiry
-    why: The credential-cache-expiry behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/credential-cache-expiry.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_credential_cache_expiry$/)'
   - id: case-bearer-token-empty-versus-absent
-    why: The bearer-token-empty-versus-absent behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/bearer-token-empty-versus-absent.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_bearer_token_empty_versus_absent$/)'
   - id: case-auth-params-removed-from-body
-    why: The auth-params-removed-from-body behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-params-removed-from-body.yaml.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_auth_params_removed_from_body$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_aws_settings.py)" && uv run --locked
-      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_aws_settings.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_aws_settings*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_aws_settings*")"
       && grep -lq 'bedrock_aws_settings' tools/oracle/fuzz/corpus/helper_case/bedrock_aws_settings* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_aws_settings$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -218,6 +355,66 @@ checks:
   - id: secret-safe-failure
     why: The secret safe failure invariant has no passing production test.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_aws_settings_secret_safe_failure$/)'
+  - id: case-session-tags-canonical
+    why: 'None remains None; accept sequence/tuple of dicts with required string Key/Value via AwsSessionTag adapter,
+      ignoring extra tag fields as source validation does. Stable-sort by Key, preserve duplicate Keys and their
+      relative order, retain empty strings. Invalid entries raise ValueError with Invalid ''aws_session_tags'' value.
+      Expected a list of {''Key'': <str>, ''Value'': <str>} dicts, e.g. [{''Key'': ''team'', ''Value'': ''genai''}].
+      Got: <repr>. Validate before signing.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_session_tags_canonical$/)'
+  - id: case-assume-role-parameter-presence
+    why: Always emit RoleArn and RoleSessionName. ExternalId is omitted only for None, so empty string survives.
+      Tags is omitted for None/empty sequence, otherwise canonical tuple retained. No invented default session name
+      here.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_assume_role_parameter_presence$/)'
+  - id: case-web-identity-policy
+    why: 'Emit Version=2012-10-17 and four ordered Allow statements, each Resource=* and Condition.Bool.aws:SecureTransport="true".
+      Sid BedrockLiteLLM actions bedrock:InvokeModel,InvokeModelWithResponseStream,CountTokens,Rerank,Retrieve,ListKnowledgeBases,InvokeAgent,ApplyGuardrail,GetGuardrail,ListGuardrails
+      (each bedrock: prefix); Sid BedrockAgentCoreLiteLLM actions bedrock-agentcore:InvokeAgentRuntime,InvokeAgentRuntimeForUser,InvokeGateway;
+      Sid ClaudePlatformLiteLLM actions aws-external-anthropic:CreateInference,CreateBatchInference,CancelBatchInference,DeleteBatchInference,CountTokens,Get*,List*;
+      Sid BedrockMantleLiteLLM action bedrock-mantle:CreateInference. Preserve exact order and capitalization.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_web_identity_policy$/)'
+  - id: case-auth-parameters-popped-before-validation
+    why: Pop aws_access_key_id,aws_secret_access_key,aws_session_token,aws_session_name,aws_profile_name,aws_role_name,aws_web_identity_token,aws_sts_endpoint,aws_external_id,aws_session_tags
+      from optional_params, supplying None for missing; aws_region_name and aws_bedrock_runtime_endpoint remain.
+      AwsAuthParams is frozen and ignores extras; invalid typed strings fail after all keys were popped. Preserve
+      this mutation order.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_auth_parameters_popped_before_validation$/)'
+  - id: case-bearer-presence-not-truthiness
+    why: api_key wins whenever non-None including empty; only None reads AWS_BEARER_TOKEN_BEDROCK via resolved B682
+      settings. Convert selected falsey string to None. Blank explicit api_key suppresses a configured env token;
+      whitespace survives. Bearer and SigV4 credentials are separate.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_bearer_presence_not_truthiness$/)'
+  - id: case-credential-cache-key-and-bound
+    why: Share one in-process IAM cache across instances, maximum1000 entries,64 striped single-flight fetch locks.
+      Key is SHA256 of sorted-key JSON of all passed credential parameters including ssl_verify; session name/tags/endpoint/identity
+      differences isolate entries. On truthy hit return; falsey hit fetches. Write fetched credentials with supplied
+      TTL even None; ambient default600 seconds delegates B2226 in-memory cache. Concurrent same-key misses perform
+      one fetch; exceptions do not cache a successful identity.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_credential_cache_key_and_bound$/)'
+  - id: case-local-credential-sources
+    why: Profile passes profile_name to SDK Session then get_credentials, no TTL; explicit access/secret/session
+      token creates Credentials directly, no TTL. Static access+secret+region uses SDK Session and get_credentials
+      with3540-second TTL; ambient uses SDK Session() with TTLNone. Profiles/session-token triples bypass the cache
+      in B594, not this helper. SDK absence/failures propagate; do not synthesize credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_local_credential_sources$/)'
+  - id: case-auth-selector-presence
+    why: Web identity requires token,role,session name all non-None; role/profile predicates test non-None, session
+      triple tests all three non-None, static branch requires access/secret/region non-None. Empty strings count
+      present at these selection predicates; s3_static_key_pair separately requires both nonempty strings and returns
+      None otherwise.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_auth_selector_presence$/)'
+  - id: case-aws-auth-error-projection
+    why: AwsAuthError preserves supplied status/message, request POST https://us-west-2.console.aws.amazon.com/bedrock,
+      response with same status/request and no invented param/code. get_ssl_verify delegates B172 TLS policy including
+      bool or custom CA path.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::aws_settings_cases::case_[0-9]+_aws_auth_error_projection$/)'
+  - id: config-s3-access-key-id
+    why: s3_access_key_id lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_settings_config_cases::case_[0-9]+_loads_s3_access_key_id$/)'
+  - id: config-s3-secret-access-key
+    why: s3_secret_access_key lacks a production config loader case.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::bedrock_aws_settings_config_cases::case_[0-9]+_loads_s3_secret_access_key$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-aws-settings/static-key-pair.yaml
 - tools/oracle/cases/helpers/providers/bedrock-aws-settings/session-token-triple.yaml
@@ -227,6 +424,15 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-aws-settings/credential-cache-expiry.yaml
 - tools/oracle/cases/helpers/providers/bedrock-aws-settings/bearer-token-empty-versus-absent.yaml
 - tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-params-removed-from-body.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/session-tags-canonical.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/assume-role-parameter-presence.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/web-identity-policy.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-parameters-popped-before-validation.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/bearer-presence-not-truthiness.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/credential-cache-key-and-bound.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/local-credential-sources.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/auth-selector-presence.yaml
+- tools/oracle/cases/helpers/providers/bedrock-aws-settings/aws-auth-error-projection.yaml
 deviations:
 - what: AWS profile/default credential chains never execute credential_process or other subprocess providers.
   why: The no-subprocess rule permits native configured files, environment, web identity and instance/container
@@ -237,103 +443,100 @@ out_of_scope:
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response L66-L75; merge_bedrock_aws_request_params
-  L108-L129; get_cached_model_info L156-L169; _get_local_model_cost_map L173-L176; AmazonBedrockGlobalConfig.__init__
-  L456-L457; AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
-  L465-L470; AmazonBedrockGlobalConfig.get_all_regions L472-L479; AmazonBedrockGlobalConfig.get_ap_regions L481-L493;
-  AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions L498-L511; AmazonBedrockGlobalConfig.get_ca_regions
-  L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527; add_custom_header L530-L538; _get_bedrock_client_ssl_verify
-  L541-L552; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
-  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596;
-  reuse that implementation or its injected typed boundary.
-- 'litellm/llms/bedrock/common_utils.py: BedrockError.__init__ L79-L102 belong to B682; reuse that implementation
-  or its injected typed boundary.'
-- >-
-  litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+- 'litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
   L1327-L1329; BedrockModelInfo._supported_cross_region_inference_region L1342-L1344; BedrockModelInfo._explicit_invoke_route
   L1452-L1456; BedrockModelInfo._explicit_agent_route L1459-L1463; BedrockModelInfo._explicit_agentcore_route L1466-L1470;
   BedrockModelInfo._explicit_converse_like_route L1496-L1500; BedrockModelInfo._explicit_async_invoke_route L1503-L1507;
   BedrockModelInfo._explicit_openai_route L1510-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
-  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.
-- >-
-  litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196; convert_bedrock_invoke_output_format_to_inline_schema
-  L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output L251-L290; strip_unsupported_bedrock_invoke_output_config_keys
-  L293-L331; normalize_custom_field_on_tools L334-L359; tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object
-  L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke L413-L433; ensure_bedrock_anthropic_messages_tool_names
-  L436-L452 belong to B597; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not port them.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn
+  L538-L560; BaseAWSLLM._get_provider_from_model_path L562-L580; BaseAWSLLM.get_bedrock_invoke_provider L582-L616;
+  BaseAWSLLM.get_bedrock_model_id L618-L667; BaseAWSLLM._get_model_id_from_model_with_spec L669-L678; BaseAWSLLM.encode_model_id
+  L680-L689; BaseAWSLLM.get_bedrock_embedding_provider L691-L730; BaseAWSLLM._get_aws_region_name L732-L790; BaseAWSLLM._validate_aws_region_name
+  L792-L804; BaseAWSLLM._parse_sts_region_from_endpoint L806-L815; BaseAWSLLM._resolve_sts_region L817-L828; BaseAWSLLM._build_sts_client_kwargs
+  L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499;
+  BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong to B591.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name
+  L874-L910; BaseAWSLLM._is_already_running_as_role L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214
+  belong to B592.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience
+  L971-L988; BaseAWSLLM._auth_with_web_identity_token L990-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155;
+  BaseAWSLLM._handle_irsa_same_account L1157-L1191 belong to B593.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L345-L510; BaseAWSLLM.resolve_credentials
+  L512-L525; BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
+  L1257-L1390 belong to B594.'
+- 'Function ownership inventory litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1519-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params L1527-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params
+  L1536-L1568; BaseAWSLLM.get_request_headers L1570-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655;
+  BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws
+  L1770-L1779 belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_cached_model_info L156-L169; _get_local_model_cost_map
+  L172-L176; AmazonBedrockGlobalConfig.__init__ L456-L457; AmazonBedrockGlobalConfig.get_all_regions L472-L479;
+  AmazonBedrockGlobalConfig.get_ap_regions L481-L493; AmazonBedrockGlobalConfig.get_sa_regions L495-L496; AmazonBedrockGlobalConfig.get_eu_regions
+  L498-L511; AmazonBedrockGlobalConfig.get_ca_regions L513-L514; AmazonBedrockGlobalConfig.get_us_regions L516-L527;
+  add_custom_header L530-L538; _get_bedrock_client_ssl_verify L541-L552; _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
+  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
+  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
+  L1331-L1334; BedrockModelInfo.get_base_model L1336-L1339 belong to B2203.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api
+  L1517-L1560; get_bedrock_chat_config L1563-L1636 belong to B2231.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963
+  belong to B595.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: merge_bedrock_aws_request_params L108-L129;
+  AmazonBedrockGlobalConfig.get_mapped_special_auth_params L459-L463; AmazonBedrockGlobalConfig.map_special_auth_params
+  L465-L470; ModelResponseIterator.__init__ L728-L730; ModelResponseIterator.__iter__ L733-L734; ModelResponseIterator.__next__
+  L736-L740; ModelResponseIterator.__aiter__ L743-L744; ModelResponseIterator.__anext__ L746-L750 belong to B596.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: pop_bedrock_invoke_output_config_format L179-L196;
+  convert_bedrock_invoke_output_format_to_inline_schema L199-L242; _bedrock_model_supports L245-L248; apply_bedrock_invoke_structured_output
+  L251-L290; strip_unsupported_bedrock_invoke_output_config_keys L293-L331; normalize_custom_field_on_tools L334-L359;
+  tools_without_eager_input_streaming L365-L370; normalize_json_schema_custom_types_to_object L373-L410; normalize_tool_input_schema_types_for_bedrock_invoke
+  L413-L433; ensure_bedrock_anthropic_messages_tool_names L436-L452 belong to B597.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: get_bedrock_tool_name L753-L766; is_bedrock_application_inference_profile_arn
   L796-L802; without_bedrock_route_prefix L817-L818; _model_cost_entry L837-L839; _bedrock_price_map_entries L842-L846;
   _bedrock_price_map_flag L849-L850; _price_map_entry_lists_endpoint L853-L855; _openai_gpt_version L858-L862; bedrock_runtime_chat_completions_is_default
   L865-L878; bedrock_runtime_chat_completions_serves_tools_with_reasoning L881-L888; bedrock_runtime_chat_completions_enforces_response_format
   L891-L898; bedrock_model_is_openai_gpt L901-L903; _response_format_needs_converse L922-L931; bedrock_request_needs_converse
   L934-L967; _chat_completions_unless_converse_needed L970-L975; bedrock_route_for_request L978-L989; BedrockModelInfo.get_api_base
-  L1273-L1277; BedrockModelInfo.get_api_key L1280-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
-  L1298-L1299; BedrockModelInfo.get_token_counter L1317-L1324; BedrockModelInfo.get_bedrock_route L1347-L1414; BedrockModelInfo._explicit_converse_route
-  L1417-L1421; BedrockModelInfo._explicit_claude_platform_route L1424-L1428; BedrockModelInfo.get_claude_platform_model
-  L1431-L1435; BedrockModelInfo.map_claude_platform_auth_params L1438-L1449; BedrockModelInfo._model_has_route_prefix
-  L1473-L1486; BedrockModelInfo._explicit_mantle_route L1489-L1493 belong to B598; reuse that implementation or
-  its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
+  L1272-L1277; BedrockModelInfo.get_api_key L1279-L1284; BedrockModelInfo.validate_environment L1286-L1296; BedrockModelInfo.get_models
+  L1298-L1299; BedrockModelInfo.get_bedrock_route L1346-L1414; BedrockModelInfo._explicit_converse_route L1416-L1421;
+  BedrockModelInfo._explicit_claude_platform_route L1423-L1428; BedrockModelInfo.get_claude_platform_model L1430-L1435;
+  BedrockModelInfo.map_claude_platform_auth_params L1437-L1449; BedrockModelInfo._model_has_route_prefix L1472-L1486;
+  BedrockModelInfo._explicit_mantle_route L1488-L1493 belong to B598.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659;
+  get_bedrock_response_stream_shape L1662-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__
+  L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event L1714-L1739; _decoded_json_value L1742-L1744;
+  get_anthropic_beta_from_headers L1747-L1783 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_token_counter L1317-L1324
+  belong to B641.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796;
+  resolve_s3_bucket_owner L1799-L1809; _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835;
+  CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model L1837-L1849; CommonBatchFilesUtils.parse_s3_uri
+  L1851-L1871 belong to B643.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.generate_unique_job_name
+  L1965-L1984 belong to B649.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.get_error_class L2023-L2027
+  belong to B650.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: error_response_text L59-L63; _synthesize_error_response
+  L66-L75; BedrockError.__init__ L79-L102 belong to B682.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: _mantle_api_base_from_env L1009-L1014; bedrock_supports_openai_responses
   L1017-L1036; build_mantle_messages_url L1039-L1061; bedrock_converse_supports_parallel_tool_use_config L1102-L1106;
   bedrock_model_accepts_cache_points L1109-L1133; bedrock_supports_tool_search L1136-L1147; is_claude_4_5_on_bedrock
   L1150-L1163; bedrock_converse_supports_strict_tools L1169-L1185; _get_bedrock_converse_strict_tools_flag L1188-L1208;
   normalize_bedrock_opus_output_config_effort L1211-L1235; _get_bedrock_output_config_effort_ceiling L1238-L1261
-  belong to B690; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _get_all_bedrock_regions L773-L778; get_bedrock_cross_region_inference_regions
-  L781-L783; extract_model_name_from_bedrock_arn L786-L793; strip_bedrock_routing_prefix L805-L810; split_bedrock_region_path
-  L821-L831; strip_bedrock_throughput_suffix L992-L1002; get_bedrock_base_model L1064-L1099; BedrockModelInfo.get_non_litellm_routing_model_name
-  L1332-L1334; BedrockModelInfo.get_base_model L1337-L1339 belong to B591; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: _load_bedrock_response_stream_shape L1639-L1659; get_bedrock_response_stream_shape
-  L1663-L1670; build_bedrock_stream_error L1679-L1701; BedrockEventStreamDecoderBase.__init__ L1709-L1712; BedrockEventStreamDecoderBase._parse_message_from_event
-  L1714-L1739; _decoded_json_value L1742-L1744; get_anthropic_beta_from_headers L1747-L1783 belong to B599; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: resolve_s3_encryption_key_id L1786-L1796; resolve_s3_bucket_owner L1799-L1809;
-  _resolve_s3_setting L1812-L1822; CommonBatchFilesUtils.__init__ L1831-L1835; CommonBatchFilesUtils.get_bedrock_model_id_from_litellm_model
-  L1837-L1849; CommonBatchFilesUtils.parse_s3_uri L1851-L1871 belong to B643; reuse that implementation or its injected
-  typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: CommonBatchFilesUtils.sign_aws_request L1906-L1963; CommonBatchFilesUtils.generate_unique_job_name
-  L1965-L1984; CommonBatchFilesUtils.get_error_class L2023-L2027 belong to B644; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM.get_credentials L346-L510; BaseAWSLLM.resolve_credentials L512-L525;
-  BaseAWSLLM.resolve_s3_credentials L527-L536; BaseAWSLLM._resolve_role_credentials L1216-L1255; BaseAWSLLM._auth_with_aws_role
-  L1258-L1390 belong to B594; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_aws_region_from_model_arn L538-L560; BaseAWSLLM._get_provider_from_model_path
-  L563-L580; BaseAWSLLM.get_bedrock_invoke_provider L583-L616; BaseAWSLLM.get_bedrock_model_id L619-L667; BaseAWSLLM._get_model_id_from_model_with_spec
-  L670-L678; BaseAWSLLM.encode_model_id L681-L689; BaseAWSLLM.get_bedrock_embedding_provider L692-L730; BaseAWSLLM._get_aws_region_name
-  L732-L790; BaseAWSLLM._validate_aws_region_name L793-L804; BaseAWSLLM._parse_sts_region_from_endpoint L807-L815;
-  BaseAWSLLM._resolve_sts_region L818-L828; BaseAWSLLM._build_sts_client_kwargs L830-L843; BaseAWSLLM.get_aws_region_name_for_non_llm_api_calls
-  L845-L872; BaseAWSLLM.get_runtime_endpoint L1471-L1499; BaseAWSLLM._select_default_endpoint_url L1501-L1517 belong
-  to B591; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._parse_arn_account_and_role_name L875-L910; BaseAWSLLM._is_already_running_as_role
-  L912-L969; BaseAWSLLM._extract_credentials_and_ttl L1193-L1214 belong to B592; reuse that implementation or its
-  injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._unverified_web_identity_audience L972-L988; BaseAWSLLM._auth_with_web_identity_token
-  L991-L1088; BaseAWSLLM._handle_irsa_cross_account L1090-L1155; BaseAWSLLM._handle_irsa_same_account L1157-L1191
-  belong to B593; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/base_aws_llm.py: BaseAWSLLM._get_boto_credentials_from_optional_params L1520-L1525; BaseAWSLLM._get_boto_credentials_from_optional_params
-  L1528-L1534; BaseAWSLLM._get_boto_credentials_from_optional_params L1536-L1568; BaseAWSLLM.get_request_headers
-  L1571-L1627; BaseAWSLLM._filter_headers_for_aws_signature L1629-L1655; BaseAWSLLM._sign_request L1657-L1730; sign_aws_json_post
-  L1733-L1749; run_aws_signing L1758-L1767; sign_request_off_loop_if_aws L1770-L1779 belong to B595; reuse that
-  implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/common_utils.py: BedrockModelInfo.get_bedrock_provider_config_for_messages_api L1518-L1560;
-  get_bedrock_chat_config L1563-L1636 belong to B028; reuse that implementation or its injected typed boundary.
+  belong to B690.'
+- 'Function ownership inventory litellm/llms/bedrock/common_utils.py: init_bedrock_client L555-L724; BedrockModelInfo.extract_model_name_from_arn
+  L1326-L1329; BedrockModelInfo._supported_cross_region_inference_region L1341-L1344; BedrockModelInfo._explicit_invoke_route
+  L1451-L1456; BedrockModelInfo._explicit_agent_route L1458-L1463; BedrockModelInfo._explicit_agentcore_route L1465-L1470;
+  BedrockModelInfo._explicit_converse_like_route L1495-L1500; BedrockModelInfo._explicit_async_invoke_route L1502-L1507;
+  BedrockModelInfo._explicit_openai_route L1509-L1515; CommonBatchFilesUtils.extract_model_from_s3_file_path L1873-L1904;
+  CommonBatchFilesUtils.get_s3_bucket_and_key_from_config L1986-L2021 have no caller at the pin; do not implement
+  or add cases.'
 pitfalls:
-- aws-config default process providers must be disabled explicitly; accepting a profile must not run credential_process.
+- Empty strings satisfy the source credential-selection predicates, but the S3 static pair helper deliberately requires
+  nonempty strings.
+- 'Session-tag validation mutates optional_params first: an invalid value must not leave popped auth keys in a request
+  body.'
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

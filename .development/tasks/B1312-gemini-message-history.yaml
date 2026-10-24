@@ -1,0 +1,89 @@
+id: B1312
+title: Gemini conversation history and signature replay
+description: >-
+  Implement gemini_history's conversion of parsed OpenAI messages into ordered Content records.
+  Own _collect_tool_call_thought_signatures and _gemini_convert_messages_with_history, using
+  B1311 media parts, B232 tool invocations and B233 tool results. Merge consecutive user/system
+  messages into user turns and consecutive assistant messages into model turns. A media-only
+  user turn warns and gains one space text; empty history also warns and becomes a space turn.
+  Preserve empty string content, ignore empty text list elements, require image_url.url and
+  file.file_id or file_data, and keep file format > mime_type > content_type precedence.
+  Group adjacent tool/function responses into one user turn; a text-only assistant must not
+  replace last_message_with_tool_calls. Forward function-call IDs only on B1305's newer models.
+  Replay reasoning_content, signed thinking blocks, generated images and server-side toolCall/
+  toolResponse parts. A genuine signature already present on a tool must not be duplicated on
+  assistant text; synthetic placeholders do not suppress a real text signature. Compare tool
+  parts ignoring thoughtSignature only, using B1311's equivalent-key helper.
+  decode_thinking_part parses bounded JSON bytes from thinking_blocks[].thinking; malformed
+  JSON falls back to literal signed text. Add its cargo-fuzz target and replay test. The
+  gemini_history oracle runs the whole Python conversion, covering media_blank_text,
+  mixed_role_runs, tool_result_after_plain_assistant, signed_tool_text, server_tool_replay,
+  malformed_thinking_json, missing_media_fields and empty_history. Tests also verify that
+  input records survive a second conversion unchanged. B1311 owns the remote-fetch rejection;
+  this walker only propagates that error and makes no network decision itself.
+  The two functions contain 375 nonblank noncomment lines; _check_text_in_content contributes
+  13. Budget 315 Rust, 190 behavior tests, 100 adapters, 80 fuzz/replay and 70 record/export
+  lines, maximum 800. Reuse existing tool/media records instead of redeclaring their decoders.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,gemini_history}.rs
+    - crates/betterlite-vertex/src/gemini_history/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/thinking_part.rs
+    - crates/betterlite-vertex/fuzz/corpus/thinking_part/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/gemini_history.rs
+    - tools/oracle/src/helpers/gemini_history/**
+    - tools/oracle/helpers/{dispatch,gemini_history}.py
+    - tools/oracle/cases/helpers/gemini-history/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_history*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L640-L1075
+    why: Signature collection and the complete role/history traversal with warning fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L603-L615
+    why: Empty string still counts as an existing text part.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L115-L122
+    why: Native content and system-instruction wrappers reuse the shared parts.
+dod:
+  - text: Role merging, tool association and signature circulation match independently transformed Python histories.
+    proof: [history-tests, oracle, history-python]
+  - text: Thinking JSON decoding is bounded and falls back to signed text on malformed input.
+    proof: [history-tests, thinking-corpus]
+  - text: The helper dispatcher recognizes newly committed conversation seeds.
+    proof: [history-seed]
+checks:
+  optional: []
+  commands:
+    - id: history-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_history::/) - test(replays_the_thinking_part_corpus)'
+      why: History behavior cannot be proved solely by fuzz replay.
+    - id: thinking-corpus
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/thinking_part)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/thinking_part.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_thinking_part_corpus)'
+      why: The nested thinking JSON decoder needs its own production replay boundary.
+    - id: history-python
+      run: test -f tools/oracle/helpers/gemini_history.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: History comparisons must retain signatures and warning outcomes.
+    - id: history-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_history*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_history::/)'
+      why: Conversation seeds must reach the new helper variant through the real parser.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-history/media-blank-text.yaml
+  - tools/oracle/cases/helpers/gemini-history/mixed-role-runs.yaml
+  - tools/oracle/cases/helpers/gemini-history/tool-result-after-plain-assistant.yaml
+  - tools/oracle/cases/helpers/gemini-history/signed-tool-text.yaml
+  - tools/oracle/cases/helpers/gemini-history/server-tool-replay.yaml
+  - tools/oracle/cases/helpers/gemini-history/malformed-thinking-json.yaml
+  - tools/oracle/cases/helpers/gemini-history/missing-media-fields.yaml
+  - tools/oracle/cases/helpers/gemini-history/empty-history.yaml
+deviations: []
+out_of_scope:
+  - In transformation.py, media and equivalent-key routines before L640 plus L1313-L1328 are B1311; request composition, system extraction and cache-call wrappers from L1082 are B1321.
+  - common_utils schema functions are B1307, catalog/labels/timestamps B1306, URLs B1304/B1305 and token lookup B1319.
+pitfalls:
+  - Gemini's fallback user text is one space, while the system-only request placeholder is a period owned by B1321.
+  - A tool result following a plain assistant message still matches the earlier assistant that carried the call.
+  - Comparing signatures as part of tool identity creates duplicate calls when a signed thinking block already contains one.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: standard

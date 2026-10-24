@@ -3,8 +3,8 @@ title: Foundry Anthropic chat transport
 description: >-
   Add FoundryAnthropicChat as a small transport/auth override over native Anthropic mapping and stream services.
   Preserve extra_body promotion, billing-header stripping and Azure credential handling; do not copy the Anthropic
-  prompt/response transformations. Attach explicit api-key to x-api-key conversion only for the native messages
-  request.
+  prompt/response transformations. The chat override retains Azure api-key and the Anthropic x-api-key simultaneously;
+  the separate B564 native Messages override renames only when x-api-key is absent.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/anthropic/handler.py:
@@ -13,7 +13,7 @@ description: >-
   L42-L43; AzureAnthropicConfig.validate_environment L45-L107; AzureAnthropicConfig.transform_request L109-L136.
 
 
-  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  Reuse BaseAzureLLM._base_validate_azure_environment from B2200 (litellm/llms/azure/common_utils.py); its implementation
   remains with that prerequisite.
 
 
@@ -27,6 +27,43 @@ description: >-
 
   Reuse make_sync_call from B689 (litellm/llms/anthropic/chat/handler.py); its implementation remains with that
   prerequisite.
+
+
+  Named case contracts: azure_key_header: For dict params inject truthy explicit key only if api_key key is absent
+  (present None blocks); for typed params fill a falsey key. B2200 resolves Azure auth. Generate B570 Anthropic
+  headers with explicit api_key or empty string, then merge Azure/caller headers last, preserving x-api-key plus
+  api-key when both exist. entra_bearer_header: Apply the same B2200 token precedence and failures as native Azure
+  validation; Azure Authorization overrides a generated header. anthropic-version is filled as 2023-06-01 only when
+  the exact key is absent, so empty/present caller values survive. extra_body_promotion: Promote only a nonempty
+  dict extra_body, overwrite duplicate top-level options with its values, then remove extra_body even if it appeared
+  inside itself. Empty/non-dict extra_body remains until post-parent cleanup removes extra_body/max_retries/stream_options
+  from the body. billing_metadata_stripped: custom_llm_provider is azure_ai and should_strip_billing_metadata is
+  true for the inherited request mapper. Probe B568 cache_control/computer/MCP/PDF/file-id and B570 caller anthropic-beta
+  set; this override does not pass effort, eager-input, context-management or advanced-tool flags to get_anthropic_headers.
+  chat_stream_native_events: Deep-copy messages/options, pop stream=None, json_mode=False and is_vertex_request=False.
+  Only literal True enables async or stream branches; async stream accepts only AsyncHTTPHandler clients, sync nonstream
+  only HTTPHandler clients. Sync stream delegates B689 and stamps provider azure_ai plus B570 mapped response headers;
+  async/nonstream use the inherited services. chat_failure_projection: Sync nonstream passes timeout to client construction
+  and POST; exception status defaults 500, message prefers response.text over exception.text over str(error), headers
+  prefer exception.headers then response.headers only when the response is truthy. Raise B567 AnthropicError without
+  changing status; successful response delegates the native parent projection.
+
+
+  Write standalone Rust test anthropic_chat_credential_identity_isolation in betterlite-foundry: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test anthropic_chat_secret_safe_failure in betterlite-foundry: Debug and owned failure paths
+  do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Reuse B249 pre_call/post_call for the logging hooks invoked in the owned range; pass the source input, original
+  response and additional_args in source order. This task owns the call site, not the logging implementation.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2201. Reuse the named implementations; do not copy
+  them at this call boundary.
 
 
   Implement crates/betterlite-foundry/src/anthropic.rs with adjacent tests under anthropic/. Keep each Rust module
@@ -44,9 +81,9 @@ description: >-
 
   Write rstest function anthropic_cases in betterlite-foundry with these exact named cases (one per oracle file):
   foundry_anthropic_url, azure_key_header, entra_bearer_header, extra_body_promotion, billing_metadata_stripped,
-  chat_stream_native_events. Each case exercises its named outcome independently; use stable supplied clocks/IDs
-  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
-  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  chat_stream_native_events, chat_failure_projection. Each case exercises its named outcome independently; use stable
+  supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task must not register
+  a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_anthropic* using HelperCase: kind: helper
@@ -61,9 +98,9 @@ description: >-
 
 
   Budget from 268 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 290 production lines, 99 behavior/config-test lines,
-  79 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 493 planned, 500 maximum changed lines.
+  docstrings; SDK overloads share an async implementation): 280 production lines, 220 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 645 planned, 650 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
@@ -85,8 +122,7 @@ references:
   why: Own AzureAnthropicChatCompletion.__init__, AzureAnthropicChatCompletion.completion. Other functions in this
     file remain with the owners listed below.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/transformation.py#L13-L136
-  why: >-
-    Own _promote_extra_body_to_optional_params, AzureAnthropicConfig.custom_llm_provider, AzureAnthropicConfig.should_strip_billing_metadata,
+  why: Own _promote_extra_body_to_optional_params, AzureAnthropicConfig.custom_llm_provider, AzureAnthropicConfig.should_strip_billing_metadata,
     AzureAnthropicConfig.validate_environment, AzureAnthropicConfig.transform_request. Other functions in this file
     remain with the owners listed below.
 dod:
@@ -95,29 +131,39 @@ dod:
   - case-foundry-anthropic-url
   - oracle
   - helper-python
-- text: 'azure key header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic/azure-key-header.yaml.'
+- text: 'azure_key_header: For dict params inject truthy explicit key only if api_key key is absent (present None
+    blocks); for typed params fill a falsey key. B2200 resolves Azure auth. Generate B570 Anthropic headers with
+    explicit api_key or empty string, then merge Azure/caller headers last, preserving x-api-key plus api-key when
+    both exist.'
   proof:
   - case-azure-key-header
   - oracle
   - helper-python
-- text: 'entra bearer header: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic/entra-bearer-header.yaml.'
+- text: 'entra_bearer_header: Apply the same B2200 token precedence and failures as native Azure validation; Azure
+    Authorization overrides a generated header. anthropic-version is filled as 2023-06-01 only when the exact key
+    is absent, so empty/present caller values survive.'
   proof:
   - case-entra-bearer-header
   - oracle
   - helper-python
-- text: 'extra body promotion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic/extra-body-promotion.yaml.'
+- text: 'extra_body_promotion: Promote only a nonempty dict extra_body, overwrite duplicate top-level options with
+    its values, then remove extra_body even if it appeared inside itself. Empty/non-dict extra_body remains until
+    post-parent cleanup removes extra_body/max_retries/stream_options from the body.'
   proof:
   - case-extra-body-promotion
   - oracle
   - helper-python
-- text: >-
-    billing metadata stripped: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic/billing-metadata-stripped.yaml.
+- text: 'billing_metadata_stripped: custom_llm_provider is azure_ai and should_strip_billing_metadata is true for
+    the inherited request mapper. Probe B568 cache_control/computer/MCP/PDF/file-id and B570 caller anthropic-beta
+    set; this override does not pass effort, eager-input, context-management or advanced-tool flags to get_anthropic_headers.'
   proof:
   - case-billing-metadata-stripped
   - oracle
   - helper-python
-- text: >-
-    chat stream native events: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic/chat-stream-native-events.yaml.
+- text: 'chat_stream_native_events: Deep-copy messages/options, pop stream=None, json_mode=False and is_vertex_request=False.
+    Only literal True enables async or stream branches; async stream accepts only AsyncHTTPHandler clients, sync
+    nonstream only HTTPHandler clients. Sync stream delegates B689 and stamps provider azure_ai plus B570 mapped
+    response headers; async/nonstream use the inherited services.'
   proof:
   - case-chat-stream-native-events
   - oracle
@@ -126,41 +172,76 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'chat_failure_projection: Sync nonstream passes timeout to client construction and POST; exception status
+    defaults 500, message prefers response.text over exception.text over str(error), headers prefer exception.headers
+    then response.headers only when the response is truthy. Raise B567 AnthropicError without changing status; successful
+    response delegates the native parent projection.'
+  proof:
+  - case-chat-failure-projection
+  - oracle
+  - helper-python
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
 checks:
   optional:
   - mutants
   commands:
   - id: case-foundry-anthropic-url
-    why: The foundry-anthropic-url behavior is missing or differs from its pinned fixture.
+    why: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-anthropic/foundry-anthropic-url.yaml.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_cases::case_[0-9]+_foundry_anthropic_url$/)'
   - id: case-azure-key-header
-    why: The azure-key-header behavior is missing or differs from its pinned fixture.
+    why: For dict params inject truthy explicit key only if api_key key is absent (present None blocks); for typed
+      params fill a falsey key. B2200 resolves Azure auth. Generate B570 Anthropic headers with explicit api_key
+      or empty string, then merge Azure/caller headers last, preserving x-api-key plus api-key when both exist.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_cases::case_[0-9]+_azure_key_header$/)'
   - id: case-entra-bearer-header
-    why: The entra-bearer-header behavior is missing or differs from its pinned fixture.
+    why: Apply the same B2200 token precedence and failures as native Azure validation; Azure Authorization overrides
+      a generated header. anthropic-version is filled as 2023-06-01 only when the exact key is absent, so empty/present
+      caller values survive.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_cases::case_[0-9]+_entra_bearer_header$/)'
   - id: case-extra-body-promotion
-    why: The extra-body-promotion behavior is missing or differs from its pinned fixture.
+    why: Promote only a nonempty dict extra_body, overwrite duplicate top-level options with its values, then remove
+      extra_body even if it appeared inside itself. Empty/non-dict extra_body remains until post-parent cleanup
+      removes extra_body/max_retries/stream_options from the body.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_cases::case_[0-9]+_extra_body_promotion$/)'
   - id: case-billing-metadata-stripped
-    why: The billing-metadata-stripped behavior is missing or differs from its pinned fixture.
+    why: custom_llm_provider is azure_ai and should_strip_billing_metadata is true for the inherited request mapper.
+      Probe B568 cache_control/computer/MCP/PDF/file-id and B570 caller anthropic-beta set; this override does not
+      pass effort, eager-input, context-management or advanced-tool flags to get_anthropic_headers.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_cases::case_[0-9]+_billing_metadata_stripped$/)'
   - id: case-chat-stream-native-events
-    why: The chat-stream-native-events behavior is missing or differs from its pinned fixture.
+    why: Deep-copy messages/options, pop stream=None, json_mode=False and is_vertex_request=False. Only literal
+      True enables async or stream branches; async stream accepts only AsyncHTTPHandler clients, sync nonstream
+      only HTTPHandler clients. Sync stream delegates B689 and stamps provider azure_ai plus B570 mapped response
+      headers; async/nonstream use the inherited services.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_cases::case_[0-9]+_chat_stream_native_events$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_anthropic.py)" && uv run --locked
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_anthropic.py)" && uv run --locked
       --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_anthropic*")"
       && grep -lq 'foundry_anthropic' tools/oracle/fuzz/corpus/helper_case/foundry_anthropic* && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_anthropic$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-chat-failure-projection
+    why: Sync nonstream passes timeout to client construction and POST; exception status defaults 500, message prefers
+      response.text over exception.text over str(error), headers prefer exception.headers then response.headers
+      only when the response is truthy. Raise B567 AnthropicError without changing status; successful response delegates
+      the native parent projection.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_cases::case_[0-9]+_chat_failure_projection$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_chat_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::anthropic_chat_secret_safe_failure$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-anthropic/foundry-anthropic-url.yaml
 - tools/oracle/cases/helpers/providers/foundry-anthropic/azure-key-header.yaml
@@ -168,6 +249,7 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-anthropic/extra-body-promotion.yaml
 - tools/oracle/cases/helpers/providers/foundry-anthropic/billing-metadata-stripped.yaml
 - tools/oracle/cases/helpers/providers/foundry-anthropic/chat-stream-native-events.yaml
+- tools/oracle/cases/helpers/providers/foundry-anthropic/chat-failure-projection.yaml
 deviations: []
 out_of_scope:
 - B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
@@ -175,9 +257,9 @@ out_of_scope:
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 pitfalls:
-- Preserve extra_body promotion, billing-header stripping and Azure credential handling; do not copy the Anthropic
-  prompt/response transformations.
+- A dict with api_key=None blocks explicit-key insertion while a typed object with a falsey key does not.
+- Foundry chat keeps x-api-key from the Anthropic header builder; the native Messages rename is a different override.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 650
   max_new_expects: 0
-review_level: standard
+review_level: security

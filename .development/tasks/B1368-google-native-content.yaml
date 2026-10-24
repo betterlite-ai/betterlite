@@ -1,0 +1,90 @@
+id: B1368
+title: Native Google GenAI content preparation for Studio and Vertex
+description: >-
+  Implement google_native_content for Studio's native GenAI methods except validate_environment
+  and _get_google_ai_studio_api_key, already B1331, plus all 77 nonblank noncomment lines of
+  VertexAIGoogleGenAIConfig. Studio's remaining source is about 310 lines. Expose typed native
+  content/config/response records using existing Gemini parts and usage types, with extension
+  fields only where the source's dict-compatible native response allows them. Studio advertises
+  the exact 30 supported option names and accepts their camel/snake spellings, filtering unknown
+  keys and emitting camelCase. Vertex instead converts every supplied key to snake_case without
+  filtering; preserve acronym splitting from its regex. Common auth extraction uses the mutable
+  Vertex getters in credentials/project/location order, then sync or async B1302/B1303 token
+  resolution, B1304 URL building with v1beta1 features enabled and B1331 Studio key extraction.
+  Vertex header validation adds Bearer only for a non-None key, including an empty string, then
+  applies caller headers last. For response schemas, prefer responseSchema over response_schema
+  by presence. Non-object schemas remain unchanged. JSON-schema-capable models replace the
+  selected schema key with the matching-case JSON-schema key, or discard it if either JSON-schema
+  alias already exists. Older models discard the selected JSON-schema alias and run B1307 on a
+  copy with property ordering; no schema key means no change. Studio request always includes
+  model/contents/tools/generationConfig, retaining tools null and empty config, and includes
+  systemInstruction for any non-None value. Vertex includes tools, instruction and config only
+  when truthy. Decode native response JSON with decode_google_native_content, retain raw response
+  metadata for logging, and replace citationMetadata.citationSources with citations on each
+  candidate, overwriting any existing citations. Preserve unknown native response fields without
+  converting into an OpenAI completion. Add google_native_content fixtures studio_alias_filter,
+  vertex_unknown_option, vertex_acronym_split, schema_dual_alias, old_schema_copy,
+  studio_null_tools, vertex_empty_omission and citation_overwrite. Fuzz native response records;
+  native auth tests use injected tokens, not a helper-driven network. Budget 350 code, 180 tests,
+  145 oracle and 80 fuzz lines, cap 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,google_native_content}.rs
+    - crates/betterlite-vertex/src/google_native_content/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/google_native_content.rs
+    - crates/betterlite-vertex/fuzz/corpus/google_native_content/**
+    - tools/oracle/src/helpers/{mod,google_native_content}.rs
+    - tools/oracle/helpers/{dispatch,google_native_content}.py
+    - tools/oracle/cases/helpers/google-native-content/**
+    - tools/oracle/fuzz/corpus/helper_case/google_native_content*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L38-L144
+    why: Native Studio capability list and spelling normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/transformation.py#L178-L406
+    why: Auth/URL assembly, schema migration and citation conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/google_genai/transformation.py#L11-L103
+    why: Vertex native header, key spelling and truthy-body overrides.
+dod:
+  - text: Native GenAI preparation retains provider-specific key normalization, schema precedence and omission rules.
+    proof: [native-google-tests, native-google-python, oracle]
+  - text: Native Google response bytes replay through a typed decoder retaining allowed extension fields.
+    proof: [native-google-corpus]
+  - text: Native content helper records are accepted by the shared fixture parser.
+    proof: [native-google-seeds]
+checks:
+  optional: []
+  commands:
+    - id: native-google-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^google_native_content::/) - test(replays_the_google_native_content_corpus)'
+      why: Separate provider tests cover mutation order, header overrides and source-dictionary preservation.
+    - id: native-google-python
+      run: test -f tools/oracle/helpers/google_native_content.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pure native request/response transformations run against the pinned fallback native response type.
+    - id: native-google-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_native_content.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_native_content)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_native_content_corpus)'
+      why: Candidate citation and extension-field inputs enter decode_google_native_content during replay.
+    - id: native-google-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/google_native_content*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::google_native_content::/)'
+      why: The native content variant must be present in new HelperCase seeds.
+oracle_cases:
+  - tools/oracle/cases/helpers/google-native-content/studio-alias-filter.yaml
+  - tools/oracle/cases/helpers/google-native-content/vertex-unknown-option.yaml
+  - tools/oracle/cases/helpers/google-native-content/vertex-acronym-split.yaml
+  - tools/oracle/cases/helpers/google-native-content/schema-dual-alias.yaml
+  - tools/oracle/cases/helpers/google-native-content/old-schema-copy.yaml
+  - tools/oracle/cases/helpers/google-native-content/studio-null-tools.yaml
+  - tools/oracle/cases/helpers/google-native-content/vertex-empty-omission.yaml
+  - tools/oracle/cases/helpers/google-native-content/citation-overwrite.yaml
+deviations: []
+out_of_scope:
+  - B1391 owns the guardrail_translation subpackage under the Studio google_genai covers glob.
+  - B1331 owns Studio validate_environment and _get_google_ai_studio_api_key at L146-L176; every other method in both native transformation files belongs here.
+  - B098 owns generic native GenAI API contracts and public routes; B034/B035 expose the provider preparation and response hooks for that caller.
+pitfalls:
+  - Vertex's native option map preserves unsupported keys while Studio filters them.
+  - A present non-object responseSchema prevents schema normalization rather than falling through to response_schema.
+  - Studio retains tools null and an empty generationConfig where Vertex omits them.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

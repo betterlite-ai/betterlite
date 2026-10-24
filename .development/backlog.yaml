@@ -99,7 +99,7 @@ tasks:
     milestone: M1 openai data plane
     title: Provider framework, provider resolution and parameter mapping
     status: todo
-    depends_on: [B005, B006, B174, B175, B176, B179]
+    depends_on: [B005, B006, B174, B175, B176, B179, B2202, B2214, B2230]
     file: tasks/B010-provider-framework.yaml
     covers:
       - "litellm/llms/{__init__,base,README}.*"
@@ -155,7 +155,7 @@ tasks:
     milestone: M2 routing
     title: Router call pipeline and response metadata
     status: todo
-    depends_on: [B008, B302, B303, B364, B014, B011, B301, B395, B396, B002]
+    depends_on: [B008, B302, B303, B364, B014, B011, B301, B395, B396, B002, B2202]
     file: tasks/B016-router-core.yaml
     covers:
       - "litellm/router.py"
@@ -167,7 +167,9 @@ tasks:
     status: todo
     depends_on: [B016, B305, B306, B005, B012, B301]
     file: tasks/B017-routing-retries.yaml
-    covers: []
+    covers:
+      - "litellm/litellm_core_utils/core_helpers.py"
+      - "litellm/router_utils/add_retry_fallback_headers.py"
   - id: B018
     milestone: M2 routing
     title: Fallback management API and persistent configuration
@@ -184,6 +186,7 @@ tasks:
     file: tasks/B019-io-token-limits.yaml
     covers:
       - "litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py"
+      - "litellm/router_utils/add_retry_fallback_headers.py"
   - id: B020
     milestone: M2 routing
     title: Budget-aware filtering and policy composition
@@ -223,7 +226,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI provider, every remaining endpoint
     status: todo
-    depends_on: [B010, B014, B004, B005, B006, B015, B202, B203, B668, B669, B670, B671, B502, B503, B504, B505, B506, B507, B508, B509, B510, B171, B500, B527, B002]
+    depends_on: [B010, B004, B006, B080, B900, B901, B668, B669, B670, B671, B507, B508, B510, B500, B198, B196, B249, B187, B184, B129, B002, B171, B2237, B2238]
     file: tasks/B024-openai-provider.yaml
     covers:
       - "litellm/llms/openai/openai.py"
@@ -252,11 +255,12 @@ tasks:
       - "litellm/llms/openai/videos/guardrail_translation/__init__.py"
       - "litellm/main.py"
       - "litellm/utils.py"
+      - "litellm/litellm_core_utils/core_helpers.py"
   - id: B025
     milestone: M3 providers
     title: Azure OpenAI
     status: todo
-    depends_on: [B010, B014, B529, B531, B532, B533, B534, B540, B695, B696, B171]
+    depends_on: [B010, B531, B532, B533, B534, B540, B684, B2200, B695, B696, B198, B196, B249, B187, B129, B171, B2230]
     file: tasks/B025-azure-provider.yaml
     covers:
       - "litellm/llms/azure/audio_transcription/__init__.py"
@@ -271,7 +275,7 @@ tasks:
     milestone: M3 providers
     title: Azure AI Foundry
     status: todo
-    depends_on: [B010, B014, B025, B549, B550, B551, B552, B559, B560, B561, B562, B563, B698, B171]
+    depends_on: [B010, B549, B550, B551, B552, B562, B563, B698, B182, B198, B196, B249, B187, B171, B2230, B560]
     file: tasks/B026-foundry-provider.yaml
     covers:
       - "litellm/llms/azure_ai/README.md"
@@ -292,7 +296,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic provider
     status: todo
-    depends_on: [B010, B014, B584, B586, B585, B171, B173, B567, B568, B569, B570, B571, B572, B573, B574, B575, B576, B577, B578, B579, B580, B581, B582, B583, B587, B588]
+    depends_on: [B010, B584, B585, B586, B587, B588, B576, B567, B198, B196, B249, B187, B129, B171, B2230]
     file: tasks/B027-anthropic-provider.yaml
     covers:
       - "litellm/llms/anthropic/__init__.py"
@@ -307,14 +311,14 @@ tasks:
       - "litellm/llms/anthropic/prompt_cache_prediction.py"
       - "litellm/llms/anthropic/files/handler.py"
       - "litellm/main.py"
+      - "litellm/llms/anthropic/chat/handler.py"
   - id: B028
     milestone: M3 providers
     title: Bedrock chat through Converse and Invoke, and Bedrock Messages
     status: todo
-    depends_on: [B010, B014, B598, B610, B611, B612, B613, B614, B615, B616, B617, B618, B619, B620, B623, B624, B625, B626, B171, B173, B590, B591, B592, B593, B594, B595, B596, B597, B599, B600, B601, B602, B603, B604, B605, B606, B607, B608, B609, B621, B622, B678, B680, B652, B653]
+    depends_on: [B010, B038, B598, B591, B2203, B656, B625, B622, B599, B619, B620, B652, B653, B611, B610, B613, B614, B615, B616, B617, B618, B678, B680, B159, B198, B196, B249, B187, B129, B171, B2231, B2230]
     file: tasks/B028-bedrock-provider.yaml
     covers:
-      - "litellm/llms/bedrock/common_utils.py"
       - "litellm/llms/bedrock/chat/agentcore/__init__.py"
       - "litellm/llms/bedrock/chat/converse_like/handler.py"
       - "litellm/llms/bedrock/chat/converse_like/transformation.py"
@@ -336,7 +340,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock batches, files, realtime, responses, agents, passthrough, search and vector stores
     status: todo
-    depends_on: [B678, B680, B681, B643, B644, B645, B646, B647, B648, B649, B650, B651, B171, B174, B175]
+    depends_on: [B678, B680, B681, B643, B644, B645, B646, B647, B648, B649, B650, B651, B174, B175, B171]
     file: tasks/B030-bedrock-services-services.yaml
     covers:
       - "litellm/llms/bedrock/claude_platform/__init__.py"
@@ -346,53 +350,52 @@ tasks:
     milestone: M3 providers
     title: Vertex AI Gemini, context caching and token counting
     status: todo
-    depends_on: [B010, B011, B182, B186]
-    file: null
+    depends_on: [B010, B678, B002, B004, B005, B1301, B1331, B1306, B1327, B1320, B032, B1386, B1387, B1330, B1319, B206, B196, B125]
+    file: tasks/B031-vertex-gemini-provider.yaml
     covers:
-      - "litellm/llms/vertex_ai/*.py"
-      - "litellm/llms/vertex_ai/{gemini,context_caching,count_tokens}/**"
-      - "litellm/types/llms/vertex_ai.py"
       - "litellm/main.py"
   - id: B032
     milestone: M3 providers
     title: Vertex AI partner models, Gemma and Model Garden
     status: todo
-    depends_on: [B031]
-    file: null
+    depends_on: [B010, B678, B1302, B1304, B1306, B1332, B1333, B1335, B1336, B1337, B1338, B1339, B582, B036, B038, B081, B004, B005, B171]
+    file: tasks/B032-vertex-partner-provider.yaml
     covers:
-      - "litellm/llms/vertex_ai/{vertex_ai_partner_models,vertex_gemma_models,vertex_model_garden}/**"
-      - "litellm/types/llms/vertex_ai_gemma.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/{__init__,main}.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/__init__.py"
+      - "litellm/llms/vertex_ai/vertex_gemma_models/__init__.py"
+      - "litellm/types/llms/vertex_ai.py"
   - id: B033
     milestone: M3 providers
     title: Vertex AI embeddings, images, speech, transcription, video, realtime and rerank
     status: todo
-    depends_on: [B031]
-    file: null
+    depends_on: [B010, B678, B1301, B1395, B1349, B1345, B1346, B1347, B1348, B1352, B1353, B1354, B1355, B1357, B1360, B1361, B1362, B1365, B1379, B1381, B1382, B006, B082, B083, B085, B1125, B998, B999, B1135, B1122, B1001, B1003, B1120, B1115, B1008, B1014, B901]
+    file: tasks/B033-vertex-multimodal-provider.yaml
     covers:
-      - "litellm/llms/vertex_ai/{gemini_embeddings,multimodal_embeddings,vertex_embeddings,image_generation,image_edit,text_to_speech,audio_transcription,videos,realtime,rerank}/**"
-      - "litellm/types/llms/{vertex_ai_speech_to_text,vertex_ai_text_to_speech,vertex_ai_gemini_transcription}.py"
+      - "litellm/llms/vertex_ai/text_to_speech/transformation.py"
   - id: B034
     milestone: M3 providers
     title: Vertex AI batches, files, fine-tuning, RAG engine, agent engine, vector stores and GenAI
     status: todo
-    depends_on: [B031]
-    file: null
+    depends_on: [B010, B678, B1372, B1373, B1375, B1376, B1377, B1383, B1384, B1385, B1386, B1388, B1389, B1393, B1368, B1369, B206, B1015, B1025, B1058, B1064, B1032, B1033, B1034, B087, B1050, B1051, B1133, B086, B088, B1067, B900]
+    file: tasks/B034-vertex-native-services.yaml
     covers:
-      - "litellm/llms/vertex_ai/{batches,files,fine_tuning,rag_engine,agent_engine,vector_stores,google_genai,interactions}/**"
+      - "litellm/llms/vertex_ai/{agent_engine,interactions,vector_stores}/__init__.py"
+      - "litellm/llms/vertex_ai/batches/Readme.md"
   - id: B035
     milestone: M3 providers
     title: Gemini through Google AI Studio
     status: todo
-    depends_on: [B031, B186]
-    file: null
+    depends_on: [B031, B010, B678, B1325, B1330, B1331, B1341, B1350, B1351, B1363, B1364, B1366, B1367, B1368, B1370, B1378, B1379, B1381, B1382, B1390, B1391, B1392, B998, B999, B1120, B1122, B1001, B1028, B1029, B1064, B1115, B1008, B206, B173, B009, B004, B005, B006, B082, B083, B1032, B1034, B087, B1067, B1125, B900, B901]
+    file: tasks/B035-google-ai-studio-provider.yaml
     covers:
-      - "litellm/llms/gemini/**"
-      - "litellm/types/llms/{gemini,gemini_audio_transcription}.py"
+      - "litellm/llms/gemini/context_caching/README.md"
+      - "litellm/main.py"
   - id: B036
     milestone: M3 providers
     title: xAI, Mistral and Codestral
     status: todo
-    depends_on: [B010, B011, B177]
+    depends_on: [B010, B011, B177, B2220]
     file: null
     covers:
       - "litellm/llms/{xai,mistral,codestral}/**"
@@ -403,7 +406,7 @@ tasks:
     milestone: M3 providers
     title: Cohere, Voyage, Jina and Infinity
     status: todo
-    depends_on: [B010, B011, B182, B186]
+    depends_on: [B010, B011, B182, B186, B183, B2230]
     file: null
     covers:
       - "litellm/llms/{cohere,voyage,jina_ai,infinity}/**"
@@ -435,7 +438,7 @@ tasks:
     milestone: M3 providers
     title: Self-hosted inference servers
     status: todo
-    depends_on: [B024, B186]
+    depends_on: [B024, B186, B2223, B2224, B2220]
     file: null
     covers:
       - "litellm/llms/{hosted_vllm,vllm,ollama,oobabooga,lm_studio,llamafile,lemonade,docker_model_runner,xinference,triton,petals}/**"
@@ -445,7 +448,7 @@ tasks:
     milestone: M3 providers
     title: Aggregators and hosted inference platforms
     status: todo
-    depends_on: [B024, B186]
+    depends_on: [B024, B186, B2222, B2220]
     file: null
     covers:
       - "litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**"
@@ -489,6 +492,7 @@ tasks:
     file: null
     covers:
       - "litellm/llms/{chatgpt,github_copilot}/**"
+      - "litellm/main.py"
   - id: B046
     milestone: M3 providers
     title: Image and video generation providers
@@ -528,7 +532,7 @@ tasks:
     milestone: M3 providers
     title: Agent platform providers
     status: todo
-    depends_on: [B142]
+    depends_on: [B142, B2210]
     file: null
     covers:
       - "litellm/llms/{a2a,langflow,langgraph,manus}/**"
@@ -546,9 +550,6 @@ tasks:
       - "litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py"
       - "migrations/run.py"
       - "litellm/proxy/prisma_migration.py"
-      - "litellm-proxy-extras/litellm_proxy_extras/migrations/migration_lock.toml"
-      - "litellm-proxy-extras/litellm_proxy_extras/py.typed"
-      - "migrations/Dockerfile"
   - id: B052
     milestone: M4 keys, spend and management
     title: Wire virtual key authentication into the server
@@ -702,7 +703,7 @@ tasks:
     milestone: M4 keys, spend and management
     title: Cost calculation for every call type
     status: todo
-    depends_on: [B013, B014]
+    depends_on: [B2207, B633, B004, B193, B196, B197, B204, B205, B174, B198, B206]
     file: null
     covers:
       - "litellm/cost_calculator.py"
@@ -725,6 +726,9 @@ tasks:
       - "litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py"
       - "litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py"
       - "litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py"
+      - "litellm/litellm_core_utils/litellm_logging.py"
+      - "litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py"
+      - "litellm/llms/bedrock/image_edit/stability_transformation.py"
   - id: B069
     milestone: M4 keys, spend and management
     title: Spend tracking and spend logs
@@ -737,6 +741,8 @@ tasks:
       - "litellm/proxy/logging_endpoints/**"
       - "litellm/proxy/collector.py"
       - "litellm/types/proxy/{spend_capture_rate,callback_logs_endpoints}.py"
+      - "litellm/litellm_core_utils/core_helpers.py"
+      - "litellm/llms/openai/organization_costs.py"
   - id: B070
     milestone: M4 keys, spend and management
     title: Spend write queues, daily rollups and spend log partitions
@@ -939,7 +945,7 @@ tasks:
     milestone: M5 api families
     title: Managed file routes
     status: todo
-    depends_on: [B171, B1017, B1018, B1020, B1027, B1028, B1032, B1033, B1034, B1087, B1103, B732, B855, B756, B1021, B1019, B003, B1139, B856]
+    depends_on: [B171, B1017, B1018, B1020, B1027, B1028, B1032, B1033, B1034, B1087, B1103, B732, B855, B756, B1021, B1019, B003, B1139, B856, B2208]
     file: tasks/B087-managed-file-routes.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -1076,7 +1082,7 @@ tasks:
     milestone: M5 api families
     title: Prompt compression and native compaction
     status: todo
-    depends_on: [B080, B081]
+    depends_on: [B080, B081, B173]
     file: null
     covers:
       - "litellm/compression/**"
@@ -1087,11 +1093,12 @@ tasks:
       - "litellm/llms/anthropic/compaction.py"
       - "litellm/proxy/native_compaction.py"
       - "litellm/proxy/guardrails/auto_router_compression.py"
+      - "litellm/llms/custom_httpx/asgi_handler.py"
   - id: B101
     milestone: M5 api families
     title: Provider passthrough calls in the SDK layer
     status: todo
-    depends_on: [B010, B014]
+    depends_on: [B010, B014, B2203]
     file: null
     covers:
       - "litellm/passthrough/**"
@@ -1143,6 +1150,7 @@ tasks:
       - "litellm/llms/openai/videos/guardrail_translation/handler.py"
       - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
       - "litellm/llms/bedrock/passthrough/guardrail_translation/handler.py"
+      - "litellm/litellm_core_utils/core_helpers.py"
   - id: B105
     milestone: M6 guardrails
     title: Built-in content filter, secret detection and prompt injection checks
@@ -1212,6 +1220,7 @@ tasks:
       - "litellm/tracing/**"
       - "litellm/proxy/{tracing_endpoints,tracing_runtime}.py"
       - "docker/{docker-compose.tracing.yml,tracing-config.yaml}"
+      - "litellm/litellm_core_utils/core_helpers.py"
   - id: B111
     milestone: M7 observability
     title: Prometheus metrics
@@ -1259,13 +1268,12 @@ tasks:
     milestone: M7 observability
     title: Storage, queue and SIEM loggers
     status: todo
-    depends_on: [B012]
+    depends_on: [B012, B2208]
     file: null
     covers:
       - "litellm/integrations/{s3,s3_v2,dynamodb,sqs}.py"
       - "litellm/integrations/{gcs_bucket,gcs_pubsub,azure_storage,clickhouse,azure_sentinel,zerobus}/**"
       - "litellm/types/integrations/{s3_v2,gcs_bucket,azure_sentinel,zerobus}.py"
-      - "litellm/litellm_core_utils/cloud_storage_security.py"
   - id: B116
     milestone: M7 observability
     title: Slack, email, PagerDuty and Teams alerting
@@ -1305,7 +1313,7 @@ tasks:
     milestone: M7 observability
     title: Web search and code interpreter interception, agentic loops
     status: todo
-    depends_on: [B080, B081]
+    depends_on: [B080, B081, B2204, B568]
     file: null
     covers:
       - "litellm/integrations/{websearch_interception,code_interpreter_interception}/**"
@@ -1374,7 +1382,7 @@ tasks:
     milestone: M8 platform
     title: Response caching core, in-memory and disk caches, cache API
     status: todo
-    depends_on: [B016]
+    depends_on: [B016, B2226]
     file: null
     covers:
       - "litellm/caching/{__init__,base_cache,caching,caching_handler,llm_caching_handler,in_memory_cache,dual_cache,disk_cache,_internal_lru_cache,evicted_client_closer,_embedding_router}.py"
@@ -1712,7 +1720,7 @@ tasks:
     milestone: M12 python
     title: The betterlite Python package over the Rust core, with LiteLLM's module-level settings
     status: todo
-    depends_on: [B014]
+    depends_on: [B014, B633, B2217, B2218, B2219, B2220, B2221, B2225, B2230]
     file: null
     covers:
       - "pyproject.toml"
@@ -1740,6 +1748,7 @@ tasks:
       - "litellm/{embeddings,images,rerank_api,endpoints}/**"
       - "litellm/types/{embedding,rerank}.py"
       - "litellm/types/images/**"
+      - "litellm/llms/bedrock/realtime/handler.py"
   - id: B160
     milestone: M12 python
     title: Python Responses, Anthropic Messages, Google GenAI and Interactions functions
@@ -1751,6 +1760,7 @@ tasks:
       - "litellm/{anthropic_interface,messages}/**"
       - "litellm/{google_genai,interactions}/main.py"
       - "litellm/types/responses/**"
+      - "litellm/llms/base_llm/base_utils.py"
   - id: B161
     milestone: M12 python
     title: Python files, batches, fine-tuning, vector stores, assistants, containers, videos, skills, evals, search, OCR, RAG, realtime and passthrough functions
@@ -1802,12 +1812,13 @@ tasks:
     milestone: M12 python
     title: Python helpers for token counting, cost, model info, provider lookup, caching and budgets
     status: todo
-    depends_on: [B158, B013, B068, B125]
+    depends_on: [B158, B013, B068, B125, B2204]
     file: null
     covers:
       - "litellm/{utils,cost_calculator,budget_manager}.py"
       - "litellm/caching/{__init__,caching}.py"
       - "litellm/litellm_core_utils/{token_counter,get_llm_provider_logic,get_model_cost_map}.py"
+      - "litellm/litellm_core_utils/core_helpers.py"
   - id: B167
     milestone: M12 python
     title: Python types under litellm.types
@@ -1848,6 +1859,7 @@ tasks:
     file: tasks/B171-helper-oracle.yaml
     covers:
       - "litellm/llms/custom_httpx/{asgi_handler,mock_transport}.py"
+      - "litellm/litellm_core_utils/url_utils.py"
   - id: B172
     milestone: M1 openai data plane
     title: Outbound TLS configuration and HTTP defaults
@@ -1860,7 +1872,7 @@ tasks:
     milestone: M1 openai data plane
     title: Pooled outbound requests and response limits
     status: todo
-    depends_on: [B172, B005]
+    depends_on: [B172, B005, B2236]
     file: tasks/B173-http-pool.yaml
     covers:
       - "litellm/llms/custom_httpx/{http_handler,httpx_handler,aiohttp_handler,aiohttp_transport,async_client_cleanup,llm_http_handler,container_handler}.py"
@@ -1869,7 +1881,7 @@ tasks:
     milestone: M1 openai data plane
     title: Provider identity and model resolution
     status: todo
-    depends_on: [B004, B005, B193, B209, B210, B211]
+    depends_on: [B004, B005, B193, B209, B210, B211, B2229]
     file: tasks/B174-provider-resolution.yaml
     covers:
       - "litellm/litellm_core_utils/get_llm_provider_logic.py"
@@ -1877,7 +1889,7 @@ tasks:
     milestone: M1 openai data plane
     title: Provider parameter capabilities and mapping
     status: todo
-    depends_on: [B174, B006, B212]
+    depends_on: [B174, B006, B212, B2230]
     file: tasks/B175-provider-params.yaml
     covers:
       - "litellm/litellm_core_utils/get_supported_openai_params.py"
@@ -1886,7 +1898,7 @@ tasks:
     milestone: M1 openai data plane
     title: Trusted controls, provider headers and affinity
     status: todo
-    depends_on: [B174, B213]
+    depends_on: [B174, B213, B2228]
     file: tasks/B176-provider-controls.yaml
     covers:
       - "litellm/litellm_core_utils/{get_litellm_params,llm_request_utils,provider_affinity,get_provider_specific_headers}.py"
@@ -1947,6 +1959,7 @@ tasks:
     file: tasks/B183-inline-media.yaml
     covers:
       - "litellm/litellm_core_utils/prompt_templates/image_handling.py"
+      - "litellm/utils.py"
   - id: B184
     milestone: M1 openai data plane
     title: Shared provider error taxonomy
@@ -2030,11 +2043,12 @@ tasks:
     milestone: M1 openai data plane
     title: Pinned model catalog and exact prices
     status: todo
-    depends_on: [B004, B171, B204, B205]
+    depends_on: [B004, B171, B204, B205, B2229]
     file: tasks/B193-model-catalog.yaml
     covers:
       - "model_prices_and_context_window.json"
       - "litellm/model_prices_and_context_window_backup.json"
+      - "litellm/utils.py"
   - id: B194
     milestone: M1 openai data plane
     title: Model catalog loading and atomic refresh
@@ -2053,6 +2067,7 @@ tasks:
       - "litellm/litellm_core_utils/{tokenizer,default_encoding}.py"
       - "litellm/litellm_core_utils/tokenizers/**"
       - "litellm/utils.py"
+      - "litellm/main.py"
   - id: B196
     milestone: M1 openai data plane
     title: Text, message and tool token counting
@@ -2062,6 +2077,7 @@ tasks:
     covers:
       - "litellm/litellm_core_utils/token_counter.py"
       - "litellm/utils.py"
+      - "litellm/main.py"
   - id: B197
     milestone: M1 openai data plane
     title: Image and document token accounting
@@ -2079,6 +2095,7 @@ tasks:
     covers:
       - "litellm/{_internal_context,_uuid,_version,constants}.py"
       - "litellm/litellm_core_utils/{asyncify,cached_imports,coroutine_checker,env_utils,thread_pool_executor,aws_partition}.py"
+      - "litellm/main.py"
   - id: B199
     milestone: M1 openai data plane
     title: Duration parsing and calendar resets
@@ -2107,18 +2124,16 @@ tasks:
     milestone: M1 openai data plane
     title: OpenAI text completions
     status: todo
-    depends_on: [B010, B011, B014, B193]
+    depends_on: [B010, B011, B014, B193, B2237, B2238]
     file: tasks/B202-text-completions.yaml
     covers:
-      - "litellm/llms/openai/completion/**"
-      - "litellm/llms/openai/completion/handler.py"
-      - "litellm/llms/openai/completion/transformation.py"
-      - "litellm/llms/openai/completion/utils.py"
+      - "litellm/main.py"
+      - "litellm/proxy/proxy_server.py"
   - id: B203
     milestone: M1 openai data plane
     title: Streaming text completions and completion bridge
     status: todo
-    depends_on: [B202, B005, B014, B252]
+    depends_on: [B202, B005, B014, B252, B2237, B2238]
     file: tasks/B203-text-streaming.yaml
     covers:
       - "litellm/llms/base_llm/completion/**"
@@ -2145,7 +2160,7 @@ tasks:
     milestone: M1 openai data plane
     title: Common call metadata and response helpers
     status: todo
-    depends_on: [B198, B175, B184]
+    depends_on: [B198, B175, B184, B2204]
     file: tasks/B206-call-helpers.yaml
     covers:
       - "litellm/litellm_core_utils/core_helpers.py"
@@ -2177,7 +2192,7 @@ tasks:
     milestone: M1 openai data plane
     title: OpenAI-compatible defaults A
     status: todo
-    depends_on: [B209, B171]
+    depends_on: [B209, B171, B2207]
     file: tasks/B210-provider-defaults-a.yaml
     covers:
       - "litellm/litellm_core_utils/get_llm_provider_logic.py"
@@ -2394,7 +2409,7 @@ tasks:
     milestone: M1 openai data plane
     title: Azure and OpenRouter error classifiers
     status: todo
-    depends_on: [B184, B187, B236]
+    depends_on: [B184, B187, B236, B2215]
     file: tasks/B237-azure-openrouter-errors.yaml
     covers:
       - "litellm/litellm_core_utils/exception_mapping_utils.py"
@@ -2499,10 +2514,11 @@ tasks:
     milestone: M1 openai data plane
     title: Pre-call and post-call logging dispatch
     status: todo
-    depends_on: [B247, B248, B191, B187]
+    depends_on: [B247, B248, B191, B187, B2239]
     file: tasks/B249-logging-pre-post.yaml
     covers:
       - "litellm/litellm_core_utils/litellm_logging.py"
+      - "litellm/main.py"
   - id: B250
     milestone: M1 openai data plane
     title: Success callback dispatch and deduplication
@@ -2523,10 +2539,11 @@ tasks:
     milestone: M1 openai data plane
     title: Bounded stream logging and served text
     status: todo
-    depends_on: [B188, B005, B006]
+    depends_on: [B188, B005, B006, B2227]
     file: tasks/B252-logging-streams.yaml
     covers:
       - "litellm/litellm_core_utils/litellm_logging.py"
+      - "litellm/litellm_core_utils/streaming_handler.py"
   - id: B253
     milestone: M1 openai data plane
     title: Standard logging metadata and payload privacy inputs
@@ -2676,6 +2693,7 @@ tasks:
     file: tasks/B311-chat-stream-fallback.yaml
     covers:
       - "litellm/router.py"
+      - "litellm/router_utils/add_retry_fallback_headers.py"
   - id: B312
     milestone: M2 routing
     title: Responses and Messages stream fallback boundaries
@@ -2688,7 +2706,7 @@ tasks:
     milestone: M2 routing
     title: Fallback provider and capability generalization rules
     status: todo
-    depends_on: [B010, B013, B301, B361, B002]
+    depends_on: [B010, B013, B301, B361, B002, B2229]
     file: tasks/B313-model-generalizations.yaml
     covers:
       - "litellm/litellm_core_utils/fallback_generalizations.py"
@@ -2898,6 +2916,7 @@ tasks:
     file: tasks/B338-quality-router.yaml
     covers:
       - "litellm/router_strategy/quality_router/**"
+      - "litellm/router_utils/add_retry_fallback_headers.py"
   - id: B339
     milestone: M2 routing
     title: Adaptive request classification and bandit selection
@@ -3147,6 +3166,7 @@ tasks:
     file: tasks/B366-complexity-pipeline.yaml
     covers:
       - "litellm/router_strategy/complexity_router/complexity_router.py"
+      - "litellm/router_utils/add_retry_fallback_headers.py"
   - id: B367
     milestone: M2 routing
     title: Wildcard deployment matching
@@ -3342,7 +3362,7 @@ tasks:
     milestone: M2 routing
     title: Typed routing values and bounded local store
     status: todo
-    depends_on: [B002, B301, B361]
+    depends_on: [B002, B301, B361, B2226]
     file: tasks/B390-routing-value-store.yaml
     covers:
       - "litellm/caching/in_memory_cache.py"
@@ -3441,16 +3461,17 @@ tasks:
     milestone: M3 providers
     title: OpenAI credential and endpoint settings
     status: todo
-    depends_on: [B002, B171, B187, B004]
+    depends_on: [B002, B171, B004]
     file: tasks/B500-openai-credentials.yaml
     covers:
       - "litellm/llms/openai/data_residency.py"
       - "litellm/llms/openai/common_utils.py"
+      - "litellm/main.py"
   - id: B501
     milestone: M3 providers
     title: OpenAI workload identity credentials
     status: todo
-    depends_on: [B500, B173, B171, B002]
+    depends_on: [B500, B173, B171, B002, B668, B129]
     file: tasks/B501-openai-workload-identity.yaml
     covers:
       - "litellm/llms/openai/workload_identity.py"
@@ -3458,7 +3479,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI reasoning and audio model parameters
     status: todo
-    depends_on: [B175, B193, B171, B212, B221, B668]
+    depends_on: [B175, B193, B171, B668, B174, B503, B206, B2221]
     file: tasks/B502-openai-reasoning-models.yaml
     covers:
       - "litellm/llms/openai/chat/gpt_5_transformation.py"
@@ -3468,7 +3489,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI chat media and tool sanitation
     status: todo
-    depends_on: [B004, B183, B178, B219, B221, B171, B500, B002]
+    depends_on: [B004, B183, B178, B219, B171, B500, B002]
     file: tasks/B503-openai-chat-content.yaml
     covers:
       - "litellm/llms/openai/chat/gpt_transformation.py"
@@ -3476,7 +3497,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI response choices and stream normalization
     status: todo
-    depends_on: [B004, B005, B185, B171, B226, B500, B668, B510, B173]
+    depends_on: [B004, B005, B171, B500, B668, B510, B173, B216, B206, B129, B2214, B249, B220]
     file: tasks/B504-openai-chat-choices.yaml
     covers:
       - "litellm/llms/openai/chat/gpt_transformation.py"
@@ -3484,15 +3505,16 @@ tasks:
     milestone: M3 providers
     title: OpenAI output-limit and rejected-field recovery
     status: todo
-    depends_on: [B004, B005, B171, B196]
+    depends_on: [B004, B005, B171, B196, B190]
     file: tasks/B505-openai-output-limits.yaml
     covers:
       - "litellm/llms/openai/common_utils.py"
+      - "litellm/llms/azure/azure.py"
   - id: B506
     milestone: M3 providers
     title: OpenAI Responses options and reasoning gates
     status: todo
-    depends_on: [B193, B502, B175, B171]
+    depends_on: [B193, B502, B175, B171, B668, B902, B206, B2221, B2219]
     file: tasks/B506-openai-response-params.yaml
     covers:
       - "litellm/llms/openai/responses/transformation.py"
@@ -3500,7 +3522,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI Responses replay input and tool schemas
     status: todo
-    depends_on: [B506, B178, B171, B907]
+    depends_on: [B506, B178, B171, B907, B219, B192, B902]
     file: tasks/B507-openai-response-input.yaml
     covers:
       - "litellm/llms/openai/responses/transformation.py"
@@ -3508,7 +3530,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI Responses replies and event decoding
     status: todo
-    depends_on: [B506, B501, B500, B005, B171, B185]
+    depends_on: [B506, B501, B500, B005, B171, B004, B206, B668, B1113, B129, B2221, B249]
     file: tasks/B508-openai-response-events.yaml
     covers:
       - "litellm/llms/openai/responses/transformation.py"
@@ -3516,7 +3538,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI Responses retrieve cancel delete and compact
     status: todo
-    depends_on: [B507, B508, B171, B173, B506]
+    depends_on: [B507, B508, B171, B506, B004, B206, B668, B902, B249]
     file: tasks/B509-openai-response-resources.yaml
     covers:
       - "litellm/llms/openai/responses/transformation.py"
@@ -3534,7 +3556,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI image generation variants
     status: todo
-    depends_on: [B500, B173, B171, B185]
+    depends_on: [B500, B173, B171, B004, B206, B668, B249]
     file: tasks/B511-openai-image-generation.yaml
     covers:
       - "litellm/llms/openai/image_generation/__init__.py"
@@ -3546,7 +3568,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI image edit multipart mapping
     status: todo
-    depends_on: [B511, B173, B183, B171, B997]
+    depends_on: [B511, B173, B171, B1120, B668, B500, B129, B2202]
     file: tasks/B512-openai-image-edits.yaml
     covers:
       - "litellm/llms/openai/image_edit/__init__.py"
@@ -3556,7 +3578,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI image variation requests
     status: todo
-    depends_on: [B511, B173, B183, B171]
+    depends_on: [B511, B173, B171, B668, B249, B2230]
     file: tasks/B513-openai-image-variations.yaml
     covers:
       - "litellm/llms/openai/image_variations/handler.py"
@@ -3565,7 +3587,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI binary speech generation
     status: todo
-    depends_on: [B500, B173, B171, B185]
+    depends_on: [B173, B171, B004, B206, B190, B249]
     file: tasks/B514-openai-speech.yaml
     covers:
       - "litellm/llms/openai/openai.py"
@@ -3573,7 +3595,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI audio transcription mapping
     status: todo
-    depends_on: [B500, B173, B171, B185]
+    depends_on: [B173, B171, B004, B206, B1001, B668, B129, B249]
     file: tasks/B515-openai-transcription.yaml
     covers:
       - "litellm/llms/openai/transcriptions/handler.py"
@@ -3624,7 +3646,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI thread runs and run streams
     status: todo
-    depends_on: [B520, B005, B173, B171]
+    depends_on: [B005, B173, B171, B519]
     file: tasks/B521-openai-thread-runs.yaml
     covers:
       - "litellm/llms/openai/openai.py"
@@ -3632,7 +3654,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI containers and container files
     status: todo
-    depends_on: [B500, B173, B171, B185, B068]
+    depends_on: [B500, B173, B171, B068, B206, B129, B2202]
     file: tasks/B522-openai-containers.yaml
     covers:
       - "litellm/llms/openai/containers/transformation.py"
@@ -3641,7 +3663,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI evals and eval runs
     status: todo
-    depends_on: [B500, B173, B171, B185]
+    depends_on: [B500, B173, B171, B206, B129]
     file: tasks/B523-openai-evals.yaml
     covers:
       - "litellm/llms/openai/evals/transformation.py"
@@ -3649,7 +3671,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI Decisions intermediate representation
     status: todo
-    depends_on: [B500, B173, B171]
+    depends_on: [B500, B173, B171, B099, B129]
     file: tasks/B524-openai-decisions.yaml
     covers:
       - "litellm/llms/openai/decisions/transformation.py"
@@ -3658,7 +3680,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI video create list and retrieval
     status: todo
-    depends_on: [B500, B173, B171, B672, B997]
+    depends_on: [B500, B173, B171, B672, B1120, B206, B668, B129, B2202]
     file: tasks/B525-openai-videos.yaml
     covers:
       - "litellm/llms/openai/videos/transformation.py"
@@ -3666,7 +3688,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI video edits extensions and characters
     status: todo
-    depends_on: [B525, B173, B171, B672]
+    depends_on: [B173, B171, B672, B206]
     file: tasks/B526-openai-video-edits.yaml
     covers:
       - "litellm/llms/openai/videos/transformation.py"
@@ -3674,17 +3696,16 @@ tasks:
     milestone: M3 providers
     title: OpenAI vector stores and attached files
     status: todo
-    depends_on: [B500, B173, B171]
+    depends_on: [B500, B173, B171, B668]
     file: tasks/B527-openai-vector-stores.yaml
     covers:
       - "litellm/llms/openai/vector_stores/transformation.py"
       - "litellm/llms/openai/vector_store_files/transformation.py"
-      - "litellm/utils.py"
   - id: B528
     milestone: M3 providers
     title: OpenAI realtime connection and session requests
     status: todo
-    depends_on: [B500, B173, B171, B187, B1004, B1005, B1006, B1008, B1009]
+    depends_on: [B500, B173, B171, B187, B1004, B1005, B1006, B1008, B1009, B249]
     file: tasks/B528-openai-realtime.yaml
     covers:
       - "litellm/llms/openai/realtime/handler.py"
@@ -3693,7 +3714,7 @@ tasks:
     milestone: M3 providers
     title: Azure configuration and credential selection
     status: todo
-    depends_on: [B002, B173, B171, B187, B004, B673, B674, B675, B676, B677, B530]
+    depends_on: [B002, B173, B171, B673, B675, B677, B530, B129, B165, B2226]
     file: tasks/B529-azure-credentials.yaml
     covers:
       - "litellm/llms/azure/common_utils.py"
@@ -3704,7 +3725,7 @@ tasks:
     milestone: M3 providers
     title: Azure federated OIDC token exchange
     status: todo
-    depends_on: [B173, B171, B002, B673]
+    depends_on: [B173, B171, B002, B673, B129, B2226]
     file: tasks/B530-azure-oidc-exchange.yaml
     covers:
       - "litellm/llms/azure/common_utils.py"
@@ -3712,7 +3733,7 @@ tasks:
     milestone: M3 providers
     title: Azure v1 and deployment endpoint construction
     status: todo
-    depends_on: [B529, B530, B173, B171, B002]
+    depends_on: [B529, B530, B173, B171, B002, B2200, B673, B675, B004]
     file: tasks/B531-azure-endpoints.yaml
     covers:
       - "litellm/llms/azure/common_utils.py"
@@ -3721,7 +3742,7 @@ tasks:
     milestone: M3 providers
     title: Azure chat parameters and message conversion
     status: todo
-    depends_on: [B531, B502, B182, B178, B193, B171, B684]
+    depends_on: [B531, B502, B182, B178, B193, B171, B684, B668, B205, B206, B174, B198, B2221, B2225, B2230]
     file: tasks/B532-azure-chat-params.yaml
     covers:
       - "litellm/llms/azure/chat/gpt_transformation.py"
@@ -3729,19 +3750,18 @@ tasks:
       - "litellm/llms/azure/chat/o_series_transformation.py"
   - id: B533
     milestone: M3 providers
-    title: Azure chat transport and content-filter errors
+    title: Azure chat execution and SDK error propagation
     status: todo
-    depends_on: [B531, B532, B504, B173, B005, B237, B171, B505, B529, B530, B685]
+    depends_on: [B531, B532, B171, B505, B685, B004, B684, B249, B673, B668, B2202]
     file: tasks/B533-azure-chat-call.yaml
     covers:
       - "litellm/llms/azure/azure.py"
       - "litellm/llms/azure/chat/o_series_handler.py"
-      - "litellm/llms/azure/exception_mapping.py"
   - id: B534
     milestone: M3 providers
     title: Azure embedding requests
     status: todo
-    depends_on: [B531, B006, B173, B171, B237, B529]
+    depends_on: [B531, B006, B173, B171, B237, B529, B004, B673, B249]
     file: tasks/B534-azure-embeddings.yaml
     covers:
       - "litellm/llms/azure/azure.py"
@@ -3749,16 +3769,17 @@ tasks:
     milestone: M3 providers
     title: Azure image HTTP execution and operation polling
     status: todo
-    depends_on: [B531, B173, B171, B237, B002, B009]
+    depends_on: [B173, B171, B002, B009, B673]
     file: tasks/B535-azure-image-transport.yaml
     covers:
       - "litellm/llms/azure/azure.py"
       - "litellm/llms/azure/image_generation/http_utils.py"
+      - "litellm/utils.py"
   - id: B536
     milestone: M3 providers
     title: Azure image generation and edits
     status: todo
-    depends_on: [B531, B535, B511, B512, B553, B554, B171, B529]
+    depends_on: [B531, B535, B511, B512, B553, B554, B171, B529, B2200, B668, B004, B129, B673, B249]
     file: tasks/B536-azure-images.yaml
     covers:
       - "litellm/llms/azure/azure.py"
@@ -3769,7 +3790,7 @@ tasks:
     milestone: M3 providers
     title: Azure OpenAI speech transport
     status: todo
-    depends_on: [B531, B514, B173, B171]
+    depends_on: [B531, B173, B171, B190, B1083, B1084, B129, B2200, B249]
     file: tasks/B537-azure-speech.yaml
     covers:
       - "litellm/llms/azure/azure.py"
@@ -3786,7 +3807,7 @@ tasks:
     milestone: M3 providers
     title: Azure native and OpenAI transcription
     status: todo
-    depends_on: [B531, B515, B173, B171, B002]
+    depends_on: [B531, B515, B173, B171, B002, B1001, B004, B668, B673, B129, B249, B2202]
     file: tasks/B539-azure-transcription.yaml
     covers:
       - "litellm/llms/azure/audio_transcription/transformation.py"
@@ -3795,14 +3816,14 @@ tasks:
     milestone: M3 providers
     title: Azure text completions
     status: todo
-    depends_on: [B531, B202, B203, B182, B173, B171]
+    depends_on: [B531, B171, B177, B005, B673, B249, B2237]
     file: tasks/B540-azure-completion.yaml
     covers:
       - "litellm/llms/azure/completion/handler.py"
       - "litellm/llms/azure/completion/transformation.py"
   - id: B541
     milestone: M3 providers
-    title: Azure files and batch lifecycle
+    title: Azure batch lifecycle
     status: todo
     depends_on: [B531, B516, B517, B173, B171, B694]
     file: tasks/B541-azure-files.yaml
@@ -3830,7 +3851,7 @@ tasks:
     milestone: M3 providers
     title: Azure Responses native requests
     status: todo
-    depends_on: [B531, B506, B507, B508, B509, B502, B171]
+    depends_on: [B506, B507, B508, B509, B502, B171, B2200, B532, B174, B206, B673, B2221]
     file: tasks/B544-azure-responses.yaml
     covers:
       - "litellm/llms/azure/responses/transformation.py"
@@ -3839,7 +3860,7 @@ tasks:
     milestone: M3 providers
     title: Azure realtime protocol and HTTP sessions
     status: todo
-    depends_on: [B531, B171, B1004, B1005, B1006, B1008, B1009, B002]
+    depends_on: [B531, B171, B1004, B1005, B1006, B1008, B1009, B002, B129, B528]
     file: tasks/B545-azure-realtime.yaml
     covers:
       - "litellm/llms/azure/realtime/handler.py"
@@ -3848,7 +3869,7 @@ tasks:
     milestone: M3 providers
     title: Azure web search via Responses
     status: todo
-    depends_on: [B531, B530, B508, B173, B171, B529, B677]
+    depends_on: [B531, B530, B508, B173, B171, B529, B677, B091, B668, B129, B002, B2202]
     file: tasks/B546-azure-search.yaml
     covers:
       - "litellm/llms/azure/search/transformation.py"
@@ -3856,7 +3877,7 @@ tasks:
     milestone: M3 providers
     title: Azure container video and vector-store endpoints
     status: todo
-    depends_on: [B531, B522, B525, B527, B171]
+    depends_on: [B522, B525, B527, B171, B2200]
     file: tasks/B547-azure-resource-urls.yaml
     covers:
       - "litellm/llms/azure/containers/transformation.py"
@@ -3866,7 +3887,7 @@ tasks:
     milestone: M3 providers
     title: Azure native passthrough preparation and logging
     status: todo
-    depends_on: [B531, B508, B504, B171, B188, B101, B103, B668]
+    depends_on: [B508, B504, B171, B188, B101, B103, B668, B2200, B129]
     file: tasks/B548-azure-passthrough.yaml
     covers:
       - "litellm/llms/azure/passthrough/transformation.py"
@@ -3874,7 +3895,7 @@ tasks:
     milestone: M3 providers
     title: Foundry endpoint and authentication settings
     status: todo
-    depends_on: [B529, B530, B531, B002, B171, B173, B004, B502, B673, B675]
+    depends_on: [B529, B530, B531, B002, B171, B173, B004, B502, B673, B675, B129, B2220]
     file: tasks/B549-foundry-credentials.yaml
     covers:
       - "litellm/llms/azure_ai/common_utils.py"
@@ -3883,7 +3904,7 @@ tasks:
     milestone: M3 providers
     title: Foundry chat request and response mapping
     status: todo
-    depends_on: [B549, B502, B503, B504, B193, B218, B171, B531]
+    depends_on: [B549, B502, B503, B504, B193, B218, B171, B2200, B668, B174, B219, B036, B129, B2221]
     file: tasks/B550-foundry-chat.yaml
     covers:
       - "litellm/llms/azure_ai/chat/transformation.py"
@@ -3891,7 +3912,7 @@ tasks:
     milestone: M3 providers
     title: Foundry bounded 422 request repair
     status: todo
-    depends_on: [B550, B505, B010, B173, B171]
+    depends_on: [B550, B505, B010, B173, B171, B219, B198]
     file: tasks/B551-foundry-rejected-fields.yaml
     covers:
       - "litellm/llms/azure_ai/chat/transformation.py"
@@ -3899,7 +3920,7 @@ tasks:
     milestone: M3 providers
     title: Foundry text and image embeddings
     status: todo
-    depends_on: [B549, B006, B173, B183, B171]
+    depends_on: [B549, B006, B173, B183, B171, B004, B668]
     file: tasks/B552-foundry-embeddings.yaml
     covers:
       - "litellm/llms/azure_ai/embed/handler.py"
@@ -3917,7 +3938,7 @@ tasks:
     milestone: M3 providers
     title: Foundry MAI images and usage
     status: todo
-    depends_on: [B549, B511, B171, B668]
+    depends_on: [B549, B511, B171, B668, B004, B249]
     file: tasks/B554-foundry-mai-images.yaml
     covers:
       - "litellm/llms/azure_ai/image_generation/mai_transformation.py"
@@ -3925,7 +3946,7 @@ tasks:
     milestone: M3 providers
     title: Foundry Flux and MAI image edits
     status: todo
-    depends_on: [B549, B553, B554, B512, B183, B171, B002, B668]
+    depends_on: [B549, B553, B554, B512, B183, B171, B002, B668, B004, B129, B249]
     file: tasks/B555-foundry-image-edits.yaml
     covers:
       - "litellm/llms/azure_ai/image_edit/__init__.py"
@@ -3936,7 +3957,7 @@ tasks:
     milestone: M3 providers
     title: Foundry rerank requests
     status: todo
-    depends_on: [B549, B173, B171]
+    depends_on: [B549, B173, B171, B037, B668, B129]
     file: tasks/B556-foundry-rerank.yaml
     covers:
       - "litellm/llms/azure_ai/rerank/transformation.py"
@@ -3944,7 +3965,7 @@ tasks:
     milestone: M3 providers
     title: Foundry native Responses and Decisions
     status: todo
-    depends_on: [B549, B531, B506, B507, B508, B509, B524, B171]
+    depends_on: [B549, B506, B507, B508, B509, B171, B544, B099]
     file: tasks/B557-foundry-responses.yaml
     covers:
       - "litellm/llms/azure_ai/responses/transformation.py"
@@ -3953,7 +3974,7 @@ tasks:
     milestone: M3 providers
     title: Foundry Azure AI Search vector queries
     status: todo
-    depends_on: [B549, B173, B171]
+    depends_on: [B173, B171, B2200, B1058, B1059, B002]
     file: tasks/B558-foundry-vector-stores.yaml
     covers:
       - "litellm/llms/azure_ai/vector_stores/transformation.py"
@@ -3961,7 +3982,7 @@ tasks:
     milestone: M3 providers
     title: Foundry agent request and run URL construction
     status: todo
-    depends_on: [B549, B218, B171]
+    depends_on: [B549, B218, B171, B206, B668, B129, B2202]
     file: tasks/B559-foundry-agent-requests.yaml
     covers:
       - "litellm/llms/azure_ai/agents/transformation.py"
@@ -3970,7 +3991,7 @@ tasks:
     milestone: M3 providers
     title: Foundry agent thread and run execution
     status: todo
-    depends_on: [B559, B173, B171, B561, B531, B529]
+    depends_on: [B559, B173, B171, B561, B529, B2202]
     file: tasks/B560-foundry-agent-runs.yaml
     covers:
       - "litellm/llms/azure_ai/agents/handler.py"
@@ -3979,7 +4000,7 @@ tasks:
     milestone: M3 providers
     title: Foundry agent replies and SSE events
     status: todo
-    depends_on: [B559, B005, B196, B171]
+    depends_on: [B559, B005, B196, B171, B173, B2202]
     file: tasks/B561-foundry-agent-results.yaml
     covers:
       - "litellm/llms/azure_ai/agents/handler.py"
@@ -3987,7 +4008,7 @@ tasks:
     milestone: M3 providers
     title: Foundry model-router metadata and selection
     status: todo
-    depends_on: [B549, B550, B193, B171]
+    depends_on: [B549, B550, B171, B563, B565, B2200, B129, B2202, B2220, B2230]
     file: tasks/B562-foundry-model-router.yaml
     covers:
       - "litellm/llms/azure_ai/common_utils.py"
@@ -3996,7 +4017,7 @@ tasks:
     milestone: M3 providers
     title: Foundry Anthropic chat transport
     status: todo
-    depends_on: [B549, B577, B580, B582, B173, B171, B584, B570, B531, B689, B567]
+    depends_on: [B577, B580, B582, B173, B171, B584, B570, B689, B567, B2200, B568, B249, B2201]
     file: tasks/B563-foundry-anthropic.yaml
     covers:
       - "litellm/llms/azure_ai/anthropic/handler.py"
@@ -4005,7 +4026,7 @@ tasks:
     milestone: M3 providers
     title: Foundry Anthropic Messages requests
     status: todo
-    depends_on: [B549, B577, B570, B571, B171, B531, B961]
+    depends_on: [B2200, B960, B961, B129, B171]
     file: tasks/B564-foundry-anthropic-messages.yaml
     covers:
       - "litellm/llms/azure_ai/anthropic/messages_transformation.py"
@@ -4013,7 +4034,7 @@ tasks:
     milestone: M3 providers
     title: Foundry Anthropic token counting
     status: todo
-    depends_on: [B549, B585, B564, B173, B171, B531, B567]
+    depends_on: [B549, B585, B2200, B173, B567, B171]
     file: tasks/B565-foundry-anthropic-count.yaml
     covers:
       - "litellm/llms/azure_ai/anthropic/count_tokens/handler.py"
@@ -4023,7 +4044,7 @@ tasks:
     milestone: M3 providers
     title: Foundry passthrough URLs and response projections
     status: todo
-    depends_on: [B549, B548, B188, B171, B101, B092]
+    depends_on: [B549, B548, B171, B101, B092, B103]
     file: tasks/B566-foundry-passthrough.yaml
     covers:
       - "litellm/llms/azure_ai/passthrough/transformation.py"
@@ -4031,7 +4052,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic settings and OAuth credential projection
     status: todo
-    depends_on: [B002, B173, B171, B187, B193, B004]
+    depends_on: [B002, B173, B171, B129, B2202]
     file: tasks/B567-anthropic-credentials.yaml
     covers:
       - "litellm/llms/anthropic/common_utils.py"
@@ -4039,16 +4060,17 @@ tasks:
     milestone: M3 providers
     title: Anthropic content feature and beta detection
     status: todo
-    depends_on: [B193, B171, B180, B569]
+    depends_on: [B688, B174, B234, B221, B180, B171, B2221]
     file: tasks/B568-anthropic-feature-flags.yaml
     covers:
       - "litellm/llms/anthropic/common_utils.py"
       - "litellm/types/llms/anthropic_tool_search.py"
+      - "litellm/integrations/websearch_interception/tools.py"
   - id: B569
     milestone: M3 providers
     title: Anthropic model capability and thinking policy
     status: todo
-    depends_on: [B567, B193, B212, B171, B591, B688]
+    depends_on: [B688, B206, B171, B2216, B2221]
     file: tasks/B569-anthropic-capabilities.yaml
     covers:
       - "litellm/llms/anthropic/common_utils.py"
@@ -4057,7 +4079,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic request headers and model discovery
     status: todo
-    depends_on: [B567, B568, B569, B171]
+    depends_on: [B567, B568, B171, B688]
     file: tasks/B570-anthropic-headers.yaml
     covers:
       - "litellm/llms/anthropic/common_utils.py"
@@ -4066,7 +4088,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic history cleanup and cache portability
     status: todo
-    depends_on: [B567, B180, B171]
+    depends_on: [B220, B180, B171]
     file: tasks/B571-anthropic-message-replay.yaml
     covers:
       - "litellm/llms/anthropic/common_utils.py"
@@ -4074,7 +4096,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic web-search replay flattening
     status: todo
-    depends_on: [B567, B171, B180]
+    depends_on: [B171, B180]
     file: tasks/B572-anthropic-web-replay.yaml
     covers:
       - "litellm/llms/anthropic/common_utils.py"
@@ -4083,7 +4105,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic reversible tool-name mapping
     status: todo
-    depends_on: [B567, B171, B217]
+    depends_on: [B171]
     file: tasks/B573-anthropic-tool-names.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
@@ -4091,7 +4113,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic structured-output schema filtering
     status: todo
-    depends_on: [B567, B178, B171, B217]
+    depends_on: [B217, B171, B2202]
     file: tasks/B574-anthropic-output-schema.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
@@ -4099,7 +4121,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic tools and tool-choice conversion
     status: todo
-    depends_on: [B567, B569, B574, B178, B171, B568]
+    depends_on: [B217, B568, B180, B171]
     file: tasks/B575-anthropic-tools.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
@@ -4108,7 +4130,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic chat parameter and context mapping
     status: todo
-    depends_on: [B569, B575, B574, B175, B171]
+    depends_on: [B2201, B569, B575, B574, B688, B206, B171, B2202]
     file: tasks/B576-anthropic-params.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
@@ -4117,7 +4139,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic chat request assembly
     status: todo
-    depends_on: [B576, B573, B570, B571, B180, B221, B183, B171, B575, B568, B569]
+    depends_on: [B576, B573, B571, B180, B221, B183, B171, B575, B568, B569, B2201, B2202, B688, B174, B206, B567, B2221]
     file: tasks/B577-anthropic-request.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
@@ -4126,16 +4148,17 @@ tasks:
     milestone: M3 providers
     title: Anthropic reply content and tool-result projection
     status: todo
-    depends_on: [B575, B226, B171]
+    depends_on: [B902, B171]
     file: tasks/B578-anthropic-response-content.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
       - "litellm/types/llms/anthropic.py"
+      - "litellm/llms/base_llm/base_utils.py"
   - id: B579
     milestone: M3 providers
     title: Anthropic usage and cache-token normalization
     status: todo
-    depends_on: [B567, B196, B171]
+    depends_on: [B196, B171]
     file: tasks/B579-anthropic-usage.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
@@ -4144,7 +4167,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic response envelope conversion
     status: todo
-    depends_on: [B578, B579, B573, B238, B171, B570]
+    depends_on: [B578, B579, B570, B567, B206, B190, B002, B171, B249]
     file: tasks/B580-anthropic-response.yaml
     covers:
       - "litellm/llms/anthropic/chat/transformation.py"
@@ -4153,7 +4176,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic streaming block and usage state
     status: todo
-    depends_on: [B578, B579, B171]
+    depends_on: [B579, B005, B902, B004, B206, B171, B2201, B2214]
     file: tasks/B581-anthropic-stream-state.yaml
     covers:
       - "litellm/llms/anthropic/chat/handler.py"
@@ -4162,7 +4185,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic event-to-chat chunk conversion
     status: todo
-    depends_on: [B581, B573, B171, B578]
+    depends_on: [B581, B578, B902, B005, B567, B171]
     file: tasks/B582-anthropic-stream-events.yaml
     covers:
       - "litellm/llms/anthropic/chat/handler.py"
@@ -4170,7 +4193,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic SSE decoding and cancellation
     status: todo
-    depends_on: [B582, B005, B173, B171, B581]
+    depends_on: [B582, B005, B173, B171, B581, B567]
     file: tasks/B583-anthropic-stream-decode.yaml
     covers:
       - "litellm/llms/anthropic/chat/handler.py"
@@ -4178,7 +4201,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic chat HTTP execution
     status: todo
-    depends_on: [B577, B580, B583, B173, B238, B171, B570, B689, B960]
+    depends_on: [B577, B580, B173, B570, B689, B960, B567, B190, B005, B171, B2230, B249, B2201]
     file: tasks/B584-anthropic-chat-call.yaml
     covers:
       - "litellm/llms/anthropic/chat/handler.py"
@@ -4186,25 +4209,26 @@ tasks:
     milestone: M3 providers
     title: Anthropic native token counting
     status: todo
-    depends_on: [B577, B570, B173, B196, B171, B567]
+    depends_on: [B567, B173, B198, B002, B171]
     file: tasks/B585-anthropic-count-tokens.yaml
     covers:
       - "litellm/llms/anthropic/count_tokens/handler.py"
       - "litellm/llms/anthropic/count_tokens/token_counter.py"
       - "litellm/llms/anthropic/count_tokens/transformation.py"
+      - "litellm/llms/anthropic/common_utils.py"
   - id: B586
     milestone: M3 providers
     title: Legacy Anthropic completions
     status: todo
-    depends_on: [B567, B177, B202, B203, B005, B173, B171, B576, B195]
+    depends_on: [B177, B005, B2201, B2202, B195, B002, B171, B2214]
     file: tasks/B586-anthropic-completion.yaml
     covers:
       - "litellm/llms/anthropic/completion/transformation.py"
   - id: B587
     milestone: M3 providers
-    title: Anthropic batch creation and result status
+    title: Anthropic batch retrieval and result projection
     status: todo
-    depends_on: [B577, B580, B570, B517, B173, B171, B068]
+    depends_on: [B2201, B567, B580, B173, B171, B068, B190, B249, B247]
     file: tasks/B587-anthropic-batches.yaml
     covers:
       - "litellm/llms/anthropic/batches/transformation.py"
@@ -4213,7 +4237,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic native file lifecycle
     status: todo
-    depends_on: [B570, B516, B173, B171, B567]
+    depends_on: [B567, B235, B171, B173]
     file: tasks/B588-anthropic-files.yaml
     covers:
       - "litellm/llms/anthropic/files/transformation.py"
@@ -4221,7 +4245,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock AWS credential inputs and local sources
     status: todo
-    depends_on: [B002, B198, B173, B171, B187, B682]
+    depends_on: [B682, B172, B171, B2226]
     file: tasks/B590-bedrock-aws-settings.yaml
     covers:
       - "litellm/llms/bedrock/base_aws_llm.py"
@@ -4230,16 +4254,16 @@ tasks:
     milestone: M3 providers
     title: Bedrock model identifiers regions and endpoints
     status: todo
-    depends_on: [B590, B198, B171, B002]
+    depends_on: [B590, B198, B2203, B171, B002, B129]
     file: tasks/B591-bedrock-aws-endpoints.yaml
     covers:
       - "litellm/llms/bedrock/base_aws_llm.py"
       - "litellm/llms/bedrock/common_utils.py"
   - id: B592
     milestone: M3 providers
-    title: AWS role assumption and credential expiry
+    title: AWS role identity probes and credential expiry
     status: todo
-    depends_on: [B590, B591, B173, B171]
+    depends_on: [B590, B682, B171]
     file: tasks/B592-bedrock-assume-role.yaml
     covers:
       - "litellm/llms/bedrock/base_aws_llm.py"
@@ -4247,7 +4271,7 @@ tasks:
     milestone: M3 providers
     title: AWS web identity and IRSA role chains
     status: todo
-    depends_on: [B590, B591, B592, B173, B171]
+    depends_on: [B590, B591, B187, B002, B171, B129]
     file: tasks/B593-bedrock-web-identity.yaml
     covers:
       - "litellm/llms/bedrock/base_aws_llm.py"
@@ -4255,7 +4279,7 @@ tasks:
     milestone: M3 providers
     title: AWS credential resolver composition
     status: todo
-    depends_on: [B590, B591, B592, B593, B171]
+    depends_on: [B590, B591, B592, B593, B171, B682]
     file: tasks/B594-bedrock-credentials.yaml
     covers:
       - "litellm/llms/bedrock/base_aws_llm.py"
@@ -4263,15 +4287,16 @@ tasks:
     milestone: M3 providers
     title: Bedrock SigV4 and bearer request signing
     status: todo
-    depends_on: [B594, B591, B173, B171, B590]
+    depends_on: [B594, B591, B171, B590]
     file: tasks/B595-bedrock-signing.yaml
     covers:
       - "litellm/llms/bedrock/base_aws_llm.py"
+      - "litellm/llms/bedrock/common_utils.py"
   - id: B596
     milestone: M3 providers
     title: Bedrock trusted request metadata and SDK projection
     status: todo
-    depends_on: [B590, B594, B591, B595, B173, B198, B171, B002]
+    depends_on: [B171, B002]
     file: tasks/B596-bedrock-request-policy.yaml
     covers:
       - "litellm/llms/bedrock/common_utils.py"
@@ -4281,7 +4306,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Invoke structured-output and tool schemas
     status: todo
-    depends_on: [B575, B574, B178, B171, B569]
+    depends_on: [B569, B171, B688, B2221]
     file: tasks/B597-bedrock-invoke-schema.yaml
     covers:
       - "litellm/llms/bedrock/common_utils.py"
@@ -4289,7 +4314,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock model capabilities and route selection
     status: todo
-    depends_on: [B591, B596, B569, B193, B171, B002, B690]
+    depends_on: [B2203, B596, B193, B171]
     file: tasks/B598-bedrock-model-routes.yaml
     covers:
       - "litellm/llms/bedrock/common_utils.py"
@@ -4297,10 +4322,9 @@ tasks:
     milestone: M3 providers
     title: AWS event-stream decoding and native errors
     status: todo
-    depends_on: [B590, B173, B239, B171]
+    depends_on: [B682, B173, B187, B171]
     file: tasks/B599-bedrock-event-frames.yaml
     covers:
-      - "litellm/llms/bedrock/chat/__init__.py"
       - "litellm/llms/bedrock/common_utils.py"
       - "litellm/llms/bedrock/chat/invoke_handler.py"
       - "litellm/types/llms/bedrock.py"
@@ -4308,7 +4332,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse reasoning and model options
     status: todo
-    depends_on: [B598, B569, B175, B171, B591, B688]
+    depends_on: [B2203, B569, B688, B690, B171, B002, B2216, B2221]
     file: tasks/B600-bedrock-converse-options.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4316,7 +4340,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse tool choice and structured outputs
     status: todo
-    depends_on: [B598, B575, B574, B178, B171, B600, B569, B688]
+    depends_on: [B600, B688, B231, B2202, B171, B2221]
     file: tasks/B601-bedrock-converse-tools.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4325,7 +4349,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse parameter composition
     status: todo
-    depends_on: [B600, B601, B596, B171, B598, B576, B569, B591, B688]
+    depends_on: [B600, B601, B596, B569, B688, B690, B2201, B2202, B2203, B171]
     file: tasks/B602-bedrock-converse-params.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4333,7 +4357,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse system and orphan-tool handling
     status: todo
-    depends_on: [B598, B181, B171, B602]
+    depends_on: [B218, B221, B2202, B602, B002, B171]
     file: tasks/B603-bedrock-converse-messages.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4341,7 +4365,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse request assembly
     status: todo
-    depends_on: [B602, B603, B570, B571, B181, B183, B171, B596, B601, B600, B598, B599, B569, B591, B683, B688]
+    depends_on: [B600, B601, B602, B603, B683, B596, B690, B569, B688, B2202, B2203, B2204, B206, B181, B183, B171, B598]
     file: tasks/B604-bedrock-converse-request.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4349,7 +4373,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse usage and thinking details
     status: todo
-    depends_on: [B579, B171]
+    depends_on: [B579, B196, B171]
     file: tasks/B605-bedrock-converse-usage.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4357,7 +4381,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse tool content and citations
     status: todo
-    depends_on: [B601, B226, B171, B598]
+    depends_on: [B218, B598, B005, B171, B220]
     file: tasks/B606-bedrock-converse-content.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4365,7 +4389,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse response conversion
     status: todo
-    depends_on: [B605, B606, B598, B239, B171, B596]
+    depends_on: [B605, B606, B596, B682, B190, B206, B198, B171, B249]
     file: tasks/B607-bedrock-converse-response.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -4373,7 +4397,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Converse event-to-chat mapping
     status: todo
-    depends_on: [B599, B606, B605, B171, B598]
+    depends_on: [B605, B598, B206, B198, B005, B171]
     file: tasks/B608-bedrock-converse-events.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_handler.py"
@@ -4381,16 +4405,17 @@ tasks:
     milestone: M3 providers
     title: Bedrock Invoke provider and JSON-mode streams
     status: todo
-    depends_on: [B599, B608, B583, B171, B581]
+    depends_on: [B599, B608, B581, B582, B578, B504, B206, B004, B171, B2214, B010, B2201]
     file: tasks/B609-bedrock-invoke-events.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_handler.py"
       - "litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py"
+      - "litellm/llms/bedrock/chat/__init__.py"
   - id: B610
     milestone: M3 providers
     title: Bedrock Converse transport
     status: todo
-    depends_on: [B604, B607, B608, B594, B591, B595, B173, B171, B599, B590, B596, B691, B960]
+    depends_on: [B604, B607, B594, B591, B595, B173, B171, B590, B691, B960, B2203, B176, B190, B005, B682, B206, B249, B600]
     file: tasks/B610-bedrock-converse-call.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_handler.py"
@@ -4399,7 +4424,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Invoke base request preparation
     status: todo
-    depends_on: [B591, B595, B598, B177, B171, B590, B596, B682]
+    depends_on: [B2205, B613, B614, B617, B618, B619, B590, B682, B002, B171]
     file: tasks/B611-bedrock-invoke-request.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"
@@ -4408,7 +4433,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Invoke reply conversion and stream ownership
     status: todo
-    depends_on: [B611, B609, B605, B171, B173, B610, B691, B682]
+    depends_on: [B2205, B613, B614, B617, B618, B206, B196, B682, B171]
     file: tasks/B612-bedrock-invoke-response.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"
@@ -4416,7 +4441,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock classic model parameter maps
     status: todo
-    depends_on: [B611, B171, B682]
+    depends_on: [B2205, B037, B2201, B2202, B682, B002, B171]
     file: tasks/B613-bedrock-legacy-models.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py"
@@ -4429,7 +4454,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock and direct Amazon Nova chat
     status: todo
-    depends_on: [B604, B607, B611, B171, B002, B600, B602]
+    depends_on: [B2205, B600, B602, B604, B607, B038, B129, B002, B171, B668]
     file: tasks/B614-bedrock-nova-chat.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py"
@@ -4438,7 +4463,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Qwen and DeepSeek reasoning replies
     status: todo
-    depends_on: [B611, B612, B177, B171, B609]
+    depends_on: [B2205, B612, B218, B002, B171, B2231, B249, B220]
     file: tasks/B615-bedrock-qwen-deepseek.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/amazon_qwen2_transformation.py"
@@ -4448,7 +4473,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Moonshot Invoke adapter
     status: todo
-    depends_on: [B611, B612, B171, B682]
+    depends_on: [B2205, B668, B504, B039, B590, B682, B171]
     file: tasks/B616-bedrock-moonshot.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/amazon_moonshot_transformation.py"
@@ -4456,7 +4481,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock TwelveLabs Pegasus video chat
     status: todo
-    depends_on: [B611, B612, B183, B171, B682]
+    depends_on: [B183, B2202, B206, B196, B682, B171]
     file: tasks/B617-bedrock-pegasus.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py"
@@ -4464,7 +4489,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Claude chat through Invoke
     status: todo
-    depends_on: [B611, B597, B598, B577, B580, B570, B183, B171, B569, B576, B599, B960, B688, B690]
+    depends_on: [B568, B569, B576, B577, B580, B590, B597, B599, B688, B690, B183, B960, B171, B2221]
     file: tasks/B618-bedrock-claude-invoke.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py"
@@ -4472,7 +4497,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock OpenAI Invoke and runtime request mapping
     status: todo
-    depends_on: [B611, B598, B595, B503, B502, B620, B171, B590, B596, B591, B504, B101, B682, B668]
+    depends_on: [B038, B503, B620, B590, B591, B595, B596, B668, B682, B688, B2201, B2203, B183, B171, B504, B2221]
     file: tasks/B619-bedrock-openai-invoke.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_transformations/amazon_openai_transformation.py"
@@ -4481,7 +4506,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock runtime reasoning-tag and choice decoding
     status: todo
-    depends_on: [B504, B005, B171, B598, B591]
+    depends_on: [B2203, B598, B504, B038, B206, B171]
     file: tasks/B620-bedrock-reasoning-stream.yaml
     covers:
       - "litellm/llms/bedrock/chat/chat_completions/transformation.py"
@@ -4489,7 +4514,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Messages cache thinking and beta policy
     status: todo
-    depends_on: [B598, B570, B569, B571, B597, B171, B599, B692, B688, B690]
+    depends_on: [B688, B690, B171]
     file: tasks/B621-bedrock-message-options.yaml
     covers:
       - "litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py"
@@ -4497,7 +4522,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Messages request and stream adaptation
     status: todo
-    depends_on: [B621, B591, B595, B571, B570, B599, B171, B623, B611, B596, B597, B598, B569, B961, B963, B979, B682, B690]
+    depends_on: [B621, B623, B2205, B596, B597, B569, B961, B979, B682, B690, B568, B692, B2201, B609, B171, B962, B608]
     file: tasks/B622-bedrock-messages.yaml
     covers:
       - "litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py"
@@ -4505,7 +4530,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Messages terminal usage promotion
     status: todo
-    depends_on: [B579, B171, B599]
+    depends_on: [B171]
     file: tasks/B623-bedrock-message-usage.yaml
     covers:
       - "litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py"
@@ -4513,7 +4538,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Mantle Claude chat and Messages
     status: todo
-    depends_on: [B591, B595, B618, B622, B583, B171, B598, B961, B690, B581]
+    depends_on: [B591, B690, B2205, B618, B622, B962, B581, B183, B598, B171]
     file: tasks/B624-bedrock-mantle-chat.yaml
     covers:
       - "litellm/llms/bedrock/chat/mantle/transformation.py"
@@ -4522,7 +4547,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Mantle standalone provider configuration
     status: todo
-    depends_on: [B591, B595, B503, B504, B571, B570, B171, B002, B502, B624, B590]
+    depends_on: [B2207, B668, B504, B590, B591, B595, B598, B622, B658, B682, B688, B129, B171, B2221, B2214]
     file: tasks/B625-bedrock-mantle-settings.yaml
     covers:
       - "litellm/llms/bedrock_mantle/common_utils.py"
@@ -4533,7 +4558,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Mantle standalone Responses
     status: todo
-    depends_on: [B625, B506, B507, B508, B509, B171, B907, B590, B682]
+    depends_on: [B2207, B2202, B590, B506, B507, B907, B682, B598, B171]
     file: tasks/B626-bedrock-mantle-responses.yaml
     covers:
       - "litellm/llms/bedrock_mantle/responses/transformation.py"
@@ -4541,7 +4566,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Titan and Cohere embeddings
     status: todo
-    depends_on: [B006, B591, B183, B171]
+    depends_on: [B006, B183, B037, B002, B171]
     file: tasks/B627-bedrock-other-titan-embeddings.yaml
     covers:
       - "litellm/llms/bedrock/embed/amazon_titan_g1_transformation.py"
@@ -4552,7 +4577,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Nova multimodal embeddings
     status: todo
-    depends_on: [B006, B591, B183, B171]
+    depends_on: [B006, B171]
     file: tasks/B628-bedrock-other-nova-embeddings.yaml
     covers:
       - "litellm/llms/bedrock/embed/amazon_nova_transformation.py"
@@ -4560,7 +4585,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock TwelveLabs Marengo 2.7 embeddings
     status: todo
-    depends_on: [B006, B591, B183, B171, B630]
+    depends_on: [B006, B183, B171, B630, B2201, B176]
     file: tasks/B629-bedrock-other-marengo-embeddings.yaml
     covers:
       - "litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py"
@@ -4568,15 +4593,15 @@ tasks:
     milestone: M3 providers
     title: Bedrock TwelveLabs Marengo 3 input validation
     status: todo
-    depends_on: [B171, B590, B682]
+    depends_on: [B171, B183, B682]
     file: tasks/B630-bedrock-other-marengo-three.yaml
     covers:
       - "litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py"
   - id: B631
     milestone: M3 providers
-    title: Bedrock embedding request fanout and replies
+    title: Bedrock embedding request ordering and replies
     status: todo
-    depends_on: [B627, B628, B629, B630, B594, B591, B595, B173, B171, B590, B693]
+    depends_on: [B627, B628, B629, B591, B595, B171, B590, B693, B037, B249]
     file: tasks/B631-bedrock-other-embedding-call.yaml
     covers:
       - "litellm/llms/bedrock/embed/embedding.py"
@@ -4584,7 +4609,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock asynchronous embedding job status
     status: todo
-    depends_on: [B631, B643, B173, B171, B595]
+    depends_on: [B591, B693, B595, B173, B171, B249]
     file: tasks/B632-bedrock-other-embedding-jobs.yaml
     covers:
       - "litellm/llms/bedrock/embed/embedding.py"
@@ -4592,18 +4617,19 @@ tasks:
     milestone: M3 providers
     title: Bedrock image model request and reply maps
     status: todo
-    depends_on: [B511, B598, B171, B682]
+    depends_on: [B004, B171, B682, B002]
     file: tasks/B633-bedrock-other-image-models.yaml
     covers:
       - "litellm/llms/bedrock/image_generation/amazon_titan_transformation.py"
       - "litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py"
       - "litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py"
       - "litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py"
+      - "litellm/llms/bedrock/image_generation/image_handler.py"
   - id: B634
     milestone: M3 providers
     title: Bedrock image generation execution
     status: todo
-    depends_on: [B633, B594, B591, B595, B173, B171, B590]
+    depends_on: [B633, B591, B595, B173, B171, B590, B682, B249]
     file: tasks/B634-bedrock-other-image-call.yaml
     covers:
       - "litellm/llms/bedrock/image_generation/image_handler.py"
@@ -4611,7 +4637,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Nova Canvas edit request policy
     status: todo
-    depends_on: [B633, B598, B183, B171, B637, B591, B682]
+    depends_on: [B183, B171, B637, B2203, B682, B193, B159, B2202, B2217, B2219]
     file: tasks/B635-bedrock-other-canvas-edits.yaml
     covers:
       - "litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py"
@@ -4619,7 +4645,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Nova Canvas edit results
     status: todo
-    depends_on: [B635, B511, B171, B068]
+    depends_on: [B635, B004, B171, B068]
     file: tasks/B636-bedrock-other-canvas-results.yaml
     covers:
       - "litellm/llms/bedrock/image_edit/amazon_nova_canvas_image_edit_transformation.py"
@@ -4627,7 +4653,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Stability image edit transformations
     status: todo
-    depends_on: [B633, B512, B591, B183, B171, B068, B682]
+    depends_on: [B004, B171, B068, B682, B159, B2202, B046]
     file: tasks/B637-bedrock-other-stability-edits.yaml
     covers:
       - "litellm/llms/bedrock/image_edit/stability_transformation.py"
@@ -4635,7 +4661,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock image edit execution
     status: todo
-    depends_on: [B635, B636, B637, B594, B591, B595, B173, B171, B590]
+    depends_on: [B635, B636, B637, B634, B591, B595, B590, B173, B682, B249, B2202, B171]
     file: tasks/B638-bedrock-other-image-edits.yaml
     covers:
       - "litellm/llms/bedrock/image_edit/handler.py"
@@ -4643,7 +4669,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock rerank request and results
     status: todo
-    depends_on: [B594, B591, B595, B556, B173, B171]
+    depends_on: [B591, B595, B1013, B173, B171, B682, B249]
     file: tasks/B639-bedrock-other-rerank.yaml
     covers:
       - "litellm/llms/bedrock/rerank/handler.py"
@@ -4652,24 +4678,25 @@ tasks:
     milestone: M3 providers
     title: Bedrock native count-token shapes
     status: todo
-    depends_on: [B591, B590, B171]
+    depends_on: [B591, B171, B2203]
     file: tasks/B640-bedrock-other-count-tokens.yaml
     covers:
       - "litellm/llms/bedrock/count_tokens/transformation.py"
   - id: B641
     milestone: M3 providers
-    title: Bedrock count-token transport and local fallback
+    title: Bedrock CountTokens transport and failure records
     status: todo
-    depends_on: [B640, B594, B595, B173, B196, B171, B591, B682]
+    depends_on: [B640, B595, B173, B171, B591, B682, B2203, B590]
     file: tasks/B641-bedrock-other-count-call.yaml
     covers:
       - "litellm/llms/bedrock/count_tokens/handler.py"
       - "litellm/llms/bedrock/count_tokens/bedrock_token_counter.py"
+      - "litellm/llms/bedrock/common_utils.py"
   - id: B642
     milestone: M3 providers
     title: Bedrock audio transcription payload and Converse calls
     status: todo
-    depends_on: [B604, B607, B594, B595, B515, B173, B171]
+    depends_on: [B1001, B590, B594, B595, B173, B171]
     file: tasks/B642-bedrock-other-transcription.yaml
     covers:
       - "litellm/llms/bedrock/audio_transcription/__init__.py"
@@ -4677,7 +4704,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock managed S3 object authorization
     status: todo
-    depends_on: [B594, B591, B002, B171, B590]
+    depends_on: [B2208, B002, B171, B590, B173, B129, B682, B174]
     file: tasks/B643-bedrock-services-s3-access.yaml
     covers:
       - "litellm/llms/bedrock/files/transformation.py"
@@ -4687,7 +4714,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock S3 signed requests and object upload
     status: todo
-    depends_on: [B643, B595, B596, B516, B173, B171]
+    depends_on: [B643, B590, B591, B594, B595, B596, B235, B159, B198, B682, B2208, B002, B171, B1015]
     file: tasks/B644-bedrock-services-s3-signing.yaml
     covers:
       - "litellm/llms/bedrock/files/transformation.py"
@@ -4696,15 +4723,15 @@ tasks:
     milestone: M3 providers
     title: Bedrock managed file listing and lifecycle
     status: todo
-    depends_on: [B644, B643, B516, B173, B171]
+    depends_on: [B644, B643, B594, B591, B595, B198, B682, B1015, B173, B171, B2208]
     file: tasks/B645-bedrock-services-s3-listing.yaml
     covers:
       - "litellm/llms/bedrock/files/transformation.py"
   - id: B646
     milestone: M3 providers
-    title: Bedrock file content and S3 result conversion
+    title: Bedrock binary file content results
     status: todo
-    depends_on: [B644, B643, B645, B173, B171]
+    depends_on: [B004, B682, B171]
     file: tasks/B646-bedrock-services-file-content.yaml
     covers:
       - "litellm/llms/bedrock/files/transformation.py"
@@ -4713,7 +4740,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock batch embedding record conversion
     status: todo
-    depends_on: [B627, B193, B171]
+    depends_on: [B627, B193, B171, B2225]
     file: tasks/B647-bedrock-services-batch-embeddings.yaml
     covers:
       - "litellm/llms/bedrock/files/transformation.py"
@@ -4721,32 +4748,34 @@ tasks:
     milestone: M3 providers
     title: Bedrock batch chat text and Responses records
     status: todo
-    depends_on: [B647, B644, B611, B604, B618, B202, B203, B507, B171, B643, B596, B1025, B600]
+    depends_on: [B647, B644, B604, B618, B218, B171, B643, B596, B1025, B600, B175, B2205, B235, B1015, B002, B2214, B2228, B591]
     file: tasks/B648-bedrock-services-batch-records.yaml
     covers:
       - "litellm/llms/bedrock/files/transformation.py"
   - id: B649
     milestone: M3 providers
-    title: Bedrock batch creation and input authorization
+    title: Bedrock batch creation requests and replies
     status: todo
-    depends_on: [B643, B644, B648, B517, B595, B173, B171, B002, B596]
+    depends_on: [B643, B595, B591, B198, B171, B002, B596, B192, B004, B2214]
     file: tasks/B649-bedrock-services-batch-create.yaml
     covers:
       - "litellm/llms/bedrock/batches/transformation.py"
+      - "litellm/llms/bedrock/common_utils.py"
   - id: B650
     milestone: M3 providers
     title: Bedrock batch status and result metadata
     status: todo
-    depends_on: [B649, B643, B517, B605, B171, B596]
+    depends_on: [B643, B171, B596, B595, B198, B682, B004]
     file: tasks/B650-bedrock-services-batch-status.yaml
     covers:
       - "litellm/llms/bedrock/batches/transformation.py"
       - "litellm/llms/bedrock/batches/handler.py"
+      - "litellm/llms/bedrock/common_utils.py"
   - id: B651
     milestone: M3 providers
-    title: Bedrock batch retrieval cancellation and output reads
+    title: Bedrock batch status and cancellation calls
     status: todo
-    depends_on: [B650, B646, B643, B595, B591, B173, B171, B649]
+    depends_on: [B650, B649, B594, B632, B693, B198, B249, B171, B159, B173, B595, B590]
     file: tasks/B651-bedrock-services-batch-call.yaml
     covers:
       - "litellm/llms/bedrock/batches/handler.py"
@@ -4754,7 +4783,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock InvokeAgent requests and trace replies
     status: todo
-    depends_on: [B591, B595, B599, B004, B171, B590, B682]
+    depends_on: [B591, B595, B171, B590, B682, B2202, B218, B2209, B002]
     file: tasks/B652-bedrock-services-invoke-agent.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
@@ -4763,7 +4792,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock AgentCore invocation preparation
     status: todo
-    depends_on: [B591, B595, B171, B590, B682]
+    depends_on: [B595, B171, B590, B682, B2202, B218, B198, B002]
     file: tasks/B653-bedrock-services-agentcore-request.yaml
     covers:
       - "litellm/llms/bedrock/chat/agentcore/transformation.py"
@@ -4772,7 +4801,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock AgentCore JSON and SSE replies
     status: todo
-    depends_on: [B653, B005, B171, B196, B050, B682]
+    depends_on: [B171, B196, B2210, B682, B004]
     file: tasks/B654-bedrock-services-agentcore-response.yaml
     covers:
       - "litellm/llms/bedrock/chat/agentcore/transformation.py"
@@ -4780,7 +4809,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock AgentCore streaming adapters
     status: todo
-    depends_on: [B654, B173, B005, B171, B682]
+    depends_on: [B654, B173, B682, B249, B004, B171, B005]
     file: tasks/B655-bedrock-services-agentcore-stream.yaml
     covers:
       - "litellm/llms/bedrock/chat/agentcore/transformation.py"
@@ -4788,7 +4817,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Claude Platform workspace routes
     status: todo
-    depends_on: [B591, B595, B577, B580, B583, B570, B171, B002, B581, B682]
+    depends_on: [B2211, B577, B570, B568, B688, B960, B962, B581, B129, B171]
     file: tasks/B656-bedrock-services-claude-platform.yaml
     covers:
       - "litellm/llms/bedrock/claude_platform/common_utils.py"
@@ -4798,7 +4827,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Responses and inline-image policy
     status: todo
-    depends_on: [B591, B595, B598, B506, B507, B508, B509, B183, B171, B907, B682, B690]
+    depends_on: [B591, B595, B506, B507, B183, B171, B907, B682, B690, B193, B129, B2202]
     file: tasks/B657-bedrock-services-responses.yaml
     covers:
       - "litellm/llms/bedrock/responses/transformation.py"
@@ -4806,7 +4835,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock passthrough and typed logging collectors
     status: todo
-    depends_on: [B591, B595, B599, B607, B580, B188, B171, B611, B101, B103]
+    depends_on: [B591, B595, B599, B608, B609, B2205, B2203, B101, B005, B004, B682, B171, B2227, B2230]
     file: tasks/B658-bedrock-services-passthrough.yaml
     covers:
       - "litellm/llms/bedrock/passthrough/transformation.py"
@@ -4814,7 +4843,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock AgentCore MCP web search
     status: todo
-    depends_on: [B591, B595, B173, B005, B171, B002, B590, B682]
+    depends_on: [B595, B171, B002, B590, B682, B091, B129, B2212]
     file: tasks/B659-bedrock-services-search.yaml
     covers:
       - "litellm/llms/bedrock/search/transformation.py"
@@ -4822,7 +4851,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Knowledge Bases vector retrieval
     status: todo
-    depends_on: [B591, B595, B527, B173, B171, B590, B682]
+    depends_on: [B591, B595, B1058, B171, B590, B682, B002]
     file: tasks/B660-bedrock-services-vector-stores.yaml
     covers:
       - "litellm/llms/bedrock/vector_stores/transformation.py"
@@ -4830,7 +4859,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock realtime session configuration
     status: todo
-    depends_on: [B004, B171, B682]
+    depends_on: [B1004, B171, B682]
     file: tasks/B661-bedrock-services-realtime-session.yaml
     covers:
       - "litellm/llms/bedrock/realtime/transformation.py"
@@ -4838,7 +4867,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock realtime audio and conversation input
     status: todo
-    depends_on: [B661, B183, B171]
+    depends_on: [B661, B171]
     file: tasks/B662-bedrock-services-realtime-input.yaml
     covers:
       - "litellm/llms/bedrock/realtime/transformation.py"
@@ -4847,7 +4876,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock realtime content and audio output
     status: todo
-    depends_on: [B661, B171]
+    depends_on: [B661, B1004, B171]
     file: tasks/B663-bedrock-services-realtime-output.yaml
     covers:
       - "litellm/llms/bedrock/realtime/transformation.py"
@@ -4855,7 +4884,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock realtime end events usage and tools
     status: todo
-    depends_on: [B661, B663, B662, B171]
+    depends_on: [B661, B1004, B171]
     file: tasks/B664-bedrock-services-realtime-completion.yaml
     covers:
       - "litellm/llms/bedrock/realtime/transformation.py"
@@ -4863,7 +4892,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock realtime native event dispatch
     status: todo
-    depends_on: [B661, B662, B663, B664, B171, B1006]
+    depends_on: [B661, B663, B664, B171, B1006, B1004, B590, B682, B187]
     file: tasks/B665-bedrock-services-realtime-events.yaml
     covers:
       - "litellm/llms/bedrock/realtime/transformation.py"
@@ -4872,7 +4901,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock bidirectional realtime transport
     status: todo
-    depends_on: [B594, B591, B665, B173, B171, B595]
+    depends_on: [B594, B591, B665, B667, B661, B664, B173, B171, B595, B198, B682, B250, B191]
     file: tasks/B666-bedrock-services-realtime-transport.yaml
     covers:
       - "litellm/llms/bedrock/realtime/handler.py"
@@ -4880,7 +4909,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock realtime client and provider event pumping
     status: todo
-    depends_on: [B666, B665, B171]
+    depends_on: [B665, B662, B171]
     file: tasks/B667-bedrock-services-realtime-bridge.yaml
     covers:
       - "litellm/llms/bedrock/realtime/handler.py"
@@ -4888,17 +4917,22 @@ tasks:
     milestone: M3 providers
     title: OpenAI base chat parameter policy
     status: todo
-    depends_on: [B171]
+    depends_on: [B171, B2202, B2214]
     file: tasks/B668-openai-base-config.yaml
     covers:
       - "litellm/llms/openai/openai.py"
       - "litellm/llms/openai/chat/gpt_transformation.py"
       - "litellm/llms/openai/common_utils.py"
+      - "litellm/llms/openai/chat/gpt_5_transformation.py"
+      - "litellm/llms/openai/chat/o_series_transformation.py"
+      - "litellm/llms/openai/chat/gpt_audio_transformation.py"
+      - "litellm/utils.py"
+      - "litellm/llms/azure/chat/gpt_5_transformation.py"
   - id: B669
     milestone: M3 providers
     title: OpenAI media operation composition
     status: todo
-    depends_on: [B010, B014, B511, B512, B513, B514, B515, B525, B526, B171]
+    depends_on: [B511, B512, B513, B514, B515, B525, B526, B171]
     file: tasks/B669-openai-media-dispatch.yaml
     covers:
       - "litellm/llms/openai/image_generation/__init__.py"
@@ -4911,7 +4945,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI resource operation composition
     status: todo
-    depends_on: [B010, B014, B516, B517, B518, B522, B523, B527, B171]
+    depends_on: [B516, B517, B518, B522, B523, B527, B171]
     file: tasks/B670-openai-resource-dispatch.yaml
     covers:
       - "litellm/llms/openai/openai.py"
@@ -4923,7 +4957,7 @@ tasks:
     milestone: M3 providers
     title: OpenAI assistants and session operation composition
     status: todo
-    depends_on: [B010, B014, B519, B520, B521, B524, B528, B171]
+    depends_on: [B519, B520, B521, B524, B528, B171]
     file: tasks/B671-openai-assistant-dispatch.yaml
     covers:
       - "litellm/llms/openai/openai.py"
@@ -4942,7 +4976,7 @@ tasks:
     milestone: M3 providers
     title: Azure client-secret grant
     status: todo
-    depends_on: [B173, B171, B187]
+    depends_on: [B173, B171, B187, B129, B2202, B002]
     file: tasks/B673-azure-client-secret.yaml
     covers:
       - "litellm/llms/azure/common_utils.py"
@@ -4965,14 +4999,14 @@ tasks:
     milestone: M3 providers
     title: Azure managed-identity grant
     status: todo
-    depends_on: [B173, B171, B187, B002, B530, B699, B673]
+    depends_on: [B173, B171, B187, B002, B530, B699, B673, B2213]
     file: tasks/B676-azure-managed-identity.yaml
     covers: []
   - id: B677
     milestone: M3 providers
     title: Azure default and deployment credential chains
     status: todo
-    depends_on: [B673, B674, B675, B676, B530, B171, B002]
+    depends_on: [B673, B674, B675, B676, B530, B171, B002, B187]
     file: tasks/B677-azure-default-chain.yaml
     covers:
       - "litellm/llms/azure/common_utils.py"
@@ -4981,7 +5015,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock operation dispatcher foundation
     status: todo
-    depends_on: [B010, B014, B171]
+    depends_on: [B171, B591, B598]
     file: tasks/B678-bedrock-dispatch-contract.yaml
     covers:
       - "litellm/llms/bedrock/base_aws_llm.py"
@@ -4999,7 +5033,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock agent and Claude Platform composition
     status: todo
-    depends_on: [B678, B652, B653, B654, B655, B656, B171]
+    depends_on: [B678, B652, B653, B654, B655, B656, B171, B2209]
     file: tasks/B680-bedrock-agent-dispatch.yaml
     covers:
       - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
@@ -5009,7 +5043,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Responses search vector and realtime composition
     status: todo
-    depends_on: [B678, B657, B658, B659, B660, B667, B171]
+    depends_on: [B678, B657, B658, B659, B660, B171, B666]
     file: tasks/B681-bedrock-interactive-dispatch.yaml
     covers:
       - "litellm/llms/bedrock/responses/transformation.py"
@@ -5021,7 +5055,7 @@ tasks:
     milestone: M3 providers
     title: AWS deployment settings and environment snapshot
     status: todo
-    depends_on: [B002, B198, B187, B171]
+    depends_on: [B002, B171, B2202]
     file: tasks/B682-bedrock-settings.yaml
     covers:
       - "litellm/llms/bedrock/common_utils.py"
@@ -5029,7 +5063,7 @@ tasks:
     milestone: M3 providers
     title: Converse tool and beta request preparation
     status: todo
-    depends_on: [B601, B602, B575, B574, B960, B171]
+    depends_on: [B601, B231, B599, B568, B688, B2203, B171]
     file: tasks/B683-bedrock-converse-tools-beta.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_transformation.py"
@@ -5037,24 +5071,23 @@ tasks:
     milestone: M3 providers
     title: Azure base chat parameter and content policy
     status: todo
-    depends_on: [B668, B178, B219, B221, B175, B531, B171]
+    depends_on: [B668, B178, B219, B182, B2202, B2214, B184, B673, B002, B171]
     file: tasks/B684-azure-chat-base-policy.yaml
     covers:
       - "litellm/llms/azure/chat/gpt_transformation.py"
   - id: B685
     milestone: M3 providers
-    title: Azure chat streams and content-filter errors
+    title: Azure chat streaming adapters
     status: todo
-    depends_on: [B531, B532, B005, B504, B173, B171, B238]
+    depends_on: [B531, B005, B171, B505, B529, B530, B2200, B673, B249, B187, B159]
     file: tasks/B685-azure-stream-errors.yaml
     covers:
       - "litellm/llms/azure/azure.py"
-      - "litellm/llms/azure/exception_mapping.py"
   - id: B686
     milestone: M3 providers
     title: Azure assistant definition operations
     status: todo
-    depends_on: [B519, B531, B173, B171]
+    depends_on: [B519, B531, B171, B159]
     file: tasks/B686-azure-assistant-definitions.yaml
     covers:
       - "litellm/llms/azure/assistants.py"
@@ -5062,7 +5095,7 @@ tasks:
     milestone: M3 providers
     title: Azure thread creation and retrieval
     status: todo
-    depends_on: [B520, B686, B531, B173, B171, B697]
+    depends_on: [B520, B686, B171]
     file: tasks/B687-azure-thread-messages.yaml
     covers:
       - "litellm/llms/azure/assistants.py"
@@ -5071,7 +5104,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic catalog capability and thinking selection
     status: todo
-    depends_on: [B193, B591, B171]
+    depends_on: [B193, B171, B002, B2203, B2216, B174, B184, B2219, B2221]
     file: tasks/B688-anthropic-capability-catalog.yaml
     covers:
       - "litellm/llms/anthropic/common_utils.py"
@@ -5079,7 +5112,7 @@ tasks:
     milestone: M3 providers
     title: Anthropic streaming HTTP ownership
     status: todo
-    depends_on: [B577, B583, B173, B238, B171, B960]
+    depends_on: [B173, B171, B570, B005, B249, B581, B567, B184, B583]
     file: tasks/B689-anthropic-http-stream.yaml
     covers:
       - "litellm/llms/anthropic/chat/handler.py"
@@ -5087,7 +5120,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock model capabilities and Mantle endpoint policy
     status: todo
-    depends_on: [B591, B688, B193, B171, B002]
+    depends_on: [B688, B2203, B2207, B129, B193, B171, B2225]
     file: tasks/B690-bedrock-model-capabilities.yaml
     covers:
       - "litellm/llms/bedrock/common_utils.py"
@@ -5095,7 +5128,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Invoke and Converse streaming HTTP helpers
     status: todo
-    depends_on: [B599, B595, B173, B171]
+    depends_on: [B609, B608, B607, B682, B173, B171, B249, B600]
     file: tasks/B691-bedrock-http-stream.yaml
     covers:
       - "litellm/llms/bedrock/chat/converse_handler.py"
@@ -5104,7 +5137,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock Messages beta headers and unsupported fields
     status: todo
-    depends_on: [B960, B690, B568, B171, B599]
+    depends_on: [B960, B690, B568, B599, B171]
     file: tasks/B692-bedrock-messages-beta.yaml
     covers:
       - "litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py"
@@ -5112,7 +5145,7 @@ tasks:
     milestone: M3 providers
     title: Bedrock embedding HTTP and result projection
     status: todo
-    depends_on: [B594, B591, B595, B627, B628, B629, B630, B173, B171]
+    depends_on: [B590, B594, B595, B627, B628, B629, B173, B129, B171, B682]
     file: tasks/B693-bedrock-embedding-io.yaml
     covers:
       - "litellm/llms/bedrock/embed/embedding.py"
@@ -5120,7 +5153,7 @@ tasks:
     milestone: M3 providers
     title: Azure file lifecycle
     status: todo
-    depends_on: [B516, B531, B173, B171]
+    depends_on: [B516, B531, B171, B187, B159]
     file: tasks/B694-azure-files.yaml
     covers:
       - "litellm/llms/azure/files/handler.py"
@@ -5128,7 +5161,7 @@ tasks:
     milestone: M3 providers
     title: Azure image and audio operation composition
     status: todo
-    depends_on: [B010, B014, B535, B536, B537, B538, B539, B171]
+    depends_on: [B535, B536, B537, B538, B539, B171]
     file: tasks/B695-azure-media-dispatch.yaml
     covers:
       - "litellm/llms/azure/azure.py"
@@ -5138,7 +5171,7 @@ tasks:
     milestone: M3 providers
     title: Azure resource and realtime operation composition
     status: todo
-    depends_on: [B010, B014, B694, B541, B542, B543, B686, B687, B544, B545, B546, B547, B548, B171, B697]
+    depends_on: [B694, B541, B542, B543, B686, B687, B544, B545, B546, B547, B548, B171, B697]
     file: tasks/B696-azure-resource-dispatch.yaml
     covers:
       - "litellm/llms/azure/files/handler.py"
@@ -5154,7 +5187,7 @@ tasks:
     milestone: M3 providers
     title: Azure message creation and attachment policy
     status: todo
-    depends_on: [B520, B686, B531, B171, B173]
+    depends_on: [B520, B686, B184, B002, B171]
     file: tasks/B697-azure-message-attachments.yaml
     covers:
       - "litellm/llms/azure/assistants.py"
@@ -5163,7 +5196,7 @@ tasks:
     milestone: M3 providers
     title: Foundry resource operation composition
     status: todo
-    depends_on: [B010, B014, B553, B554, B555, B556, B557, B558, B564, B565, B566, B171]
+    depends_on: [B553, B554, B555, B556, B557, B558, B564, B565, B566, B171]
     file: tasks/B698-foundry-resource-dispatch.yaml
     covers:
       - "litellm/llms/azure_ai/image_generation/__init__.py"
@@ -5190,7 +5223,7 @@ tasks:
     milestone: M5 api families
     title: Image contracts
     status: todo
-    depends_on: [B010, B171, B175, B183, B1087, B1120]
+    depends_on: [B010, B171, B175, B183, B1087, B1120, B2202]
     file: tasks/B997-image-contracts.yaml
     covers:
       - "litellm/llms/base_llm/image_generation/transformation.py"
@@ -5365,7 +5398,7 @@ tasks:
     milestone: M3 providers
     title: Azure hosted managed-identity protocols
     status: todo
-    depends_on: [B173, B171, B187, B673]
+    depends_on: [B173, B171, B187, B673, B2213]
     file: tasks/B699-azure-hosted-identity.yaml
     covers: []
   - id: B900
@@ -5403,7 +5436,7 @@ tasks:
     milestone: M5 api families
     title: Responses parameters
     status: todo
-    depends_on: [B171, B175, B206, B213, B902, B903, B1087, B002]
+    depends_on: [B171, B175, B206, B213, B902, B903, B1087, B002, B668]
     file: tasks/B905-responses-parameters.yaml
     covers:
       - "litellm/responses/utils.py"
@@ -6290,7 +6323,7 @@ tasks:
     milestone: M5 api families
     title: File content stream
     status: todo
-    depends_on: [B009, B012, B171, B1015, B1020, B1080, B1087, B516, B002]
+    depends_on: [B009, B012, B171, B1015, B1020, B1080, B1087, B516, B002, B645, B646]
     file: tasks/B1030-file-content-stream.yaml
     covers:
       - "litellm/files/main.py"
@@ -6314,7 +6347,7 @@ tasks:
     milestone: M5 api families
     title: File content route
     status: todo
-    depends_on: [B171, B1017, B1019, B1027, B1030, B1087, B732, B855, B756, B1021, B1080, B1020, B1025, B003, B1139, B856]
+    depends_on: [B171, B1017, B1019, B1027, B1030, B1087, B732, B855, B756, B1021, B1080, B1020, B1025, B003, B1139, B856, B2208]
     file: tasks/B1033-file-content-route.yaml
     covers:
       - "litellm/proxy/openai_files_endpoints/files_endpoints.py"
@@ -6330,7 +6363,7 @@ tasks:
     milestone: M5 api families
     title: Batch records
     status: todo
-    depends_on: [B010, B171, B207, B1015, B1087]
+    depends_on: [B010, B171, B207, B1015, B1087, B2214]
     file: tasks/B1035-batch-records.yaml
     covers:
       - "litellm/llms/base_llm/batches/transformation.py"
@@ -6366,7 +6399,7 @@ tasks:
     milestone: M5 api families
     title: Batch output usage
     status: todo
-    depends_on: [B013, B068, B171, B1035, B1087, B906]
+    depends_on: [B013, B068, B171, B1035, B1087, B906, B649]
     file: tasks/B1039-batch-output-usage.yaml
     covers:
       - "litellm/batches/batch_utils.py"
@@ -7195,7 +7228,7 @@ tasks:
     milestone: M5 API families
     title: Responses provider contract
     status: todo
-    depends_on: [B010, B171, B1087, B1138]
+    depends_on: [B010, B171, B1087, B1138, B2202]
     file: tasks/B1114-responses-provider-contract.yaml
     covers:
       - "litellm/llms/base_llm/responses/transformation.py"
@@ -9285,3 +9318,1172 @@ tasks:
     covers:
       - "migrations/run.py"
       - "litellm/proxy/prisma_migration.py"
+  - id: B2200
+    milestone: M3 providers
+    title: Azure URL and credential input policy
+    status: todo
+    depends_on: [B529, B668, B129, B002, B171]
+    file: tasks/B2200-azure-url-policy.yaml
+    covers:
+      - "litellm/llms/azure/common_utils.py"
+  - id: B2201
+    milestone: M3 providers
+    title: Anthropic option defaults and small projections
+    status: todo
+    depends_on: [B205, B206, B002, B171, B2202]
+    file: tasks/B2201-anthropic-option-primitives.yaml
+    covers:
+      - "litellm/llms/anthropic/chat/transformation.py"
+  - id: B2202
+    milestone: M3 providers
+    title: Shared provider base config and response metadata
+    status: todo
+    depends_on: [B002, B171]
+    file: tasks/B2202-provider-base-helpers.yaml
+    covers:
+      - "litellm/llms/base_llm/chat/transformation.py"
+      - "litellm/llms/base_llm/base_utils.py"
+      - "litellm/router_utils/add_retry_fallback_headers.py"
+      - "litellm/utils.py"
+      - "litellm/llms/base_llm/responses/transformation.py"
+      - "litellm/llms/base_llm/image_edit/transformation.py"
+  - id: B2203
+    milestone: M3 providers
+    title: Bedrock model normalization and region catalog
+    status: todo
+    depends_on: [B193, B171, B198]
+    file: tasks/B2203-bedrock-model.yaml
+    covers:
+      - "litellm/llms/bedrock/common_utils.py"
+      - "litellm/passthrough/utils.py"
+  - id: B2204
+    milestone: M3 providers
+    title: Shared request record filtering and cache attribution
+    status: todo
+    depends_on: [B002, B171]
+    file: tasks/B2204-request-records.yaml
+    covers:
+      - "litellm/litellm_core_utils/core_helpers.py"
+      - "litellm/integrations/anthropic_cache_control_hook.py"
+  - id: B2205
+    milestone: M3 providers
+    title: Bedrock Invoke shared request primitives
+    status: todo
+    depends_on: [B590, B591, B595, B596, B682, B177, B182, B214, B2202, B171]
+    file: tasks/B2205-bedrock-invoke-primitives.yaml
+    covers:
+      - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"
+  - id: B2206
+    milestone: M3 providers
+    title: Bedrock Invoke custom stream composition
+    status: todo
+    depends_on: [B2205, B691, B176, B173, B004, B171]
+    file: tasks/B2206-bedrock-invoke-stream.yaml
+    covers:
+      - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"
+  - id: B2207
+    milestone: M3 providers
+    title: Bedrock Mantle input and model metadata policy
+    status: todo
+    depends_on: [B591, B129, B2203, B193, B002, B171]
+    file: tasks/B2207-bedrock-mantle-inputs.yaml
+    covers:
+      - "litellm/llms/bedrock_mantle/common_utils.py"
+      - "litellm/llms/bedrock_mantle/chat/transformation.py"
+  - id: B2208
+    milestone: M3 providers
+    title: Shared cloud object names and authorization
+    status: todo
+    depends_on: [B002, B171]
+    file: tasks/B2208-cloud-storage.yaml
+    covers:
+      - "litellm/litellm_core_utils/cloud_storage_security.py"
+  - id: B2209
+    milestone: M3 providers
+    title: Bedrock InvokeAgent event and trace decoding
+    status: todo
+    depends_on: [B599, B682, B004, B171, B159]
+    file: tasks/B2209-invoke-agent-reply.yaml
+    covers:
+      - "litellm/llms/bedrock/chat/invoke_agent/transformation.py"
+  - id: B2210
+    milestone: M3 providers
+    title: Shared A2A text projection
+    status: todo
+    depends_on: [B171]
+    file: tasks/B2210-a2a-text.yaml
+    covers:
+      - "litellm/llms/a2a/common_utils.py"
+  - id: B2211
+    milestone: M3 providers
+    title: Claude Platform workspace and signing inputs
+    status: todo
+    depends_on: [B591, B595, B682, B129, B002, B171]
+    file: tasks/B2211-claude-platform-inputs.yaml
+    covers:
+      - "litellm/llms/bedrock/claude_platform/common_utils.py"
+  - id: B2212
+    milestone: M3 providers
+    title: AgentCore search MCP reply parsing
+    status: todo
+    depends_on: [B091, B682, B171]
+    file: tasks/B2212-agentcore-search-reply.yaml
+    covers:
+      - "litellm/llms/bedrock/search/transformation.py"
+  - id: B2213
+    milestone: M3 providers
+    title: Azure Arc managed-identity challenge protocol
+    status: todo
+    depends_on: [B173, B171, B187, B002]
+    file: tasks/B2213-azure-arc-identity.yaml
+    covers:
+      - "litellm/secret_managers/get_azure_ad_token_provider.py"
+  - id: B2214
+    milestone: M3 providers
+    title: Shared provider message and iterator primitives
+    status: todo
+    depends_on: [B171]
+    file: tasks/B2214-provider-message-primitives.yaml
+    covers:
+      - "litellm/llms/base_llm/chat/transformation.py"
+      - "litellm/llms/base_llm/base_utils.py"
+      - "litellm/llms/base_llm/base_model_iterator.py"
+      - "litellm/llms/base_llm/batches/transformation.py"
+      - "litellm/types/utils.py"
+  - id: B2215
+    milestone: M3 providers
+    title: Azure content-policy error payloads
+    status: todo
+    depends_on: [B184, B171]
+    file: tasks/B2215-azure-content-policy.yaml
+    covers:
+      - "litellm/llms/azure/exception_mapping.py"
+  - id: B2216
+    milestone: M3 providers
+    title: Anthropic raw catalog capability lookup
+    status: todo
+    depends_on: [B2203, B193, B171]
+    file: tasks/B2216-anthropic-catalog-lookup.yaml
+    covers:
+      - "litellm/llms/anthropic/common_utils.py"
+  - id: B2217
+    milestone: M3 providers
+    title: Model catalog keys and provider matching
+    status: todo
+    depends_on: [B193, B2203, B171]
+    file: tasks/B2217-model-catalog-keys.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2218
+    milestone: M3 providers
+    title: Resolved model metadata projection
+    status: todo
+    depends_on: [B204, B205, B171]
+    file: tasks/B2218-model-metadata-projection.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2222
+    milestone: M3 providers
+    title: Fireworks catalog metadata primitives
+    status: todo
+    depends_on: [B193, B2217, B171]
+    file: tasks/B2222-fireworks-catalog-metadata.yaml
+    covers:
+      - "litellm/llms/fireworks_ai/common_utils.py"
+      - "litellm/llms/fireworks_ai/chat/transformation.py"
+  - id: B2223
+    milestone: M3 providers
+    title: Ollama runtime model metadata
+    status: todo
+    depends_on: [B193, B129, B500, B173, B187, B002, B171]
+    file: tasks/B2223-ollama-model-metadata.yaml
+    covers:
+      - "litellm/llms/ollama/common_utils.py"
+  - id: B2224
+    milestone: M3 providers
+    title: Lemonade runtime model metadata
+    status: todo
+    depends_on: [B129, B173, B187, B002, B171]
+    file: tasks/B2224-lemonade-model-metadata.yaml
+    covers:
+      - "litellm/llms/lemonade/chat/transformation.py"
+  - id: B2220
+    milestone: M3 providers
+    title: Provider model metadata factory
+    status: todo
+    depends_on: [B668, B2203, B2222, B2223, B2224, B171]
+    file: tasks/B2220-provider-metadata-factory.yaml
+    covers:
+      - "litellm/utils.py"
+      - "litellm/llms/base_llm/base_utils.py"
+      - "litellm/llms/xai/common_utils.py"
+      - "litellm/llms/fireworks_ai/chat/transformation.py"
+      - "litellm/llms/lemonade/chat/transformation.py"
+      - "litellm/llms/azure_ai/common_utils.py"
+  - id: B2229
+    milestone: M3 providers
+    title: Shared catalog generalization engine
+    status: todo
+    depends_on: [B171]
+    file: tasks/B2229-catalog-generalizations.yaml
+    covers:
+      - "litellm/litellm_core_utils/fallback_generalizations.py"
+  - id: B2219
+    milestone: M3 providers
+    title: Provider-aware model metadata resolution
+    status: todo
+    depends_on: [B174, B209, B193, B2217, B2218, B2220, B2222, B2223, B2224, B2229, B2203, B2207, B171]
+    file: tasks/B2219-model-metadata-resolution.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2221
+    milestone: M3 providers
+    title: Shared model capability predicates
+    status: todo
+    depends_on: [B174, B209, B2219, B2220, B2217, B193, B171]
+    file: tasks/B2221-model-capability-predicates.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2226
+    milestone: M3 providers
+    title: Shared local TTL cache primitives
+    status: todo
+    depends_on: [B002, B171, B187]
+    file: tasks/B2226-local-ttl-cache.yaml
+    covers:
+      - "litellm/caching/in_memory_cache.py"
+      - "litellm/caching/dual_cache.py"
+  - id: B2225
+    milestone: M3 providers
+    title: Cached full model metadata queries
+    status: todo
+    depends_on: [B175, B2219, B2220, B2217, B002, B171]
+    file: tasks/B2225-full-model-metadata.yaml
+    covers:
+      - "litellm/utils.py"
+  - id: B2228
+    milestone: M3 providers
+    title: Shared owned-parameter names
+    status: todo
+    depends_on: [B171]
+    file: tasks/B2228-owned-parameter-names.yaml
+    covers:
+      - "litellm/types/litellm_params.py"
+      - "litellm/types/utils.py"
+  - id: B2227
+    milestone: M3 providers
+    title: Shared streamed-response assembly
+    status: todo
+    depends_on: [B004, B196, B068, B184, B171, B218, B2232, B2233, B2234, B2235, B2239]
+    file: tasks/B2227-streamed-response-assembly.yaml
+    covers:
+      - "litellm/main.py"
+  - id: B2231
+    milestone: M3 providers
+    title: Bedrock config selection tags
+    status: todo
+    depends_on: [B598, B591, B2203, B171]
+    file: tasks/B2231-bedrock-config-selection.yaml
+    covers:
+      - "litellm/llms/bedrock/common_utils.py"
+      - "litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py"
+  - id: B2230
+    milestone: M3 providers
+    title: Shared chat config selection
+    status: todo
+    depends_on: [B668, B2231, B171]
+    file: tasks/B2230-chat-config-selection.yaml
+    covers:
+      - "litellm/utils.py"
+      - "litellm/llms/azure/chat/o_series_transformation.py"
+      - "litellm/llms/azure_ai/common_utils.py"
+      - "litellm/llms/cohere/common_utils.py"
+  - id: B2232
+    milestone: M3 providers
+    title: Stream base response assembly
+    status: todo
+    depends_on: [B004, B174, B2230, B187, B171]
+    file: tasks/B2232-stream-base-assembly.yaml
+    covers:
+      - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"
+  - id: B2233
+    milestone: M3 providers
+    title: Stream tool fragment assembly
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B2233-stream-tool-assembly.yaml
+    covers:
+      - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"
+  - id: B2234
+    milestone: M3 providers
+    title: Stream text thinking and audio assembly
+    status: todo
+    depends_on: [B004, B171]
+    file: tasks/B2234-stream-content-assembly.yaml
+    covers:
+      - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"
+  - id: B2235
+    milestone: M3 providers
+    title: Stream usage accumulation and estimation
+    status: todo
+    depends_on: [B004, B196, B171, B2239]
+    file: tasks/B2235-stream-usage-assembly.yaml
+    covers:
+      - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"
+  - id: B2236
+    milestone: M3 providers
+    title: Configured OpenAI mock transport
+    status: todo
+    depends_on: [B002, B171]
+    file: tasks/B2236-openai-mock-transport.yaml
+    covers:
+      - "litellm/llms/custom_httpx/mock_transport.py"
+  - id: B2237
+    milestone: M3 providers
+    title: OpenAI text completion policy
+    status: todo
+    depends_on: [B668, B218, B004, B171, B2202]
+    file: tasks/B2237-text-completion-policy.yaml
+    covers:
+      - "litellm/llms/openai/completion/transformation.py"
+      - "litellm/llms/openai/completion/utils.py"
+      - "litellm/utils.py"
+  - id: B2238
+    milestone: M3 providers
+    title: OpenAI text completion transport
+    status: todo
+    depends_on: [B2237, B173, B249, B005, B004, B668, B2202, B171]
+    file: tasks/B2238-text-completion-transport.yaml
+    covers:
+      - "litellm/llms/openai/completion/handler.py"
+  - id: B2239
+    milestone: M3 providers
+    title: Injected verbose logging hooks
+    status: todo
+    depends_on: [B187, B002, B171]
+    file: tasks/B2239-verbose-hooks.yaml
+    covers:
+      - "litellm/main.py"
+      - "litellm/utils.py"
+  - id: B1300
+    milestone: M3 providers
+    title: Vertex federation with rotating AWS credentials
+    status: todo
+    depends_on: [B594, B595, B171]
+    file: tasks/B1300-vertex-aws-federation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/aws_credentials_supplier.py"
+      - "litellm/llms/vertex_ai/vertex_ai_aws_wif.py"
+  - id: B1301
+    milestone: M3 providers
+    title: Vertex credential sources and configuration precedence
+    status: todo
+    depends_on: [B002, B009, B171, B1300]
+    file: tasks/B1301-vertex-credential-sources.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+  - id: B1302
+    milestone: M3 providers
+    title: Vertex credential cache and reauthentication
+    status: todo
+    depends_on: [B1301, B171]
+    file: tasks/B1302-vertex-token-cache.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+  - id: B1303
+    milestone: M3 providers
+    title: Vertex stale-token refresh coordination
+    status: todo
+    depends_on: [B1301, B1302]
+    file: tasks/B1303-vertex-async-refresh.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+  - id: B1305
+    milestone: M3 providers
+    title: Google model identifiers and native endpoint URLs
+    status: todo
+    depends_on: [B1300, B009, B193, B171]
+    file: tasks/B1305-vertex-model-urls.yaml
+    covers:
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1304
+    milestone: M3 providers
+    title: Vertex custom proxy paths and partner endpoints
+    status: todo
+    depends_on: [B009, B193, B171, B1305]
+    file: tasks/B1304-vertex-custom-endpoints.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_llm_base.py"
+      - "litellm/llms/vertex_ai/common_utils.py"
+  - id: B1306
+    milestone: M3 providers
+    title: Vertex model routing, labels and catalog metadata
+    status: todo
+    depends_on: [B1305, B193, B205, B240, B171]
+    file: tasks/B1306-vertex-model-policy.yaml
+    covers:
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/main.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1307
+    milestone: M3 providers
+    title: Vertex structured-output schema shaping
+    status: todo
+    depends_on: [B217, B1301, B171]
+    file: tasks/B1307-vertex-schema-shaping.yaml
+    covers:
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1308
+    milestone: M3 providers
+    title: Gemini function tools, search and Maps retrieval
+    status: todo
+    depends_on: [B1307, B171]
+    file: tasks/B1308-gemini-tool-mapping.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1309
+    milestone: M3 providers
+    title: Gemini thinking controls and response formats
+    status: todo
+    depends_on: [B1301, B1305, B1306, B1307, B171]
+    file: tasks/B1309-gemini-thinking-format.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1310
+    milestone: M3 providers
+    title: Gemini option assembly and sampling defaults
+    status: todo
+    depends_on: [B1301, B1305, B1308, B1309, B193, B171]
+    file: tasks/B1310-gemini-options.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1311
+    milestone: M3 providers
+    title: Gemini media references and MIME hints
+    status: todo
+    depends_on: [B1305, B183, B1128, B171]
+    file: tasks/B1311-gemini-media.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1312
+    milestone: M3 providers
+    title: Gemini conversation history and signature replay
+    status: todo
+    depends_on: [B1311, B1305, B232, B233, B179, B171]
+    file: tasks/B1312-gemini-message-history.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/llms/vertex_ai/common_utils.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1317
+    milestone: M3 providers
+    title: Gemini cache prefixes, TTL and system instructions
+    status: todo
+    depends_on: [B1301, B1306, B1312, B171]
+    file: tasks/B1317-gemini-cache-prefix.yaml
+    covers:
+      - "litellm/llms/vertex_ai/context_caching/transformation.py"
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1318
+    milestone: M3 providers
+    title: Google cached-content endpoint and paginated lookup
+    status: todo
+    depends_on: [B1304, B1305, B173, B171]
+    file: tasks/B1318-gemini-cache-lookup.yaml
+    covers:
+      - "litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1324
+    milestone: M3 providers
+    title: Automatic Gemini cached-content creation
+    status: todo
+    depends_on: [B1317, B1318, B173, B193, B196, B125, B002]
+    file: tasks/B1324-gemini-cache-create.yaml
+    covers:
+      - "litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1325
+    milestone: M3 providers
+    title: Google AI Studio chat capabilities and media input
+    status: todo
+    depends_on: [B1310, B1311, B1312, B1305, B193, B171]
+    file: tasks/B1325-studio-chat-input.yaml
+    covers:
+      - "litellm/llms/gemini/chat/transformation.py"
+  - id: B1321
+    milestone: M3 providers
+    title: Gemini request bodies after cache and system extraction
+    status: todo
+    depends_on: [B1310, B1311, B1312, B1317, B1324, B1325, B1306, B177, B171]
+    file: tasks/B1321-gemini-request-body.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+      - "litellm-proxy-extras/litellm_proxy_extras/migrations/migration_lock.toml"
+      - "litellm-proxy-extras/litellm_proxy_extras/py.typed"
+      - "migrations/Dockerfile"
+  - id: B1313
+    milestone: M3 providers
+    title: Gemini response text, signatures and media parts
+    status: todo
+    depends_on: [B1300, B232, B171]
+    file: tasks/B1313-gemini-response-parts.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1323
+    milestone: M3 providers
+    title: Gemini grounding annotations and streamed metadata
+    status: todo
+    depends_on: [B1306, B171]
+    file: tasks/B1323-gemini-response-metadata.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1322
+    milestone: M3 providers
+    title: Gemini modality usage and grounding request accounting
+    status: todo
+    depends_on: [B1323, B171]
+    file: tasks/B1322-gemini-usage.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/{vertex_and_google_ai_studio_gemini,grounding_requests}.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1314
+    milestone: M3 providers
+    title: Gemini candidate choices and content filtering
+    status: todo
+    depends_on: [B1313, B1323, B171]
+    file: tasks/B1314-gemini-candidates.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1326
+    milestone: M3 providers
+    title: Decode Gemini complete responses and served model metadata
+    status: todo
+    depends_on: [B1314, B1322, B171]
+    file: tasks/B1326-gemini-response-envelope.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1315
+    milestone: M3 providers
+    title: Gemini fragmented stream reader and tool-call continuity
+    status: todo
+    depends_on: [B1314, B1322, B1323, B1326, B171]
+    file: tasks/B1315-gemini-stream-reader.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1316
+    milestone: M3 providers
+    title: Execute Gemini HTTP calls with Vertex or Studio authentication
+    status: todo
+    depends_on: [B1303, B1304, B1312, B1321, B1315, B1326, B173, B171]
+    file: tasks/B1316-gemini-http-execution.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1327
+    milestone: M3 providers
+    title: Select Gemini complete and streaming execution paths
+    status: todo
+    depends_on: [B1302, B1304, B1321, B1316, B1326]
+    file: tasks/B1327-gemini-call-selection.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - id: B1319
+    milestone: M3 providers
+    title: Google character pricing and grounded-request charges
+    status: todo
+    depends_on: [B1300, B193, B171]
+    file: tasks/B1319-google-pricing.yaml
+    covers:
+      - "litellm/llms/vertex_ai/cost_calculator.py"
+      - "litellm/llms/vertex_ai/gemini/cost_calculator.py"
+      - "litellm/llms/gemini/cost_calculator.py"
+  - id: B1328
+    milestone: M3 providers
+    title: Legacy Vertex prediction results and asynchronous execution
+    status: todo
+    depends_on: [B1303, B173, B195, B171]
+    file: tasks/B1328-vertex-legacy-results.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_non_gemini.py"
+  - id: B1320
+    milestone: M3 providers
+    title: Legacy Vertex model selection and synchronous predictions
+    status: todo
+    depends_on: [B1301, B1302, B1310, B1328, B193, B596, B171]
+    file: tasks/B1320-vertex-legacy-selection.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_non_gemini.py"
+  - id: B1331
+    milestone: M3 providers
+    title: Google AI Studio credentials and model discovery
+    status: todo
+    depends_on: [B1300, B002, B009, B173, B171]
+    file: tasks/B1331-studio-identity.yaml
+    covers:
+      - "litellm/llms/gemini/common_utils.py"
+      - "litellm/llms/gemini/google_genai/transformation.py"
+  - id: B1329
+    milestone: M3 providers
+    title: Google and Vertex countTokens endpoint adapters
+    status: todo
+    depends_on: [B1301, B1303, B1304, B1331, B173, B171]
+    file: tasks/B1329-google-count-endpoints.yaml
+    covers:
+      - "litellm/llms/{gemini,vertex_ai}/count_tokens/handler.py"
+  - id: B1332
+    milestone: M3 providers
+    title: Vertex partner rawPredict token counting
+    status: todo
+    depends_on: [B1301, B1303, B1305, B173, B002, B171]
+    file: tasks/B1332-vertex-partner-count.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py"
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/main.py"
+  - id: B1330
+    milestone: M3 providers
+    title: Select Google token counters and preserve wrapper differences
+    status: todo
+    depends_on: [B1306, B1312, B1329, B1332, B1331, B171]
+    file: tasks/B1330-google-token-counter-selection.yaml
+    covers:
+      - "litellm/llms/{gemini,vertex_ai}/common_utils.py"
+  - id: B1333
+    milestone: M3 providers
+    title: Vertex Claude chat policy and output sanitization
+    status: todo
+    depends_on: [B1300, B568, B569, B576, B577, B580, B688, B183, B171]
+    file: tasks/B1333-vertex-claude-chat.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/{transformation,output_params_utils}.py"
+  - id: B1339
+    milestone: M3 providers
+    title: Vertex Claude native Messages adaptation
+    status: todo
+    depends_on: [B1301, B1302, B1304, B1333, B568, B960, B961, B962, B171]
+    file: tasks/B1339-vertex-native-messages.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/experimental_pass_through/transformation.py"
+  - id: B1335
+    milestone: M3 providers
+    title: Vertex OpenAI partner policies and Llama stream repair
+    status: todo
+    depends_on: [B1306, B668, B504, B005, B193, B002, B171]
+    file: tasks/B1335-vertex-openai-partners.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_ai_partner_models/{ai21,gpt_oss,llama3,mistral}/transformation.py"
+  - id: B1336
+    milestone: M3 providers
+    title: Vertex Gemma prediction envelopes and embedded errors
+    status: todo
+    depends_on: [B1306, B668, B503, B173, B171]
+    file: tasks/B1336-vertex-gemma-envelope.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_gemma_models/transformation.py"
+      - "litellm/types/llms/vertex_ai_gemma.py"
+  - id: B1337
+    milestone: M3 providers
+    title: Execute Vertex Gemma predictions and synthetic streams
+    status: todo
+    depends_on: [B1302, B1304, B1305, B1336, B504]
+    file: tasks/B1337-vertex-gemma-calls.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_gemma_models/{main,transformation}.py"
+  - id: B1338
+    milestone: M3 providers
+    title: Vertex Model Garden OpenAI endpoint selection
+    status: todo
+    depends_on: [B1302, B1305, B1306, B038, B010, B171]
+    file: tasks/B1338-vertex-model-garden.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_model_garden/main.py"
+  - id: B1334
+    milestone: M3 providers
+    title: Gemini image dimensions, generation options and search tools
+    status: todo
+    depends_on: [B1308, B1322, B193, B171]
+    file: tasks/B1334-gemini-image-policy.yaml
+    covers:
+      - "litellm/llms/gemini/common_utils.py"
+  - id: B1340
+    milestone: M3 providers
+    title: Gemini text and multimodal embedding transformations
+    status: todo
+    depends_on: [B1300, B006, B196, B171]
+    file: tasks/B1340-gemini-embedding-records.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1341
+    milestone: M3 providers
+    title: Execute Google embedding requests and resolve native file references
+    status: todo
+    depends_on: [B1302, B1304, B1340, B173, B171]
+    file: tasks/B1341-gemini-embedding-calls.yaml
+    covers:
+      - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py"
+  - id: B1342
+    milestone: M3 providers
+    title: Vertex text, tuned and BGE embedding records
+    status: todo
+    depends_on: [B1306, B006, B002, B171]
+    file: tasks/B1342-vertex-text-embeddings.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vertex_embeddings/{transformation,bge,types}.py"
+  - id: B1343
+    milestone: M3 providers
+    title: Vertex multimodal embedding pairing and media usage
+    status: todo
+    depends_on: [B1300, B006, B171]
+    file: tasks/B1343-vertex-multimodal-embeddings.yaml
+    covers:
+      - "litellm/llms/vertex_ai/multimodal_embeddings/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1344
+    milestone: M3 providers
+    title: Execute Vertex text and multimodal embedding predictions
+    status: todo
+    depends_on: [B1302, B1303, B1304, B1342, B1343, B173]
+    file: tasks/B1344-vertex-predict-embeddings.yaml
+    covers:
+      - "litellm/llms/vertex_ai/{vertex_embeddings,multimodal_embeddings}/embedding_handler.py"
+  - id: B1345
+    milestone: M3 providers
+    title: Vertex Gemini image generation and image credential fallback
+    status: todo
+    depends_on: [B1301, B1302, B1305, B1334, B997, B171]
+    file: tasks/B1345-vertex-gemini-images.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_generation/{vertex_gemini_transformation,vertex_imagen_transformation}.py"
+      - "litellm/llms/vertex_ai/image_edit/{vertex_gemini_transformation,vertex_imagen_transformation}.py"
+  - id: B1346
+    milestone: M3 providers
+    title: Vertex Imagen generation requests and prediction images
+    status: todo
+    depends_on: [B1345, B1301, B1302, B1305, B1306, B997, B171]
+    file: tasks/B1346-vertex-imagen-generation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_generation/vertex_imagen_transformation.py"
+  - id: B1347
+    milestone: M3 providers
+    title: Vertex Gemini image edit JSON and local image records
+    status: todo
+    depends_on: [B1345, B1302, B1120, B1128, B997, B171]
+    file: tasks/B1347-vertex-gemini-image-edit.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py"
+  - id: B1348
+    milestone: M3 providers
+    title: Imagen edit references, masks and recursive file inputs
+    status: todo
+    depends_on: [B1345, B1346, B1302, B1305, B1307, B1128, B997, B171]
+    file: tasks/B1348-vertex-imagen-edit.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py"
+  - id: B1349
+    milestone: M3 providers
+    title: Vertex image configuration selection and billing policy
+    status: todo
+    depends_on: [B1306, B1345, B1346, B1347, B1348, B193, B171]
+    file: tasks/B1349-vertex-image-selection-cost.yaml
+    covers:
+      - "litellm/llms/vertex_ai/image_generation/{__init__,image_generation_handler,cost_calculator}.py"
+      - "litellm/llms/vertex_ai/image_edit/{__init__,cost_calculator}.py"
+  - id: B1350
+    milestone: M3 providers
+    title: Studio image generation usage and token-first pricing
+    status: todo
+    depends_on: [B1331, B1334, B1345, B1346, B1349, B193, B997, B171]
+    file: tasks/B1350-studio-image-generation.yaml
+    covers:
+      - "litellm/llms/gemini/image_generation/**"
+      - "litellm/llms/gemini/image_usage_transformation.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1351
+    milestone: M3 providers
+    title: Studio image edits with shared Gemini image usage
+    status: todo
+    depends_on: [B1334, B1345, B1347, B1350, B1120, B997, B171]
+    file: tasks/B1351-studio-image-edit.yaml
+    covers:
+      - "litellm/llms/gemini/image_edit/**"
+  - id: B1352
+    milestone: M3 providers
+    title: Cloud speech synthesis voices, SSML and audio decoding
+    status: todo
+    depends_on: [B1301, B1302, B1304, B171]
+    file: tasks/B1352-vertex-speech-synthesis.yaml
+    covers:
+      - "litellm/llms/vertex_ai/text_to_speech/**"
+      - "litellm/types/llms/vertex_ai_text_to_speech.py"
+  - id: B1353
+    milestone: M3 providers
+    title: Lyria predict and interactions audio synthesis
+    status: todo
+    depends_on: [B1301, B1302, B1304, B1306, B1352, B1369, B175, B171]
+    file: tasks/B1353-vertex-lyria-speech.yaml
+    covers:
+      - "litellm/llms/vertex_ai/text_to_speech/transformation.py"
+  - id: B1369
+    milestone: M3 providers
+    title: Vertex native interactions targets and authentication
+    status: todo
+    depends_on: [B1301, B1302, B1304, B1305, B1370, B171]
+    file: tasks/B1369-vertex-native-interactions.yaml
+    covers:
+      - "litellm/llms/vertex_ai/interactions/transformation.py"
+  - id: B1354
+    milestone: M3 providers
+    title: Vertex Speech-to-Text recognition and duration metadata
+    status: todo
+    depends_on: [B1301, B1302, B1305, B175, B171]
+    file: tasks/B1354-vertex-speech-recognition.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/transformation.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1355
+    milestone: M3 providers
+    title: Vertex Gemini native audio transcription and token usage
+    status: todo
+    depends_on: [B1354, B1301, B1302, B1305, B175, B171]
+    file: tasks/B1355-vertex-gemini-transcription.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/gemini_transcribe_transformation.py"
+      - "litellm/types/llms/vertex_ai_gemini_transcription.py"
+  - id: B1356
+    milestone: M3 providers
+    title: Chirp session constraints, transcript deltas and billed turns
+    status: todo
+    depends_on: [B1123, B1001, B1004, B193, B171]
+    file: tasks/B1356-chirp-session-events.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1358
+    milestone: M3 providers
+    title: Chirp native gRPC stream and bounded request relay
+    status: todo
+    depends_on: [B1300, B171]
+    file: tasks/B1358-chirp-recognize-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_backend.py"
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1359
+    milestone: M3 providers
+    title: Chirp stream rotation, turn discard and backend shutdown
+    status: todo
+    depends_on: [B1358, B171]
+    file: tasks/B1359-chirp-stream-rotation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_backend.py"
+      - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - id: B1357
+    milestone: M3 providers
+    title: Connect Chirp realtime commands and backend event decoding
+    status: todo
+    depends_on: [B1354, B1356, B1358, B1359, B1123, B1004, B171]
+    file: tasks/B1357-chirp-realtime-adapter.yaml
+    covers:
+      - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"
+  - id: B1360
+    milestone: M3 providers
+    title: Vertex Discovery Engine rerank records and search-unit billing
+    status: todo
+    depends_on: [B1301, B1302, B1306, B171]
+    file: tasks/B1360-vertex-discovery-rerank.yaml
+    covers:
+      - "litellm/llms/vertex_ai/rerank/**"
+  - id: B1361
+    milestone: M3 providers
+    title: Vertex Veo create and edit request preparation
+    status: todo
+    depends_on: [B1301, B1302, B1305, B193, B525, B672, B171]
+    file: tasks/B1361-vertex-veo-requests.yaml
+    covers:
+      - "litellm/llms/vertex_ai/videos/transformation.py"
+  - id: B1362
+    milestone: M3 providers
+    title: Vertex Veo operation results, content and usage defaults
+    status: todo
+    depends_on: [B1361, B1306, B1301, B002, B525, B672, B171]
+    file: tasks/B1362-vertex-veo-operations.yaml
+    covers:
+      - "litellm/llms/vertex_ai/videos/**"
+      - "litellm/constants.py"
+  - id: B1363
+    milestone: M3 providers
+    title: Studio Veo input mapping and API-key precedence
+    status: todo
+    depends_on: [B1331, B1361, B525, B171]
+    file: tasks/B1363-studio-veo-input.yaml
+    covers:
+      - "litellm/llms/gemini/videos/transformation.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1364
+    milestone: M3 providers
+    title: Studio Veo operation decoding and generated video retrieval
+    status: todo
+    depends_on: [B1362, B1363, B525, B672, B173, B171]
+    file: tasks/B1364-studio-veo-results.yaml
+    covers:
+      - "litellm/llms/gemini/videos/**"
+      - "litellm/types/llms/gemini.py"
+  - id: B1365
+    milestone: M3 providers
+    title: Vertex Live setup policy and Chirp backend selection
+    status: todo
+    depends_on: [B1304, B1356, B1357, B1378, B1379, B171]
+    file: tasks/B1365-vertex-live-session.yaml
+    covers:
+      - "litellm/llms/vertex_ai/realtime/**"
+  - id: B1378
+    milestone: M3 providers
+    title: Gemini Live setup options and modality defaults
+    status: todo
+    depends_on: [B1308, B1309, B1331, B193, B1004, B002, B171]
+    file: tasks/B1378-gemini-live-setup.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1379
+    milestone: M3 providers
+    title: Gemini Live client messages and function response records
+    status: todo
+    depends_on: [B1378, B1307, B1004, B171]
+    file: tasks/B1379-gemini-live-client.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+      - "litellm/llms/gemini/common_utils.py"
+      - "litellm/types/llms/gemini.py"
+  - id: B1366
+    milestone: M3 providers
+    title: Studio interactions transcription with word timestamps
+    status: todo
+    depends_on: [B1331, B1354, B171]
+    file: tasks/B1366-studio-transcription.yaml
+    covers:
+      - "litellm/llms/gemini/audio_transcription/**"
+      - "litellm/types/llms/gemini_audio_transcription.py"
+  - id: B1367
+    milestone: M3 providers
+    title: Studio native file uploads and encoded file identifiers
+    status: todo
+    depends_on: [B1331, B1306, B235, B516, B171]
+    file: tasks/B1367-studio-native-files.yaml
+    covers:
+      - "litellm/llms/gemini/files/**"
+      - "litellm/types/llms/gemini.py"
+  - id: B1368
+    milestone: M3 providers
+    title: Native Google GenAI content preparation for Studio and Vertex
+    status: todo
+    depends_on: [B1301, B1302, B1303, B1304, B1306, B1307, B1326, B1331, B171]
+    file: tasks/B1368-google-native-content.yaml
+    covers:
+      - "litellm/llms/vertex_ai/google_genai/**"
+      - "litellm/llms/gemini/google_genai/**"
+  - id: B1370
+    milestone: M3 providers
+    title: Studio interactions revision migration and lifecycle records
+    status: todo
+    depends_on: [B1331, B171]
+    file: tasks/B1370-studio-interactions.yaml
+    covers:
+      - "litellm/llms/gemini/interactions/**"
+  - id: B1371
+    milestone: M3 providers
+    title: Vertex batch job records, GCS model paths and row accounting
+    status: todo
+    depends_on: [B1306, B1319, B1322, B1326, B517, B171]
+    file: tasks/B1371-vertex-batch-records.yaml
+    covers:
+      - "litellm/llms/vertex_ai/batches/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1372
+    milestone: M3 providers
+    title: Create Vertex batches and resolve tuned endpoint models
+    status: todo
+    depends_on: [B1302, B1304, B1305, B1371, B009, B173, B171]
+    file: tasks/B1372-vertex-batch-create.yaml
+    covers:
+      - "litellm/llms/vertex_ai/batches/handler.py"
+  - id: B1373
+    milestone: M3 providers
+    title: Retrieve, list and cancel native Vertex batch jobs
+    status: todo
+    depends_on: [B1302, B1304, B1371, B1372, B009, B173, B171]
+    file: tasks/B1373-vertex-batch-lifecycle.yaml
+    covers:
+      - "litellm/llms/vertex_ai/batches/handler.py"
+  - id: B1374
+    milestone: M3 providers
+    title: Vertex batch label correlation and embedding regrouping
+    status: todo
+    depends_on: [B1371, B006, B171]
+    file: tasks/B1374-vertex-batch-row-correlation.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+  - id: B1393
+    milestone: M3 providers
+    title: Native GCS object authorization and trusted legacy access
+    status: todo
+    depends_on: [B002, B643, B1300, B171]
+    file: tasks/B1393-vertex-gcs-access.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+      - "litellm/litellm_core_utils/cloud_storage_security.py"
+  - id: B1375
+    milestone: M3 providers
+    title: Vertex batch input conversion and rewindable upload streams
+    status: todo
+    depends_on: [B1374, B1340, B1310, B1321, B1025, B010, B1128, B517, B171]
+    file: tasks/B1375-vertex-batch-upload-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+  - id: B1376
+    milestone: M3 providers
+    title: Vertex native file upload targets and GCS metadata records
+    status: todo
+    depends_on: [B1393, B1375, B1302, B1306, B235, B1015, B516, B171]
+    file: tasks/B1376-vertex-native-files.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1377
+    milestone: M3 providers
+    title: Vertex batch output detection and streaming file conversion
+    status: todo
+    depends_on: [B1374, B1375, B1326, B002, B171]
+    file: tasks/B1377-vertex-batch-download-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/transformation.py"
+  - id: B1383
+    milestone: M3 providers
+    title: Vertex native GCS file content execution
+    status: todo
+    depends_on: [B1393, B1377, B1303, B173, B002, B171]
+    file: tasks/B1383-vertex-file-content-executor.yaml
+    covers:
+      - "litellm/llms/vertex_ai/files/handler.py"
+  - id: B1384
+    milestone: M3 providers
+    title: Vertex supervised tuning creation and result conversion
+    status: todo
+    depends_on: [B1302, B1304, B1305, B1306, B518, B173, B171]
+    file: tasks/B1384-vertex-fine-tuning.yaml
+    covers:
+      - "litellm/llms/vertex_ai/fine_tuning/**"
+      - "litellm/types/llms/vertex_ai.py"
+  - id: B1385
+    milestone: M3 providers
+    title: Vertex RAG corpus file ingestion and chunking
+    status: todo
+    depends_on: [B1376, B1393, B1301, B002, B171]
+    file: tasks/B1385-vertex-rag-ingestion.yaml
+    covers:
+      - "litellm/llms/vertex_ai/rag_engine/**"
+  - id: B1386
+    milestone: M3 providers
+    title: Vertex Agent Engine query preparation and buffered answers
+    status: todo
+    depends_on: [B1301, B1302, B1305, B218, B196, B171]
+    file: tasks/B1386-vertex-agent-engine-records.yaml
+    covers:
+      - "litellm/llms/vertex_ai/agent_engine/transformation.py"
+  - id: B1387
+    milestone: M3 providers
+    title: Vertex Agent Engine streamed chunks and wrapper binding
+    status: todo
+    depends_on: [B1386, B010, B173, B171]
+    file: tasks/B1387-vertex-agent-engine-stream.yaml
+    covers:
+      - "litellm/llms/vertex_ai/agent_engine/transformation.py"
+      - "litellm/llms/vertex_ai/agent_engine/sse_iterator.py"
+  - id: B1388
+    milestone: M3 providers
+    title: Vertex RAG vector search and corpus creation
+    status: todo
+    depends_on: [B1058, B1301, B1302, B1305, B1384, B171]
+    file: tasks/B1388-vertex-rag-vector-store.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py"
+  - id: B1389
+    milestone: M3 providers
+    title: Vertex Discovery Engine scoped vector search
+    status: todo
+    depends_on: [B1058, B1301, B1302, B193, B002, B171]
+    file: tasks/B1389-vertex-discovery-search.yaml
+    covers:
+      - "litellm/llms/vertex_ai/vector_stores/search_api/transformation.py"
+  - id: B1390
+    milestone: M3 providers
+    title: Studio File Search vector records and creation
+    status: todo
+    depends_on: [B1058, B1331, B1384, B171]
+    file: tasks/B1390-studio-file-search.yaml
+    covers:
+      - "litellm/llms/gemini/vector_stores/**"
+  - id: B1391
+    milestone: M3 providers
+    title: Google GenAI native guardrail text translation
+    status: todo
+    depends_on: [B1368, B171]
+    file: tasks/B1391-google-genai-guardrail-text.yaml
+    covers:
+      - "litellm/llms/gemini/google_genai/guardrail_translation/**"
+  - id: B1392
+    milestone: M3 providers
+    title: Studio native agent lifecycle records and credential scoping
+    status: todo
+    depends_on: [B1331, B171]
+    file: tasks/B1392-studio-native-agents.yaml
+    covers:
+      - "litellm/llms/gemini/agents/**"
+  - id: B1380
+    milestone: M3 providers
+    title: Gemini Live content lifecycle events and state projections
+    status: todo
+    depends_on: [B1378, B1379, B1004, B171]
+    file: tasks/B1380-gemini-live-content-events.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1381
+    milestone: M3 providers
+    title: Gemini Live tool correlation and usage accounting
+    status: todo
+    depends_on: [B1378, B1379, B1322, B1115, B1004, B171]
+    file: tasks/B1381-gemini-live-accounting.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1394
+    milestone: M3 providers
+    title: Gemini Live tool turn event sequence
+    status: todo
+    depends_on: [B1378, B1379, B1381, B1322, B1115, B1004, B171]
+    file: tasks/B1394-gemini-live-tool-turn.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1382
+    milestone: M3 providers
+    title: Gemini Live server frame dispatch and cross-frame state
+    status: todo
+    depends_on: [B1378, B1379, B1380, B1381, B1394, B1004, B171]
+    file: tasks/B1382-gemini-live-server-frames.yaml
+    covers:
+      - "litellm/llms/gemini/realtime/transformation.py"
+  - id: B1395
+    milestone: M3 providers
+    title: Vertex embedding alias resolution and native API selection
+    status: todo
+    depends_on: [B010, B678, B1301, B1341, B1344, B193, B002, B006]
+    file: tasks/B1395-vertex-embedding-dispatch.yaml
+    covers:
+      - "litellm/main.py"

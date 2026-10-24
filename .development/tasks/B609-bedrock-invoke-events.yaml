@@ -1,12 +1,14 @@
 id: B609
 title: Bedrock Invoke provider and JSON-mode streams
 description: >-
-  Add typed InvokeStream selectors for Claude3, Titan, Mistral and JSON-mode fake tool conversion over existing
-  provider chunks. Share frame parsing and stateful ownership, preserve terminal usage and async/sync wrapper observable
-  ordering, and keep each accumulator bounded.
+  Implement BedrockStream composition above B599 framing and B608 base chunk projection, with Anthropic, DeepSeek
+  and OpenAI-compatible decoder selection. Keep the two public selector variants distinct, preserve sync/async event
+  ordering and EOF diagnostics, and provide the one-chunk buffered fake-stream projection.
 
 
-  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_handler.py:
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/__init__.py:
+  get_bedrock_event_stream_decoder L9-L25. litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182;
+  AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786. litellm/llms/bedrock/chat/invoke_handler.py:
   AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser L835-L836;
   AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856; AmazonOpenAICompatibleStreamDecoder.__init__
   L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874; MockResponseIterator.__init__ L878-L881;
@@ -24,6 +26,60 @@ description: >-
   B615 buffered response normalization.
 
 
+  Named case contracts: claude3_invoke_stream: Anthropic constructor initializes B608 base with model only, then
+  B581 Anthropic iterator with streaming_response=None,sync_stream and supplied json_mode. chunk_parser delegates
+  B582 (not B583 SSE parser) with parsed chunk. Replay B581/B582 empty-tool, thinking/signature, usage and JSON-mode
+  cases at this delegation seam; no duplicate Anthropic mapping. json_mode_tool_chunk: MockResponseIterator json_mode
+  literal True plus tool_calls non-None invokes B578 _convert_tool_response_to_message; if it returns message, replace
+  text with message.content-or-empty and no tool. If it returns None, preserve text but still suppress real tool
+  use. With json_mode false, _handle_json_mode_chunk returns first nonempty tool, but outer _chunk_parser independently
+  indexes first tool whenever listnon-None; empty list therefore raises. Source synthetic conversion handles only
+  first json_tool_call payload, matching B578. json_mode_stop: Fake stream projects choices[0] content-or-empty,
+  first tool only (index0), required usage prompt/completion/total only, is_finished=true and B206 mapped original
+  finish_reason-or-empty. Even JSON-mode conversion retains mapped original finish reason; do not force stop as
+  B607 does. Iter/aiter return self; next/anext share is_done, set it before parsing, and yield at most one chunk,
+  including failure then stop. empty_tool_input: Buffered tool projection preserves exact function.arguments, including
+  empty string; it does not synthesize{} like B608 stop logic. Missingusage/choice/tool fields and empty non-None
+  tool list become ValueError Failed to decode chunk: <chunk>. Error: <error>. Apply shared secret-redaction at
+  outward boundary and preserve typed underlying failure. deepseek_stream_chunks: Constructor initializes BaseModelResponseIterator
+  via B004 and has_finished_thinking=false. Require generation and stop_reason. Exactly first generation=</think>
+  before transition logs Deepseek r1: </think> received, setting has_finished_thinking to True, switches state and
+  yields emptycontent; other text including <think>, embedded/fragmented delimiter remains reasoning. After transition
+  generation emits content, reasoning=None, and later </think> emitted literally. prompt_token_count/generation_token_count
+  use value-or-0 and sum, preserving provided negative numbers. stop_reason passed raw, no map_finish_reason; no
+  explicit id/model/role added beyond wire defaults. Exceptions rethrow unchanged. stream_selector_variants: _stream_decoder
+  selects Anthropic for exact anthropic with model/sync/json_mode; DeepSeek for deepseek_r1 with model/sync only;
+  Moonshot for moonshot via OpenAI-compatible model/sync; otherwise base B608 with supplied json_mode. get_bedrock_event_stream_decoder
+  only special-cases anthropic/deepseek_r1: moonshot and every other provider use base B608 with default json_mode=false,
+  ignoring supplied flag. Do not collapse these selectors into one table. openai_compatible_invoke_stream: Moonshot
+  constructor initializes base B608 then B504 OpenAIChatCompletionStreamingHandler with streaming_response=None
+  and sync flag; delegates parsed chunk unchanged to B504. Explicit selector path honors OpenAI-shaped delta/tool/usage
+  frames, while legacy get_bedrock_event_stream_decoder moonshot path intentionally remains base dispatch. framing_iteration_and_eof:
+  Both iter_bytes/aiter_bytes call B599 framing/tally, count event before parse, skip falsey decoded text, json-decode
+  truthy text and yield chosen provider projection once per event, even when that projection is empty. Surface malformed
+  JSON and invalid provider payload errors without fabricating a success. On EOF replay exact B599 no-events/leftover-bytes502
+  cases including headers and first 200-byte diagnostic; complete but ignored events count as successful framing.
+  Preserve already-emitted chunks before a late error.
+
+
+  Titan/Mistral/base provider branch behavior belongs to B608 invoke_chunk_provider_dispatch and is reused through
+  framing_iteration_and_eof; do not keep redundant selector cases that exercise no new outcome. BaseModelResponseIterator
+  initialization belongs B2214; its common iteration/closure belongs B010. Both iterators keep no additional SSE
+  parser; they decode AWS-framed JSON only.
+
+
+  Outside-byte boundary: decode_bedrock_event_json consumes UTF-8 JSON payload bytes returned by B599 for framed
+  Bedrock events; both sync and async iteration call this exact decoder before selecting the provider projection
+  in crates/betterlite-bedrock/src/invoke_events.rs or its scoped child module. Use that production decoder from
+  the request path, Rust oracle adapter and cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_events.rs.
+  Add valid, malformed, truncated and boundary corpus inputs and adjacent test replays_the_bedrock_invoke_events_corpus
+  that checks outcome categories through this decoder. The B171 HelperCase parser is a separate boundary.
+
+
+  Direct constructor/helper prerequisites used by this slice: B2201. Reuse the named implementations; do not copy
+  them at this call boundary.
+
+
   Implement crates/betterlite-bedrock/src/invoke_events.rs with adjacent tests under invoke_events/. Keep each Rust
   module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
   never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
@@ -38,10 +94,10 @@ description: >-
 
 
   Write rstest function invoke_events_cases in betterlite-bedrock with these exact named cases (one per oracle file):
-  claude3_invoke_stream, titan_invoke_stream, mistral_invoke_stream, json_mode_tool_chunk, json_mode_stop, empty_tool_input,
-  deepseek_stream_chunks. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
-  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
-  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+  claude3_invoke_stream, json_mode_tool_chunk, json_mode_stop, empty_tool_input, deepseek_stream_chunks, stream_selector_variants,
+  openai_compatible_invoke_stream, framing_iteration_and_eof. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
 
 
   Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events* using HelperCase: kind:
@@ -51,15 +107,14 @@ description: >-
   corpus.
 
 
-  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
-  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
-  needed, is B002.
+  Use the production outside-byte decoder named below; B171 still owns HelperCase decoding and B002 owns configuration
+  decoding.
 
 
-  Budget from 162 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
-  docstrings; SDK overloads share an async implementation): 190 production lines, 108 behavior/config-test lines,
-  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 406 planned, 425 maximum changed lines.
+  Budget from 231 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 270 production lines, 285 behavior/config-test lines,
+  120 combined Rust/Python adapter lines, 60 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 760 planned, 775 maximum changed lines.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -75,52 +130,70 @@ scope:
   - tools/oracle/helpers/bedrock_invoke_events.py
   - tools/oracle/cases/helpers/providers/bedrock-invoke-events/**
   - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_events.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_events/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L817-L969
-  why: >-
-    Own AmazonAnthropicClaudeStreamDecoder.__init__, AmazonAnthropicClaudeStreamDecoder._chunk_parser, AmazonDeepSeekR1StreamDecoder.__init__,
+  why: Own AmazonAnthropicClaudeStreamDecoder.__init__, AmazonAnthropicClaudeStreamDecoder._chunk_parser, AmazonDeepSeekR1StreamDecoder.__init__,
     AmazonDeepSeekR1StreamDecoder._chunk_parser, AmazonOpenAICompatibleStreamDecoder.__init__, AmazonOpenAICompatibleStreamDecoder._chunk_parser,
     MockResponseIterator.__init__, MockResponseIterator.__iter__, MockResponseIterator._handle_json_mode_chunk,
     MockResponseIterator._chunk_parser, MockResponseIterator.__next__, MockResponseIterator.__aiter__, MockResponseIterator.__anext__.
     Other functions in this file remain with the owners listed below.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py#L83-L121
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py#L83-L121
   why: Own AmazonDeepseekR1ResponseIterator.__init__, AmazonDeepseekR1ResponseIterator.chunk_parser. Other functions
     in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L169-L182
+  why: Own stream decoder composition above framing and provider chunk mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L745-L765
+  why: Own stream decoder composition above framing and provider chunk mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L767-L786
+  why: Own stream decoder composition above framing and provider chunk mapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/__init__.py#L9-L25
+  why: Own stream decoder composition above framing and provider chunk mapping.
 dod:
-- text: 'claude3 invoke stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/claude3-invoke-stream.yaml.'
+- text: 'claude3_invoke_stream: Anthropic constructor initializes B608 base with model only, then B581 Anthropic
+    iterator with streaming_response=None,sync_stream and supplied json_mode. chunk_parser delegates B582 (not B583
+    SSE parser) with parsed chunk. Replay B581/B582 empty-tool, thinking/signature, usage and JSON-mode cases at
+    this delegation seam; no duplicate Anthropic mapping.'
   proof:
   - case-claude3-invoke-stream
   - oracle
   - helper-python
-- text: 'titan invoke stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/titan-invoke-stream.yaml.'
-  proof:
-  - case-titan-invoke-stream
-  - oracle
-  - helper-python
-- text: 'mistral invoke stream: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/mistral-invoke-stream.yaml.'
-  proof:
-  - case-mistral-invoke-stream
-  - oracle
-  - helper-python
-- text: 'json mode tool chunk: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-tool-chunk.yaml.'
+- text: 'json_mode_tool_chunk: MockResponseIterator json_mode literal True plus tool_calls non-None invokes B578
+    _convert_tool_response_to_message; if it returns message, replace text with message.content-or-empty and no
+    tool. If it returns None, preserve text but still suppress real tool use. With json_mode false, _handle_json_mode_chunk
+    returns first nonempty tool, but outer _chunk_parser independently indexes first tool whenever listnon-None;
+    empty list therefore raises. Source synthetic conversion handles only first json_tool_call payload, matching
+    B578.'
   proof:
   - case-json-mode-tool-chunk
   - oracle
   - helper-python
-- text: 'json mode stop: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-stop.yaml.'
+- text: 'json_mode_stop: Fake stream projects choices[0] content-or-empty, first tool only (index0), required usage
+    prompt/completion/total only, is_finished=true and B206 mapped original finish_reason-or-empty. Even JSON-mode
+    conversion retains mapped original finish reason; do not force stop as B607 does. Iter/aiter return self; next/anext
+    share is_done, set it before parsing, and yield at most one chunk, including failure then stop.'
   proof:
   - case-json-mode-stop
   - oracle
   - helper-python
-- text: 'empty tool input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/empty-tool-input.yaml.'
+- text: 'empty_tool_input: Buffered tool projection preserves exact function.arguments, including empty string;
+    it does not synthesize{} like B608 stop logic. Missingusage/choice/tool fields and empty non-None tool list
+    become ValueError Failed to decode chunk: <chunk>. Error: <error>. Apply shared secret-redaction at outward
+    boundary and preserve typed underlying failure.'
   proof:
   - case-empty-tool-input
   - oracle
   - helper-python
-- text: >-
-    deepseek stream chunks: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-invoke-events/deepseek-stream-chunks.yaml.
+- text: 'deepseek_stream_chunks: Constructor initializes BaseModelResponseIterator via B004 and has_finished_thinking=false.
+    Require generation and stop_reason. Exactly first generation=</think> before transition logs Deepseek r1: </think>
+    received, setting has_finished_thinking to True, switches state and yields emptycontent; other text including
+    <think>, embedded/fragmented delimiter remains reasoning. After transition generation emits content, reasoning=None,
+    and later </think> emitted literally. prompt_token_count/generation_token_count use value-or-0 and sum, preserving
+    provided negative numbers. stop_reason passed raw, no map_finish_reason; no explicit id/model/role added beyond
+    wire defaults. Exceptions rethrow unchanged.'
   proof:
   - case-deepseek-stream-chunks
   - oracle
@@ -129,84 +202,143 @@ dod:
     parser.
   proof:
   - helper-case-corpus
+- text: 'stream_selector_variants: _stream_decoder selects Anthropic for exact anthropic with model/sync/json_mode;
+    DeepSeek for deepseek_r1 with model/sync only; Moonshot for moonshot via OpenAI-compatible model/sync; otherwise
+    base B608 with supplied json_mode. get_bedrock_event_stream_decoder only special-cases anthropic/deepseek_r1:
+    moonshot and every other provider use base B608 with default json_mode=false, ignoring supplied flag. Do not
+    collapse these selectors into one table.'
+  proof:
+  - case-stream-selector-variants
+  - oracle
+  - helper-python
+- text: 'openai_compatible_invoke_stream: Moonshot constructor initializes base B608 then B504 OpenAIChatCompletionStreamingHandler
+    with streaming_response=None and sync flag; delegates parsed chunk unchanged to B504. Explicit selector path
+    honors OpenAI-shaped delta/tool/usage frames, while legacy get_bedrock_event_stream_decoder moonshot path intentionally
+    remains base dispatch.'
+  proof:
+  - case-openai-compatible-invoke-stream
+  - oracle
+  - helper-python
+- text: 'framing_iteration_and_eof: Both iter_bytes/aiter_bytes call B599 framing/tally, count event before parse,
+    skip falsey decoded text, json-decode truthy text and yield chosen provider projection once per event, even
+    when that projection is empty. Surface malformed JSON and invalid provider payload errors without fabricating
+    a success. On EOF replay exact B599 no-events/leftover-bytes502 cases including headers and first 200-byte diagnostic;
+    complete but ignored events count as successful framing. Preserve already-emitted chunks before a late error.'
+  proof:
+  - case-framing-iteration-and-eof
+  - oracle
+  - helper-python
+- text: decode_bedrock_event_json has production decoder replay and new malformed/boundary seeds.
+  proof:
+  - parser-corpus
 checks:
   optional:
   - mutants
   commands:
   - id: case-claude3-invoke-stream
-    why: The claude3-invoke-stream behavior is missing or differs from its pinned fixture.
+    why: Anthropic constructor initializes B608 base with model only, then B581 Anthropic iterator with streaming_response=None,sync_stream
+      and supplied json_mode. chunk_parser delegates B582 (not B583 SSE parser) with parsed chunk. Replay B581/B582
+      empty-tool, thinking/signature, usage and JSON-mode cases at this delegation seam; no duplicate Anthropic
+      mapping.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_claude3_invoke_stream$/)'
-  - id: case-titan-invoke-stream
-    why: The titan-invoke-stream behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_titan_invoke_stream$/)'
-  - id: case-mistral-invoke-stream
-    why: The mistral-invoke-stream behavior is missing or differs from its pinned fixture.
-    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_mistral_invoke_stream$/)'
   - id: case-json-mode-tool-chunk
-    why: The json-mode-tool-chunk behavior is missing or differs from its pinned fixture.
+    why: MockResponseIterator json_mode literal True plus tool_calls non-None invokes B578 _convert_tool_response_to_message;
+      if it returns message, replace text with message.content-or-empty and no tool. If it returns None, preserve
+      text but still suppress real tool use. With json_mode false, _handle_json_mode_chunk returns first nonempty
+      tool, but outer _chunk_parser independently indexes first tool whenever listnon-None; empty list therefore
+      raises. Source synthetic conversion handles only first json_tool_call payload, matching B578.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_json_mode_tool_chunk$/)'
   - id: case-json-mode-stop
-    why: The json-mode-stop behavior is missing or differs from its pinned fixture.
+    why: Fake stream projects choices[0] content-or-empty, first tool only (index0), required usage prompt/completion/total
+      only, is_finished=true and B206 mapped original finish_reason-or-empty. Even JSON-mode conversion retains
+      mapped original finish reason; do not force stop as B607 does. Iter/aiter return self; next/anext share is_done,
+      set it before parsing, and yield at most one chunk, including failure then stop.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_json_mode_stop$/)'
   - id: case-empty-tool-input
-    why: The empty-tool-input behavior is missing or differs from its pinned fixture.
+    why: 'Buffered tool projection preserves exact function.arguments, including empty string; it does not synthesize{}
+      like B608 stop logic. Missingusage/choice/tool fields and empty non-None tool list become ValueError Failed
+      to decode chunk: <chunk>. Error: <error>. Apply shared secret-redaction at outward boundary and preserve typed
+      underlying failure.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_empty_tool_input$/)'
   - id: case-deepseek-stream-chunks
-    why: The deepseek-stream-chunks behavior is missing or differs from its pinned fixture.
+    why: 'Constructor initializes BaseModelResponseIterator via B004 and has_finished_thinking=false. Require generation
+      and stop_reason. Exactly first generation=</think> before transition logs Deepseek r1: </think> received,
+      setting has_finished_thinking to True, switches state and yields emptycontent; other text including <think>,
+      embedded/fragmented delimiter remains reasoning. After transition generation emits content, reasoning=None,
+      and later </think> emitted literally. prompt_token_count/generation_token_count use value-or-0 and sum, preserving
+      provided negative numbers. stop_reason passed raw, no map_finish_reason; no explicit id/model/role added beyond
+      wire defaults. Exceptions rethrow unchanged.'
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_deepseek_stream_chunks$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
-    run: >-
-      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_events.py)" && uv run
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_events.py)" && uv run
       --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
       basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-case-corpus
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
-    run: >-
-      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events*")"
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events*")"
       && grep -lq 'bedrock_invoke_events' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_events* && cargo nextest
       run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_events$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: case-stream-selector-variants
+    why: '_stream_decoder selects Anthropic for exact anthropic with model/sync/json_mode; DeepSeek for deepseek_r1
+      with model/sync only; Moonshot for moonshot via OpenAI-compatible model/sync; otherwise base B608 with supplied
+      json_mode. get_bedrock_event_stream_decoder only special-cases anthropic/deepseek_r1: moonshot and every other
+      provider use base B608 with default json_mode=false, ignoring supplied flag. Do not collapse these selectors
+      into one table.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_stream_selector_variants$/)'
+  - id: case-openai-compatible-invoke-stream
+    why: Moonshot constructor initializes base B608 then B504 OpenAIChatCompletionStreamingHandler with streaming_response=None
+      and sync flag; delegates parsed chunk unchanged to B504. Explicit selector path honors OpenAI-shaped delta/tool/usage
+      frames, while legacy get_bedrock_event_stream_decoder moonshot path intentionally remains base dispatch.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_openai_compatible_invoke_stream$/)'
+  - id: case-framing-iteration-and-eof
+    why: Both iter_bytes/aiter_bytes call B599 framing/tally, count event before parse, skip falsey decoded text,
+      json-decode truthy text and yield chosen provider projection once per event, even when that projection is
+      empty. Surface malformed JSON and invalid provider payload errors without fabricating a success. On EOF replay
+      exact B599 no-events/leftover-bytes502 cases including headers and first 200-byte diagnostic; complete but
+      ignored events count as successful framing. Preserve already-emitted chunks before a late error.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_events_cases::case_[0-9]+_framing_iteration_and_eof$/)'
+  - id: parser-corpus
+    why: Outside bytes lack replay through the actual decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_invoke_events)"
+      && grep -q 'decode_bedrock_event_json' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_invoke_events.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_invoke_events_corpus$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/bedrock-invoke-events/claude3-invoke-stream.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-events/titan-invoke-stream.yaml
-- tools/oracle/cases/helpers/providers/bedrock-invoke-events/mistral-invoke-stream.yaml
 - tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-tool-chunk.yaml
 - tools/oracle/cases/helpers/providers/bedrock-invoke-events/json-mode-stop.yaml
 - tools/oracle/cases/helpers/providers/bedrock-invoke-events/empty-tool-input.yaml
 - tools/oracle/cases/helpers/providers/bedrock-invoke-events/deepseek-stream-chunks.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/stream-selector-variants.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/openai-compatible-invoke-stream.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-events/framing-iteration-and-eof.yaml
 deviations: []
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
   remain with their endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
-  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
-  L146-L166 belong to B611; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360 belong to B691; reuse
-  that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418; AWSEventStreamDecoder.check_empty_tool_call_args
-  L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str L442-L447; AWSEventStreamDecoder.translate_thinking_blocks
-  L449-L472; AWSEventStreamDecoder._initialize_converse_response_id L474-L483; AWSEventStreamDecoder._handle_converse_start_event
-  L485-L528; AWSEventStreamDecoder._handle_converse_delta_event L530-L585; AWSEventStreamDecoder._handle_converse_stop_event
-  L587-L609; AWSEventStreamDecoder.converse_chunk_parser L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743
-  belong to B608; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; _response_header L363-L364; _EventStreamTally.__init__
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: _response_header L363-L364; _EventStreamTally.__init__
   L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event L379-L381; _EventStreamTally.undecoded_stream_error
-  L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AWSEventStreamDecoder._parse_message_from_event
-  L788-L813 belong to B599; reuse that implementation or its injected typed boundary.
-- >-
-  litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py: AmazonDeepSeekR1Config.transform_response
-  L32-L79 belong to B615; reuse that implementation or its injected typed boundary.
+  L383-L403; AWSEventStreamDecoder._parse_message_from_event L788-L813 belong to B599.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418;
+  AWSEventStreamDecoder.check_empty_tool_call_args L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str
+  L442-L447; AWSEventStreamDecoder.translate_thinking_blocks L449-L472; AWSEventStreamDecoder._initialize_converse_response_id
+  L474-L483; AWSEventStreamDecoder._handle_converse_start_event L485-L528; AWSEventStreamDecoder._handle_converse_delta_event
+  L530-L585; AWSEventStreamDecoder._handle_converse_stop_event L587-L609; AWSEventStreamDecoder.converse_chunk_parser
+  L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743 belong to B608.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110;
+  AmazonCohereChatConfig.get_config L112-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
+  L146-L166 belong to B611.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call
+  L274-L360 belong to B691.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/amazon_deepseek_transformation.py:
+  AmazonDeepSeekR1Config.transform_response L32-L79 belong to B615.'
 pitfalls:
-- The stream selector invokes the DeepSeek iterator owned here and injects other family projections without a dependency
-  cycle.
+- The legacy exported selector lacks the Moonshot branch and drops json_mode for the base decoder.
+- MockResponseIterator marks itself done before parsing, so a failed first next cannot be retried.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 775
   max_new_expects: 0
 review_level: standard

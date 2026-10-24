@@ -1,0 +1,360 @@
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+checks:
+  commands:
+  - id: helper-python
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_invoke_primitives.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+  - id: helper-case-corpus
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_primitives*")"
+      && grep -lq 'bedrock_invoke_primitives' tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_primitives* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_invoke_primitives$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+  - id: case-base-options
+    why: 'The base supported list is exactly max_tokens,max_completion_tokens,stream. Map either token alias to
+      max_tokens in input order, so the last wins; copy stream without coercion and ignore other input names. _apply_config_to_params
+      inserts only absent keys: an existing None prevents a configured default. Initialize both B2202 BaseConfig
+      and B590 BaseAWSLLM.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_base_options$/)'
+  - id: case-provider-family-selection
+    why: 'Use the same cases as B591: remove only one leading invoke/; case-insensitive nova substring wins before
+      all other provider checks. Then check the first dot segment, the first slash segment, and finally case-sensitive
+      substrings in the exact enum order: cohere,anthropic,mistral,amazon,meta,llama,ai21,nova,deepseek_r1,qwen3,qwen2,twelvelabs,openai,stability,moonshot.
+      Unknown returns None. Verify the enum against the pinned BEDROCK_INVOKE_PROVIDERS_LITERAL rather than sorting
+      it.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_provider_family_selection$/)'
+  - id: case-invoke-model-url
+    why: B591 supplies model ID quoting, endpoint and region. Pop model_id through get_bedrock_model_id before _get_aws_region_name,
+      and do not pass that popped value to region selection. Preserve trailing endpoint slashes. Only stream is
+      literally True and provider != ai21 selects /model/{modelId}/invoke-with-response-stream; otherwise use /model/{modelId}/invoke.
+      Return endpoint_url, even when api_base produced a different proxy_endpoint_url. No Accept header is added.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_invoke_model_url$/)'
+  - id: case-guardrail-headers
+    why: 'Pop guardrailConfig before validating. Missing or None yields no guardrail headers. Validate a partial
+      TypedDict with optional string guardrailIdentifier/guardrailVersion and trace limited to enabled,disabled,enabled_full;
+      ignore extra keys, preserve empty strings. Missing identifier raises BedrockError 400 with message guardrailConfig={raw}
+      is missing ''guardrailIdentifier''. Expected format: {expected}. Type/trace errors instead use Invalid guardrailConfig={raw}.
+      Expected format: {expected}. Error: {validation_error}. The exact expected literal is {''guardrailIdentifier'':
+      str, ''guardrailVersion'': str, ''trace'': ''enabled''|''disabled''|''enabled_full''}. Compare stable validation
+      details through B682; do not invent param or code.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_guardrail_headers$/)'
+  - id: case-guardrail-metadata-merge
+    why: Emit X-Amzn-Bedrock-GuardrailIdentifier, X-Amzn-Bedrock-GuardrailVersion and uppercase X-Amzn-Bedrock-Trace
+      only for values other than None. Delegate owned metadata removal and case-insensitive caller-header precedence
+      to B596. api_key does not add an Authorization header in validate_environment. get_error_class preserves the
+      supplied status, message and headers through B682.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_guardrail_metadata_merge$/)'
+  - id: case-signing-forwarding
+    why: sign_request delegates to B595 _sign_request with service_name=bedrock, forwarding headers, optional_params,
+      request_data, api_base, api_key, model, stream and fake_stream unchanged. Preserve the returned signed bytes
+      and headers.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_signing_forwarding$/)'
+  - id: case-prompt-template-selection
+    why: If the selected model is an exact custom_prompt_dict key, call B177 custom_prompt with required roles and
+      initial_prompt_value/final_prompt_value defaulting to empty strings; return no history. Otherwise anthropic,amazon,mistral,meta,llama
+      call B177 prompt_factory with custom_llm_provider=bedrock; cohere calls B182 cohere_message_pt; deepseek_r1
+      calls B214 deepseek_r1_pt. Other providers concatenate Python string representations of every required content
+      value with no separators, independent of role; missing content propagates its error.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_prompt_template_selection$/)'
+  - id: case-llama-local-template
+    why: 'A custom_prompt_dict entry bypasses Hugging Face acquisition entirely. Otherwise the Bedrock llama3/llama4
+      plus instruct branch requests meta-llama/Meta-Llama-3-8B-Instruct from B177/B215 local assets. Missing local
+      assets propagate Exception with message No chat template found and no fallback warning: the Bedrock branch
+      precedes the factory try/except. Oracle fixtures make both acquisition seams unavailable without network;
+      a Rust-only no-download test verifies no outbound request.'
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_cases::case_[0-9]+_llama_local_template$/)'
+  - id: no-template-download
+    why: The local-only decision is not enforced.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_never_downloads_templates$/)'
+  - id: credential-identity-isolation
+    why: Distinct configured identities cannot share credentials, headers or cache entries.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_credential_identity_isolation$/)'
+  - id: secret-safe-failure
+    why: Debug and owned failure paths do not expose fixture credentials.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::invoke_primitives_secret_safe_failure$/)'
+  optional:
+  - mutants
+description: >-
+  Implement shared Invoke validation, URL selection, signing and prompt selection below every model-specific subclass.
+  B611 owns request-family composition and B612 owns reply-family composition; they call these helpers directly.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  _bedrock_invoke_guardrail_headers L55-L74; AmazonInvokeConfig.__init__ L78-L80; AmazonInvokeConfig.get_supported_openai_params
+  L82-L90; AmazonInvokeConfig.map_openai_params L92-L107; AmazonInvokeConfig.get_complete_url L109-L144; AmazonInvokeConfig.sign_request
+  L146-L167; AmazonInvokeConfig._apply_config_to_params L169-L173; AmazonInvokeConfig.validate_environment L421-L438;
+  AmazonInvokeConfig.get_error_class L440-L441; AmazonInvokeConfig.get_bedrock_invoke_provider L536-L570; AmazonInvokeConfig._get_provider_from_model_path
+  L572-L590; AmazonInvokeConfig.convert_messages_to_prompt L592-L630.
+
+
+  Named case contracts: base_options: The base supported list is exactly max_tokens,max_completion_tokens,stream.
+  Map either token alias to max_tokens in input order, so the last wins; copy stream without coercion and ignore
+  other input names. _apply_config_to_params inserts only absent keys: an existing None prevents a configured default.
+  Initialize both B2202 BaseConfig and B590 BaseAWSLLM. provider_family_selection: Use the same cases as B591: remove
+  only one leading invoke/; case-insensitive nova substring wins before all other provider checks. Then check the
+  first dot segment, the first slash segment, and finally case-sensitive substrings in the exact enum order: cohere,anthropic,mistral,amazon,meta,llama,ai21,nova,deepseek_r1,qwen3,qwen2,twelvelabs,openai,stability,moonshot.
+  Unknown returns None. Verify the enum against the pinned BEDROCK_INVOKE_PROVIDERS_LITERAL rather than sorting
+  it. invoke_model_url: B591 supplies model ID quoting, endpoint and region. Pop model_id through get_bedrock_model_id
+  before _get_aws_region_name, and do not pass that popped value to region selection. Preserve trailing endpoint
+  slashes. Only stream is literally True and provider != ai21 selects /model/{modelId}/invoke-with-response-stream;
+  otherwise use /model/{modelId}/invoke. Return endpoint_url, even when api_base produced a different proxy_endpoint_url.
+  No Accept header is added. guardrail_headers: Pop guardrailConfig before validating. Missing or None yields no
+  guardrail headers. Validate a partial TypedDict with optional string guardrailIdentifier/guardrailVersion and
+  trace limited to enabled,disabled,enabled_full; ignore extra keys, preserve empty strings. Missing identifier
+  raises BedrockError 400 with message guardrailConfig={raw} is missing 'guardrailIdentifier'. Expected format:
+  {expected}. Type/trace errors instead use Invalid guardrailConfig={raw}. Expected format: {expected}. Error: {validation_error}.
+  The exact expected literal is {'guardrailIdentifier': str, 'guardrailVersion': str, 'trace': 'enabled'|'disabled'|'enabled_full'}.
+  Compare stable validation details through B682; do not invent param or code. guardrail_metadata_merge: Emit X-Amzn-Bedrock-GuardrailIdentifier,
+  X-Amzn-Bedrock-GuardrailVersion and uppercase X-Amzn-Bedrock-Trace only for values other than None. Delegate owned
+  metadata removal and case-insensitive caller-header precedence to B596. api_key does not add an Authorization
+  header in validate_environment. get_error_class preserves the supplied status, message and headers through B682.
+  signing_forwarding: sign_request delegates to B595 _sign_request with service_name=bedrock, forwarding headers,
+  optional_params, request_data, api_base, api_key, model, stream and fake_stream unchanged. Preserve the returned
+  signed bytes and headers. prompt_template_selection: If the selected model is an exact custom_prompt_dict key,
+  call B177 custom_prompt with required roles and initial_prompt_value/final_prompt_value defaulting to empty strings;
+  return no history. Otherwise anthropic,amazon,mistral,meta,llama call B177 prompt_factory with custom_llm_provider=bedrock;
+  cohere calls B182 cohere_message_pt; deepseek_r1 calls B214 deepseek_r1_pt. Other providers concatenate Python
+  string representations of every required content value with no separators, independent of role; missing content
+  propagates its error. llama_local_template: A custom_prompt_dict entry bypasses Hugging Face acquisition entirely.
+  Otherwise the Bedrock llama3/llama4 plus instruct branch requests meta-llama/Meta-Llama-3-8B-Instruct from B177/B215
+  local assets. Missing local assets propagate Exception with message No chat template found and no fallback warning:
+  the Bedrock branch precedes the factory try/except. Oracle fixtures make both acquisition seams unavailable without
+  network; a Rust-only no-download test verifies no outbound request.
+
+
+  Add standalone Rust test invoke_primitives_never_downloads_templates that makes local lookup fail and asserts
+  the exact missing-template failure with zero outbound attempts. This checks the declared deviation, not Python
+  network behavior.
+
+
+  Write standalone Rust test invoke_primitives_credential_identity_isolation in betterlite-bedrock: Distinct configured
+  identities cannot share credentials, headers or cache entries. This invariant is Rust-only, not a Python oracle
+  case.
+
+
+  Write standalone Rust test invoke_primitives_secret_safe_failure in betterlite-bedrock: Debug and owned failure
+  paths do not expose fixture credentials. This invariant is Rust-only, not a Python oracle case.
+
+
+  Implement crates/betterlite-bedrock/src/invoke_primitives.rs with adjacent tests under invoke_primitives/. Keep
+  each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_invoke_primitives in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function invoke_primitives_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): base_options, provider_family_selection, invoke_model_url, guardrail_headers, guardrail_metadata_merge,
+  signing_forwarding, prompt_template_selection, llama_local_template. Each case exercises its named outcome independently;
+  use stable supplied clocks/IDs and fixture transports. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_primitives* using HelperCase:
+  kind: helper and the externally tagged bedrock_invoke_primitives variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_invoke_primitives that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 207 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 235 production lines, 265 behavior/config-test lines,
+  105 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 30 module/dispatch/shared-seed
+  wiring lines; 635 planned, 650 maximum changed lines.
+deviations:
+- what: Use local Hugging Face assets only. A missing Bedrock Llama instruct template raises No chat template found
+    without an outbound download; custom_prompt_dict remains a local bypass.
+  why: The download decision remains open for Max. Preserve this branch's actual failure instead of borrowing the
+    fallback from the later factory branch.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5266-L5309
+dod:
+- proof:
+  - helper-case-corpus
+  text: New bedrock_invoke_primitives seeds parse as the intended call variant and replay through the shared production
+    parser.
+- text: 'base_options: The base supported list is exactly max_tokens,max_completion_tokens,stream. Map either token
+    alias to max_tokens in input order, so the last wins; copy stream without coercion and ignore other input names.
+    _apply_config_to_params inserts only absent keys: an existing None prevents a configured default. Initialize
+    both B2202 BaseConfig and B590 BaseAWSLLM.'
+  proof:
+  - case-base-options
+  - oracle
+  - helper-python
+- text: 'provider_family_selection: Use the same cases as B591: remove only one leading invoke/; case-insensitive
+    nova substring wins before all other provider checks. Then check the first dot segment, the first slash segment,
+    and finally case-sensitive substrings in the exact enum order: cohere,anthropic,mistral,amazon,meta,llama,ai21,nova,deepseek_r1,qwen3,qwen2,twelvelabs,openai,stability,moonshot.
+    Unknown returns None. Verify the enum against the pinned BEDROCK_INVOKE_PROVIDERS_LITERAL rather than sorting
+    it.'
+  proof:
+  - case-provider-family-selection
+  - oracle
+  - helper-python
+- text: 'invoke_model_url: B591 supplies model ID quoting, endpoint and region. Pop model_id through get_bedrock_model_id
+    before _get_aws_region_name, and do not pass that popped value to region selection. Preserve trailing endpoint
+    slashes. Only stream is literally True and provider != ai21 selects /model/{modelId}/invoke-with-response-stream;
+    otherwise use /model/{modelId}/invoke. Return endpoint_url, even when api_base produced a different proxy_endpoint_url.
+    No Accept header is added.'
+  proof:
+  - case-invoke-model-url
+  - oracle
+  - helper-python
+- text: 'guardrail_headers: Pop guardrailConfig before validating. Missing or None yields no guardrail headers.
+    Validate a partial TypedDict with optional string guardrailIdentifier/guardrailVersion and trace limited to
+    enabled,disabled,enabled_full; ignore extra keys, preserve empty strings. Missing identifier raises BedrockError
+    400 with message guardrailConfig={raw} is missing ''guardrailIdentifier''. Expected format: {expected}. Type/trace
+    errors instead use Invalid guardrailConfig={raw}. Expected format: {expected}. Error: {validation_error}. The
+    exact expected literal is {''guardrailIdentifier'': str, ''guardrailVersion'': str, ''trace'': ''enabled''|''disabled''|''enabled_full''}.
+    Compare stable validation details through B682; do not invent param or code.'
+  proof:
+  - case-guardrail-headers
+  - oracle
+  - helper-python
+- text: 'guardrail_metadata_merge: Emit X-Amzn-Bedrock-GuardrailIdentifier, X-Amzn-Bedrock-GuardrailVersion and
+    uppercase X-Amzn-Bedrock-Trace only for values other than None. Delegate owned metadata removal and case-insensitive
+    caller-header precedence to B596. api_key does not add an Authorization header in validate_environment. get_error_class
+    preserves the supplied status, message and headers through B682.'
+  proof:
+  - case-guardrail-metadata-merge
+  - oracle
+  - helper-python
+- text: 'signing_forwarding: sign_request delegates to B595 _sign_request with service_name=bedrock, forwarding
+    headers, optional_params, request_data, api_base, api_key, model, stream and fake_stream unchanged. Preserve
+    the returned signed bytes and headers.'
+  proof:
+  - case-signing-forwarding
+  - oracle
+  - helper-python
+- text: 'prompt_template_selection: If the selected model is an exact custom_prompt_dict key, call B177 custom_prompt
+    with required roles and initial_prompt_value/final_prompt_value defaulting to empty strings; return no history.
+    Otherwise anthropic,amazon,mistral,meta,llama call B177 prompt_factory with custom_llm_provider=bedrock; cohere
+    calls B182 cohere_message_pt; deepseek_r1 calls B214 deepseek_r1_pt. Other providers concatenate Python string
+    representations of every required content value with no separators, independent of role; missing content propagates
+    its error.'
+  proof:
+  - case-prompt-template-selection
+  - oracle
+  - helper-python
+- text: 'llama_local_template: A custom_prompt_dict entry bypasses Hugging Face acquisition entirely. Otherwise
+    the Bedrock llama3/llama4 plus instruct branch requests meta-llama/Meta-Llama-3-8B-Instruct from B177/B215 local
+    assets. Missing local assets propagate Exception with message No chat template found and no fallback warning:
+    the Bedrock branch precedes the factory try/except. Oracle fixtures make both acquisition seams unavailable
+    without network; a Rust-only no-download test verifies no outbound request.'
+  proof:
+  - case-llama-local-template
+  - oracle
+  - helper-python
+- text: Missing local templates never trigger a download.
+  proof:
+  - no-template-download
+- text: Distinct configured identities cannot share credentials, headers or cache entries.
+  proof:
+  - credential-identity-isolation
+- text: Debug and owned failure paths do not expose fixture credentials.
+  proof:
+  - secret-safe-failure
+id: B2205
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/base-options.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/provider-family-selection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/invoke-model-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/guardrail-headers.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/guardrail-metadata-merge.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/signing-forwarding.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/prompt-template-selection.yaml
+- tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/llama-local-template.yaml
+out_of_scope:
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  AmazonInvokeConfig.get_async_custom_stream_wrapper L443-L480; AmazonInvokeConfig.get_sync_custom_stream_wrapper
+  L482-L523; AmazonInvokeConfig.has_custom_stream_wrapper L525-L527; AmazonInvokeConfig.supports_stream_param_in_request_body
+  L529-L534 belong to B2206.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  AmazonInvokeConfig.transform_request L175-L279 belong to B611.'
+- 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
+  AmazonInvokeConfig.transform_response L281-L419 belong to B612.'
+pitfalls:
+- The computed proxy_endpoint_url is not the return value of get_complete_url.
+- The Bedrock template branch is outside the later factory fallback catch.
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L55-L74
+  why: Own _bedrock_invoke_guardrail_headers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L78-L80
+  why: Own AmazonInvokeConfig.__init__.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L82-L90
+  why: Own AmazonInvokeConfig.get_supported_openai_params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L92-L107
+  why: Own AmazonInvokeConfig.map_openai_params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L109-L144
+  why: Own AmazonInvokeConfig.get_complete_url.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L146-L167
+  why: Own AmazonInvokeConfig.sign_request.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L169-L173
+  why: Own AmazonInvokeConfig._apply_config_to_params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L421-L438
+  why: Own AmazonInvokeConfig.validate_environment.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L440-L441
+  why: Own AmazonInvokeConfig.get_error_class.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L537-L570
+  why: Own AmazonInvokeConfig.get_bedrock_invoke_provider.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L573-L590
+  why: Own AmazonInvokeConfig._get_provider_from_model_path.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L592-L630
+  why: Own AmazonInvokeConfig.convert_messages_to_prompt.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1364-L1380
+  why: Exact provider enum order used by substring fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L55-L74
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L78-L80
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L82-L90
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L92-L107
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L109-L144
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L146-L167
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L169-L173
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L421-L438
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L440-L441
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L536-L570
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L572-L590
+  why: Owned function body checked against the pinned checkout.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L592-L630
+  why: Owned function body checked against the pinned checkout.
+review_level: security
+scope:
+  lint_tables: false
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/invoke_primitives.rs
+  - crates/betterlite-bedrock/src/invoke_primitives/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_invoke_primitives.rs
+  - tools/oracle/src/helpers/bedrock_invoke_primitives/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_invoke_primitives.py
+  - tools/oracle/cases/helpers/providers/bedrock-invoke-primitives/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_invoke_primitives*
+title: Bedrock Invoke shared request primitives
