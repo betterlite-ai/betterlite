@@ -58,8 +58,8 @@ references:
   why: Global callback lists.
 dod:
 - text: >-
-    Registration order, effective deduplication, removal, phase selection and standalone config validators match
-    the listed helper cases.
+    Registration order, effective deduplication, removal, phase selection and integration with B246 config validators
+    match the listed helper cases.
   proof:
   - oracle
   - helper-python
