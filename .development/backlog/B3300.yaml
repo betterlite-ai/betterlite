@@ -3,7 +3,7 @@ milestone: M5 api families
 title: OCR response contracts and proxy request decoding
 status: todo
 depends_on: []
-file: null
+file: tasks/B3300-ocr-contracts-and-decoding.yaml
 covers:
   - "litellm/llms/base_llm/ocr/**"
   - "litellm/proxy/ocr_endpoints/endpoints.py"

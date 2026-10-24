@@ -1,0 +1,101 @@
+id: B3300
+title: OCR response contracts and proxy request decoding
+description: >-
+  Build crates/betterlite-ocr, a shared crate for OCR response records and wire models
+  (OCRResponse, OCRPage, OCRPageDimensions, OCRPageImage, OCRUsageInfo and DocumentType),
+  matching LiteLLM's Mistral OCR response format plus a private slot for a provider's native
+  response payload.
+  Implement request parsing and format selection in crates/betterlite-server::api::ocr_request.
+  The module handles two request bodies: JSON with document objects (type, document_url, image_url)
+  and multipart form data (file upload, model, other OCR parameters). The req_format parameter
+  selects response shape: "litellm" returns the normalized OCRResponse, "native" returns the provider's
+  own JSON when set and the parameter was requested. The parser rejects file-type documents in JSON
+  (they are for SDK-local use with a shared filesystem), and rejects reducto:// file IDs from JSON (they
+  are not scoped to the proxy user). Multipart form parsing rewinds the file, reads at most 50 MiB,
+  and strips MIME-type parameters but retains the supplied MIME type unless it is application/octet-stream.
+  Format selection strips and lowercases strings; body values override headers. Native response preservation
+  respects all captured LiteLLM response headers except content-length and content-type.
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-ocr/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/api/mod.rs
+    - crates/betterlite-server/src/api/ocr_request.rs
+    - crates/betterlite-server/src/api/ocr_request/**
+    - tools/oracle/cases/helpers/ocr/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/ocr/transformation.py#L1-102
+    why: OCR response types, format constants, parse_ocr_request_format and native response storage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L1-247
+    why: Request parsing helpers, multipart and JSON parsing, format resolution, and native response selection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/ocr/__init__.py#L1-19
+    why: OCR module exports for public visibility.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L1-27
+    why: Pydantic base class LiteLLMPydanticObjectBase for OCR model definitions.
+dod:
+  - text: OCRResponse, OCRPage, OCRPageDimensions, OCRPageImage and OCRUsageInfo are serde derives in betterlite-ocr with field names and defaults matching LiteLLM.
+    proof: [ocr-types]
+  - text: parse_ocr_request_format accepts exactly "litellm" and "native", strips and lowercases string inputs, and rejects other values with the format message LiteLLM uses.
+    proof: [ocr-types, ocr-request-tests]
+  - text: req_format parameter comes from the body (preferred) or x-req-format header, lowercased and stripped before parsing.
+    proof: [ocr-request-tests]
+  - text: Multipart form parsing accepts file, rewinds the upload, reads at most 50 MiB plus one byte, rejects empty and oversized files, and builds a document with type="file" plus optional mime_type.
+    proof: [ocr-request-tests]
+  - text: JSON parsing rejects document type="file", rejects document_url or image_url strings starting with "reducto://", and accepts other document types and parameters.
+    proof: [ocr-request-tests]
+  - text: Multipart ignores the document form field, attempts JSON decoding on other string fields, and strips MIME-type parameters except when the MIME type is application/octet-stream.
+    proof: [ocr-request-tests]
+  - text: Native response selection returns the captured provider payload with LiteLLM response headers (excluding content-length and content-type) when req_format=native was set and a payload was captured.
+    proof: [ocr-request-tests]
+  - text: Request parsing failures produce betterlite's own error text with LiteLLM's status, type, param and code.
+    proof: [oracle]
+  - text: Empty request body with available form data from auth middleware falls back to multipart parsing instead of failing.
+    proof: [ocr-request-tests]
+  - text: Every mutant in the request parsing, format selection, multipart decoding and native response logic is caught by a test.
+    proof: [mutants]
+  - text: All eight OCR response type fields (object, pages, model, document_annotation, usage_info, content, tables, keyValuePairs) with defaults and extra-fields policy match LiteLLM.
+    proof: [ocr-types]
+checks:
+  optional: [mutants]
+  commands:
+    - id: ocr-types
+      why: the OCR response types, constants or format parser do not exist or do not match LiteLLM
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/ocr/)'
+    - id: ocr-request-tests
+      why: the request parsing, format selection or multipart decoding tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/ocr_request/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ocr/json-url-request.yaml
+  - tools/oracle/cases/helpers/ocr/json-invalid-format.yaml
+  - tools/oracle/cases/helpers/ocr/multipart-file-upload.yaml
+  - tools/oracle/cases/helpers/ocr/multipart-oversized.yaml
+  - tools/oracle/cases/helpers/ocr/json-file-type-rejected.yaml
+  - tools/oracle/cases/helpers/ocr/json-reducto-id-rejected.yaml
+  - tools/oracle/cases/helpers/ocr/native-response-format.yaml
+  - tools/oracle/cases/helpers/ocr/format-header-precedence.yaml
+  - tools/oracle/cases/helpers/ocr/empty-body-with-form-fallback.yaml
+deviations:
+  - what: betterlite rejects reducto:// file IDs in JSON requests with a 400 error; LiteLLM would accept them and fail when calling the provider.
+    why: A file ID without user scoping is a path to leaking cross-user data through the proxy. Rejecting early prevents confusion when a shared ID shows wrong results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L229-245
+  - what: betterlite error messages on request parsing failures are betterlite's own instead of LiteLLM's Python exception messages.
+    why: Error wording is not part of the wire contract; clients branch on status and code, not message text. Matching LiteLLM's exception type and code is sufficient (rule errors-match-litellm).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ocr_endpoints/endpoints.py#L200-213
+out_of_scope:
+  - OCR execution and provider dispatch (owned by a later task after unresolved dependencies resolve).
+  - Authentication and request processing common to all routes (owned by B004 and B014).
+  - Exception mapping and common response headers (owned by the same later tasks).
+  - File persistence or temporary storage beyond the request lifetime.
+  - The public OCR route handler and HTTP integration (owned by B092).
+pitfalls:
+  - "The MultipartForm field document has special handling: it is skipped when building the OCR request, not passed as a parameter."
+  - "The file upload is rewound before reading to handle cases where auth middleware consumed it. Seek must happen before the read limit check."
+  - "MIME-type parameters after semicolon (e.g. \"text/plain; charset=utf-8\") must be stripped; only the base MIME type is stored."
+  - "The native response payload is stored in OCRResponse's private _hidden_params dict and must not leak into the normalized JSON serialization."
+  - "Test names must contain ocr_request so the filters select them. Helpers that parse bytes without HTTP integration cannot call FastAPI handlers; they must run against pure functions."
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Canadian PII and local airline passenger catalog records
 status: todo
 depends_on: []
-file: null
+file: tasks/B3263-policy-catalog-canadian-passenger.yaml
 covers:
   - "policy_templates.json"
   - "litellm/policy_templates_backup.json"

@@ -1,0 +1,46 @@
+id: B3255
+title: Published advanced Australian PII catalog record
+description: >-
+  Retain the published advanced Australian PII record and its document envelope as an independently pinned remote-response fixture. Keep it distinct from the backup version in B3254, which adds example_sentences.
+  The published root catalog `policy_templates.json` serves as the remote-response fixture for fetch requests by B3253. This task owns the opening array envelope and the complete advanced-au-pii-protection guardrail template record with all guardrailDefinitions (au-pii-tax-identifiers, au-pii-passports, international-pii-identifiers, contact-information-pii, financial-pii, credentials-api-keys, network-infrastructure-pii and protected-class-information), plus the closing array bracket.
+  Preserve the exact field order and values from the pinned LiteLLM commit. The record includes the policy_name "advanced-pii-protection-australia", description text, eight guardrails in guardrails_add, no guardrails in guardrails_remove, PII Protection and Australia tags, and 1ms estimated_latency_ms.
+scope:
+  paths:
+    - policy_templates.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L1-L381
+    why: The opening array bracket and complete advanced-au-pii-protection record with all guardrailDefinitions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/policy_templates.json#L2712-L2712
+    why: The closing array bracket.
+dod:
+  - text: Lines 1-381 of policy_templates.json contain the opening array and complete advanced-au-pii-protection record with all eight guardrail definitions.
+    proof: [catalog-data]
+  - text: Line 2712 of policy_templates.json contains the closing array bracket.
+    proof: [catalog-data]
+checks:
+  optional: []
+  commands:
+    - id: catalog-data
+      why: the policy_templates.json file is missing required lines, data differs from the pinned LiteLLM commit, or has malformed JSON
+      run: |-
+        test -f policy_templates.json && \
+        head -381 policy_templates.json > /tmp/policy_catalog_published_australian_pii_head.json && \
+        tail -1 policy_templates.json > /tmp/policy_catalog_published_australian_pii_tail.txt && \
+        grep -q '^\s*]$' /tmp/policy_catalog_published_australian_pii_tail.txt && \
+        python3 -c "import json; json.load(open('/tmp/policy_catalog_published_australian_pii_head.json'))" && \
+        grep -q '"id":\s*"advanced-au-pii-protection"' policy_templates.json && \
+        grep -q '"policy_name":\s*"advanced-pii-protection-australia"' policy_templates.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Code that loads or references this catalog. B3252 loads the backup; B3253 fetches the published version.
+  - Guardrail implementations referenced by these template records. The records only define policy patterns and metadata.
+pitfalls:
+  - The file is valid JSON and must remain so. Any syntax errors break both the local loader and remote fetch fallback.
+  - The array opening bracket is on line 1 and the closing bracket is on line 2712. The envelope lines are owned here; intermediate records are owned by other catalog tasks.
+  - Each guardrailDefinitions entry in this record includes a complete litellm_params block with guardrail, mode, patterns array and pattern_redaction_format. Do not drop any definitions.
+review_level: standard
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

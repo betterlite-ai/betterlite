@@ -1,0 +1,112 @@
+id: B3187
+title: Provider form catalog from OpenAI Like through Predibase
+description: >-
+  Create the ordered fragment of the public provider form catalog in betterlite-server, covering the twelve provider definitions from OPENAI_LIKE through PREDIBASE.
+  This fragment holds credential field metadata, display names, and model placeholders for each provider, consumed by B3190's get_provider_fields function as part of its assembled catalog.
+  Preserve every credential field name, label, placeholder, tooltip, required flag, field_type and options value exactly as LiteLLM defines them at the pinned commit, including Oracle Cloud Infrastructure's PEM textarea for the private key.
+  Store this fragment in its own asset path crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json so parallel workers do not rewrite a shared file; B3190 later assembles all fragments in the source order.
+scope:
+  paths:
+    - crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L2530-L2885
+    why: The complete provider record definitions for OPENAI_LIKE, OpenAI_Text, OpenAI_Compatible, OpenAI_Text_Compatible, Openrouter, Nadir, Oracle, OVHCLOUD, Perplexity, PETALS, PG_VECTOR and PREDIBASE with their credential fields and default model placeholders.
+dod:
+  - text: The twelve provider records (OPENAI_LIKE through PREDIBASE) are preserved byte-for-byte from the LiteLLM source at the pinned commit.
+    proof: [provider-records-preserved]
+  - text: Sample credential fields match LiteLLM's exact field_type, label, and required values. OPENAI_LIKE has optional api_base and api_key; Oracle has six required and one required PEM textarea field; PETALS and PG_VECTOR have optional api_key fields.
+    proof: [credential-field-values]
+  - text: Oracle's PEM private-key textarea field is preserved with its full placeholder text including the BEGIN/END markers and newline escaping.
+    proof: [oracle-pem-field-intact]
+  - text: Multiple OpenAI-compatible entries preserve their distinct provider display names and underlying litellm_provider identifiers.
+    proof: [openai-variants-distinct]
+  - text: The JSON file parses correctly with serde_json and yields twelve provider records in the expected order.
+    proof: [provider-json-parses]
+checks:
+  optional: []
+  commands:
+    - id: provider-records-preserved
+      why: the provider records differ from LiteLLM or a record is missing
+      run: |
+        cat > /tmp/check_providers.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json') as f:
+            data = json.load(f)
+        expected = ['OPENAI_LIKE', 'OpenAI_Text', 'OpenAI_Compatible', 'OpenAI_Text_Compatible', 'Openrouter', 'Nadir', 'Oracle', 'OVHCLOUD', 'Perplexity', 'PETALS', 'PG_VECTOR', 'PREDIBASE']
+        actual = [p.get('provider') for p in data]
+        if actual != expected:
+            print(f"Provider mismatch: expected {expected}, got {actual}")
+            exit(1)
+        if len(data) != 12:
+            print(f"Expected 12 providers, got {len(data)}")
+            exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_providers.py
+    - id: credential-field-values
+      why: a credential field label, type or required flag does not match LiteLLM
+      run: |
+        cat > /tmp/check_fields.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json') as f:
+            data = json.load(f)
+        # Check OPENAI_LIKE has optional api_key
+        openai_like = next(p for p in data if p['provider'] == 'OPENAI_LIKE')
+        api_key = next((f for f in openai_like['credential_fields'] if f['key'] == 'api_key'), None)
+        if not api_key or api_key['field_type'] != 'password' or api_key['required']:
+            print(f"OPENAI_LIKE api_key should be optional: {api_key}")
+            exit(1)
+        # Check PETALS has optional api_key
+        petals = next(p for p in data if p['provider'] == 'PETALS')
+        petals_key = next((f for f in petals['credential_fields'] if f['key'] == 'api_key'), None)
+        if not petals_key or petals_key['required']:
+            print(f"PETALS api_key should be optional (required: false): {petals_key}")
+            exit(1)
+        # Check PG_VECTOR has optional api_key
+        pg_vector = next(p for p in data if p['provider'] == 'PG_VECTOR')
+        pg_key = next((f for f in pg_vector['credential_fields'] if f['key'] == 'api_key'), None)
+        if not pg_key or pg_key['required']:
+            print(f"PG_VECTOR api_key should be optional (required: false): {pg_key}")
+            exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_fields.py
+    - id: oracle-pem-field-intact
+      why: Oracle PEM key field is missing or modified
+      run: |
+        jq -e '.[] | select(.provider == "Oracle") | .credential_fields[] | select(.key == "oci_key") | .field_type == "textarea" and .label == "OCI Private Key (PEM)" and (.placeholder | contains("BEGIN RSA PRIVATE KEY"))' crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json > /dev/null
+    - id: openai-variants-distinct
+      why: OpenAI-compatible variants are collapsed or missing their distinct display names
+      run: |
+        jq -e '.[0].provider == "OPENAI_LIKE" and .[1].provider == "OpenAI_Text" and .[2].provider == "OpenAI_Compatible" and .[3].provider == "OpenAI_Text_Compatible"' crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json > /dev/null
+    - id: provider-json-parses
+      why: the JSON file does not parse or does not yield twelve records
+      run: |
+        cat > /tmp/check_parse.rs << 'CHECKER'
+        use std::fs;
+        fn main() {
+            let content = fs::read_to_string("crates/betterlite-server/assets/provider_create_fields_openai_like_predibase.json")
+                .expect("failed to read json file");
+            let data: Vec<serde_json::Value> = serde_json::from_str(&content)
+                .expect("failed to parse json");
+            assert_eq!(data.len(), 12, "expected 12 providers, got {}", data.len());
+        }
+        CHECKER
+        rustc /tmp/check_parse.rs -o /tmp/check_parse && /tmp/check_parse
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Consuming or assembling this fragment into a larger catalog. B3190 loads all fragments in source order.
+  - Network behavior or credential validation. This task only preserves the form metadata.
+  - Provider resolution or model execution. The task provides data only.
+  - Provider records after PREDIBASE are owned by B3188 (PRISM through TOPAZ) and B3189 (Triton through WATSONX), with the final four (WATSONX_TEXT, xAI, XINFERENCE, CURSOR) and outer array delimiters owned by B3190.
+pitfalls:
+  - "The JSON file must be a plain array, not an object with a key. B3190's loader expects JSON.load(file) to yield a list directly."
+  - "Every null value in options, placeholder or tooltip must be preserved exactly; missing the null and writing an empty string changes the wire format."
+  - "The OpenAI_Text and OpenAI_Text_Compatible providers both map to the litellm_provider \"text-completion-openai\"; preserve both entries in order rather than merging them by provider identifier."
+  - "The Oracle provider has a required PEM textarea field that spans multiple lines in its placeholder. Preserve the newlines and escaped characters exactly as written in the source."
+  - "The Openrouter and Nadir providers have required api_key fields; Perplexity also has required api_key. PETALS and PG_VECTOR have optional (required: false) api_key fields, not required."
+  - "Multiple providers (Nadir, Perplexity, PETALS, PG_VECTOR) have null placeholders and tooltips. Keep them as null, not as empty strings."
+review_level: standard
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0

@@ -1,0 +1,213 @@
+id: B3600
+title: Pass-through wire records and response helpers
+description: >-
+  Build the native pass-through payload and endpoint type records in betterlite-server
+  and implement the small URL, response-header and buffering predicates. Implement the
+  seven endpoint-type detection rules, response-body JSON parsing, response-header
+  filtering that excludes transfer-encoding, content-encoding, content-length and
+  hop-by-hop headers, streaming-response detection by Content-Type: text/event-stream,
+  and buffering-decision logic that reads JSON and AWS JSON responses into memory while
+  relaying octet-stream/batch results without accumulating.
+  
+  Build PassthroughStandardLoggingPayload as a typed record with url, request_method,
+  request_body and response_body fields plus optional cost_per_request. Implement
+  EndpointType enum with VertexAi, Gemini, Anthropic, OpenAi, Tinyfish, Generic and
+  Decisions variants matched by URL hostname/path patterns and provider name. Build
+  get_endpoint_type by URL hostname (api.anthropic.com, api.openai.com, openai.azure.com,
+  *.openai.com), path patterns (generateContent, streamGenerateContent, rawPredict,
+  streamRawPredict for Vertex), custom_llm_provider (typesafe v1/systemone becomes
+  Decisions), and the is_tinyfish_agent_url predicate.
+  
+  Path joining normalizes .. segments silently with posixpath.normpath instead of
+  raising; if combined path climbs out of the base, fall back to the base. Trailing
+  slashes on subpaths are preserved through normalization. URL construction with
+  subpath handles missing trailing slash on the base, preserves the original trailing
+  slash on the subpath after normalization, and returns the base when include_subpath
+  is false or the subpath is empty.
+  
+  Response-body parsing attempts response.json() and returns None on any exception.
+  Response-header filtering excludes transfer-encoding, content-encoding,
+  content-length, server, date, connection and keep-alive, adds the x-litellm-call-id
+  header if provided, and applies custom headers (also excluding the same headers)
+  without letting them override the upstream response body's content-length or other
+  framework defaults. Streaming detection checks for text/event-stream in the
+  content-type header. Buffering reads JSON and x-amz-json responses into memory,
+  buffers upstream errors (status >= 400), and streams everything else.
+  
+  Build stream-param resolution that reads stream from the request body if present,
+  falling back to the parameter passed to the route handler.
+  
+  Implement the state-key constants as module-level Final strings: LITELLM_PASS_THROUGH_CUSTOM_BODY_STATE_KEY,
+  LITELLM_PASS_THROUGH_RAW_BODY_STATE_KEY, LITELLM_PASS_THROUGH_DEPLOYMENT_MODEL_INFO_STATE_KEY
+  and LITELLM_PASS_THROUGH_ENDPOINT_MARKER for FastAPI endpoint discovery by auth.
+scope:
+  paths:
+  - crates/betterlite-server/src/**
+  - crates/betterlite-http/src/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/passthrough_endpoints/pass_through_endpoints.py#L1-L66
+  why: >-
+    State-key constants, EndpointType enum variants (7 total including Gemini),
+    and PassthroughStandardLoggingPayload fields.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L147-L151
+  why: get_response_body implementation; returns None on exception.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L348-L403
+  why: >-
+    get_response_headers excludes hop-by-hop headers, adds x-litellm-call-id,
+    applies custom headers; get_endpoint_type detects by hostname and path patterns.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L670-L745
+  why: >-
+    construct_target_url_with_subpath and join_base_and_endpoint_path preserve
+    trailing slashes through normalization; path normalization uses posixpath.normpath
+    silently with fallback to base on climb-out; _update_stream_param_based_on_request_body.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2737-L2741
+  why: _is_streaming_response checks content-type header for text/event-stream.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L2774-L2793
+  why: >-
+    _should_buffer_passthrough_response buffers JSON and x-amz-json, buffers errors
+    (status >= 400), streams everything else.
+dod:
+- text: >-
+    All seven EndpointType variants (VertexAi, Gemini, Anthropic, OpenAi, Tinyfish,
+    Generic, Decisions) are built and endpoint-type detection cases match LiteLLM.
+  proof:
+  - endpoint-type-cases
+- text: >-
+    Response headers are filtered correctly: excluded headers are transfer-encoding,
+    content-encoding, content-length, server, date, connection, keep-alive; custom
+    headers are applied without overriding framework defaults.
+  proof:
+  - response-header-cases
+- text: >-
+    URL path joining preserves trailing slashes through normalization and falls back
+    to the base when a combined path would climb out; .. segments are normalized
+    silently without raising errors.
+  proof:
+  - url-joining-cases
+- text: >-
+    Streaming and buffering detection match LiteLLM: text/event-stream detection,
+    buffering JSON and x-amz-json responses, buffering errors (status >= 400),
+    streaming other content types.
+  proof:
+  - response-buffering-cases
+- text: >-
+    Every state-key constant and PassthroughStandardLoggingPayload field is implemented
+    with its exact LiteLLM name.
+  proof:
+  - passthrough-payload-tests
+- text: Every mutant in response filtering, path joining, and buffering logic is caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: endpoint-type-cases
+    why: >-
+      the endpoint-type behavior tests fail, do not exist, or do not cover all seven
+      variants and their detection patterns
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_endpoint_type_behavior($|::)/) - test(/replays_the_/)'
+  - id: response-header-cases
+    why: >-
+      the response-header filtering tests fail, do not exist, or do not cover excluded
+      headers and custom header application
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_response_headers_behavior($|::)/) - test(/replays_the_/)'
+  - id: url-joining-cases
+    why: >-
+      the URL joining tests fail, do not exist, or do not cover trailing-slash
+      preservation and .. normalization
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_url_joining_behavior($|::)/) - test(/replays_the_/)'
+  - id: response-buffering-cases
+    why: >-
+      the buffering-decision tests fail, do not exist, or do not cover streaming
+      detection and content-type classification
+    run: >-
+      cargo nextest run --locked -p betterlite-server -p betterlite-http --no-tests=fail
+      -E 'test(/::passthrough_buffering_behavior($|::)/) - test(/replays_the_/)'
+  - id: passthrough-payload-tests
+    why: >-
+      the PassthroughStandardLoggingPayload or state-key constants are missing,
+      incomplete, or have wrong field names
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail
+      -E 'test(/::passthrough_payload($|::)/)'
+oracle_cases:
+- tools/oracle/cases/passthrough/endpoint-type-vertex.yaml
+- tools/oracle/cases/passthrough/endpoint-type-gemini.yaml
+- tools/oracle/cases/passthrough/endpoint-type-anthropic.yaml
+- tools/oracle/cases/passthrough/endpoint-type-openai.yaml
+- tools/oracle/cases/passthrough/endpoint-type-tinyfish.yaml
+- tools/oracle/cases/passthrough/endpoint-type-generic.yaml
+- tools/oracle/cases/passthrough/endpoint-type-decisions.yaml
+- tools/oracle/cases/passthrough/response-headers-exclude-transfer.yaml
+- tools/oracle/cases/passthrough/response-headers-exclude-content.yaml
+- tools/oracle/cases/passthrough/response-headers-add-callid.yaml
+- tools/oracle/cases/passthrough/response-headers-custom.yaml
+- tools/oracle/cases/passthrough/url-join-trailing-slash.yaml
+- tools/oracle/cases/passthrough/url-join-normpath.yaml
+- tools/oracle/cases/passthrough/url-join-fallback.yaml
+- tools/oracle/cases/passthrough/is-streaming-response.yaml
+- tools/oracle/cases/passthrough/buffer-json-response.yaml
+- tools/oracle/cases/passthrough/buffer-error-response.yaml
+- tools/oracle/cases/passthrough/stream-other-types.yaml
+deviations:
+- what: >-
+    Path joining normalizes .. segments silently using posixpath.normpath instead of
+    raising an error; if the normalized path would climb out of the base, the function
+    returns the base instead of an error.
+  why: >-
+    This follows LiteLLM's behavior exactly. Subpaths are untrusted and must not
+    escape the base the operator configured. Silent normalization is simpler than
+    error-raising and matches the upstream's behavior.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L697-L705
+out_of_scope:
+- >-
+  The is_tinyfish_agent_url predicate is built by a task that owns the TinyFish-specific
+  provider helpers (gap A in the outline), so this task calls it as a dependency; the
+  predicate returns false in betterlite until that task lands.
+- >-
+  Custom header resolution from config.yaml (set_env_variables_in_header) is built by
+  the route registration task (B3616); this task uses only the header dict after
+  resolution.
+- >-
+  The get_response_body, get_response_headers, construct_target_url_with_subpath,
+  join_base_and_endpoint_path, _is_streaming_response and _should_buffer_passthrough_response
+  are static helpers called by later tasks (B3605+); they are built here as pure functions
+  with no dependencies on logging or request routing.
+pitfalls:
+- >-
+  Trailing slashes must be preserved through posixpath.normpath; the Python code at line
+  698-703 checks and restores them after normalization, or the behavior changes.
+- >-
+  posixpath.normpath preserves the leading / and collapses a sequence of /s to one,
+  but "." becomes "." not "", so check for it and replace it with "" when appropriate.
+- >-
+  Response headers are case-insensitive; the excluded-headers check uses .lower() on both
+  the header key and the set membership check.
+- >-
+  The fallback behavior in join_base_and_endpoint_path returns base_path + "/" when the
+  combined path is not empty and does not start with the base path; this is not an error.
+- >-
+  Buffering logic checks status_code >= 400 separately from content-type classification;
+  all error responses are buffered regardless of content type.
+- >-
+  The EndpointType enum has 7 variants, including Gemini at line 28 of the Python file;
+  do not drop it or endpoint-type detection for Google Gemini fails silently.
+review_level: standard
+budget:
+  max_changed_lines: 350
+  max_new_expects: 2

@@ -1,0 +1,93 @@
+id: B3653
+title: Deepgram listen and Fal queue spend logging
+description: >-
+  Build the WebSocket listen and image-queue logging projections over their provider pricing
+  helpers, composing B068 cost calculation. Implement deepgram_listen_passthrough_handler and
+  fal_ai_passthrough_handler, extracting model identifiers, computing spend from provider pricing
+  registries, and writing enriched response objects and logging state. Preserve unpriced-result
+  semantics, warn when registries lack entries and avoid charging Fal status/result requests again.
+
+  Deepgram listen receives audio WebSocket frames, sums frame durations across channels and
+  collects base pricing from the registry via completion_cost. When the base pricing lookup
+  fails, _audio_cost returns None; addon models that fail to price are silently dropped from
+  the sum and contribute nothing. The handler extracts the model from upstream URL, calculates
+  billed duration as audio seconds times channel count, computes response cost, and writes the
+  cost to both response hidden params and logging object fields. Fal AI queue receives response
+  body and request body; the handler extracts the model by stripping the configured queue-base
+  path and selecting the component before /requests/. Cost is computed only on submission routes,
+  gathering image URLs from all top-level response values and constructing an ImageResponse with
+  a flat list of ImageObject entries.
+
+  Logging object gets model, custom_llm_provider and response_cost set consistently. Both
+  handlers return PassThroughEndpointLoggingTypedDict with result and kwargs carrying cost
+  for the logging framework. Write helper cases executing the cost functions with mocked
+  registries and test the complete handler flow including unpriced and multi-addon scenarios for
+  Deepgram and Fal model extraction, submission filtering and URL collection.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/media_relay_logging.rs
+    - crates/betterlite-core/src/api/media_relay_logging/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/src/media_relay_logging.rs
+    - crates/betterlite-server/src/media_relay_logging/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/cases/helpers/media-relay-logging/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/deepgram_listen_passthrough_logging_handler.py#L1-L96
+    why: Complete Deepgram listen handler, cost helpers, route detection and response enrichment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/fal_ai_passthrough_logging_handler.py#L1-L71
+    why: Complete Fal AI handler, URL part extraction, route detection and model extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py
+    why: Deepgram model and transcript extraction helpers called by the handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py
+    why: Fal queue-base URL and cost calculation helpers called by the handler.
+dod:
+  - text: Deepgram handler extracts model, sums audio duration across channels, calculates cost from registry base plus addons and writes to response/logging.
+    proof: [deepgram-handler-tests, oracle, media-relay-logging-python]
+  - text: Fal handler extracts model from queue path, computes cost only on submission routes, gathers all top-level image URLs and writes logging fields.
+    proof: [fal-handler-tests, oracle, media-relay-logging-python]
+  - text: Unpriced registry entries return None without losing the spend row; Fal status/result routes skip cost computation.
+    proof: [deepgram-handler-tests, fal-handler-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: deepgram-handler-tests
+      why: Deepgram listen handler misses cost computation, registry lookup or logging field updates.
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/^media_relay_logging::deepgram/)'
+    - id: fal-handler-tests
+      why: Fal AI handler misses model extraction, submission filtering or URL collection.
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/^media_relay_logging::fal/)'
+    - id: media-relay-logging-python
+      why: Helper adapters or fixtures lack typing or implementation.
+      run: test -f tools/oracle/helpers/dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/media-relay-logging/deepgram-route-detection-listen.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/deepgram-route-detection-non-listen.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/deepgram-basic-handler.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/deepgram-unpriced-base.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/deepgram-multiple-addons.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/fal-route-detection-match.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/fal-route-detection-no-match.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/fal-submission-handler.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/fal-status-skip-cost.yaml
+  - tools/oracle/cases/helpers/media-relay-logging/fal-url-extraction.yaml
+deviations:
+  - what: Unpriced registry lookups log debug and return None instead of raising, preserving the spend row with zero cost.
+    why: The source handler catches exceptions from completion_cost and continues; betterlite uses the same fallback behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/deepgram_listen_passthrough_logging_handler.py#L33-L35
+out_of_scope:
+  - Deepgram listen helpers deepgram_listen_addon_pricing_models, deepgram_listen_audio_seconds, deepgram_listen_channel_count, deepgram_listen_is_priced, deepgram_listen_model, deepgram_listen_pricing_model, deepgram_listen_registry_key, deepgram_listen_transcript belong to B1542; they are imported and called, not built.
+  - Fal AI cost calculator exports fal_ai_passthrough_cost and fal_ai_queue_base belong to B1531; they are imported and called, not built.
+  - B068 owns completion_cost and is the direct pricing entry point; this task calls it with prepared transcription responses.
+pitfalls:
+  - Deepgram's _audio_cost returns None only when the base pricing lookup fails, not when an addon fails; failed addons are silently dropped from the sum.
+  - Fal's is_submit check uses the path to determine if cost should be computed; GET requests to retrieve results must not be charged.
+  - Deepgram registry lookups that fail log debug and continue without raising; unpriced entries preserve the spend row with zero cost instead of losing it.
+  - Fal image URL extraction traverses all top-level response values without recursive nesting, gathering ImageObject records from both single and sequence types.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security
