@@ -9,7 +9,8 @@ description: >-
   transport sources retained and raw provider text kept out of Display/Debug/client messages. Add provider_error
   helper operations using synthetic HTTP exceptions plus HTTP oracle cases for the installed OpenAI path. Add provider_error
   fuzz target for error bytes, including invalid UTF-8, HTML, null/array bodies and nested oversized envelopes.
-  Budget 330 classification/parser lines, 100 integration and 320 tests.
+  Budget 330 classification/parser lines, 100 integration and 320 tests. Seed B171's shared helper_case corpus with
+  every added operation and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -30,6 +31,7 @@ scope:
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/openai-errors/**
   - tools/oracle/cases/errors/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L39-L272
@@ -53,6 +55,9 @@ dod:
 - text: Vendor cookies, CORS headers, authorization and query secrets are removed from all exposed diagnostics.
   proof:
   - openai-error-tests
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -71,6 +76,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/openai-errors/context-before-status.yaml
 - tools/oracle/cases/helpers/openai-errors/rate-limit-before-context.yaml
