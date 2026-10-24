@@ -262,6 +262,7 @@ tasks:
     depends_on:
     - B019
     - B327
+    - B328
     file: null
     covers:
     - router_plugins.json
@@ -2203,3 +2204,15 @@ tasks:
     covers:
     - litellm/router_strategy/auto_router/**
     - docker/install_auto_router.sh
+
+  - id: B328
+    milestone: M2 routing
+    title: Local complexity scoring and default tiers
+    status: todo
+    depends_on:
+    - B019
+    - B012
+    file: tasks/B328-complexity-scoring.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/{__init__,config,complexity_router}.py
+    - litellm/router_strategy/complexity_router/README.md
