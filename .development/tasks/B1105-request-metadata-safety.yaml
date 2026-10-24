@@ -201,7 +201,7 @@ out_of_scope:
   _get_validated_callback_metadata L943-L952, KeyAndTeamLoggingSettings.get_key_dynamic_logging_settings L961-L964,
   KeyAndTeamLoggingSettings.get_team_dynamic_logging_settings L967-L970, _get_dynamic_logging_metadata L973-L1031,
   _tenant_otel_params L1037-L1041, _dynamically_disabled_backends L1047-L1072, resolve_tenant_otel_destinations
-  L1075-L1150, _tenant_service_name L1153-L1170, clean_headers L1173-L1223.'
+  L1075-L1150, _tenant_service_name L1153-L1170.'
 - 'litellm/proxy/litellm_pre_call_utils.py: B1106 owns LiteLLMProxyRequestSetup.get_logged_api_key L1615-L1618,
   LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key L1621-L1650, LiteLLMProxyRequestSetup.add_user_api_key_auth_to_request_metadata
   L1653-L1703, LiteLLMProxyRequestSetup.add_management_endpoint_metadata_to_request_metadata L1706-L1732, LiteLLMProxyRequestSetup.add_key_level_controls

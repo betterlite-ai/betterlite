@@ -1,113 +1,45 @@
 id: B938
-title: Responses read routes
+title: Responses read and cancellation routes
 description: >-
-  Install the /responses and /v1/responses addressed GET/DELETE/input_items/cancel routes, selecting polling or
-  provider lifecycle services after B855 admission and responses-id-security. Retain route aliases, query parameters
-  and x-litellm-* response metadata, and keep ownership checks before ID-based credential routing.
+  Build get_response, delete_response, get_response_input_items and cancel_response in
+  betterlite-server::api::responses_read_routes, with polling coordination in the corresponding
+  betterlite-core module. Own each complete handler. Register GET and DELETE /responses/{response_id},
+  GET /responses/{response_id}/input_items and POST /responses/{response_id}/cancel, plus all four
+  operations under /v1/responses and /openai/v1/responses. B080 mounts this factory once.
 
+  Use B756/B855 authentication and admission, B929 response-id authorization, B935 polling storage,
+  B933 retrieval/input-item calls and B1116 deletion/cancellation. Call B004's base_process_llm_request
+  and _handle_llm_api_exception through their native interfaces. Pass model=None and the existing
+  user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version
+  settings through that processor; this task adds no config keys. B1100 decodes bodies and B1087
+  supplies limits. The route types are aget_responses, adelete_responses, alist_input_items and acancel_responses.
 
-  Register GET response, DELETE response, GET input_items and POST cancel under /responses, /v1/responses and /openai/v1/responses.
-  Polling get/delete/cancel run before the pinned security hook: missing polling ID returns 404; Redis unavailable
-  returns 500. betterlite deliberately checks polling owner before any get/delete/cancel, returning 403 authentication_error
-  with param null and code 403 on another owner; native denial tests cover this deviation while HTTP parity cases
-  cover allowed owners and source errors. Seed polling records through B1139 rather than invoking handlers directly.
+  A non-polling request reads its JSON body even on GET or DELETE, then overwrites response_id with
+  the path value. An input_items URL query never supplies after, before, include, limit or order:
+  without body overrides the OpenAI request has limit=20 and order=desc. Shared request processing
+  still extracts api-version. Preserve its x-litellm-call-id and other response headers.
 
+  Polling get/delete/cancel branch before JSON body parsing and provider processing. Missing Redis
+  raises HTTPException 500; missing state raises HTTPException 404. These bypass ProxyException and
+  return a detail string, with no error.type, error.param or error.code. GET returns the cached record.
+  DELETE returns id equal to the polling path, object=response and deleted=true after successful deletion.
+  Cancellation reads state again after cancel_polling succeeds and returns that reread, including null
+  if the record disappears. Failed delete/cancel returns 500 detail. Do not synthesize a cancelled record.
 
-  Implement crates/betterlite-server/src/api/responses_read_routes.rs, crates/betterlite-core/src/api/responses_read_routes.rs.
-  Use ResponsesReadRoutesInput and ResponsesReadRoutesResult with typed nested records; inject only the clock, repositories,
-  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
-  ambient environment or duplicate credential resolution.
+  The approved owner-check deviation runs after Redis/state existence checks and before mutation.
+  Compare B935's trusted PollOwner, including its key-fingerprint fallback and legacy-owner denial;
+  caller metadata cannot assert ownership. Other-owner get/delete/cancel returns 403 with
+  error.type=permission_error, error.param=null and error.code="403", without provider traffic or state changes.
 
+  Place the named tests below in api::responses_read_routes::tests. HTTP scenarios use B1139 storage
+  isolation, a fixed test master key and B856 ordinary-key rows. Capture provider response ids from
+  creation, or seed polling records with their private owner envelope. Compare upstream requests and
+  client responses. Ignore only error wording; source detail strings below identify the branch.
+  Native HTTP tests cover owner denial; injected repository tests cover mutation races.
 
-  Register exactly these routes in this task: GET /v1/responses/{response_id}; GET /responses/{response_id}; GET
-  /openai/v1/responses/{response_id}; DELETE /v1/responses/{response_id}; DELETE /responses/{response_id}; DELETE
-  /openai/v1/responses/{response_id}; GET /v1/responses/{response_id}/input_items; GET /responses/{response_id}/input_items;
-  GET /openai/v1/responses/{response_id}/input_items; POST /v1/responses/{response_id}/cancel; POST /responses/{response_id}/cancel;
-  POST /openai/v1/responses/{response_id}/cancel. Each alias is exercised through the booted proxy. Every route
-  factory is mounted once; a family composer mounts its child factories without re-registering their methods/paths.
-
-
-  Extraction uses the typed path/query/body records named by the owned handler signatures.
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): endpoints.py:741 status_code=500, exception_detail=FastAPI detail string; endpoints.py:752
-  status_code=404, exception_detail=FastAPI detail string; endpoints.py:852 status_code=500, exception_detail=FastAPI
-  detail string; endpoints.py:860 status_code=404, exception_detail=FastAPI detail string; endpoints.py:868 status_code=500,
-  exception_detail=FastAPI detail string; endpoints.py:1262 status_code=500, exception_detail=FastAPI detail string;
-  endpoints.py:1270 status_code=404, exception_detail=FastAPI detail string; endpoints.py:1282 status_code=500,
-  exception_detail=FastAPI detail string. Compare the actual source status, error type, param and code; ignore only
-  error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions get_response_alias, delete_owned_response, input_items_cursor_limit,
-  cancel_poll_response, cross_team_before_upstream, poll_id_missing_404, poll_redis_missing_500, openai_get_alias,
-  route_aliases, auth_missing, auth_invalid under api::responses_read_routes::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Implement tests::compatibility_deviations with one named rstest case per deviation below, asserting the exact
-  current betterlite result and the pinned contrast. These cases are not disguised as differential equality; oracle
-  inputs for unchanged behavior remain comparable.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/response_api_endpoints/endpoints.py: get_response (L695-L790); litellm/proxy/response_api_endpoints/endpoints.py:
-  delete_response (L811-L899); litellm/proxy/response_api_endpoints/endpoints.py: get_response_input_items (L920-L970);
-  litellm/proxy/response_api_endpoints/endpoints.py: cancel_response (L1216-L1313). Abstract/protocol declarations
-  map to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 310 owned nonblank/non-comment/non-docstring Python lines (348 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 330 implementation,
-  124 behavior tests, 132 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 624 total within the 630-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B003 (HTTP server, health routes and master key auth), B171 (Direct helper oracle and
-  URL path encoding), B929 (Responses id security), B933 (Responses lifecycle call), B935 (Responses poll state),
-  B1087 (Api boundaries), B1116 (Responses delete and cancel calls), B1100 (Shared request body decoding), B1139
-  (Stateful HTTP oracle scenarios), B732 (Typed authentication principals and grant resolution), B855 (Authenticated
-  request admission and budget handoff), B756 (Authentication header selection and mode dispatch), B856 (Management
-  oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas;
-  the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  The native compatibility_deviations test drives the booted HTTP server: create a polling response as owner A,
-  then attempt get/delete/cancel as owner B with a fresh response per mutation; assert 403 authentication_error,
-  param null, code 403, no provider request and no state change. Same-owner A succeeds. Cover the B935 identity-less
-  key-fingerprint fallback and missing legacy owner denial; existing missing-ID 404 and Redis-unavailable 500 take
-  precedence over owner checking. Use the B935 trusted PollOwner envelope, never caller metadata.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
-
-
-  The polling ownership denial uses HTTP 403 and {error: {type: authentication_error, param: null, code: "403"}};
-  code is a string. This is a native-only deviation test, not a differential equality seed.
+  The decorator-inclusive owned spans contain 348 nonblank, non-comment physical Python lines,
+  including signatures/docstrings. Allow 330 implementation, 190 native tests, 210 scenario fixture
+  and 40 wiring lines, 770 total. Body decoding belongs to B1100; no new parser or helper adapter is needed.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -131,148 +63,124 @@ scope:
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L677-L970
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Owns retrieval, deletion and input-items handlers and their nine aliases; polling exits before provider exception mapping.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1201-L1313
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
+  why: Owns cancellation and its three aliases, including the second cache read after mutation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L838-L864
+  why: B509 adds limit=20 and order=desc when input_items receives no pagination body fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L601-L614
+  why: B004 maps provider-flow HTTPException into the OpenAI envelope; polling exceptions never enter this function.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L22
+  why: Existing provider-id ownership failure uses permission_error for HTTP 403, which the polling deviation must share.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: ProxyException serializes under error while uncaught polling HTTPException retains FastAPI's detail envelope.
 dod:
-- text: 'get response alias: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-get-response-alias
-  - oracle
-- text: 'delete owned response: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-delete-owned-response
-  - oracle
-- text: 'input items cursor limit: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-input-items-cursor-limit
-  - oracle
-- text: 'cancel poll response: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cancel-poll-response
-  - oracle
-- text: 'cross team before upstream: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-cross-team-before-upstream
-  - oracle
-- text: 'poll id missing 404: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-poll-id-missing-404
-  - oracle
-- text: 'poll redis missing 500: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-poll-redis-missing-500
-  - oracle
-- text: 'openai get alias: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-openai-get-alias
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every explicit deviation has a native test for its documented status/code or fallback.
-  proof:
-  - deviation-tests
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    route_aliases sends all twelve method/path combinations with a valid owner and a fresh resource for each mutation.
+    GET returns the mock response with 200; DELETE returns object=response/deleted=true; input_items returns the mock
+    object=list/data=[]; cancel returns status=cancelled. Provider flows expose x-litellm-call-id and the processor's
+    selected x-litellm-* headers.
+  proof: [case-route-aliases, oracle]
+- text: >-
+    path_overwrites_body sends GET, DELETE, input_items and cancel with body response_id=resp_wrong and a different
+    captured id in the path. Only the path's decoded provider id reaches upstream; all four mock successes are 200.
+  proof: [case-path-body, oracle]
+- text: >-
+    input_items_pagination sends ?limit=1&after=item_wrong&order=asc&include=message.input_image.image_url without a body;
+    upstream receives only limit=20&order=desc and returns 200 object=list. Another GET supplies JSON limit=2, order=asc,
+    after=item_a and include=[message.input_image.image_url]; those body values reach the mock.
+  proof: [case-pagination, oracle]
+- text: >-
+    polling_lifecycle seeds a same-owner litellm_poll_test with status=in_progress and output=[]. GET returns that
+    record with 200 and no upstream call. DELETE returns 200 id=litellm_poll_test/object=response/deleted=true and
+    removes it. A fresh cancellation returns the reread status=cancelled and retained output=[].
+  proof: [case-polling-lifecycle, oracle]
+- text: >-
+    polling_failures covers GET, DELETE and cancel without Redis (500 detail, no error object) and with Redis but
+    no litellm_poll_missing (404 detail, no error object). Source messages are "Redis cache not configured. Polling
+    requires Redis." for GET, "Redis cache not configured." for mutations, "Polling response litellm_poll_missing
+    not found or expired" for GET, and "Polling response litellm_poll_missing not found" for mutations.
+  proof: [case-polling-failures, oracle]
+- text: >-
+    polling_mutation_races injects delete_polling=false and cancel_polling=false after an existing-state read;
+    both return 500 detail (source "Failed to delete polling response" and "Failed to cancel polling response").
+    Successful cancel followed by a missing reread returns 200 JSON null. Native repository tests preserve the
+    non-atomic read/mutate/read order.
+  proof: [case-polling-races]
+- text: >-
+    provider_owner_denial uses an encrypted provider response minted for team_a with a team_b key. Each operation
+    returns 403 permission_error, param=null, code="403", without upstream traffic; x-litellm-call-id is present.
+  proof: [case-provider-owner, oracle]
+- text: >-
+    authentication sends a valid resource path with no authorization and then Bearer sk-invalid against a configured
+    master key. Both return 401 auth_error, param="None", code="401", without reading polling state or calling upstream.
+  proof: [case-authentication, oracle]
+- text: >-
+    compatibility_deviations creates polling state as A and attempts get/delete/cancel as B, then as its owner.
+    B gets 403 permission_error, param=null, code="403" with unchanged state; A succeeds. Include same-key identity-less
+    ownership, another key fingerprint, a legacy record without owner, and missing-record 404 before owner denial.
+  proof: [deviation-tests]
+- text: HTTP fixtures are added on this branch and both server and core polling tests execute.
+  proof: [new-oracle-cases, behavior-tests, oracle]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::responses_read_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-get-response-alias
-    why: the get-response-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::get_response_alias($|::)/)'
-  - id: case-delete-owned-response
-    why: the delete-owned-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::delete_owned_response($|::)/)'
-  - id: case-input-items-cursor-limit
-    why: the input-items-cursor-limit behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::input_items_cursor_limit($|::)/)'
-  - id: case-cancel-poll-response
-    why: the cancel-poll-response behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::cancel_poll_response($|::)/)'
-  - id: case-cross-team-before-upstream
-    why: the cross-team-before-upstream behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::cross_team_before_upstream($|::)/)'
-  - id: case-poll-id-missing-404
-    why: the poll-id-missing-404 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::poll_id_missing_404($|::)/)'
-  - id: case-poll-redis-missing-500
-    why: the poll-redis-missing-500 behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::poll_redis_missing_500($|::)/)'
-  - id: case-openai-get-alias
-    why: the openai-get-alias behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::openai_get_alias($|::)/)'
+    why: response handlers or polling coordination lack executable tests
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::responses_read_routes::/)'
   - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
+    why: a public lifecycle alias is missing
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::auth_invalid($|::)/)'
+  - id: case-path-body
+    why: a caller body can override the addressed response
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::path_overwrites_body($|::)/)'
+  - id: case-pagination
+    why: URL pagination is forwarded or JSON body pagination is lost
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::input_items_pagination($|::)/)'
+  - id: case-polling-lifecycle
+    why: cache retrieval or mutation returns the wrong response body
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::polling_lifecycle($|::)/)'
+  - id: case-polling-failures
+    why: Redis absence and missing polling state are conflated
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::polling_failures($|::)/)'
+  - id: case-polling-races
+    why: cancellation invents state or treats a failed mutation as success
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_read_routes::tests::polling_mutation_races($|::)/)'
+  - id: case-provider-owner
+    why: a cross-team provider id reaches credential routing
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::provider_owner_denial($|::)/)'
+  - id: case-authentication
+    why: absent or invalid bearer credentials reach lifecycle services
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::authentication($|::)/)'
   - id: deviation-tests
-    why: the documented compatibility difference lacks a native assertion
+    why: the polling owner check has no HTTP regression test
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_read_routes::tests::compatibility_deviations($|::)/)'
   - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the branch has no new response-lifecycle scenarios
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/responses-read-routes)"
 oracle_cases:
-- tools/oracle/cases/api/responses-read-routes/get-response-alias.yaml
-- tools/oracle/cases/api/responses-read-routes/delete-owned-response.yaml
-- tools/oracle/cases/api/responses-read-routes/input-items-cursor-limit.yaml
-- tools/oracle/cases/api/responses-read-routes/cancel-poll-response.yaml
-- tools/oracle/cases/api/responses-read-routes/cross-team-before-upstream.yaml
-- tools/oracle/cases/api/responses-read-routes/poll-id-missing-404.yaml
-- tools/oracle/cases/api/responses-read-routes/poll-redis-missing-500.yaml
-- tools/oracle/cases/api/responses-read-routes/openai-get-alias.yaml
 - tools/oracle/cases/api/responses-read-routes/route-aliases.yaml
-- tools/oracle/cases/api/responses-read-routes/auth-missing.yaml
-- tools/oracle/cases/api/responses-read-routes/auth-invalid.yaml
+- tools/oracle/cases/api/responses-read-routes/path-overwrites-body.yaml
+- tools/oracle/cases/api/responses-read-routes/input-items-pagination.yaml
+- tools/oracle/cases/api/responses-read-routes/polling-lifecycle.yaml
+- tools/oracle/cases/api/responses-read-routes/polling-failures.yaml
+- tools/oracle/cases/api/responses-read-routes/provider-owner-denial.yaml
+- tools/oracle/cases/api/responses-read-routes/authentication.yaml
 deviations:
-- what: Polling response ids are checked against the authenticated owner before get/delete/cancel; another owner
-    receives HTTP 403, type authentication_error, param null, code "403".
-  why: 'ARCHITECT DECISION: close the polling-id authorization bypass.'
+- what: Polling ids belonging to another owner return 403 permission_error, param=null, code="403" before get/delete/cancel.
+  why: The architect approved closing the polling-id authorization bypass; provider-id denials already use this type.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L738-L759
 out_of_scope:
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope
-  L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant
-  L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth
-  L182-L191, cursor_model_list L471-L485, cursor_chat_completions L496-L674.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B939 owns compact_response L988-L1052, _TokenCounter.__call__
-  L1078-L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response
-  L1102-L1107, _responses_input_as_token_count_messages L1110-L1125, responses_input_tokens L1143-L1198.'
-- 'litellm/proxy/response_api_endpoints/endpoints.py: B941 owns _read_ws_model_from_first_frame L1316-L1384, _extract_model_from_first_ws_event
-  L1387-L1396, _routing_hints_from_first_ws_frame L1407-L1419, _responses_ws_failure_frame L1422-L1428, _enforce_responses_ws_first_frame_model_auth
-  L1431-L1471, responses_websocket_endpoint L1476-L1620.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B940 owns the cursor dialect helpers and cursor_model_list/cursor_chat_completions in endpoints.py L77-L191 and L461-L674.
+- B080 owns responses_api in endpoints.py L194-L458.
+- B939 owns compact_response, the token-counting helpers and responses_input_tokens in endpoints.py L973-L1198.
+- B941 owns the WebSocket helpers and responses_websocket_endpoint in endpoints.py L1316-L1620.
+- B004 owns request processing and exception mapping; B929 owns provider-id security and B935 the polling repository.
 pitfalls:
-- At the pin, authenticated polling reads bypass ResponsesIDSecurity; a decoded polling id alone proves no ownership.
-- endpoints.py:741 uses status_code=500, detail='Redis cache not configured. Polling requires Redis.'; preserve
-  this envelope rather than a family-wide error default.
+- input_items has no polling shortcut; a litellm_poll_ id on that route still enters provider processing.
+- GET and DELETE can carry JSON bodies here; discarding them changes pagination and path/body precedence.
+- A successful cancellation does not guarantee its second cache read still finds a record.
 review_level: security
 budget:
-  max_changed_lines: 630
+  max_changed_lines: 780
   max_new_expects: 0
