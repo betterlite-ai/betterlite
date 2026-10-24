@@ -1,0 +1,10 @@
+kind: helper
+name: invalid-index
+call:
+  dot_paths:
+    delete:
+      data: {"tools": [{"name": "t1"}, {"name": "t2"}], "[x]": {"name": "key"}}
+      path: tools[x].name
+env: {}
+compare:
+  ignore: []

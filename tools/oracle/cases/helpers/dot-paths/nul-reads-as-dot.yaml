@@ -1,0 +1,8 @@
+kind: helper
+name: nul-reads-as-dot
+call:
+  dot_paths:
+    get: {data: {"a.b": 1}, key_path: "a\0b", default: null}
+env: {}
+compare:
+  ignore: []

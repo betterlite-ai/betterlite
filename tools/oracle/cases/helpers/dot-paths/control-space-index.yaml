@@ -1,0 +1,8 @@
+kind: helper
+name: control-space-index
+call:
+  dot_paths:
+    delete: {data: {"t": [{"x": 1}, {"x": 2}]}, path: "t[\x1c1\x1f].x"}
+env: {}
+compare:
+  ignore: []

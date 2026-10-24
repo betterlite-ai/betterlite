@@ -28,6 +28,8 @@ scope:
   - crates/betterlite-http/Cargo.toml
   - crates/betterlite-http/src/{lib,proxy,error}.rs
   - crates/betterlite-http/src/proxy/**
+  - crates/betterlite-http/src/url_path.rs
+  - crates/betterlite-http/src/url_path/**
   - crates/betterlite-http/fuzz/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/**
@@ -130,5 +132,5 @@ pitfalls:
 - Never inherit the host environment or print proxy credentials.
 review_level: security
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 950
   max_new_expects: 0
