@@ -39,7 +39,7 @@ description: >-
   proposed fields only; B2219 fills absent entry keys and retains explicit null/False values.
 
 
-  Outside-byte boundary: decode_model_generalization_rules consumes bounded rule-list JSON bytes, maximum 1048576
+  Outside-byte boundary: decode_generalization_rules consumes bounded rule-list JSON bytes, maximum 1048576
   bytes, used by catalog/config installation before compilation in crates/betterlite-models/src/catalog_generalizations.rs
   or its scoped child module. Use that production decoder from the request path, Rust oracle adapter and cargo-fuzz
   target crates/betterlite-models/fuzz/fuzz_targets/model_generalization_rules.rs. Add valid, malformed, truncated
@@ -185,7 +185,7 @@ dod:
   - case-fill-missing-projection
   - oracle
   - helper-python
-- text: decode_model_generalization_rules has production decoder replay and new malformed/boundary seeds.
+- text: decode_generalization_rules has production decoder replay and new malformed/boundary seeds.
   proof:
   - parser-corpus
 checks:
@@ -243,7 +243,7 @@ checks:
   - id: parser-corpus
     why: Outside bytes lack replay through the actual decoder.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-models/fuzz/corpus/model_generalization_rules)"
-      && grep -q 'decode_model_generalization_rules' crates/betterlite-models/fuzz/fuzz_targets/model_generalization_rules.rs
+      && grep -q 'decode_generalization_rules' crates/betterlite-models/fuzz/fuzz_targets/model_generalization_rules.rs
       && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::replays_the_model_generalization_rules_corpus$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/catalog-generalizations/install-and-legacy-extends.yaml
