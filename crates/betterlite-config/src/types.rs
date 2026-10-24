@@ -9,7 +9,7 @@ pub struct Config {
     pub general_settings: GeneralSettings,
     pub router_settings: RouterSettings,
     pub litellm_settings: LiteLlmSettings,
-    pub environment_variables: BTreeMap<String, Option<String>>,
+    pub environment_variables: BTreeMap<String, Option<SecretString>>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +63,6 @@ pub enum RoutingStrategy {
     UsageBasedRoutingV2,
     Lar1,
 }
-
 pub type RouterFallback = BTreeMap<String, Vec<String>>;
 
 #[derive(Debug, Clone, Default)]

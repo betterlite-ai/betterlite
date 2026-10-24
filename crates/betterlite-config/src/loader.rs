@@ -1,14 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
 use std::num::{ParseFloatError, ParseIntError};
 
+use secrecy::SecretString;
 use thiserror::Error;
 
 use crate::raw::{
     RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
 };
 use crate::resolve::{
-    parse_float, parse_integer, resolve_number as number, resolve_optional, resolve_secret,
-    resolve_string,
+    parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
 };
 use crate::types::{
     Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
@@ -51,7 +52,6 @@ pub enum ConfigError {
     #[error("invalid scalar at {path}")]
     InvalidScalar { path: String, value: bool },
 }
-
 pub struct ConfigLoader<L> {
     lookup: L,
 }
@@ -60,9 +60,11 @@ impl<L> ConfigLoader<L>
 where
     L: EnvironmentLookup,
 {
-    pub const fn new(lookup: L) -> Self {
-        let value = lookup;
-        Self { lookup: value }
+    pub fn new(input: L) -> Self {
+        match Result::<L, Infallible>::Ok(input) {
+            Ok(lookup) => Self { lookup },
+            Err(error) => match error {},
+        }
     }
 
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
@@ -137,10 +139,15 @@ where
     L: EnvironmentLookup,
 {
     let prefix = format!("model_list.{index}.litellm_params");
-    let model = resolve_optional(raw.model, &format!("{prefix}.model"), lookup)?;
-    let api_base = resolve_optional(raw.api_base, &format!("{prefix}.api_base"), lookup)?;
+    let optional = |value: Option<String>, path: &str| {
+        value
+            .map(|text| resolve_string(text, path, lookup))
+            .transpose()
+    };
+    let model = optional(raw.model, &format!("{prefix}.model"))?;
+    let api_base = optional(raw.api_base, &format!("{prefix}.api_base"))?;
     let api_key = resolve_secret(raw.api_key, &format!("{prefix}.api_key"), lookup)?;
-    let api_version = resolve_optional(raw.api_version, &format!("{prefix}.api_version"), lookup)?;
+    let api_version = optional(raw.api_version, &format!("{prefix}.api_version"))?;
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
     let timeout = float(raw.timeout, &format!("{prefix}.timeout"))?;
@@ -167,7 +174,10 @@ fn convert_info<L>(raw: RawInfo, index: usize, lookup: &L) -> Result<ModelInfo, 
 where
     L: EnvironmentLookup,
 {
-    let id = resolve_optional(raw.id, &format!("model_list.{index}.model_info.id"), lookup)?;
+    let id = raw
+        .id
+        .map(|text| resolve_string(text, &format!("model_list.{index}.model_info.id"), lookup))
+        .transpose()?;
     Ok(ModelInfo { id })
 }
 
@@ -176,15 +186,13 @@ where
     L: EnvironmentLookup,
 {
     let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
-    let settings = GeneralSettings { master_key };
-    Ok(settings)
+    Ok(GeneralSettings { master_key })
 }
 
 fn convert_router<L>(raw: RawRouter, lookup: &L) -> Result<RouterSettings, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let routing_strategy = raw.routing_strategy;
     let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
     let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
     let num_retries = integer(raw.num_retries, "router_settings.num_retries")?;
@@ -192,7 +200,7 @@ where
     let allowed_fails = integer(raw.allowed_fails, "router_settings.allowed_fails")?;
     let cooldown_time = float(raw.cooldown_time, "router_settings.cooldown_time")?;
     Ok(RouterSettings {
-        routing_strategy,
+        routing_strategy: raw.routing_strategy,
         num_retries,
         timeout,
         allowed_fails,
@@ -205,30 +213,30 @@ fn convert_litellm<L>(raw: RawLiteLlm, lookup: &L) -> Result<LiteLlmSettings, Co
 where
     L: EnvironmentLookup,
 {
-    let settings_path = "litellm_settings";
-    let retries_path = format!("{settings_path}.num_retries");
-    let timeout_path = format!("{settings_path}.request_timeout");
-    let num_retries = number(raw.num_retries, &retries_path, lookup, parse_integer)?;
-    let request_timeout = number(raw.request_timeout, &timeout_path, lookup, parse_float)?;
-    let drop_params = raw.drop_params;
+    let retries_path = "litellm_settings.num_retries";
+    let timeout_path = "litellm_settings.request_timeout";
+    let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
+    let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     Ok(LiteLlmSettings {
         num_retries,
         request_timeout,
-        drop_params,
+        drop_params: raw.drop_params,
     })
 }
 
 fn convert_environment<L>(
     values: BTreeMap<String, Option<String>>,
     lookup: &L,
-) -> Result<BTreeMap<String, Option<String>>, ConfigError>
+) -> Result<BTreeMap<String, Option<SecretString>>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    let mut resolved = BTreeMap::new();
-    for (key, value) in values {
-        let path = format!("environment_variables.{key}");
-        resolved.insert(key, resolve_optional(value, &path, lookup)?);
-    }
+    let resolved = values
+        .into_iter()
+        .map(|(key, value)| {
+            let path = format!("environment_variables.{key}");
+            resolve_secret(value, &path, lookup).map(|secret| (key, secret))
+        })
+        .collect::<Result<BTreeMap<_, _>, ConfigError>>()?;
     Ok(resolved)
 }
