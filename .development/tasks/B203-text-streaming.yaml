@@ -1,0 +1,73 @@
+id: B203
+title: Streaming text completions and completion bridge
+description: >-
+  Extend B202 text completions with incremental SSE and the text/chat transformation bridge required by the provider
+  framework. Reuse B005's framing parser and B010's typed stream lifecycle, add only text-choice chunk decoding
+  and explicit bridge mapping, and preserve finish reasons, multi-choice indices, logprobs and usage. A chat request
+  routed to a text-completion deployment selects the bridge explicitly; ordinary chat and ordinary text-completion
+  routes retain their own result types. Add HTTP oracle cases for both request paths, usage/options and errors before
+  streaming starts; fuzz text_stream decoding with arbitrary read boundaries and replay its corpus. Add pause-controlled
+  timing and client-disconnect tests that prove incremental delivery and upstream cancellation without buffering
+  a whole completion. Budget 280 stream/bridge lines, 120 integration and 330 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-openai/**
+  - crates/betterlite-provider/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/completions/**
+  - tools/oracle/cases/chat-text-bridge/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L216-L321
+  why: Text streaming and wrapper selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/transformation.py#L75-L111
+  why: Explicit completion-to-chat response transformation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/completion/transformation.py#L19-L76
+  why: Text endpoint transformation boundary.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/bridges/completion_transformation.py#L18-L55
+  why: Separate request/response/iterator bridge responsibilities.
+dod:
+- text: Text streams, usage, multi-choice/logprob chunks and explicit chat/text bridge calls match listed HTTP cases.
+  proof:
+  - oracle
+- text: A chunk reaches the client before the next provider event, and disconnect cancels and closes upstream within
+    one second.
+  proof:
+  - text-stream-tests
+- text: Text decoding reuses SSE framing and corpus replay covers arbitrary chunk boundaries, invalid UTF-8 and
+    malformed JSON.
+  proof:
+  - text-stream-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: text-stream-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/text_stream|text_bridge/)'
+  - id: text-stream-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/text_stream.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/text_stream)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_text_stream_corpus)'
+oracle_cases:
+- tools/oracle/cases/completions/stream-basic.yaml
+- tools/oracle/cases/completions/stream-usage.yaml
+- tools/oracle/cases/completions/stream-multiple-choices.yaml
+- tools/oracle/cases/completions/stream-logprobs.yaml
+- tools/oracle/cases/completions/stream-upstream-500.yaml
+- tools/oracle/cases/chat-text-bridge/nonstream.yaml
+- tools/oracle/cases/chat-text-bridge/stream.yaml
+deviations: []
+out_of_scope:
+- Retry/fallback behavior after a stream starts stays with B017-B018, matching B005's boundary.
+- Other provider text-completion APIs remain in their provider tasks.
+pitfalls:
+- Do not emit chat-shaped chunks on a completion route unless the oracle demonstrates that exact shape.
+- An SSE data event can span multiple network reads and UTF-8 codepoints.
+- Terminal usage and DONE must each be emitted only when the pinned stream mapping emits them.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
