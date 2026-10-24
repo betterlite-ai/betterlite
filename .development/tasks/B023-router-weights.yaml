@@ -13,7 +13,7 @@ description: Finish router settings compatibility with typed scoped weights and 
   it. Use deterministic candidate sets or supplied random samples for comparisons, and separate seeded
   distribution tests for random choices. Extend the existing config_yaml fuzz target and committed corpus
   for every newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target
-  router_weights under crates/betterlite-server/fuzz and a normal replays_the_router_weights_corpus test
+  router_weights under crates/betterlite-server/fuzz and a normal replays_the_weights_corpus test
   using the production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures
   and oracle cases are budget-excluded by checks.yaml.
 scope:
@@ -22,15 +22,15 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/router-weights/**
-  - tools/oracle/src/router_probes/router-weights/**
+  - tools/oracle/src/router_probes/router_weights/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/router_weights.py
   - tools/oracle/litellm/probes/registry.py
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L67-L147
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/router_weights.py#L67-L129
   why: Reference and team validation with mandatory DB checks.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L7-L35
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router_weights.py#L7-L30
   why: Identifier and positive-group validation.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
   why: Existing scoped-weight selection precedence.
@@ -40,7 +40,8 @@ dod:
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the router_weights prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -69,8 +70,8 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-server/fuzz/fuzz_targets/router_weights.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/router_weights)"
-      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_router_weights_corpus)'
+    run: test -f crates/betterlite-server/fuzz/fuzz_targets/weights.rs && test -n "$(ls -A crates/betterlite-server/fuzz/corpus/weights)"
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_weights_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
