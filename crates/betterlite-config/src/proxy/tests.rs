@@ -22,25 +22,22 @@ fn render(policy: &ProxyPolicy, target: &str) -> String {
     let url = Url::parse(target).unwrap();
     let route = match policy.route(&url) {
         None => "direct".to_owned(),
-        Some(ProxyRoute::Forward(server)) => server.credentials.as_ref().map_or_else(
-            || format!("{}:{}", server.host, server.port),
-            |found| {
-                let password = found.password.expose_secret();
-                format!("{}:{password}@{}:{}", found.username, server.host, server.port)
-            },
-        ),
+        Some(ProxyRoute::Forward(server)) => {
+            let credentials = server.credentials.as_ref();
+            let user = credentials
+                .map(|found| format!("{}:{}@", found.username, found.password.expose_secret()));
+            let (host, port) = (&server.host, server.port);
+            format!("{}{host}:{port}", user.unwrap_or_default())
+        }
         Some(ProxyRoute::Unsupported { scheme }) => format!("unsupported {scheme}"),
         Some(ProxyRoute::Invalid { name }) => format!("invalid {name}"),
     };
+    let warnings = policy.warnings.iter().map(|warning| match warning {
+        ProxyWarning::SecureProxyIgnored { name, scheme } => format!(" warn {name} {scheme}"),
+        ProxyWarning::NetrcUnusable { .. } => " warn netrc".to_owned(),
+    });
     let mut line = route;
-    for warning in &policy.warnings {
-        let text = match warning {
-            ProxyWarning::SecureProxyIgnored { name, scheme } => format!(" warn {name} {scheme}"),
-            ProxyWarning::NetrcUnreadable { .. } => " warn netrc unreadable".to_owned(),
-            ProxyWarning::NetrcInvalid { .. } => " warn netrc invalid".to_owned(),
-        };
-        line.push_str(&text);
-    }
+    line.extend(warnings);
     line
 }
 
@@ -74,13 +71,13 @@ fn render(policy: &ProxyPolicy, target: &str) -> String {
 #[case::fallback_respects_no_proxy(FALLBACK, &[("HTTP_PROXY", PROXY), ("NO_PROXY", "example.com")], "http://example.com", "direct")]
 #[case::fallback_drops_https_proxy(FALLBACK, &[("HTTPS_PROXY", "https://user:secret@proxy.local:443")], "https://api.example.com", "direct warn https https")]
 #[case::fallback_has_no_prefix(FALLBACK, &[("HTTP_PROXY", "proxy.local:3128")], "http://api.example.com", "unsupported proxy.local")]
-#[case::fallback_reads_netrc(FALLBACK, &[("HTTP_PROXY", PROXY), ("NETRC", "@netrc")], "http://api.example.com", "netrc-user:netrc-pass@proxy.local:3128")]
-#[case::fallback_netrc_default(FALLBACK, &[("HTTP_PROXY", "http://other.local:1"), ("NETRC", "@netrc")], "http://api.example.com", "fallback-user:fallback-pass@other.local:1")]
-#[case::fallback_url_beats_netrc(FALLBACK, &[("HTTP_PROXY", "http://url:pass@proxy.local:3128"), ("NETRC", "@netrc")], "http://api.example.com", "url:pass@proxy.local:3128")]
-#[case::fallback_home_netrc(FALLBACK, &[("HOME", "@home"), ("HTTP_PROXY", PROXY)], "http://api.example.com", "netrc-user:netrc-pass@proxy.local:3128")]
+#[case::fallback_reads_netrc(FALLBACK, &[("HTTP_PROXY", PROXY), ("NETRC", "~/.netrc")], "http://api.example.com", "netrc-user:netrc-pass@proxy.local:3128")]
+#[case::fallback_netrc_default(FALLBACK, &[("HTTP_PROXY", "http://other.local:1"), ("NETRC", "~/.netrc")], "http://api.example.com", "fallback-user:fallback-pass@other.local:1")]
+#[case::fallback_url_beats_netrc(FALLBACK, &[("HTTP_PROXY", "http://url:pass@proxy.local:3128"), ("NETRC", "~/.netrc")], "http://api.example.com", "url:pass@proxy.local:3128")]
+#[case::fallback_home_netrc(FALLBACK, &[("HOME", "~"), ("HTTP_PROXY", PROXY)], "http://api.example.com", "netrc-user:netrc-pass@proxy.local:3128")]
 #[case::fallback_missing_home_netrc(FALLBACK, &[("HOME", "/nonexistent"), ("HTTP_PROXY", PROXY)], "http://api.example.com", "proxy.local:3128")]
-#[case::fallback_missing_named_netrc(FALLBACK, &[("HTTP_PROXY", PROXY), ("NETRC", "/nonexistent/netrc")], "http://api.example.com", "proxy.local:3128 warn netrc unreadable")]
-#[case::fallback_invalid_netrc(FALLBACK, &[("HTTP_PROXY", PROXY), ("NETRC", "@invalid")], "http://api.example.com", "proxy.local:3128 warn netrc invalid")]
+#[case::fallback_missing_named_netrc(FALLBACK, &[("HTTP_PROXY", PROXY), ("NETRC", "/nonexistent/netrc")], "http://api.example.com", "proxy.local:3128 warn netrc")]
+#[case::fallback_invalid_netrc(FALLBACK, &[("HTTP_PROXY", PROXY), ("NETRC", "~/invalid")], "http://api.example.com", "proxy.local:3128 warn netrc")]
 fn http_proxies_proxy_policy_tests_behavior(
     #[case] settings: &str,
     #[case] variables: &[(&str, &str)],
@@ -93,17 +90,10 @@ fn http_proxies_proxy_policy_tests_behavior(
     let netrc = "machine proxy.local login netrc-user password netrc-pass\ndefault login fallback-user password fallback-pass\n";
     fs::write(home.join(".netrc"), netrc).unwrap();
     fs::write(home.join("invalid"), "machine").unwrap();
+    let home_text = home.display().to_string();
     let environment: BTreeMap<String, String> = variables
         .iter()
-        .map(|(name, value)| {
-            let resolved = match *value {
-                "@netrc" => home.join(".netrc").display().to_string(),
-                "@invalid" => home.join("invalid").display().to_string(),
-                "@home" => home.display().to_string(),
-                other => other.to_owned(),
-            };
-            ((*name).to_owned(), resolved)
-        })
+        .map(|(name, value)| ((*name).to_owned(), value.replace('~', &home_text)))
         .collect();
     let config = ConfigLoader {
         lookup: BTreeMap::new(),

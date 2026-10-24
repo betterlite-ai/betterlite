@@ -200,11 +200,13 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-config",
  "betterlite-http",
  "clap",
  "futures-util",
  "reqwest",
  "rstest",
+ "secrecy",
  "serde",
  "serde-saphyr",
  "serde_json",

@@ -1,0 +1,17 @@
+task: B208
+deviations:
+  - what: A proxy URL whose scheme is not http fails the request with an error naming the scheme. aiohttp sends plain HTTP to it instead, so a socks5:// proxy gets an HTTP proxy request with Basic credentials.
+    why: Sending credentials in plain HTTP to a proxy configured as SOCKS is a silent downgrade, and rule no-silent-drops makes an unhandled input an error that names it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_transport.py#L489-L493
+  - what: The pick is made per scheme and host. LiteLLM caches it by host only, so the first request to a host decides the proxy for both its http and https URLs.
+    why: The host-only cache gives https requests the http proxy, or none, depending on which scheme came first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/aiohttp_transport.py#L483-L497
+  - what: On the trust_env fallback, a netrc file with comment lines, quoted tokens or the user keyword is reported unusable with a warning and gives no credentials; Python's netrc module reads those files.
+    why: The only netrc crates that parse Python's full syntax pull in an MPL-2.0 dependency that deny.toml rejects, and netrc-rs, the one that passes, has no comments or quoting.
+    link: https://github.com/python/cpython/blob/v3.12.11/Lib/netrc.py#L80-L140
+  - what: The environment and netrc file are read once when the policy is built, and the ignored-proxy and netrc warnings are logged once when the client is built. aiohttp reads both and warns on every request.
+    why: Rule inject-dependencies keeps environment reads in the config crate at load time, and a warning per request repeats the same line for every call.
+    link: https://github.com/aio-libs/aiohttp/blob/v3.14.5/aiohttp/helpers.py#L298-L335
+  - what: Without HOME in the environment no ~/.netrc is read. Python's Path.home() falls back to the passwd entry of the user.
+    why: betterlite reads only the injected environment, never the passwd database.
+    link: https://github.com/aio-libs/aiohttp/blob/v3.14.5/aiohttp/helpers.py#L220-L261

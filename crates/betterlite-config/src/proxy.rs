@@ -1,14 +1,13 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
-use std::path::PathBuf;
-use std::str;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use netrc_rs::Netrc;
 use percent_encoding::percent_decode_str;
 use secrecy::SecretString;
-use url::{Host, Url};
+use url::Url;
 
 use crate::types::LiteLlmSettings;
 
@@ -43,8 +42,7 @@ pub struct ProxyCredentials {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProxyWarning {
     SecureProxyIgnored { name: String, scheme: String },
-    NetrcUnreadable { path: PathBuf },
-    NetrcInvalid { path: PathBuf },
+    NetrcUnusable { path: PathBuf },
 }
 
 impl ProxyPolicy {
@@ -80,14 +78,9 @@ impl ProxyPolicy {
     #[must_use]
     pub fn route(&self, url: &Url) -> Option<&ProxyRoute> {
         // httpx hands LiteLLM an IPv6 host without its brackets
-        let host = match url.host() {
-            Some(Host::Ipv6(address)) => address.to_string(),
-            Some(Host::Domain(_) | Host::Ipv4(_)) | None => {
-                url.host_str().unwrap_or_default().to_owned()
-            }
-        };
+        let host = url.host_str().unwrap_or_default();
         if let Some(no_proxy) = &self.no_proxy
-            && bypasses(no_proxy, &host)
+            && bypasses(no_proxy, host.trim_matches(['[', ']']))
         {
             return None;
         }
@@ -139,7 +132,8 @@ fn primary_routes(proxies: &BTreeMap<String, String>) -> BTreeMap<String, ProxyR
         .iter()
         .map(|(name, value)| {
             let prefix = if value.contains("://") { "" } else { "http://" };
-            (name.clone(), parse_route(name, &format!("{prefix}{value}"), None))
+            let route = parse_route(name, &format!("{prefix}{value}"), None);
+            (name.clone(), route)
         })
         .collect()
 }
@@ -176,10 +170,10 @@ fn bypasses(no_proxy: &str, host: &str) -> bool {
         return true;
     }
     let lowered = host.to_lowercase();
-    let host_only = match lowered.rsplit_once(':') {
-        Some((prefix, port)) if !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()) => prefix,
-        Some(_) | None => &lowered,
-    };
+    let host_only = lowered
+        .rsplit_once(':')
+        .filter(|(_, port)| !port.is_empty() && port.bytes().all(|byte| byte.is_ascii_digit()))
+        .map_or(lowered.as_str(), |(prefix, _)| prefix);
     no_proxy
         .split(',')
         .map(str::trim)
@@ -234,14 +228,10 @@ fn netrc_credentials(netrc: &Netrc, host: &str) -> Option<ProxyCredentials> {
     let entry = entries()
         .find(|machine| machine.name.as_deref() == Some(host))
         .or_else(|| entries().find(|machine| machine.name.is_none()))?;
-    let username = match (&entry.login, &entry.account) {
-        (Some(login), _) if !login.is_empty() => login.clone(),
-        (_, Some(account)) => account.clone(),
-        (Some(_) | None, None) => String::new(),
-    };
+    let login = entry.login.clone().filter(|login| !login.is_empty());
     let password = entry.password.clone().unwrap_or_default();
     Some(ProxyCredentials {
-        username,
+        username: login.or_else(|| entry.account.clone()).unwrap_or_default(),
         password: SecretString::from(password),
     })
 }
@@ -250,25 +240,19 @@ fn read_netrc(
     environment: &BTreeMap<String, String>,
     warnings: &mut Vec<ProxyWarning>,
 ) -> Option<Netrc> {
-    let (path, named) = match environment.get("NETRC") {
-        Some(named_path) => (PathBuf::from(named_path), true),
-        None => (PathBuf::from(environment.get("HOME")?).join(".netrc"), false),
+    let named = environment.get("NETRC");
+    let home = environment
+        .get("HOME")
+        .map(|home| Path::new(home).join(".netrc"));
+    let path = named.map(PathBuf::from).or(home)?;
+    let parsed = match fs::read_to_string(&path) {
+        // aiohttp stays quiet about a missing ~/.netrc, but not about a missing NETRC file
+        Err(error) if named.is_none() && error.kind() == ErrorKind::NotFound => return None,
+        Err(_) => None,
+        Ok(text) => Netrc::parse(text, false).ok(),
     };
-    let bytes = match fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            // aiohttp stays quiet about a missing ~/.netrc, but not about a missing NETRC file
-            if named || error.kind() != ErrorKind::NotFound {
-                warnings.push(ProxyWarning::NetrcUnreadable { path });
-            }
-            return None;
-        }
-    };
-    let parsed = str::from_utf8(&bytes)
-        .ok()
-        .and_then(|text| Netrc::parse(text, false).ok());
     if parsed.is_none() {
-        warnings.push(ProxyWarning::NetrcInvalid { path });
+        warnings.push(ProxyWarning::NetrcUnusable { path });
     }
     parsed
 }

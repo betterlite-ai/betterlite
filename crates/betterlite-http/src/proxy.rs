@@ -43,9 +43,7 @@ impl ProxiedClient {
             }
             configured = configured.proxy(proxy);
         }
-        let client = configured
-            .build()
-            .map_err(|source| ProxyError::Client { source })?;
+        let client = configured.build().map_err(ProxyError::Client)?;
         Ok(Self {
             client,
             policy: Arc::clone(policy),
@@ -53,21 +51,20 @@ impl ProxiedClient {
     }
 
     pub async fn execute(&self, request: Request) -> Result<Response, ProxyError> {
-        match self.policy.route(request.url()) {
-            Some(ProxyRoute::Unsupported { scheme }) => {
-                return Err(ProxyError::UnsupportedScheme {
-                    scheme: scheme.clone(),
-                });
+        let rejection = match self.policy.route(request.url()) {
+            Some(ProxyRoute::Unsupported { scheme }) => ProxyError::UnsupportedScheme {
+                scheme: scheme.clone(),
+            },
+            Some(ProxyRoute::Invalid { name }) => ProxyError::InvalidUrl { name: name.clone() },
+            Some(ProxyRoute::Forward(_)) | None => {
+                return self
+                    .client
+                    .execute(request)
+                    .await
+                    .map_err(ProxyError::Request);
             }
-            Some(ProxyRoute::Invalid { name }) => {
-                return Err(ProxyError::InvalidUrl { name: name.clone() });
-            }
-            Some(ProxyRoute::Forward(_)) | None => {}
-        }
-        self.client
-            .execute(request)
-            .await
-            .map_err(|source| ProxyError::Request { source })
+        };
+        Err(rejection)
     }
 }
 

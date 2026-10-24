@@ -15,13 +15,7 @@ pub enum ProxyError {
     #[error("the {name} proxy URL is not valid")]
     InvalidUrl { name: String },
     #[error("cannot build the HTTP client")]
-    Client {
-        #[source]
-        source: reqwest::Error,
-    },
+    Client(#[source] reqwest::Error),
     #[error("the request failed")]
-    Request {
-        #[source]
-        source: reqwest::Error,
-    },
+    Request(#[source] reqwest::Error),
 }

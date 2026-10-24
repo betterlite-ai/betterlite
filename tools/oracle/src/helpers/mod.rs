@@ -1,3 +1,4 @@
+mod proxy_policy;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -18,6 +19,8 @@ use crate::process::sync_litellm;
 pub(crate) enum HelperCall {
     #[serde(rename = "url_path")]
     UrlPath(url_path::UrlPathInput),
+    #[serde(rename = "proxy_policy")]
+    ProxyPolicy(proxy_policy::ProxyPolicyInput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -73,18 +76,20 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 }
 
 fn invoke(call: &HelperCall) -> HelperOutput {
-    match call {
-        HelperCall::UrlPath(input) => match url_path::invoke(input) {
-            Ok(value) => HelperOutput {
-                ok: true,
-                value: Some(value),
-                error: None,
-            },
-            Err(error) => HelperOutput {
-                ok: false,
-                value: None,
-                error: Some(*error),
-            },
+    let result = match call {
+        HelperCall::UrlPath(input) => url_path::invoke(input),
+        HelperCall::ProxyPolicy(input) => proxy_policy::invoke(input),
+    };
+    match result {
+        Ok(value) => HelperOutput {
+            ok: true,
+            value: Some(value),
+            error: None,
+        },
+        Err(error) => HelperOutput {
+            ok: false,
+            value: None,
+            error: Some(*error),
         },
     }
 }
