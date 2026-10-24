@@ -2367,15 +2367,18 @@ tasks:
     title: Complexity routing through context compaction
     status: todo
     depends_on:
-    - B334
+    - B385
+    - B386
     - B100
     - B080
     - B081
     - B068
+    - B012
+    - B301
+    - B002
     file: tasks/B336-router-compaction.yaml
     covers:
     - litellm/router_strategy/complexity_router/context_compaction.py
-
   - id: B337
     milestone: M2 routing
     title: Cache-cost-aware complexity placement
@@ -2932,6 +2935,18 @@ tasks:
     file: tasks/B384-classifier-message-text.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B385
+    milestone: M2 routing
+    title: Compaction history partition and fit inputs
+    status: todo
+    depends_on:
+    - B010
+    - B013
+    - B100
+    - B301
+    file: tasks/B385-compaction-history.yaml
+    covers:
+    - litellm/router_strategy/complexity_router/context_compaction.py
   - id: B386
     milestone: M2 routing
     title: Complexity context-window placement
