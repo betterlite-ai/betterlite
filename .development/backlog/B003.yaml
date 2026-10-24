@@ -1,7 +1,7 @@
 id: B003
 milestone: M0 foundation
 title: HTTP server, health routes and master key auth
-status: in-progress
+status: done
 depends_on: [B001, B002]
 file: tasks/B003-server.yaml
 covers:
