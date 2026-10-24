@@ -33,6 +33,8 @@ Everything in LiteLLM's enterprise directory and in the litellm_enterprise packa
 
 When the task cannot be finished inside its scope and budgets, stop and answer with status blocked. The blocker says what you need, where, and the evidence (command, output, file and line). Typical blockers are a file outside scope, a check that can't pass without a protected file, the task text contradicting the oracle, a budget the work can't fit, and a tool missing or at the wrong version. Describe it and stop. The decision belongs to the architect.
 
+The Claude sandbox mounts /dev/null over dotfiles in your worktree (.bashrc, .bash_profile, .profile, .zshrc, .zprofile, .gitconfig, .gitmodules, .mcp.json, .ripgreprc, .idea, .vscode and paths under .claude). Inside the sandbox they make committed, scope, hooks, diff-budget and mutants fail on those paths. That alone is not a blocker: the dispatcher runs the gate again outside the sandbox. Report done when every other check passes, and say in notes which checks failed only on those paths.
+
 ## Final answer
 
 Your final answer is one JSON object that matches .development/schema/report.schema.json, and nothing else. Every field is required; use an empty string or list when there is nothing to say.
