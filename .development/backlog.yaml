@@ -219,19 +219,15 @@ tasks:
     - litellm/proxy/management_endpoints/fallback_management_endpoints.py
   - id: B019
     milestone: M2 routing
-    title: Latency, cost, usage and least-busy routing strategies
+    title: Input and output token reservations and reconciliation
     status: todo
     depends_on:
+    - B365
     - B016
-    - B314
-    - B315
-    - B316
-    - B317
-    - B318
-    - B319
-    - B013
-    - B014
     - B017
+    - B319
+    - B014
+    - B301
     file: tasks/B019-io-token-limits.yaml
     covers:
     - litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py
@@ -2717,6 +2713,19 @@ tasks:
     file: tasks/B364-static-eligibility.yaml
     covers:
     - litellm/router.py
+  - id: B365
+    milestone: M2 routing
+    title: Input and output token reservation primitives
+    status: todo
+    depends_on:
+    - B013
+    - B011
+    - B360
+    - B301
+    - B002
+    file: tasks/B365-io-token-reservations.yaml
+    covers:
+    - litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py
   - id: B395
     milestone: M2 routing
     title: Native routing strategy dispatch
