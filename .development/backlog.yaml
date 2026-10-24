@@ -2251,13 +2251,14 @@ tasks:
     title: Local complexity scoring and default tiers
     status: todo
     depends_on:
-    - B019
     - B012
+    - B301
+    - B361
+    - B002
     file: tasks/B328-complexity-scoring.yaml
     covers:
     - litellm/router_strategy/complexity_router/{__init__,config,complexity_router}.py
     - litellm/router_strategy/complexity_router/README.md
-
   - id: B329
     milestone: M2 routing
     title: Custom complexity tiers and bounded dimensions
