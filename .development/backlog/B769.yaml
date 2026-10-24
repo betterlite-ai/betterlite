@@ -1,7 +1,7 @@
 id: B769
 milestone: M4 keys, spend and management
 title: JWT login result HTML
-status: todo
+status: in-progress
 depends_on: [B003]
 file: tasks/B769-jwt-display.yaml
 covers:

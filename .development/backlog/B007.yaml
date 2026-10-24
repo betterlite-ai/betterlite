@@ -1,7 +1,7 @@
 id: B007
 milestone: M1 openai data plane
 title: Model list
-status: todo
+status: in-progress
 depends_on: [B003]
 file: tasks/B007-models.yaml
 covers:
