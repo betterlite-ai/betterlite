@@ -18,21 +18,22 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/adaptive-concurrency/**
-  - tools/oracle/src/router_probes/adaptive-concurrency/**
+  - tools/oracle/src/router_probes/adaptive_concurrency/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/adaptive_concurrency.py
   - tools/oracle/litellm/probes/registry.py
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L18-L93
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L18-L78
   why: Limit transitions, cancellation race and waiter grants.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the adaptive_concurrency prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: All mutants in changed router, config or wire code are caught.
