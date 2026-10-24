@@ -1837,7 +1837,7 @@ tasks:
     title: Provider identity and model resolution
     status: todo
     depends_on: [B005, B009, B193]
-    file: null
+    file: tasks/B174-provider-resolution.yaml
     covers:
       - "litellm/litellm_core_utils/get_llm_provider_logic.py"
   - id: B175
@@ -1868,7 +1868,7 @@ tasks:
     milestone: M1 openai data plane
     title: Tool argument parsing and schema transforms
     status: todo
-    depends_on: [B174]
+    depends_on: [B174, B177]
     file: null
     covers:
       - "litellm/litellm_core_utils/prompt_templates/common_utils.py"
@@ -1884,7 +1884,7 @@ tasks:
     milestone: M1 openai data plane
     title: Anthropic prompt and tool conversion helpers
     status: todo
-    depends_on: [B177, B179]
+    depends_on: [B177, B179, B183]
     file: null
     covers:
       - "litellm/litellm_core_utils/prompt_templates/factory.py"

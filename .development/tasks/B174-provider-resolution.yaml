@@ -1,0 +1,102 @@
+id: B174
+title: Provider identity and model resolution
+description: >-
+  Create betterlite-provider as the shared provider identity and resolution layer above betterlite-models and below
+  the server. Distinguish a catalog ProviderId from an executable Provider enum: resolving a catalog identity never
+  claims its adapter is installed. Port get_llm_provider's identity rules into pure functions taking the pinned
+  B193 catalog and an injected configuration environment, with typed resolved model/provider/base/secret fields.
+  Keep all model-name suffixes intact and resolve credentials only from trusted deployment configuration. Catalog
+  metadata may enumerate all pinned providers, but only the existing OpenAI adapter is executable in M1; unsupported
+  adapters fail explicitly. Add custom_llm_provider to supported deployment config and use the resolver in OpenAI
+  deployment construction. Add provider_resolution helper cases, including representatives of each branch family
+  and every endpoint-boundary trap, with env values supplied only by the harness. The JSON-provider-specific API
+  credentials and transport implementations stay with B038-B045; this task resolves their registered identities
+  from pinned data. Budget 300 identity/table lines, 180 resolution/config lines and 280 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-provider/**
+  - crates/betterlite-config/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-resolution/**
+  - crates/betterlite-server/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L19-L155
+  why: Endpoint boundary checks and declared versus inferred provider identity.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L158-L277
+  why: Explicit provider, prefix, OpenRouter native IDs and registry precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L278-L562
+  why: Known endpoint/model inference and unknown-model errors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L577-L936
+  why: Provider defaults and credential-name metadata; adapters retain actual authentication.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/README.md#L1-L11
+  why: Keep transformation code with the provider that owns it.
+dod:
+- text: All listed provider-resolution cases compare model, identity, base and synthetic key selection with the
+    pinned Python function.
+  proof:
+  - oracle
+- text: Resolution never enables an absent adapter, reaches the network, reads ambient environment or leaks a credential
+    through Debug/errors.
+  proof:
+  - provider-resolution-tests
+- text: Only configuration can select a base or environment credential, and existing OpenAI chat behavior survives
+    the integration.
+  proof:
+  - provider-resolution-tests
+  - oracle
+- text: The existing config parser corpus includes the new typed provider field.
+  proof:
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-resolution-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-config --no-tests=fail -E 'test(/provider_resolution/)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/provider-resolution/explicit-openai.yaml
+- tools/oracle/cases/helpers/provider-resolution/custom-provider.yaml
+- tools/oracle/cases/helpers/provider-resolution/openrouter-auto.yaml
+- tools/oracle/cases/helpers/provider-resolution/openrouter-nested.yaml
+- tools/oracle/cases/helpers/provider-resolution/azure-cohere.yaml
+- tools/oracle/cases/helpers/provider-resolution/anthropic-legacy.yaml
+- tools/oracle/cases/helpers/provider-resolution/cohere-chat.yaml
+- tools/oracle/cases/helpers/provider-resolution/known-model.yaml
+- tools/oracle/cases/helpers/provider-resolution/fine-tuned.yaml
+- tools/oracle/cases/helpers/provider-resolution/endpoint-exact.yaml
+- tools/oracle/cases/helpers/provider-resolution/endpoint-suffix-attack.yaml
+- tools/oracle/cases/helpers/provider-resolution/endpoint-path-boundary.yaml
+- tools/oracle/cases/helpers/provider-resolution/unknown-model.yaml
+- tools/oracle/cases/chat/openai-basic.yaml
+deviations: []
+out_of_scope:
+- Provider adapters and their credentials are B024-B050; dynamic Python providers are B164-B165.
+- Fallback-generalization routing rules are B018; preserve B193's typed rules for that consumer rather than activating
+  them here.
+pitfalls:
+- The native OpenRouter model openrouter/auto is not the same prefix case as openrouter/anthropic/claude-3.5-sonnet.
+- >-
+  Do not add betterlite-provider as a dependency of betterlite-openai if the executable dispatcher will depend on
+  betterlite-openai; pass resolved inputs from the caller.
+- No flat provider trait-object registry is allowed by the closed-set rule.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
