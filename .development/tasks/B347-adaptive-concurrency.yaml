@@ -1,56 +1,87 @@
 id: B347
 title: Adaptive concurrency permits
-description: Implement the reusable additive-increase/multiplicative-decrease concurrency limiter using
+description: 'Implement the reusable additive-increase/multiplicative-decrease concurrency limiter using
   owned permits, bounded waiter storage and injected outcomes. Keep it separate from B303 deployment hard
-  caps and B022's global admission controls; expose it to existing integration callbacks through the server.
-  Preserve the pinned floor, ceiling and clean-streak transitions, and supply a caller deadline for every
-  wait. Set the proposed waiter cap to 1024 with a typed overload result for callers. Use the existing
-  Rust crate boundaries from B004 and B008; integrate through the server when the provider dispatcher
-  or callbacks live in another core crate. This task's source slices are the linked ranges, not a port
-  of their Python classes. Add the listed oracle cases and the matching adapters to B301's component runner
-  where state is not observable over HTTP; adapters call production logic and never reproduce it. Use
-  deterministic candidate sets or supplied random samples for comparisons, and separate seeded distribution
-  tests for random choices. Keep the implementation, adapters and tests within 600 changed lines; fixtures
-  and oracle cases are budget-excluded by checks.yaml.
+  caps and B022''s global admission controls; expose it to existing integration callbacks through the
+  server. Preserve the pinned floor, ceiling and clean-streak transitions, and supply a caller deadline
+  for every wait. Set the waiter cap to 1024 with a typed overload result for callers. Initial, floor
+  and ceiling are required constructor arguments, not env defaults; enforce 1 <= floor <= ceiling and
+  clamp initial. Cap waiters at 1024 with caller deadline; return typed Overloaded before enqueueing a
+  1025th waiter. Implement the owned native service in crates/betterlite-router/src/adaptive_concurrency.rs.
+  Add ProbeOperation::B347 in tools/oracle/src/router_probes/mod.rs and the corresponding B347 entry in
+  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
+  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
+  fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
+  of copying their algorithms. Function coverage in litellm/integrations/adaptive_concurrency.py: AdaptiveConcurrencyLimiter.__init__
+  (L25-L33), AdaptiveConcurrencyLimiter.limit (L36-L37), AdaptiveConcurrencyLimiter.__aenter__ (L39-L55),
+  AdaptiveConcurrencyLimiter._grant (L57-L63), AdaptiveConcurrencyLimiter.__aexit__ (L65-L67), AdaptiveConcurrencyLimiter.record
+  (L69-L78). Implement these behaviors through the typed Rust services above; synchronous facades and
+  structural accessors reuse the same primitive instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/adaptive-concurrency/**
+  - crates/betterlite-router/src/adaptive_concurrency.rs
+  - crates/betterlite-router/src/adaptive_concurrency/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/adaptive_concurrency.rs
+  - crates/betterlite-server/src/routing/adaptive_concurrency/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/adaptive_concurrency.rs
   - tools/oracle/src/router_probes/adaptive_concurrency/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/adaptive_concurrency.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/adaptive_concurrency.py
+  - tools/oracle/cases/routing/adaptive-concurrency/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L18-L78
   why: Limit transitions, cancellation race and waiter grants.
 dod:
-- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
-    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
+- text: Write tests named b347_behaviors and b347_boundaries under adaptive_concurrency::tests. The first
+    asserts the listed successful and warning/fallback outcomes; the second asserts error fields, bounds,
+    cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay cannot
+    satisfy either check.
+  proof:
+  - b347-behaviors
+  - b347-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the adaptive_concurrency prefix so the required
-    filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(adaptive_concurrency)'
+  - id: b347-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b347_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b347-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b347_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/adaptive_concurrency.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/adaptive_concurrency.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
 oracle_cases:
 - tools/oracle/cases/routing/adaptive-concurrency/initial-clamped.yaml
 - tools/oracle/cases/routing/adaptive-concurrency/invalid-floor-ceiling.yaml
@@ -60,6 +91,8 @@ oracle_cases:
 - tools/oracle/cases/routing/adaptive-concurrency/cancel-before-grant.yaml
 - tools/oracle/cases/routing/adaptive-concurrency/cancel-after-grant.yaml
 - tools/oracle/cases/routing/adaptive-concurrency/ceiling-no-growth.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/waiter-cap.yaml
+- tools/oracle/cases/routing/adaptive-concurrency/waiter-deadline.yaml
 deviations:
 - what: Adaptive concurrency waits are bounded by a deadline and a 1024-waiter capacity.
   why: The pinned deque is unbounded, contrary to async-hygiene and bounded-inputs.
@@ -70,8 +103,11 @@ out_of_scope:
 pitfalls:
 - Reducing the limit does not cancel calls already in flight.
 - Cancellation after a grant must return the reserved slot exactly once.
-- The architect must acknowledge the bounded waiter cap before dispatch.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0

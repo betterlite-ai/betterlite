@@ -2528,12 +2528,11 @@ tasks:
     title: Adaptive concurrency permits
     status: todo
     depends_on:
-    - B016
     - B301
+    - B361
     file: tasks/B347-adaptive-concurrency.yaml
     covers:
     - litellm/integrations/adaptive_concurrency.py
-
   - id: B348
     milestone: M2 routing
     title: Router settings and field metadata endpoints
