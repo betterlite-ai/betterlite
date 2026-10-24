@@ -2169,10 +2169,13 @@ tasks:
     milestone: M1 openai data plane
     title: Image and document token accounting
     status: todo
-    depends_on: [B196, B183]
+    depends_on:
+    - B196
+    - B183
+    - B258
     file: tasks/B197-media-tokens.yaml
     covers:
-      - "litellm/litellm_core_utils/token_counter.py"
+    - litellm/litellm_core_utils/token_counter.py
   - id: B198
     milestone: M1 openai data plane
     title: Injected call context and shared settings
@@ -2821,3 +2824,14 @@ tasks:
     file: tasks/B257-catalog-fetch-policy.yaml
     covers:
     - litellm/litellm_core_utils/get_model_cost_map.py
+  - id: B258
+    milestone: M1 openai data plane
+    title: Image token headers and geometry
+    status: todo
+    depends_on:
+    - B183
+    - B195
+    - B171
+    file: tasks/B258-image-token-geometry.yaml
+    covers:
+    - litellm/litellm_core_utils/token_counter.py
