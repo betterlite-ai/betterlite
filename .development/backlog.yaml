@@ -1900,10 +1900,13 @@ tasks:
     milestone: M1 openai data plane
     title: Provider parameter capabilities and mapping
     status: todo
-    depends_on: [B174, B006]
+    depends_on:
+    - B174
+    - B006
+    - B212
     file: tasks/B175-provider-params.yaml
     covers:
-      - "litellm/litellm_core_utils/{get_supported_openai_params,model_param_helper,reasoning_effort_utils,service_tier_utils}.py"
+    - litellm/litellm_core_utils/get_supported_openai_params.py
   - id: B176
     milestone: M1 openai data plane
     title: Trusted controls, provider headers and affinity
@@ -2210,3 +2213,13 @@ tasks:
     file: tasks/B211-provider-defaults-b.yaml
     covers:
     - litellm/litellm_core_utils/get_llm_provider_logic.py
+  - id: B212
+    milestone: M1 openai data plane
+    title: Parameter projections and service-tier helpers
+    status: todo
+    depends_on:
+    - B174
+    - B171
+    file: tasks/B212-parameter-projections.yaml
+    covers:
+    - litellm/litellm_core_utils/{model_param_helper,reasoning_effort_utils,service_tier_utils}.py
