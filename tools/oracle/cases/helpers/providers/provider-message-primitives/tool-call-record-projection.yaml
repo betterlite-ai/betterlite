@@ -1,0 +1,14 @@
+kind: helper
+name: tool-call-record-projection
+call:
+  provider_message_primitives:
+    function: tool_call
+    record:
+      id: call_1
+      custom: {}
+      type: null
+      function: {name: grep, arguments: "{}"}
+      index: 0
+env: {}
+compare:
+  ignore: []

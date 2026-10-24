@@ -1,0 +1,5 @@
+task: B2214
+deviations:
+  - what: A tools value that is not a list cannot reach the response_format primitive, so betterlite refuses it at the record boundary on both branches. LiteLLM leaves it untouched when response_format is supported and raises AttributeError from list.append only on the tool-call branch.
+    why: FormatParams.tools is a typed list of tool records, and the oracle adapter reports AttributeError for any non-list tools instead of building a record it cannot type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L224-L225

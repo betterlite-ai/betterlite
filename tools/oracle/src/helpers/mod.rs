@@ -1,4 +1,5 @@
 mod catalog_generalizations;
+mod provider_message_primitives;
 mod proxy_policy;
 mod url_path;
 
@@ -20,6 +21,8 @@ use crate::process::sync_litellm;
 pub(crate) enum HelperCall {
     #[serde(rename = "catalog_generalizations")]
     CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
+    #[serde(rename = "provider_message_primitives")]
+    ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
     #[serde(rename = "proxy_policy")]
     ProxyPolicy(proxy_policy::ProxyPolicyInput),
     #[serde(rename = "url_path")]
@@ -81,6 +84,7 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 fn invoke(call: &HelperCall) -> HelperOutput {
     let result = match call {
         HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
+        HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
         HelperCall::ProxyPolicy(input) => proxy_policy::invoke(input),
         HelperCall::UrlPath(input) => url_path::invoke(input),
     };
