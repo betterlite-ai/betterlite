@@ -117,7 +117,7 @@ tasks:
     title: Logging pipeline, callback registry and redaction
     status: todo
     depends_on: [B004, B187, B188, B189, B190, B191, B192, B006]
-    file: null
+    file: tasks/B012-logging-pipeline.yaml
     covers:
       - "litellm/_logging.py"
       - "litellm/_service_logger.py"
