@@ -1,11 +1,12 @@
 import logging
 import os
+import sys
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from types import ModuleType
 from typing import TypeAlias, cast, override
 
 import nacl.secret
-from litellm.proxy import proxy_server
 from litellm.proxy.common_utils import encrypt_decrypt_utils as codec
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -105,27 +106,32 @@ def restored_globals(input_value: dict[str, Json]) -> Generator[None]:
     # nacl.secret binds random at import, so the box only sees a replacement in its own namespace
     box_namespace = cast(dict[str, object], vars(nacl.secret))
     saved_box_random = box_namespace["random"]
-    saved_settings = cast(dict[str, Json], proxy_server.general_settings)
-    saved_master, saved_urandom = proxy_server.master_key, os.urandom
+    saved_urandom = os.urandom
     saved_salt = os.environ.pop("LITELLM_SALT_KEY", None)
     logger = logging.getLogger("LiteLLM Proxy")
     saved_level = logger.level
     salt = optional_text(input_value, "salt_key")
     if salt is not None:
         os.environ["LITELLM_SALT_KEY"] = salt
-    proxy_server.master_key = optional_text(input_value, "master_key")
+    # the codec reads only these two globals, and the real module adds seconds to every helper call
+    proxy_server = ModuleType("litellm.proxy.proxy_server")
+    proxy_namespace = cast(dict[str, Json], vars(proxy_server))
+    proxy_namespace["master_key"] = optional_text(input_value, "master_key")
     if isinstance(settings, dict):
-        proxy_server.general_settings = settings
-    else:
-        # deleting the global makes LiteLLM's import fail, its "settings unavailable" path
-        del proxy_server.general_settings
+        # a missing global makes LiteLLM's import fail, its "settings unavailable" path
+        proxy_namespace["general_settings"] = settings
+    saved_proxy_server = sys.modules.get(proxy_server.__name__)
+    sys.modules[proxy_server.__name__] = proxy_server
     os.urandom = box_namespace["random"] = fixed
     logger.setLevel(logging.DEBUG)
     try:
         yield
     finally:
         logger.setLevel(saved_level)
-        proxy_server.master_key, proxy_server.general_settings = saved_master, saved_settings
+        if saved_proxy_server is None:
+            del sys.modules[proxy_server.__name__]
+        else:
+            sys.modules[proxy_server.__name__] = saved_proxy_server
         os.urandom, box_namespace["random"] = saved_urandom, saved_box_random
         os.environ.pop("LITELLM_SALT_KEY", None)
         if saved_salt is not None:
