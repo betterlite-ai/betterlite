@@ -1,61 +1,82 @@
 id: B901
 title: Websocket oracle
 description: >-
-  Extend the oracle with independently executed WebSocket transcripts, preserving gateway startup, bounded transport
-  and existing HTTP/helper dispatch.
+  Add a bounded WebSocket transcript format and driver to betterlite-oracle. The worker owns the transcript parser,
+  scripted client/provider peers, direction-aware comparison, barrier scheduling, gateway-driver wiring, and the
+  service-driver process seam. Existing HTTP and helper cases keep their current dispatch and startup paths; this task
+  adds the WebSocket path without changing those paths.
 
+  A fixture in tools/oracle/cases/harness/websocket-oracle/ has kind: websocket. Its handshake must carry path,
+  headers, requested_subprotocols, expected_http_status and negotiated_subprotocol. Each frame has exactly one of text
+  or binary, direction client_to_provider or provider_to_client, action send or expect, and an optional barrier name.
+  The close record has initiator client or provider, an integer code and a reason string. The comparator keeps client and
+  provider sequences independent: provider [ready, delta] and client [setup, followup] still match when the global
+  arrival order is setup, ready, delta, followup. A client send bearing barrier after_provider_ready waits until the
+  provider observation named after_provider_ready has been recorded. A pre-upgrade refusal is represented by the HTTP
+  handshake status and has no accepted WebSocket close frame.
 
-  Use kind: websocket and tools/oracle/cases/websocket/<domain>/*.yaml. Transcript fields: handshake (path, headers,
-  requested subprotocols, expected HTTP status and negotiated subprotocol), frames (direction client_to_provider
-  or provider_to_client, action send or expect, text or binary fixture, optional barrier), and close (initiator,
-  code, reason). Scripts drive sends while observations are compared per direction; do not impose a single total
-  order on concurrent relays. A barrier gates the next send until named observations occur. Capture pre-accept refusal
-  as HTTP 403, not an accepted close frame. Fixtures live only under tools/oracle/fixtures/websocket-oracle/; cap
-  frames at 1024, each frame at 1 MiB, total capture at 16 MiB and execution at 120 seconds. decode_ws_case reads
-  bounded transcript YAML; the sole replay test is websocket_oracle::tests::replays_corpus. Self-check also runs
-  existing health/chat HTTP cases.
+  OracleLimits rejects a case with more than 1024 frames, a text or binary payload larger than 1_048_576 bytes, more
+  than 16_777_216 captured traffic bytes, or an execution lasting more than 120 seconds. The boundary values 1024,
+  1_048_576, 16_777_216 and 120 seconds are accepted. decode_ws_case(bytes, &OracleLimits) is the only production
+  decoder for the bounded YAML. It rejects an unknown field or duplicate field before starting either peer, resolves a
+  binary fixture only below tools/oracle/fixtures/websocket-oracle/, and rejects a path such as ../outside.bin. A
+  decoded case cannot create an unbounded allocation, detached task or unreaped child. The fuzz target and
+  websocket_oracle::tests::replays_corpus call decode_ws_case directly.
 
+  The gateway driver boots both proxies and selects a route from the booted gateway. It supports the three pinned
+  aliases /openai/v1/realtime, /v1/realtime and /realtime. A valid model=realtime-a handshake expects HTTP 101 and
+  one upstream connection for each alias. With valid authentication, no model and no intent expects bare HTTP 403 before
+  upgrade; intent=transcription with no model authorizes gpt-realtime-whisper and sends upstream only
+  intent=transcription. Only explicit model and intent enter the upstream query. For guardrails=" first, ,second ",
+  the route observation is data.guardrails=["first","second"] and no upstream guardrails key. The first nonempty
+  trimmed token in Sec-WebSocket-Protocol=" realtime, second " is negotiated as realtime; an absent protocol header
+  leaves negotiated_subprotocol empty. A gateway case selecting a service driver is rejected before a socket starts.
 
-  The default driver is gateway and always boots both proxies. A separate service driver is an externally tagged
-  ServiceCall with typed arguments and scripted client frames: native_responses_relay, managed_responses_turns or
-  realtime_probe. It invokes only the pinned native service entry point, never a FastAPI route; the Rust driver
-  invokes the corresponding production service. Both independently connect to the scripted B901 upstream WebSocket
-  server, capture handshake/frames/close, and receive a bounded scripted client sink. This makes lower service tasks
-  testable without depending on a route that calls them. Service adapters are registered by the service-owning tasks;
-  gateway route/auth cases may not select this driver.
+  The externally tagged service driver accepts only native_responses_relay, managed_responses_turns and realtime_probe.
+  It sends one JSON object on stdin, {operation: <service tag>, input: <typed arguments and scripted frames>}, to
+  tools/oracle/helpers/websocket_dispatch.py as a fresh bounded child. The child returns one JSON object on stdout,
+  either {ok: <transcript result>} or {error: {class, status, type, param, code, message}}, and writes diagnostics on
+  stderr. register_service(tag, adapter) is the only registration point; an unknown tag fails before a service or
+  upstream connection starts. B943, B945 and B1011 register their own tags once and service execution uses the native
+  service entry point, not a FastAPI handler. A service connects independently to its scripted upstream WebSocket.
 
+  Provider fixtures preserve these pinned OpenAI realtime observations. query_params=None becomes {model: realtime-a}
+  for the service call, query_params={} stays empty, and a nonempty mapping keeps its supplied key/value order. The
+  default base https://api.openai.com/ becomes wss://api.openai.com/v1/realtime; http://provider.test/ becomes
+  ws://provider.test/v1/realtime; the path is always /v1/realtime. OpenAI-Beta: realtime=v1 is forwarded only when
+  the client sent that header. api_key=None returns ValueError with message "api_key is required for OpenAI realtime
+  calls". Auth fixtures compare Authorization: Bearer sk-test before api-key: sk-test, then the first matching
+  openai-insecure-api-key.sk-test subprotocol. No credential returns HTTP 403 detail "No API key provided" after an
+  attempted close code 1008; Authorization: Basic wrong returns HTTP 403 detail "Invalid Authorization header format"
+  after the same attempted code.
 
-  Implement tools/oracle/src/websocket_oracle.rs. Use WebsocketOracleInput and WebsocketOracleResult with typed
-  nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
-  constructors. Define OracleLimits for the concrete harness caps above; product ApiLimits is not a tooling dependency.
+  After the client receives HTTP 101, an upstream handshake refusal status 401, 403, 429 or 503 produces an error event
+  of type server_error with the literal message "Upstream realtime handshake rejected with HTTP <status>" and closes
+  with 1008, 1008, 1013 or 1011 respectively. The event has no param or code field. These four status-to-close-code
+  values and the message are compared from B1004's pinned realtime_errors.py contract. B901 adds no database write,
+  environment read, warning-and-drop branch or provider transform; its adapters record observations and return them to
+  the transcript comparator. B1011/B528 supply resolved values for REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS
+  (LiteLLM's unset default is the string "20.0", parsed as 20.0) and
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES (LiteLLM's unset default is None); B901 does not load either variable.
 
+  Implement tools/oracle/src/websocket_oracle.rs and websocket_driver modules with typed records plus injected clock,
+  transport, repository and resolved-settings interfaces. Add behavior tests named transcript_schema, bounded_inputs,
+  direction_order, barrier_gates_send, preaccept_status, route_aliases, service_driver_isolation, realtime_route_inputs,
+  provider_preparation, websocket_auth, upstream_refusal and changed_peer under websocket_oracle::tests. Keep
+  websocket_oracle::tests::replays_corpus as the sole corpus replay name. Self-check must continue to run existing
+  health and chat HTTP cases through their old driver.
 
-  Write adjacent tests.rs behavior functions per_direction_order, barrier_gates_send, preaccept_http_status, service_driver_isolation,
-  rejects_unknown_field, rejects_duplicate_field, detects_changed_peer, rejects_oversize_input, preserves_legacy_cases
-  under websocket_oracle::tests. Each named function drives production code and asserts its case result; use named
-  rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+  LiteLLM ownership is protocol context only: B1125 owns proxy_server.py:12856-13045 and all three route aliases; B528
+  owns every OpenAIRealtime callable in handler.py:35-190; B756 owns user_api_key_auth_websocket_for_model in
+  user_api_key_auth.py:648-707; B1004 owns realtime_errors.py:41-71; and B1011/B528 own the two environment-backed
+  constants. B901 owns no LiteLLM callable. The pinned README documents /v1/realtime, intent=transcription,
+  /v1/realtime/client_secrets, /v1/realtime/transcription_sessions and providers OpenAI, Azure OpenAI, Bedrock,
+  Vertex AI and xAI. The source references below are the checked protocol inputs for the fixtures, not new ownership.
 
-
-  The production external-byte decoder is betterlite-oracle::websocket_oracle::decode_ws_case(bytes: &[u8], limits:
-  &OracleLimits), for bounded transcript YAML. Place its implementation in tools/oracle/src/websocket_oracle.rs
-  and call it from the actual boundary. The cargo-fuzz target tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs
-  passes arbitrary bounded bytes to that exact decoder; websocket_oracle::tests::replays_corpus replays newly committed
-  seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 0 owned nonblank/non-comment/non-docstring Python lines (0 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 320 implementation,
-  94 behavior tests, 80 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 584 total within the 590-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Sizing: the task owns 0 nonblank, non-comment LiteLLM implementation lines. Allow 330 implementation/tooling lines,
+  125 native behavior-test lines, 95 transcript-fixture lines, 60 decoder fuzz/replay lines and 30 wiring lines, for a
+  640-line changed-line budget. Its direct implementation input is B171's oracle runner and URL path encoding; route
+  and provider tasks register adapters and consume this harness.
 scope:
   paths:
   - tools/oracle/Cargo.toml
@@ -84,101 +105,207 @@ scope:
   - tools/oracle/helpers/websocket_dispatch.py
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12856-L13045
-  why: Pinned HTTP/protocol contract used by this tooling extension.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/handler.py#L85-L170
-  why: Pinned HTTP/protocol contract used by this tooling extension.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L676-L707
-  why: Pinned HTTP/protocol contract used by this tooling extension.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/README.md#L1-L8
+  why: Lines 1-8 identify the documented WebSocket route /v1/realtime, transcription intent, sibling HTTP paths and the five provider labels that the fixture metadata must accept.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12856-L12979
+  why: Lines 12856-12979 show the three decorators, null query defaults, protocol-token selection, gpt-realtime-whisper fallback, 1008 model refusal and explicit model/intent plus trimmed guardrail projection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12979-L13045
+  why: Lines 12979-13045 define the pre-call error event and 1011 reason, the InvalidStatus handoff, the redacted server-error branch and the ordered finally cleanup that route transcripts must be able to record.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/handler.py#L35-L107
+  why: Lines 35-107 supply the OpenAI base URL https://api.openai.com/, Authorization and conditional OpenAI-Beta headers, URL scheme/path rewriting, query insertion and the None event-normalizer result.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/handler.py#L109-L190
+  why: Lines 109-190 define api_base and api_key failure order, query_params=None model insertion, the connect metadata and max-size setting, plus InvalidStatus delegation and the 1011 exception close.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L648-L707
+  why: >-
+    Lines 648-707 define the whole WebSocket credential callable: Authorization then api-key then the first matching
+    openai-insecure-api-key. subprotocol, and the exact 403 details with attempted 1008 closes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L335-L342
+  why: Lines 335-342 show that REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES is None when unset and REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS parses the default string "20.0"; B901 receives these resolved settings from B1011/B528.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_errors.py#L41-L71
+  why: >-
+    Lines 41-71 are B1004's checked close contract: 401 and 403 map to 1008, 429 maps to 1013, every other status
+    including 503 maps to 1011, and the refusal event message is exactly "Upstream realtime handshake rejected with
+    HTTP <status>".
 dod:
-- text: 'per direction order: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    transcript_schema decodes kind=websocket with path=/v1/realtime, headers={}, requested_subprotocols=[],
+    expected_http_status=101, negotiated_subprotocol=null, one text client_to_provider send and one text
+    provider_to_client expect; the same decoder rejects an unknown field and a duplicate field before either peer
+    process is started.
   proof:
-  - case-per-direction-order
-- text: 'barrier gates send: the named production behavior test asserts the result and effects described above.'
+  - case-transcript-schema
+- text: >-
+    bounded_inputs rejects 1025 frames, a 1_048_577-byte frame, 16_777_217 captured bytes and a 121-second
+    execution, while accepting exactly 1024 frames, 1_048_576 bytes, 16_777_216 bytes and 120 seconds; a binary
+    fixture path ../outside.bin is rejected and a timed child is reaped.
   proof:
+  - case-bounded-inputs
+  - parser-corpus
+- text: >-
+    direction_order accepts provider frames [ready, delta] and client frames [setup, followup] in global order
+    setup, ready, delta, followup, and barrier_gates_send holds client send followup until provider observation
+    after_provider_ready exists.
+  proof:
+  - case-direction-order
   - case-barrier-gates-send
-- text: 'preaccept http status: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    preaccept_status records a route refusal as HTTP 403 with no accepted close frame, while route_aliases selects
+    /openai/v1/realtime, /v1/realtime and /realtime exactly once and boots both proxies without duplicate route
+    registration.
   proof:
-  - case-preaccept-http-status
-- text: 'service driver isolation: the named production behavior test asserts the result and effects described above.'
+  - case-preaccept-status
+  - case-route-aliases
+  - gateway-self-check
+- text: >-
+    service_driver_isolation dispatches native_responses_relay, managed_responses_turns and realtime_probe only to
+    their registered typed adapters, rejects an unknown tag before opening a socket, and rejects service-driver
+    selection from a gateway case; the adapter observes its independently scripted upstream.
   proof:
   - case-service-driver-isolation
-- text: 'rejects unknown field: the named production behavior test asserts the result and effects described above.'
+- text: >-
+    realtime_route_inputs compares model=realtime-a as HTTP 101 with one upstream connection on all three aliases,
+    model absent with no intent as HTTP 403, intent=transcription with no model as route model gpt-realtime-whisper
+    and upstream query intent=transcription without model, guardrails=" first, ,second " as
+    data.guardrails=["first","second"] without an upstream guardrails key, and protocol " realtime, second " as
+    negotiated realtime.
   proof:
-  - case-rejects-unknown-field
-- text: 'rejects duplicate field: the named production behavior test asserts the result and effects described above.'
+  - case-realtime-route-inputs
+- text: >-
+    provider_preparation compares query_params=None as {model: realtime-a}, query_params={} as an empty query,
+    supplied pairs in order, https://api.openai.com/ as wss://api.openai.com/v1/realtime, http://provider.test/ as
+    ws://provider.test/v1/realtime, OpenAI-Beta: realtime=v1 only when supplied, and api_key=None as ValueError
+    message "api_key is required for OpenAI realtime calls".
   proof:
-  - case-rejects-duplicate-field
-- text: 'detects changed peer: the named production behavior test asserts the result and effects described above.'
+  - case-provider-preparation
+- text: >-
+    websocket_auth compares Authorization: Bearer sk-test, api-key: sk-test and the first matching
+    openai-insecure-api-key.sk-test subprotocol as credentials; absent credentials return HTTP 403 detail "No API key
+    provided", Authorization: Basic wrong returns HTTP 403 detail "Invalid Authorization header format", both have
+    zero provider connections and attempted close code 1008, and Authorization takes precedence over api-key.
   proof:
-  - case-detects-changed-peer
-- text: 'rejects oversize input: the named production behavior test asserts the result and effects described above.'
+  - case-websocket-auth
+- text: >-
+    upstream_refusal compares mock statuses 401, 403, 429 and 503 after client HTTP 101 as a server_error event
+    with the exact substituted message "Upstream realtime handshake rejected with HTTP <status>" and close codes
+    1008, 1008, 1013 and 1011; the event has no param or code field and the close reason is the same literal message.
   proof:
-  - case-rejects-oversize-input
-- text: 'preserves legacy cases: the named production behavior test asserts the result and effects described above.'
+  - case-upstream-refusal
+- text: >-
+    changed_peer identifies the first changed client frame, provider frame or close field with its peer label and
+    stable JSON pointer, while legacy-dispatch keeps existing health and chat HTTP cases on the old driver and corpus
+    replay calls decode_ws_case directly.
   proof:
-  - case-preserves-legacy-cases
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
+  - case-changed-peer
+  - legacy-self-check
   - parser-corpus
-- text: Independent harness runs include deliberate comparator mismatches and preserve existing chat/health cases.
-  proof:
-  - behavior-tests
-  - harness-self-check
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    why: The WebSocket oracle module has no production-backed behavior tests, or only its corpus replay exists.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::/) - test(/::replays_corpus$/)'
-  - id: case-per-direction-order
-    why: the per-direction-order behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::per_direction_order($|::)/)'
+  - id: case-transcript-schema
+    why: The decoder accepts a malformed discriminator, missing frame shape, unknown field or duplicate field, or starts a peer before rejecting it.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::transcript_schema($|::)/)'
+  - id: case-bounded-inputs
+    why: A concrete frame, traffic, execution, fixture-root or child-lifecycle boundary is missing.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::bounded_inputs($|::)/)'
+  - id: case-direction-order
+    why: The comparator requires a single global event order instead of the two direction-local sequences.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::direction_order($|::)/)'
   - id: case-barrier-gates-send
-    why: the barrier-gates-send behavior or its assertions are absent
+    why: A client frame with after_provider_ready is sent before its named provider observation.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::barrier_gates_send($|::)/)'
-  - id: case-preaccept-http-status
-    why: the preaccept-http-status behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::preaccept_http_status($|::)/)'
+  - id: case-preaccept-status
+    why: The driver turns an HTTP 403 before upgrade into an accepted socket close or loses the absence of a close frame.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::preaccept_status($|::)/)'
+  - id: case-route-aliases
+    why: The gateway driver cannot select one alias or mounts the realtime handler more than once.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::route_aliases($|::)/)'
   - id: case-service-driver-isolation
-    why: the service-driver-isolation behavior or its assertions are absent
+    why: An unregistered service tag starts a child or provider socket, or a registered service is routed through FastAPI.
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::service_driver_isolation($|::)/)'
-  - id: case-rejects-unknown-field
-    why: the rejects-unknown-field behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::rejects_unknown_field($|::)/)'
-  - id: case-rejects-duplicate-field
-    why: the rejects-duplicate-field behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::rejects_duplicate_field($|::)/)'
-  - id: case-detects-changed-peer
-    why: the detects-changed-peer behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::detects_changed_peer($|::)/)'
-  - id: case-rejects-oversize-input
-    why: the rejects-oversize-input behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::rejects_oversize_input($|::)/)'
-  - id: case-preserves-legacy-cases
-    why: the preserves-legacy-cases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::preserves_legacy_cases($|::)/)'
+  - id: case-realtime-route-inputs
+    why: The gateway transcript loses a named realtime alias, default model, query projection, guardrail value or protocol negotiation.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::realtime_route_inputs($|::)/)'
+  - id: case-provider-preparation
+    why: The service transcript changes the pinned OpenAI URL, query insertion, header forwarding or missing-key exception.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::provider_preparation($|::)/)'
+  - id: case-websocket-auth
+    why: The transcript changes credential precedence or either exact preaccept 403 detail and attempted 1008 close.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::websocket_auth($|::)/)'
+  - id: case-upstream-refusal
+    why: A refusal status changes the exact server_error message, status mapping, close reason or absence of param/code fields.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::upstream_refusal($|::)/)'
+  - id: case-changed-peer
+    why: A changed frame or close reports the wrong peer or an unstable comparison pointer.
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::changed_peer($|::)/)'
   - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/websocket_oracle)"
-      && test -f tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs && grep -qF "decode_ws_case" tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::replays_corpus$/)'
-  - id: harness-self-check
-    why: new harness fixtures or backwards-compatible HTTP modes fail
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/websocket-oracle)"
-      && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/websocket-oracle
-      tools/oracle/cases/chat tools/oracle/cases/health
-oracle_cases: []
+    why: The committed fuzz target or replay does not invoke decode_ws_case, or no websocket seed was added.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/websocket_oracle)" && test -f tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs && grep -qF "decode_ws_case" tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::replays_corpus$/)'
+  - id: legacy-self-check
+    why: Adding WebSocket dispatch changes the existing health or chat HTTP execution path.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/websocket-oracle)" && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/websocket-oracle tools/oracle/cases/chat tools/oracle/cases/health
+  - id: gateway-self-check
+    why: The new gateway fixtures do not boot both proxies or omit one of the three realtime aliases.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/websocket-oracle)" && grep -R -qE '/(openai/v1/realtime|v1/realtime|realtime)' tools/oracle/cases/harness/websocket-oracle
+oracle_cases:
+- tools/oracle/cases/harness/websocket-oracle/transcript-schema.yaml
+- tools/oracle/cases/harness/websocket-oracle/bounded-inputs.yaml
+- tools/oracle/cases/harness/websocket-oracle/direction-order.yaml
+- tools/oracle/cases/harness/websocket-oracle/barrier-gates-send.yaml
+- tools/oracle/cases/harness/websocket-oracle/preaccept-status.yaml
+- tools/oracle/cases/harness/websocket-oracle/route-aliases.yaml
+- tools/oracle/cases/harness/websocket-oracle/service-driver-isolation.yaml
+- tools/oracle/cases/harness/websocket-oracle/realtime-route-inputs.yaml
+- tools/oracle/cases/harness/websocket-oracle/provider-preparation.yaml
+- tools/oracle/cases/harness/websocket-oracle/websocket-auth.yaml
+- tools/oracle/cases/harness/websocket-oracle/upstream-refusal.yaml
+- tools/oracle/cases/harness/websocket-oracle/changed-peer.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- >-
+  B1125 owns the complete proxy_server.py:12856-13045 call graph, including _realtime_query_params_template,
+  _release_realtime_budget_reservation, _release_realtime_max_parallel_slot, _reject_realtime_session, its nested
+  return_body and realtime_websocket_endpoint. It also owns the three route aliases, route authentication handoff,
+  guardrail lifecycle, redaction, cleanup order, database/budget effects and every warn-and-drop debug path in that
+  range; B901 only supplies transcript inputs and records observations.
+- >-
+  B528 owns the complete OpenAIRealtime handler.py:35-190 call graph: _get_default_api_base, _get_additional_headers,
+  _get_ssl_config, _construct_url, _make_event_normalizer and async_realtime. B901 does not open a provider socket or
+  read provider settings.
+- >-
+  B756 owns user_api_key_auth_websocket_for_model and its nested return_body in user_api_key_auth.py:648-707, including
+  Authorization/api-key/subprotocol precedence, user key lookup and the 403/1008 failure paths.
+- >-
+  B1004 owns realtime_errors.py:41-71, including client_close_code, upstream_handshake_close_code and
+  close_after_upstream_handshake_refusal. B901 tests their 401/403/429/503 outputs through a mock provider but does not
+  reimplement the mapping or event serializer.
+- >-
+  B1011 and B528 own loading REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS (unset string default "20.0", parsed as
+  20.0) and REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES (unset default None). B901 receives resolved settings and
+  performs no environment read.
+- >-
+  Provider frame transformations, route lifecycle calls, credential persistence, database writes and provider-specific
+  service adapters remain with B1004, B1125, B528, B756, B943, B945 and B1011 as applicable; B901 has no database or
+  warning-and-drop behavior of its own.
 pitfalls:
-- Realtime OpenAI forces upstream /v1/realtime and rewrites http:// to ws://.
-- OpenAI-Beta is forwarded only if the client sent it; the first requested subprotocol is echoed.
-- WebSocket credentials may arrive through Authorization, api-key or an openai-insecure-api-key. subprotocol.
-review_level: standard
+- >-
+  A preaccept refusal is reported by the HTTP handshake, so storing the route's attempted 1008 as an accepted client
+  close makes a valid 403 transcript fail.
+- >-
+  The transcription fallback has two different values: route authorization uses gpt-realtime-whisper, while the
+  explicit upstream query contains only intent=transcription; one fixture field must not be reused for the other.
+- >-
+  The first matching credential subprotocol is not the negotiated protocol: auth extracts
+  openai-insecure-api-key.sk-test, while the route negotiates the first nonempty token realtime.
+- >-
+  A duplicate YAML mapping key can be silently overwritten by a generic YAML value parser; duplicate detection must
+  happen before typed decoding and before child startup.
+- >-
+  The refusal table's 503 entry is the default 1011 branch rather than an explicit dictionary entry; a status-only
+  lookup that handles only the listed 401, 403 and 429 keys produces the wrong transcript.
+review_level: security
 budget:
-  max_changed_lines: 590
+  max_changed_lines: 640
   max_new_expects: 0

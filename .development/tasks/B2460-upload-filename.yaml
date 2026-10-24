@@ -1,0 +1,71 @@
+id: B2460
+title: Shared upload filename extraction
+description: >-
+  Implement path_utils.safe_filename as the shared pure basename operation in
+  betterlite-core::api::upload_filename. It replaces every backslash with / and takes the last
+  component, rejecting a NUL anywhere in the original input and a final component of empty, . or .. .
+  It does not resolve paths, trim spaces or reject earlier traversal components: the upload guard
+  in B1022 makes that separate decision. Storage tasks use this basename without accepting a local
+  destination from the request. Export a typed error preserving the ValueError branch.
+
+  This is split from B1022 because owning its previously unassigned callee plus parity tests takes
+  that task past 800 changed lines. The complete function has 19 nonblank, non-comment physical
+  lines including its docstring. Allow 40 implementation, 80 tests, 50 fixtures, 75 helper adapter
+  and 25 wiring lines within a 400-line gate. No byte decoder or settings are introduced; strings
+  have already crossed their caller's bounded decoder. Put basename_cases in the adjacent tests
+  and register B171's upload_filename operation with independently called Python/Rust functions.
+scope:
+  paths:
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/upload_filename.rs
+  - crates/betterlite-core/src/api/upload_filename/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/upload_filename.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/upload_filename.py
+  - tools/oracle/fuzz/corpus/helper_case/upload_filename-*
+  - tools/oracle/cases/helpers/upload-filename/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/path_utils.py#L72-L96
+  why: Owns the complete safe_filename function, including cross-platform separators and both ValueError messages.
+dod:
+- text: >-
+    basename_cases sends a/b.txt, C:\temp\b.txt, ../b.txt and a\b/c.txt and expects b.txt, b.txt,
+    b.txt and c.txt. .env, report..pdf and " name " retain those exact values. Empty input, a/,
+    . and .. raise ValueError "Empty or unsafe filename"; a NUL anywhere raises ValueError
+    "Filename contains null byte" before basename extraction. Pure errors carry no HTTP fields.
+  proof: [basename-tests, oracle, helper-python]
+- text: Basename fixtures and an upload_filename parser seed are new and execute both implementations.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: basename-tests
+    why: shared upload basename behavior is missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::upload_filename::tests::basename_cases($|::)/)'
+  - id: helper-python
+    why: the Python basename adapter cannot run
+    run: test -f tools/oracle/helpers/upload_filename.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new basename tag lacks a parser seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/upload_filename-*)" && grep -qE '^[[:space:]]+upload_filename:' tools/oracle/fuzz/corpus/helper_case/upload_filename-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no differential basename inputs were added
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/upload-filename)"
+oracle_cases:
+- tools/oracle/cases/helpers/upload-filename/basename-cases.yaml
+deviations: []
+out_of_scope:
+- B124 retains safe_join, try_safe_join, is_within and join_within in path_utils.py; none is called by safe_filename.
+pitfalls:
+- A NUL in a discarded directory component still raises before the basename is extracted.
+- safe_filename accepts ../b.txt as b.txt; B1022 separately refuses traversal in an upload name.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

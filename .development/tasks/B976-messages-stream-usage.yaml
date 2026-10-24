@@ -1,187 +1,123 @@
 id: B976
-title: Messages stream usage
+title: Maintain Messages stream state, usage and compaction blocks
 description: >-
-  Implement streamed Messages usage/stop-reason retention, initial usage, compaction events, refusal details and
-  content-block start decisions. Keep state per response and feed the event driver only typed transitions.
+  Build api::messages_stream_usage from AnthropicStreamWrapper's constructor/defaults, properties and state
+  helpers at adapters/streaming_iterator.py L310-L546 and L1046-L1201. This task never advances a live provider
+  stream: B977 and its synchronous part drive these transitions. Store every mutable field per instance, wrap
+  the input with B975's splitter, use B966's usage/content translation, B963 refusal helpers and B571's empty
+  unsigned-thinking predicate. B968 supplies compaction result records.
 
-
-  Implement crates/betterlite-core/src/api/messages_stream_usage.rs. Use MessagesStreamUsageInput and MessagesStreamUsageResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions held_stop_reason_usage, compaction_event_before_text, blank_delta_no_block,
-  tool_boundary_new_block, refusal_stop_details under api::messages_stream_usage::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesStreamUsage in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_stream_usage: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper.__init__
-  (L320-L366); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper.chunks
-  (L369-L372); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper.messages
-  (L375-L378); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._merge_usage_into_held_stop_reason_chunk
-  (L380-L403); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._handle_choiceless_chunk
-  (L405-L423); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._ensure_context_management_attached
-  (L425-L438); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._augment_message_delta_usage
-  (L440-L472); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._next_compaction_event
-  (L474-L525); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._create_initial_usage_delta
-  (L527-L546); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._increment_content_block_index
-  (L1046-L1047); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._with_refusal_stop_details
-  (L1049-L1068); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._delta_has_content
-  (L1071-L1107); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._is_blank_delta
-  (L1110-L1137); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper._should_start_new_content_block
-  (L1139-L1201). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 210 owned nonblank/non-comment/non-docstring Python lines (292 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 230 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 480 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B968 (Messages context clear), B975
-  (Messages stream split), B1087 (Api boundaries), B966 (Messages chat output), B963 (Messages options). These are
-  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
-  provider and keys/data branches.
+  Generate one msg_<UUID> id per instance and report it through an injected B247 logging-state recorder when
+  present. B247's task does not yet name record_streamed_anthropic_message_id; keep that narrow setter seam
+  explicit for the architect rather than adding logging persistence here. HelperCall::MessagesStreamUsage
+  applies finite typed state operations, returning each event and state snapshot; Python constructs a real
+  wrapper with an inert input. Normalize only the generated UUID while comparing equality across recording and
+  output. No byte parser or provider request is hidden in this helper. Own 301 nonblank/non-comment physical
+  lines including defaults. Budget 255 implementation, 170 tests, 160 fixtures, 100 adapters and 35 wiring,
+  720 total. Place tests under api::messages_stream_usage.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_stream_usage.rs
   - crates/betterlite-core/src/api/messages_stream_usage/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_stream_usage.rs
-  - tools/oracle/src/helpers/messages_stream_usage/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_stream_usage.py
-  - tools/oracle/helpers/messages_stream_usage/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_stream_usage-*
   - tools/oracle/cases/helpers/messages-stream-usage/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_stream_usage-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L320-L546
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L310-L546
+  why: Per-instance construction, held-stop usage replacement, context edits and one-at-a-time synthetic compaction events.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1046-L1201
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Refusal precedence, nonempty-delta predicates and transitions between text, thinking and named tools.
 dod:
-- text: 'held stop reason usage: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-held-stop-reason-usage
-  - oracle
-- text: 'compaction event before text: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-compaction-event-before-text
-  - oracle
-- text: 'blank delta no block: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-blank-delta-no-block
-  - oracle
-- text: 'tool boundary new block: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-boundary-new-block
-  - oracle
-- text: 'refusal stop details: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-refusal-stop-details
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    stream_state_initialization has index0,type=text,start={type:text,text:""},all sent/queued flags false,
+    empty queue/refusal text/tool map/applied edits and null held chunks. Initial usage is exactly input_tokens=0,
+    output_tokens=0,cache_creation_input_tokens=0,cache_read_input_tokens=0. Two instances get independent queues,
+    mutable block starts and msg_<UUID> ids; the optional recorder receives that exact id once. chunks/messages
+    properties forward through the splitter, or return null when absent. Copy the applied-edit list.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    held_usage_replaces_placeholder holds a message_delta with stop_reason=end_turn and usage0/0, then merges
+    a chunk whose B966 usage maps to input5,output2,cache_read3. Preserve stop fields, add delta={} if missing,
+    replace rather than add usage and attach applied edits only if context_management is absent. Choiceless
+    chunk with non-null usage and a held stop queues this result, sets queued_usage_chunk=true and clears the
+    held stop. Without both prerequisites return false with no queue or state change. Merge without a held
+    stop is an invalid-state error, not an unchecked panic in native code.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    compaction_usage_iterations uses summary iterations [{type:compaction,input_tokens:12,output_tokens:3}]
+    and message usage5/2 to append {type:message,input_tokens:5,output_tokens:2}. With0/0 or null/missing counters,
+    include only the supplied summary iterations. An existing iterations key, including null/[], blocks replacement;
+    absent/non-dict usage also prevents it. iterations_usage=null does nothing but still attaches nonempty
+    applied_edits when context_management is absent; an existing context_management=null is retained.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    compaction_three_step_lifecycle starts at index0 with compaction content=S. Consecutive calls yield
+    content_block_start index0 content_block={type:compaction,content:""}, content_block_delta index0
+    delta={type:compaction_delta,content:S}, then content_block_stop index0. Only the third increments index to1
+    and marks sent_compaction_block; none changes sent_content_block_finish. Fourth call returns null. Null/empty
+    summary becomes "" in the delta; absent block emits nothing. Flags change only when their event is returned.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    nonempty_delta_predicates accepts only content_block_delta with dict delta and a truthy text,partial_json,
+    thinking or signature selected by text_delta,input_json_delta,thinking_delta,signature_delta. Unknown type,
+    compaction_delta,empty payload and other outer types return false. A raw chunk is blank only when it has no
+    finish,tools,content,refusal,reasoning_content or nonempty/signed thinking block. Signed empty thinking is
+    nonblank; all empty unsigned thinking and non-dict entries are blank. A finish_reason="" is still nonblank.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    content_boundary_and_tool_restore supplies text then reasoning then named tool short with map short->long.
+    Type change updates current type/start and returns true; tool name is restored to long before storage.
+    A further named tool of the same type starts another block; nameless argument continuation does not.
+    Same-type text returns false without replacing the current start. A finish chunk returns false before
+    refusal collection. Refusal fragments concatenate in arrival order even on same-type content chunks.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    refusal_stop_precedence accumulates "No" and " thanks". A final message_delta end_turn becomes
+    stop_reason=refusal,stop_details={type:refusal,category:null,explanation:"No thanks"}; max_tokens remains max_tokens without
+    inserted stop_details. Nonterminal content and empty refusal leave the processed event unchanged. Other
+    fields in delta and the outer event survive this copied update.
+  proof: [behavior-tests, oracle, helper-python]
+- text: State fixtures are new, use independent wrapper transitions and select messages_stream_usage through the oracle parser.
+  proof: [new-cases, corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::/)
-      - test(/::replays_corpus$/)'
-  - id: case-held-stop-reason-usage
-    why: the held-stop-reason-usage behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::tests::held_stop_reason_usage($|::)/)'
-  - id: case-compaction-event-before-text
-    why: the compaction-event-before-text behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::tests::compaction_event_before_text($|::)/)'
-  - id: case-blank-delta-no-block
-    why: the blank-delta-no-block behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::tests::blank_delta_no_block($|::)/)'
-  - id: case-tool-boundary-new-block
-    why: the tool-boundary-new-block behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::tests::tool_boundary_new_block($|::)/)'
-  - id: case-refusal-stop-details
-    why: the refusal-stop-details behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::tests::refusal_stop_details($|::)/)'
+    why: stream usage or a state transition has no adjacent production test
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_usage::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_stream_usage.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_stream_usage-*)"
-      && grep -qE "^[[:space:]]+messages_stream_usage:" tools/oracle/fuzz/corpus/helper_case/messages_stream_usage-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the inert-wrapper comparison is absent or fails strict checking
+    run: test -f tools/oracle/helpers/messages_stream_usage.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpus
+    why: state-transition inputs cannot enter the helper protocol
+    run: grep -qE '^[[:space:]]+messages_stream_usage:' tools/oracle/fuzz/corpus/helper_case/messages_stream_usage-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no new usage, refusal or compaction-state fixtures were authored
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-stream-usage)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-stream-usage/held-stop-reason-usage.yaml
-- tools/oracle/cases/helpers/messages-stream-usage/compaction-event-before-text.yaml
-- tools/oracle/cases/helpers/messages-stream-usage/blank-delta-no-block.yaml
-- tools/oracle/cases/helpers/messages-stream-usage/tool-boundary-new-block.yaml
-- tools/oracle/cases/helpers/messages-stream-usage/refusal-stop-details.yaml
+- tools/oracle/cases/helpers/messages-stream-usage/stream-state-initialization.yaml
+- tools/oracle/cases/helpers/messages-stream-usage/held-usage-replaces-placeholder.yaml
+- tools/oracle/cases/helpers/messages-stream-usage/compaction-usage-iterations.yaml
+- tools/oracle/cases/helpers/messages-stream-usage/compaction-three-step-lifecycle.yaml
+- tools/oracle/cases/helpers/messages-stream-usage/nonempty-delta-predicates.yaml
+- tools/oracle/cases/helpers/messages-stream-usage/content-boundary-and-tool-restore.yaml
+- tools/oracle/cases/helpers/messages-stream-usage/refusal-stop-precedence.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: B975 owns _ChunkStream.__iter__ L51-L51,
-  _ChunkStream.__aiter__ L53-L53, _optional_attr L56-L57, _optional_attr_sequence L60-L62, _error_status_and_message
-  L65-L68, _mid_stream_error_sse_event L71-L77, _delta_payload_field L80-L91, _CombinedChunkSplitter.__init__ L114-L118,
-  _CombinedChunkSplitter.chunks L121-L124, _CombinedChunkSplitter.messages L127-L130, _CombinedChunkSplitter._is_combined
-  L133-L154, _CombinedChunkSplitter._clear_usage L163-L168, _CombinedChunkSplitter._split_by_payload_kind L171-L214,
-  _CombinedChunkSplitter._normalize_reasoning_fields L217-L238, _CombinedChunkSplitter._split L241-L261, _CombinedChunkSplitter.__iter__
-  L263-L264, _CombinedChunkSplitter.__next__ L266-L277, _CombinedChunkSplitter.__aiter__ L279-L280, _CombinedChunkSplitter.__anext__
-  L282-L293.'
-- 'litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: B977 owns AnthropicStreamWrapper.__next__
-  L548-L781, AnthropicStreamWrapper.__anext__ L783-L1011, AnthropicStreamWrapper.anthropic_sse_wrapper L1013-L1027,
-  AnthropicStreamWrapper.async_anthropic_sse_wrapper L1029-L1044, AnthropicSSEStream.__init__ L1212-L1215, AnthropicSSEStream.chunks
-  L1218-L1219, AnthropicSSEStream.messages L1222-L1223, AnthropicSSEStream.model L1226-L1227, AnthropicSSEStream.__anext__
-  L1229-L1230, AnthropicSSEStream.aclose L1232-L1233.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B975 owns adapters/streaming_iterator.py L43-L293 splitter/error helpers; B977 and its sync part own all iteration/SSE methods L548-L1044 and AnthropicSSEStream L1212-L1233.
+- B966 owns usage arithmetic and chunk translation; B571 defines empty unsigned thinking, B963 refusal extraction/details.
+- B247 owns the logging record setter. Logging persistence and main completion HTTP are not state-helper work.
 pitfalls:
-- Within AnthropicStreamWrapper._handle_choiceless_chunk\'s self.holding_stop_reason_chunk is not None and _optional_attr(chunk,
-  'usage') is not None branch, preserve return True and its nested guards.
-- Within AnthropicStreamWrapper._ensure_context_management_attached\'s not self.applied_edits or 'context_management'
-  in message_delta_chunk branch, preserve return message_delta_chunk and its nested guards.
+- Presence of context_management or usage.iterations blocks augmentation even when its value is null.
+- The compaction stop advances the index without marking an ordinary content block finished.
+- Refusal cannot override max_tokens, and its fragments must accumulate before the terminal event.
 review_level: standard
 budget:
-  max_changed_lines: 480
-  max_new_expects: 1
+  max_changed_lines: 750
+  max_new_expects: 0

@@ -1,91 +1,36 @@
 id: B1011
-title: Realtime connect
+title: Realtime SDK connection dispatch
 description: >-
-  Connect realtime WebSockets using provider-specific B010 endpoint/config preparation and bounded credential acquisition.
-  Implement the health probe with source GA/beta/transcription selection and B009 TLS policy, then execute the client/backend
-  relay with immutable authorized model.
+  Own the entire decorated _arealtime function, including its nested refresh callback, plus
+  _build_litellm_metadata,vertex_access_token_resolver and _resolve_vertex_access_token_bounded
+  in betterlite-core::api::realtime_connect. B1127 owns health probes, not half of this connector.
+  B174 resolves identity, B176 projects litellm params, and B157 selects realtime config. Generic
+  configs use B2457. Direct branches call B545 Azure, B528 OpenAI, B666 Bedrock and B1405 xAI;
+  Vertex uses B1303 tokens, B1365 config selection and B2457. Gemini/Meta configs stay with
+  B1378/B1382 and B039. Preserve each branch's exact credential/header arguments.
 
+  All optional named arguments default None. headers=None becomes {}; extra_headers overlays it
+  when not None, mutating the caller header map in the source. Resolve model using named api_base/key.
+  Copy query_params when supplied and replace its model only if that key exists; no implicit model
+  is inserted for intent=transcription. Logging receives normalized model,user,optional_params={},
+  B176 params plus arealtime=true. Metadata starts with a copy of litellm_metadata and overrides its
+  guardrails only from truthy metadata.guardrails or kwargs.guardrails; it is internal, not a URL field.
 
-  B1127 supplies the provider connection plan. Add B901 transcripts for connect, model normalization and upstream
-  refusal; drop the artificial connect-timeout case because the OpenAI handler ignores timeout. Health checks use
-  configured transports and B1001 health audio.
+  B002 loads global api_base,api_key,openai_key,xai_key,vertex_project,vertex_location (None), and unset
+  AZURE_API_BASE,AZURE_API_KEY,OPENAI_API_KEY,XAI_API_BASE,XAI_API_KEY,LITELLM_AZURE_REALTIME_PROTOCOL,
+  VERTEXAI_CREDENTIALS,VERTEXAI_PROJECT,VERTEXAI_LOCATION. REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS
+  defaults20.0 and uses float parsing. loads_realtime_connection_settings tests every setting through
+  the real loader, with new YAML seeds. B529 owns Azure AD resolution and B1402 xAI key selection.
 
-
-  B901 transcripts use the service driver realtime_probe with typed arguments and scripted client frames. Python
-  calls realtime_api.main._realtime_health_check and the B1127 connection service directly with injected transport/clock/logging
-  interfaces; Rust calls this production service. No FastAPI route/global proxy state is recreated. Route authentication
-  and alias parity are exclusively B941/B1125 gateway-driver transcripts.
-
-
-  Implement crates/betterlite-core/src/api/realtime_connect.rs. Use RealtimeConnectInput and RealtimeConnectResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions realtime_connect_model, bounded_vertex_token, health_beta_header, health_transcription_intent,
-  connect, model_normalization, upstream_refusal under api::realtime_connect::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  Implement tests::compatibility_deviations with one named rstest case per deviation below, asserting the exact
-  current betterlite result and the pinned contrast. These cases are not disguised as differential equality; oracle
-  inputs for unchanged behavior remain comparable.
-
-
-  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES
-  defaults to unset is None in LiteLLM; configured integer otherwise; env.LITELLM_AZURE_REALTIME_PROTOCOL defaults
-  to unset (None); env.REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS defaults to '20.0'. No environment reads occur
-  outside betterlite-config. Test api::realtime_connect::tests::loads_settings uses the production Config loader
-  and an injected environment map, with a named rstest case for every key above, explicit override, unset/default
-  and invalid-value/fallback behavior. Keys must be accepted, applied and absent from the unsupported-key report;
-  a grep is not proof of support. Add new config_yaml seeds for these keys and replay B002's existing decoder rather
-  than introducing a second YAML parser.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Use B901 kind: websocket transcripts with the typed realtime_probe service driver, comparing upstream handshake
-  status, negotiated subprotocol, per-direction frame ordering and close code/reason. Route gateway cases also compare
-  pre-accept HTTP status. No helper calls a WebSocket route function.
-
-
-  Callable ownership: litellm/realtime_api/main.py: _is_transcription_only_realtime_model (L590-L597); litellm/realtime_api/main.py:
-  _azure_realtime_health_protocol (L603-L613); litellm/realtime_api/main.py: _realtime_health_check_auth_headers
-  (L616-L628); litellm/realtime_api/main.py: _realtime_health_check (L631-L742). Abstract/protocol declarations
-  map to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 126 owned nonblank/non-comment/non-docstring Python lines (142 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 146 implementation,
-  82 behavior tests, 84 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 39 config tests/seeds and
-  30 wiring; 471 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B009 (Outbound HTTP clients, proxies, TLS and connection reuse for every provider), B010
-  (Provider framework, provider resolution and parameter mapping), B171 (Direct helper oracle and URL path encoding),
-  B1009 (Realtime client relay), B1087 (Api boundaries), B1127 (Realtime connection preparation), B901 (Websocket
-  oracle), B1001 (Audio file input), B528 (OpenAI realtime connection and session requests), B1010 (Realtime http
-  calls), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Use B901 service realtime_connect for actual provider handshakes/frames; finite token resolvers and
+  virtual time exercise timeout and refresh without live Google credentials. Existing decoders suffice.
+  Source count 256 nonblank/non-comment lines; budget 225 dispatch,160 tests,140 transcripts,90 adapters,
+  85 config tests/seeds and 35 wiring =735 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/realtime_connect.rs
   - crates/betterlite-core/src/api/realtime_connect/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - crates/betterlite-config/Cargo.toml
-  - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
   - crates/betterlite-config/src/api.rs
   - crates/betterlite-config/src/api/realtime_connect.rs
   - crates/betterlite-config/src/api/realtime_connect/**
@@ -93,138 +38,96 @@ scope:
   - tools/oracle/src/websocket_driver.rs
   - tools/oracle/src/websocket_driver/realtime_connect.rs
   - tools/oracle/helpers/websocket_dispatch.py
-  - tools/oracle/helpers/realtime_connect.py
+  - tools/oracle/helpers/realtime_connect_websocket.py
   - tools/oracle/cases/websocket/realtime-connect/**
-  - tools/oracle/fixtures/realtime-connect/**
+  - tools/oracle/fuzz/corpus/websocket_oracle/realtime-connect-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L338-L339
-  why: Setting env.REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L608-L608
-  why: Setting env.LITELLM_AZURE_REALTIME_PROTOCOL and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L340-L342
-  why: Setting env.REALTIME_CREDENTIAL_RESOLUTION_TIMEOUT_SECONDS and its pinned default/precedence.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L589-L742
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L78-L84
+  why: Guardrail metadata precedence and omission rules used by this connector only.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/main.py#L313-L587
+  why: Whole token helpers and _arealtime dispatch with every provider branch and nested refresh closure.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L338-L342
+  why: OAuth resolution timeout defaults20.0 seconds independently of the WebSocket frame limit.
 dod:
-- text: 'realtime connect model: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-realtime-connect-model
-  - oracle
-- text: 'bounded vertex token: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-bounded-vertex-token
-  - oracle
-- text: 'health beta header: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-health-beta-header
-  - oracle
-- text: 'health transcription intent: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-health-transcription-intent
-  - oracle
-- text: 'connect: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-connect
-  - oracle
-- text: 'model normalization: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-model-normalization
-  - oracle
-- text: 'upstream refusal: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-upstream-refusal
-  - oracle
-- text: Every explicit deviation has a native test for its documented status/code or fallback.
-  proof:
-  - deviation-tests
-- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
-    fuzz corpus exercises the new keys.
-  proof:
-  - config-tests
-  - config-corpus
-- text: The registered WebSocket service driver runs independent production services before downstream routes exist.
-  proof:
-  - service-python
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    realtime_generic_dispatch resolves model alias to provider-model, overlays headers {x:old} with
+    extra_headers {x:new,y:test}, and sends original named api_base/key to B2457, not dynamic resolver
+    replacements. A supplied query model becomes provider-model; {intent:transcription} remains model-free.
+    Caller query input is not mutated. Generic config selection precedes direct branches. Known Gemini/Meta
+    configs open one mock backend. Metadata.guardrails=[first] beats kwargs.guardrails=[second] and copied
+    litellm_metadata.guardrails=[third]; when both overrides are empty the copied third list survives.
+    No guardrails metadata is added to the provider URL. Unsupported normalized model=m raises
+    ValueError("Unsupported model: m") with no connection.
+  proof: [behavior-tests, oracle, service-python]
+- text: >-
+    realtime_openai_and_azure_credentials tests Azure and azure_ai bases dynamic > generic api_base > global
+    api_base > AZURE_API_BASE; keys dynamic > global api_key > global openai_key > AZURE_API_KEY. OpenAI
+    uses the same base chain ending https://api.openai.com/ and key chain ending OPENAI_API_KEY. All globals
+    default None. Azure version uses named api_version > generic version > "2024-10-01-preview"; protocol
+    uses kwargs.realtime_protocol > generic realtime_protocol > LITELLM_AZURE_REALTIME_PROTOCOL, then B545
+    client negotiation. A truthy key suppresses AD lookup; otherwise B529 receives named azure_ad_token and
+    kwargs. Both branches pass client=None and omit merged headers, retaining timeout,query,principal and
+    internal metadata. Compare one handshake with selected auth and exact query, including no-model transcription.
+  proof: [behavior-tests, config-tests, oracle, service-python]
+- text: >-
+    realtime_bedrock_and_xai_arguments passes every Bedrock AWS option unchanged or None: aws_region_name,
+    aws_access_key_id,aws_secret_access_key,aws_session_token,aws_role_name,aws_session_name,aws_profile_name,
+    aws_web_identity_token,aws_sts_endpoint,aws_bedrock_runtime_endpoint,aws_external_id,aws_session_tags.
+    Bedrock base/key use dynamic > named; no generic/global fallback is added and no query,headers,principal
+    or litellm_metadata is forwarded by this branch. xAI base is dynamic > generic > XAI_API_BASE >
+    https://api.x.ai/v1, ignoring global api_base; key is dynamic > xai_key > api_key > XAI_API_KEY with
+    legacy_generic_before_env=true. xAI also passes client=None and omits merged headers. Use real mock
+    connections for successful branches and native call-argument assertions for all omitted fields.
+  proof: [behavior-tests, config-tests, oracle, service-python]
+- text: >-
+    realtime_vertex_credentials_and_refresh chooses credentials vertex_credentials > vertex_ai_credentials
+    > VERTEXAI_CREDENTIALS; project vertex_project > vertex_ai_project > global vertex_project > VERTEXAI_PROJECT;
+    location follows the analogous location chain. Empty values fall through. Token resolution calls B1303
+    with provider=vertex_ai and configured20.0-second default. A timed-out resolver raises "Vertex AI realtime:
+    timed out fetching Google OAuth access token after 20.0s; check network egress from the proxy to the OAuth
+    token endpoint (oauth2.googleapis.com)" and opens no backend. Override0 expires immediately; another
+    resolver exception propagates unchanged. Refresh uses the resolved project from the first call and
+    returns only the new token. B1365 receives model,token,refresh callback,project,location. Generic transport
+    gets base dynamic > generic,api_key=None,original client/timeout,merged headers,query,principal and metadata.
+  proof: [behavior-tests, config-tests, oracle, service-python]
+- text: New loader tests, config seeds and WebSocket transcripts exercise complete connection branches.
+  proof: [config-tests, config-corpus, service-corpus, new-cases, oracle, service-python]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_connect::/)
-      - test(/::replays_corpus$/)'
-  - id: case-realtime-connect-model
-    why: the realtime-connect-model behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::realtime_connect_model($|::)/)'
-  - id: case-bounded-vertex-token
-    why: the bounded-vertex-token behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::bounded_vertex_token($|::)/)'
-  - id: case-health-beta-header
-    why: the health-beta-header behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::health_beta_header($|::)/)'
-  - id: case-health-transcription-intent
-    why: the health-transcription-intent behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::health_transcription_intent($|::)/)'
-  - id: case-connect
-    why: the connect behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::connect($|::)/)'
-  - id: case-model-normalization
-    why: the model-normalization behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::model_normalization($|::)/)'
-  - id: case-upstream-refusal
-    why: the upstream-refusal behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::upstream_refusal($|::)/)'
-  - id: deviation-tests
-    why: the documented compatibility difference lacks a native assertion
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_connect::tests::compatibility_deviations($|::)/)'
+    why: Connection dispatch moves credentials and must verify each branch's omissions as well as values.
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_connect::tests::/) - test(/::replays_corpus$/)'
   - id: config-tests
-    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
-    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_connect::tests::loads_settings($|::)/)'
+    why: Every realtime credential/protocol/timeout setting needs a supported loader path.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::realtime_connect::tests::loads_realtime_connection_settings($|::)/)'
   - id: config-corpus
-    why: no newly added key-bearing config seed reaches the production loader
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-connect-*)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    why: New realtime connection settings must replay through B002's YAML decoder.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-connect-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: service-python
-    why: the native WebSocket service adapter is absent or fails strict Python checks
-    run: test -f tools/oracle/helpers/realtime_connect.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The SDK connector must establish real mock WebSocket connections, not return helper plans.
+    run: test -f tools/oracle/helpers/realtime_connect_websocket.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: service-corpus
+    why: Connector service arguments need newly added bounded transcript seeds.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/websocket_oracle/realtime-connect-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::replays_corpus$/)'
+  - id: new-cases
+    why: Provider dispatch must add independent handshake/result observations.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/websocket/realtime-connect)"
 oracle_cases:
-- tools/oracle/cases/websocket/realtime-connect/realtime-connect-model.yaml
-- tools/oracle/cases/websocket/realtime-connect/bounded-vertex-token.yaml
-- tools/oracle/cases/websocket/realtime-connect/health-beta-header.yaml
-- tools/oracle/cases/websocket/realtime-connect/health-transcription-intent.yaml
-- tools/oracle/cases/websocket/realtime-connect/connect.yaml
-- tools/oracle/cases/websocket/realtime-connect/model-normalization.yaml
-- tools/oracle/cases/websocket/realtime-connect/upstream-refusal.yaml
-deviations:
-- what: When REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES is unset, betterlite caps an event at ApiLimits.max_event_bytes=1048576
-    and closes an oversized WebSocket message with code 1009; LiteLLM defaults to no frame cap.
-  why: Bounded external frames are required by repository rules.
-  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L338-L339
+- tools/oracle/cases/websocket/realtime-connect/realtime-generic-dispatch.yaml
+- tools/oracle/cases/websocket/realtime-connect/realtime-openai-and-azure-credentials.yaml
+- tools/oracle/cases/websocket/realtime-connect/realtime-bedrock-and-xai-arguments.yaml
+- tools/oracle/cases/websocket/realtime-connect/realtime-vertex-credentials-and-refresh.yaml
+deviations: []
 out_of_scope:
-- 'litellm/realtime_api/main.py: B1010 owns _model_params_with_stored_credentials L62-L69, _with_resolved_session_model
-  L72-L75, _build_litellm_metadata L78-L84, _get_realtime_http_provider_config L87-L124, acreate_realtime_client_secret
-  L128-L185, acreate_realtime_transcription_session L189-L257, arealtime_calls L261-L310.'
-- 'litellm/realtime_api/main.py: B1127 owns vertex_access_token_resolver L313-L322, _resolve_vertex_access_token_bounded
-  L325-L345, _arealtime L349-L587.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B1010 owns HTTP config resolution and the three HTTP SDK calls plus _with_resolved_session_model; B1127 owns stored credential merge and all health probe helpers in realtime_api/main.py.
+- B528/B545/B666/B036 own direct provider transports, B1303 credential refresh, B1365 Vertex config, B1378/B1382 Gemini config and B039 Meta config. B2457 owns generic WebSocket execution.
 pitfalls:
-- Within _is_transcription_only_realtime_model\'s model_info.get('mode') == 'audio_transcription' branch, preserve
-  return True and its nested guards.
-- _is_transcription_only_realtime_model uses model_info.get('mode'); retain its missing-value behavior and field
-  spelling in the typed projection.
+- Generic configs receive original api_base/key, while later provider branches often use dynamic resolved values.
+- Azure and OpenAI direct connectors discard the merged headers and force client=None.
+- A transcription-only URL intentionally has no model key; normalizing the route model must not insert one.
 review_level: security
 budget:
-  max_changed_lines: 480
+  max_changed_lines: 750
   max_new_expects: 0

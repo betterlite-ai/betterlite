@@ -1,0 +1,120 @@
+id: B2431
+title: Messages tool and structured-output conversion
+description: >-
+  Split the whole tool/schema methods from B965 into betterlite-core::api::messages_chat_tools_schema. Own
+  translate_anthropic_tool_choice_to_openai, translate_anthropic_tools_to_openai,
+  translate_anthropic_output_format_to_openai, _add_additional_properties_false and the three request-level
+  wrappers _translate_tool_choice_to_openai, _translate_tools_to_openai and _translate_output_format_to_openai.
+  B1117 supplies truncation, eager-input handling, cache controls and web-search classification. B965 keeps
+  system, metadata, thinking and unmodified-option copying; B967 composes both parts.
+
+  Transform parsed tool/schema records only. Recursion must respect the existing input nesting/item bounds;
+  no second JSON parser is needed. Preserve the input schema by deep copying before strict-output rewriting,
+  but preserve the source tool-parameter update semantics when extra tool fields are merged into input_schema.
+  Add a B171 messages_chat_tools_schema variant returning both transformed kwargs and the long-name map.
+  The selected methods contain 190 nonblank/non-comment lines; allow 205 implementation, 145 tests,
+  150 fixtures, 85 adapters and 30 wiring, 615 total.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/messages_chat_tools_schema.rs
+  - crates/betterlite-core/src/api/messages_chat_tools_schema/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/messages_chat_tools_schema.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_chat_tools_schema.py
+  - tools/oracle/fuzz/corpus/helper_case/messages_chat_tools_schema-*
+  - tools/oracle/cases/helpers/messages-chat-tools-schema/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L763-L921
+  why: Own complete tool choice/declaration conversion and recursive strict-schema rewriting.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1039-L1052
+  why: The tool-choice request wrapper skips absent and falsey values.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1066-L1099
+  why: The request wrapper extracts web-search options before translating regular tools.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1175-L1201
+  why: A truthy legacy output_format wins over output_config.format even when its shape is invalid.
+dod:
+- text: >-
+    tool_choice_variants maps type=any/auto/none to required/auto/none, and type=tool,name=lookup to
+    {type:function,function:{name:lookup}}. Missing name becomes empty; names over 64 characters use B1117's hash.
+    type=unknown raises ValueError "Incompatible tool choice param submitted"; a missing type raises KeyError.
+    These helpers have no HTTP status/type/param/code. The request wrapper skips absent,null,{} and empty-string choices.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    declaration_defaults converts {type:custom,name:lookup,input_schema:{type:object},description:find,strict:false}
+    into a function tool with name=lookup,parameters.type=object,description=find,strict=false. type=custom must
+    not overwrite the schema type. Missing/null/whitespace names become litellm_unnamed_tool_0 (or the input index);
+    numeric name=7 becomes "7". Extra field display_width_px=800 is merged into parameters; explicit strict="false"
+    is truthy and becomes true. Missing schema is omitted until an extra field creates it. Long-name maps contain
+    only truncated names and original full names, and eager_input_streaming stays at tool level.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    hosted_and_native_tools keeps each type prefix web_search,bash,text_editor,code_execution,web_fetch,memory,
+    tool_search_tool unchanged in the direct declaration converter. OpenAI {type:function,function:{name:f}}
+    and one-key provider-native {googleSearch:{}} pass through. Cache_control is copied for compatible targets
+    only on translated function tools, not rewritten on pass-through tools. A type=null triggers a typed failure
+    corresponding to Python AttributeError instead of silently becoming a function declaration.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    web_search_extraction sends web_search_20260209 plus ordinary lookup and gets web_search_options={} plus the
+    converted lookup tool. With only web search, tools is absent and the name map is empty. A legacy name=web_search
+    without input_schema is extracted; the same name with input_schema={} is a regular function. Empty/absent tools
+    leave existing kwargs unchanged, and web-search-specific arguments are not copied into web_search_options.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    strict_output_schema maps {type:json_schema,schema:{type:object,properties:{x:{type:string}},required:[],
+    additionalProperties:true}} to response_format={type:json_schema,json_schema:{name:structured_output,
+    strict:true,schema:{type:object,properties:{x:{type:string}},required:[x],additionalProperties:false}}}.
+    Recursively rewrite objects in properties,items,anyOf,oneOf,allOf,$defs,definitions; required uses property order.
+    An object lacking properties is unchanged. The caller's schema remains byte-equivalent after conversion.
+    Non-object format, wrong type, missing schema and empty schema yield no output format.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    format_source_precedence supplies distinct schemas in output_format and output_config.format and selects
+    the former. Empty/null output_format falls back to the nested schema; truthy invalid {type:text} does not.
+    An absent or falsey nested format leaves existing response_format untouched.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Newly added tool/schema cases and a typed helper seed cover the split without importing the later composing adapter.
+  proof: [helper-corpus, new-cases, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: tool conversion and recursive strict schema behavior are not implemented
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_tools_schema::/)'
+  - id: helper-python
+    why: tool/schema parity has no independent Python adapter
+    run: test -f tools/oracle/helpers/messages_chat_tools_schema.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the tools/schema helper tag is untested
+    run: grep -qE '^[[:space:]]+messages_chat_tools_schema:' tools/oracle/fuzz/corpus/helper_case/messages_chat_tools_schema-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: the split contributes no new parity fixtures
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-tools-schema)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-chat-tools-schema/tool-choice-variants.yaml
+- tools/oracle/cases/helpers/messages-chat-tools-schema/declaration-defaults.yaml
+- tools/oracle/cases/helpers/messages-chat-tools-schema/hosted-and-native-tools.yaml
+- tools/oracle/cases/helpers/messages-chat-tools-schema/web-search-extraction.yaml
+- tools/oracle/cases/helpers/messages-chat-tools-schema/strict-output-schema.yaml
+- tools/oracle/cases/helpers/messages-chat-tools-schema/format-source-precedence.yaml
+deviations: []
+out_of_scope:
+- B965 owns L642-L669,L740-L761,L923-L1037,L1054-L1064,L1101-L1173,L1203-L1212 in adapters/transformation.py.
+- B1117 owns primitives L25-L93,L213-L225,L357-L454,L672-L700,L1290-L1343; B964 owns L352-L353,L456-L639 messages.
+- B966 owns output L1345-L1766; B967 owns L229-L345,L1214-L1288 composition. create_tool_name_mapping and translate_thinking_for_model have no caller at the pin.
+pitfalls:
+- strict is coerced with Python truthiness, so the string "false" means true in a tool declaration.
+- The output schema walker overwrites required; it does not preserve a caller's optional properties.
+- Hosted tools bypass ordinary function-name generation, while request-level web search is removed before that pass-through branch.
+review_level: standard
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

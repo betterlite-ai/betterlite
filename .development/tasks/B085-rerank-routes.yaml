@@ -1,238 +1,104 @@
 id: B085
 title: Rerank routes
 description: >-
-  Install all pinned rerank route aliases with B052 auth and B014 rerank variants, using typed request validation
-  and the rerank-call service. Match response metadata and provider errors through B001 captures.
+  Mount POST /v2/rerank, /v1/rerank and /rerank once, with B756 authentication and B124 proxy hooks.
+  Implement the complete endpoints.py handler in betterlite-server::api::rerank_routes. Decode
+  its JSON object body, overwrite body.litellm_call_id with B004's resolved x-litellm-call-id,
+  prepare authenticated request data with B1103, then await the pre-call hook with call_type=rerank.
+  B014 route_request uses route_type=arerank and B1014 executes it. Preserve unknown body fields;
+  this route does not declare query or documents as FastAPI-required fields. Do not add an HTTP
+  422 schema check that runs before the SDK. Neither URL query parameters nor path aliases
+  change the rerank payload.
 
+  After success schedule update_request_status(status=success). Use B004 custom headers from
+  hidden model_id,cache_key,api_base with empty-string fallbacks, response_cost with None fallback,
+  allowed_model_region with empty-string fallback, request_data and additional_headers ({} when
+  absent). Hidden litellm_call_id wins when truthy, otherwise use the request call id. No post-call
+  success hook or response-header hook is invoked by this function. On failure await the failure
+  hook, log the error, then use B003 error_status_code/openai_error_type/openai_error_param and
+  ProxyException serialization; HTTPException defaults to 400 and other exceptions to 500.
 
-  Register POST /v2/rerank, /v1/rerank and /rerank. Header call id falls back to the request call id; response_cost
-  is passed as None.
-
-
-  Implement crates/betterlite-server/src/api/rerank_routes.rs, crates/betterlite-core/src/api/rerank_routes.rs.
-  Use RerankRoutesInput and RerankRoutesResult with typed nested records; inject only the clock, repositories, transports
-  and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce ambient
-  environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: POST /v2/rerank; POST /v1/rerank; POST /rerank. Each alias is exercised
-  through the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without
-  re-registering their methods/paths.
-
-
-  Route input projections: request.headers.x-litellm-call-id (absent None).
-
-
-  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
-  HTTP wire envelope): endpoints.py:121 type=openai_error_type(e, error_status_code(e, status.HTTP_400_BAD_REQUEST)),
-  param=openai_error_param(e), code=error_status_code(e, status.HTTP_400_BAD_REQUEST); endpoints.py:130 type=openai_error_type(e,
-  error_status_code(e, 500)), param=openai_error_param(e), code=error_status_code(e, 500). Compare the actual source
-  status, error type, param and code; ignore only error wording except in message-extraction tests.
-
-
-  Write adjacent tests.rs behavior functions rerank_route, v1_rerank_route, rerank_missing_query, rerank_provider_error,
-  rerank_headers, v2_rerank_route, call_id_fallback, route_aliases, auth_missing, auth_invalid under api::rerank_routes::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-server::api::rerank_routes::decode_rerank_routes(bytes: &[u8],
-  limits: &ApiLimits), for orjson.loads input body at litellm/proxy/rerank_endpoints/endpoints.py:65. Place its
-  implementation in crates/betterlite-server/src/api/rerank_routes.rs and call it from the actual boundary. The
-  cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/rerank_routes.rs passes arbitrary bounded bytes to
-  that exact decoder; api::rerank_routes::tests::replays_corpus replays newly committed seeds through the same function.
-  Transform-only helpers reuse the already decoded records.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/rerank_endpoints/endpoints.py: rerank (L45-L136). Abstract/protocol declarations
-  map to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 117 owned nonblank/non-comment/non-docstring Python lines (117 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 137 implementation,
-  100 behavior tests, 120 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds
-  and 38 wiring; 455 total within the 460-line cap. The estimate includes tests and adapters, not just production
-  code.
-
-
-  Direct inputs come from B003 (HTTP server, health routes and master key auth), B014 (Call dispatch across providers
-  and call types, shared settings and helpers), B171 (Direct helper oracle and URL path encoding), B1014 (Rerank
-  call), B1087 (Api boundaries), B001 (Oracle harness against the pinned LiteLLM), B1103 (Authenticated request
-  preparation), B732 (Typed authentication principals and grant resolution), B855 (Authenticated request admission
-  and budget handoff), B756 (Authentication header selection and mode dispatch), B1139 (Stateful HTTP oracle scenarios),
-  B856 (Management oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  decode_rerank_route(bytes, ApiLimits) is the production boundary decoder; fuzz that exact function
+  with malformed JSON, arrays, null, nested objects and limit edges. B1087 supplies limits. Native
+  tests belong in api::rerank_routes::tests. B001 HTTP cases use a booted proxy and mock provider,
+  with a configured master key and B1139/B856 virtual-key fixtures where required. No helper adapter.
+  Own 98 nonblank/non-comment lines including decorators, excluding imports. Budget 125 handler,
+  130 tests,125 HTTP fixtures,60 fuzz/replay and 30 wiring =470 lines.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/rerank_routes.rs
   - crates/betterlite-server/src/api/rerank_routes/**
-  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/rerank_routes.rs
-  - crates/betterlite-core/src/api/rerank_routes/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-server/fuzz/Cargo.toml
-  - crates/betterlite-server/fuzz/fuzz_targets/rerank_routes.rs
-  - crates/betterlite-server/fuzz/corpus/rerank_routes/**
-  - tools/oracle/cases/api/rerank-routes/**
-  - tools/oracle/fixtures/rerank-routes/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-server/fuzz/fuzz_targets/rerank_route.rs
+  - crates/betterlite-server/fuzz/corpus/rerank_route/**
+  - tools/oracle/cases/rerank-routes/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L1-L136
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rerank_endpoints/endpoints.py#L27-L136
+  why: All three decorators and the complete route, including call-id union order and failure conversion.
 dod:
-- text: 'rerank route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rerank-route
-  - oracle
-- text: 'v1 rerank route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-v1-rerank-route
-  - oracle
-- text: 'rerank missing query: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rerank-missing-query
-  - oracle
-- text: 'rerank provider error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rerank-provider-error
-  - oracle
-- text: 'rerank headers: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-rerank-headers
-  - oracle
-- text: 'v2 rerank route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-v2-rerank-route
-  - oracle
-- text: 'call id fallback: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-call-id-fallback
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    rerank_aliases sends authenticated {model:cohere/rerank-english-v3.0,query:q,documents:[a,b]}
+    separately to /v2/rerank,/v1/rerank,/rerank. Each returns 200 and the mock's results in index order
+    [1,0], with one provider request and no sorting. ?top_n=1 is ignored, body top_n=1 is forwarded.
+    Missing query reaches SDK validation, producing its mapped 500/internal_server_error/null/"500"
+    rather than FastAPI 422; malformed JSON or a JSON array also produces 500/internal_server_error/null/"500"
+    with zero provider requests. Compare message extraction on a controlled failure, not parser prose.
+  proof: [behavior-tests, oracle]
+- text: >-
+    rerank_auth_and_hooks configures a master key; absent and invalid bearer keys return
+    401/authentication_error/param="None"/code="401" with no provider request. A valid virtual key
+    runs preparation then pre_call_hook(call_type=rerank), then arerank. A rejecting hook prevents
+    dispatch and invokes failure logging; a successful call records status=success, with no success
+    hook or response-header-hook invocation. Native spies verify this order alongside HTTP fixtures.
+  proof: [behavior-tests, oracle]
+- text: >-
+    rerank_call_id_and_headers sends x-litellm-call-id=request-id and body litellm_call_id=spoofed;
+    upstream logging sees request-id. No hidden call id returns x-litellm-call-id=request-id;
+    hidden call id=provider-id returns provider-id. Empty model_id/cache_key/api_base use B004's
+    empty-string handling, absent response_cost remains None, explicit cost=0 survives. A mock
+    additional header x-provider-test=present reaches the client through get_custom_headers.
+    Missing request call id yields one generated nonempty id reused in success and failure responses.
+  proof: [behavior-tests, oracle]
+- text: >-
+    rerank_error_envelopes injects HTTPException 400,401,403,429 and a generic 500; expect respectively
+    invalid_request_error,authentication_error,permission_error,rate_limit_error,internal_server_error,
+    param=null and code="400","401","403","429","500". Supplied type=provider_error,param=query
+    is retained; literal type/param="None" is normalized by B003. A ProxyException with code=409
+    retains status409 rather than becoming500. Every error carries the request call id, invokes the
+    failure hook once, and does not run the success-status update. Message="sentinel" remains sentinel.
+  proof: [behavior-tests, oracle]
+- text: New route fixtures cover every alias and newly committed bytes replay the production JSON decoder.
+  proof: [new-cases, decoder-corpus, oracle]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-rerank-route
-    why: the rerank-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::rerank_route($|::)/)'
-  - id: case-v1-rerank-route
-    why: the v1-rerank-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::v1_rerank_route($|::)/)'
-  - id: case-rerank-missing-query
-    why: the rerank-missing-query behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::rerank_missing_query($|::)/)'
-  - id: case-rerank-provider-error
-    why: the rerank-provider-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::rerank_provider_error($|::)/)'
-  - id: case-rerank-headers
-    why: the rerank-headers behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::rerank_headers($|::)/)'
-  - id: case-v2-rerank-route
-    why: the v2-rerank-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::v2_rerank_route($|::)/)'
-  - id: case-call-id-fallback
-    why: the call-id-fallback behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::call_id_fallback($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::auth_invalid($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/rerank_routes)"
-      && test -f crates/betterlite-server/fuzz/fuzz_targets/rerank_routes.rs && grep -qF "decode_rerank_routes"
-      crates/betterlite-server/fuzz/fuzz_targets/rerank_routes.rs && cargo nextest run --locked -p betterlite-server
-      --no-tests=fail -E 'test(/^api::rerank_routes::tests::replays_corpus$/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/rerank-routes)"
+    why: Rerank HTTP admission, header fallback and error shape need production handler tests.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::/) - test(/::replays_corpus$/)'
+  - id: decoder-corpus
+    why: A route decoder must handle arbitrary body bytes without panics or unbounded allocation.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/rerank_route)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::rerank_routes::tests::replays_corpus$/)'
+  - id: new-cases
+    why: All three rerank URLs need new booted-proxy fixtures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/rerank-routes)"
 oracle_cases:
-- tools/oracle/cases/api/rerank-routes/rerank-route.yaml
-- tools/oracle/cases/api/rerank-routes/v1-rerank-route.yaml
-- tools/oracle/cases/api/rerank-routes/rerank-missing-query.yaml
-- tools/oracle/cases/api/rerank-routes/rerank-provider-error.yaml
-- tools/oracle/cases/api/rerank-routes/rerank-headers.yaml
-- tools/oracle/cases/api/rerank-routes/v2-rerank-route.yaml
-- tools/oracle/cases/api/rerank-routes/call-id-fallback.yaml
-- tools/oracle/cases/api/rerank-routes/route-aliases.yaml
-- tools/oracle/cases/api/rerank-routes/auth-missing.yaml
-- tools/oracle/cases/api/rerank-routes/auth-invalid.yaml
+- tools/oracle/cases/rerank-routes/rerank-aliases.yaml
+- tools/oracle/cases/rerank-routes/rerank-auth-and-hooks.yaml
+- tools/oracle/cases/rerank-routes/rerank-call-id-and-headers.yaml
+- tools/oracle/cases/rerank-routes/rerank-error-envelopes.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- The only callable in endpoints.py is owned here; B1014/B1079 own SDK rerank execution, B1103 request enrichment and B014 dispatch.
+- B004 supplies call-id resolution and custom headers; B003 owns shared error fields and ProxyException serialization; B124 proxy hooks are injected.
 pitfalls:
-- request.headers reads 'x-litellm-call-id' with default None; omission and an explicit value must not collapse
-  into one case.
-- endpoints.py:121 uses type=openai_error_type(e, error_status_code(e, status.HTTP_400_BAD_REQUEST)), param=openai_error_param(e),
-  code=error_status_code(e, status.HTTP_400_BAD_REQUEST); preserve this envelope rather than a family-wide error
-  default.
+- The route's JSON union puts the trusted call id on the right, so a body value cannot replace it.
+- Rerank falls back to the request call id when hidden metadata lacks one; copying image-route behavior would lose it.
+- error_status_code reads ProxyException.code as well as status_code, unlike the older audio wrapper.
 review_level: security
 budget:
-  max_changed_lines: 460
+  max_changed_lines: 500
   max_new_expects: 0

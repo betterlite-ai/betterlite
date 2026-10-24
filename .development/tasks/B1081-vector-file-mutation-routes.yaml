@@ -1,198 +1,100 @@
 id: B1081
-title: Vector file mutation routes
+title: Attached-file create, update and delete HTTP routes
 description: >-
-  Install vector-store file create/update/delete endpoints using vector-file-resolution and typed operation services.
-  Preserve aliases, authorization-before-credential selection, chunking/attributes and provider result ID restoration;
-  file list/get/content routes remain vector-file-routes.
+  Implement server::api::vector_file_mutation_routes for POST /v1/vector_stores/{vector_store_id}/files
+  and /vector_stores/{vector_store_id}/files, POST both prefixes with /{file_id}, and DELETE both
+  prefixes with /{file_id}. Own each complete handler; B1075 resolves ids/credentials/provider and B1061
+  checks original-store access. B1100 supplies request-body decoding for POST; DELETE does not read a body.
+  B004 runs avector_store_file_create/update/delete with model=null and the injected proxy/user defaults,
+  B1072/B1074 execute SDK calls, B003/B732 authenticate. No route-specific settings or helper adapter.
 
-
-  Implement crates/betterlite-server/src/api/vector_file_mutation_routes.rs, crates/betterlite-core/src/api/vector_file_mutation_routes.rs.
-  Use VectorFileMutationRoutInput and VectorFileMutationRoutResult with typed nested records; inject only the clock,
-  repositories, transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087;
-  do not introduce ambient environment or duplicate credential resolution.
-
-
-  Register exactly these routes in this task: POST /v1/vector_stores/{vector_store_id}/files; POST /vector_stores/{vector_store_id}/files;
-  POST /v1/vector_stores/{vector_store_id}/files/{file_id}; POST /vector_stores/{vector_store_id}/files/{file_id};
-  DELETE /v1/vector_stores/{vector_store_id}/files/{file_id}; DELETE /vector_stores/{vector_store_id}/files/{file_id}.
-  Each alias is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts
-  its child factories without re-registering their methods/paths.
-
-
-  Extraction uses the typed path/query/body records named by the owned handler signatures.
-
-
-  Write adjacent tests.rs behavior functions vector_file_create_route, vector_file_update_route, vector_file_delete_route,
-  vector_file_write_denied, route_aliases, auth_missing, auth_invalid under api::vector_file_mutation_routes::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
-  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
-  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
-  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
-
-
-  Callable ownership: litellm/proxy/vector_store_files_endpoints/endpoints.py: vector_store_file_create (L467-L559);
-  litellm/proxy/vector_store_files_endpoints/endpoints.py: vector_store_file_update (L887-L979); litellm/proxy/vector_store_files_endpoints/endpoints.py:
-  vector_store_file_delete (L994-L1086). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 282 owned nonblank/non-comment/non-docstring Python lines (282 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 302 implementation,
-  82 behavior tests, 84 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  38 wiring; 506 total within the 510-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1072 (Vector file create), B1074 (Vector
-  file write), B1075 (Vector file resolution), B1087 (Api boundaries), B1100 (Shared request body decoding), B732
-  (Typed authentication principals and grant resolution), B855 (Authenticated request admission and budget handoff),
-  B756 (Authentication header selection and mode dispatch), B1061 (Vector endpoint access), B003 (HTTP server, health
-  routes and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces and Postgres
-  test fixture). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
-  retain ownership on the provider and keys/data branches.
-
-
-  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
-  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
-  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
-  not rely on an absent master key to exercise an authentication failure.
-
-
-  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
-  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
-  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
-  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
-  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
-  reaches the client unchanged.
+  Replace body ids with path ids before access, resolve managed file first then managed store, disallow
+  a second registry lookup, resolve provider and check allowed indexes against the original store id.
+  Only insert resolved custom_llm_provider when the data key is absent, not when present null. Restore
+  original managed file ids after a successful processor result. The 282 nonblank/non-comment source
+  lines yield 230 code, 190 tests, 170 HTTP fixtures and 50 body-corpus/wiring lines, 640 total.
 scope:
   paths:
-  - crates/betterlite-server/Cargo.toml
-  - crates/betterlite-server/src/lib.rs
-  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/vector_file_mutation_routes.rs
   - crates/betterlite-server/src/api/vector_file_mutation_routes/**
-  - crates/betterlite-server/src/api.rs
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
-  - crates/betterlite-core/src/api/vector_file_mutation_routes.rs
-  - crates/betterlite-core/src/api/vector_file_mutation_routes/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
+  - crates/betterlite-server/fuzz/corpus/request_body/vector-file-mutation-*
   - tools/oracle/cases/api/vector-file-mutation-routes/**
-  - tools/oracle/fixtures/vector-file-mutation-routes/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L455-L559
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Create reads a body and only invokes managed-file resolution when file_id is a present key.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_files_endpoints/endpoints.py#L875-L1086
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
-  why: ProxyException stores openai_code separately but to_dict emits string code.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
-  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+  why: Update and delete override ids from the path, then share ordered resolution and response restoration.
 dod:
-- text: 'vector file create route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-file-create-route
-  - oracle
-- text: 'vector file update route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-file-update-route
-  - oracle
-- text: 'vector file delete route: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-file-delete-route
-  - oracle
-- text: 'vector file write denied: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-vector-file-write-denied
-  - oracle
-- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-route-aliases
-  - oracle
-- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-missing
-  - oracle
-- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-auth-invalid
-  - oracle
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
+- text: >-
+    attach_file_aliases sends {vector_store_id:wrong,file_id:file_a,attributes:{tag:x},chunking_strategy:{type:auto}}
+    on both create paths for vs_a. Provider gets vs_a/file_a and the selected attributes/chunking strategy;
+    mock 200 {id:file_a,object:vector_store.file,vector_store_id:vs_a,status:in_progress} returns unchanged.
+    Absent file_id skips the managed-file helper and fails later through SDK validation; present null enters
+    the helper and retains B1021's falsey-id no-op. Native trace proves access runs first and store overlay
+    follows file routing; no duplicate registry read occurs.
+  proof: [mutation-tests, oracle, new-cases]
+- text: >-
+    update_and_delete_path_ids sends POST body {file_id:wrong,vector_store_id:wrong,attributes:{tag:x}}
+    to both update aliases for vs_a/file_a and expects provider ids vs_a/file_a. Missing/null attributes
+    reaches B1074 unchanged; metadata cleaning remains the provider's. Both DELETE aliases ignore body and
+    unrelated query id fields, send the path ids and return 200 {id:file_a,object:vector_store.file.deleted,
+    deleted:true}. These DELETE requests have no body. No handler adds download headers.
+  proof: [mutation-tests, oracle]
+- text: >-
+    mutation_provider_precedence gives registry provider=openai with caller custom-llm-provider=azure
+    and query custom_llm_provider=bedrock; registry data wins. Without registry, truthy body provider wins
+    header, header wins query, and absent values fall back to openai. Present null provider may resolve
+    openai for permissions yet remains null in data because the key exists. Unknown provider skips enum
+    permission checks but is preserved for SDK error handling. An allowed-index denial returns B1061 403
+    before processing. A managed file id resolving to file_a is restored in the returned id/file_id fields.
+  proof: [mutation-tests, oracle]
+- text: >-
+    mutation_managed_requirement compares require_managed_files=false with true. False permits native
+    ids and MIT decoding; true produces 400 detail="Raw provider file ids cannot be used when require_managed_files is enabled in litellm_settings. Use the LiteLLM managed file id returned when the file was created."
+    for raw file ids, and 500 detail="Managed resource ownership validation is unavailable." for unified
+    ids without the enterprise hook. Create with absent file_id does not trigger this check. Access denial
+    on the store precedes these errors. All preprocessor HTTPException detail envelopes omit type/param/code.
+  proof: [mutation-tests, oracle]
+- text: >-
+    mutation_auth_body_and_provider_errors covers all six aliases: missing/invalid proxy key yields
+    401,authentication_error,param=null,code="401" without upstream work; valid key sends configured provider
+    Authorization, never the proxy key. Malformed POST JSON is B1100 400,invalid_request_error,
+    param=request_body,code="400". Provider 404 maps to not_found_error,404,param=null,code="404";
+    429 maps to rate_limit_error,429,param=null,code="429" with Retry-After. Compare application/json and
+    B004's x-litellm-* headers. Commit parsed-body seeds for path/body id collisions and null attributes.
+  proof: [mutation-tests, oracle, body-corpus]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::/)
-      - test(/::replays_corpus$/)'
-  - id: case-vector-file-create-route
-    why: the vector-file-create-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::vector_file_create_route($|::)/)'
-  - id: case-vector-file-update-route
-    why: the vector-file-update-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::vector_file_update_route($|::)/)'
-  - id: case-vector-file-delete-route
-    why: the vector-file-delete-route behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::vector_file_delete_route($|::)/)'
-  - id: case-vector-file-write-denied
-    why: the vector-file-write-denied behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::vector_file_write_denied($|::)/)'
-  - id: case-route-aliases
-    why: the route-aliases behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::route_aliases($|::)/)'
-  - id: case-auth-missing
-    why: the auth-missing behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::auth_missing($|::)/)'
-  - id: case-auth-invalid
-    why: the auth-invalid behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::auth_invalid($|::)/)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+  - id: mutation-tests
+    why: mutation aliases lose path precedence, managed-id ordering or authentication
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_file_mutation_routes::tests::/) - test(/::replays_corpus$/)'
+  - id: new-cases
+    why: attached-file mutations lack new booted-proxy comparisons
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/vector-file-mutation-routes)"
+  - id: body-corpus
+    why: id replacement and nullable attributes lack new request decoder input
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/request_body/vector-file-mutation-*)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/api/vector-file-mutation-routes/vector-file-create-route.yaml
-- tools/oracle/cases/api/vector-file-mutation-routes/vector-file-update-route.yaml
-- tools/oracle/cases/api/vector-file-mutation-routes/vector-file-delete-route.yaml
-- tools/oracle/cases/api/vector-file-mutation-routes/vector-file-write-denied.yaml
-- tools/oracle/cases/api/vector-file-mutation-routes/route-aliases.yaml
-- tools/oracle/cases/api/vector-file-mutation-routes/auth-missing.yaml
-- tools/oracle/cases/api/vector-file-mutation-routes/auth-invalid.yaml
-deviations: []
+- tools/oracle/cases/api/vector-file-mutation-routes/attach-file-aliases.yaml
+- tools/oracle/cases/api/vector-file-mutation-routes/update-and-delete-path-ids.yaml
+- tools/oracle/cases/api/vector-file-mutation-routes/mutation-provider-precedence.yaml
+- tools/oracle/cases/api/vector-file-mutation-routes/mutation-managed-requirement.yaml
+- tools/oracle/cases/api/vector-file-mutation-routes/mutation-auth-body-and-provider-errors.yaml
+deviations:
+- what: Pending the managed-files/batches choice, this task retains MIT raw-id use by default and the explicit 400/500 managed-id failures when require_managed_files=true.
+  why: The absent enterprise ownership hook is not silently substituted with weaker authorization.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1062-L1118
 out_of_scope:
-- 'litellm/proxy/vector_store_files_endpoints/endpoints.py: B1075 owns _update_request_data_with_managed_file_id
-  L35-L171, _replace_file_id_in_response L174-L204, _authorize_model_routing_hint L207-L215, _update_request_data_with_model_routing_hint
-  L218-L313, _update_request_data_with_litellm_managed_vector_store_registry L316-L408, _resolve_provider L411-L431,
-  _maybe_check_permissions L434-L452.'
-- 'litellm/proxy/vector_store_files_endpoints/endpoints.py: B1076 owns vector_store_file_list L574-L655, vector_store_file_retrieve
-  L670-L762, vector_store_file_content L777-L872.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
+- B1075 owns the seven resolution/projection helpers and B1076 owns all GET handlers. B1021's requirement checks are consumed through B1075.
+- B004 owns common processing and errors, B1100 decode_request_body; this task only adds seeds to that decoder's corpus.
 pitfalls:
-- 'The source field managed_vector_store: Final = await assert_user_can_access_vector_store_id(vector_store_id=vector_store_id,
-  user_api_key_dict=user_api_key_dict) is part of the wire/default contract; preserve its omission and explicit-value
-  cases.'
-- 'The source field managed_vector_store: Final = await assert_user_can_access_vector_store_id(vector_store_id=vector_store_id,
-  user_api_key_dict=user_api_key_dict) is part of the wire/default contract; preserve its omission and explicit-value
-  cases.'
+- Unlike ordinary vector-store update, attached-file update always overwrites both body ids from the path.
+- A present-null provider key blocks insertion of the resolved provider string.
+- Create distinguishes a missing file_id key from an explicitly null file_id.
 review_level: security
 budget:
-  max_changed_lines: 510
+  max_changed_lines: 740
   max_new_expects: 0

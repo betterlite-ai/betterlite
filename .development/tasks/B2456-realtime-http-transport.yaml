@@ -1,0 +1,99 @@
+id: B2456
+title: Realtime HTTP session and SDP transport
+description: >-
+  Own async_realtime_client_secret_handler,async_realtime_transcription_session_handler,
+  _async_realtime_session_post and async_realtime_calls_handler, whole methods at
+  llm_http_handler.py:6297-6511, in betterlite-provider::api::realtime_http_transport.
+  B1004 supplies the HTTP config interface, B173 the async client and B2402 send-error mapping.
+  An AsyncHTTPHandler supplied by the caller is reused; absent or sync clients select the pooled
+  OPENAI client even for another provider. Return the raw response without parsing or encrypting it.
+
+  Session POSTs choose the config's endpoint URL and validated headers, or append /v1/realtime/
+  plus client_secrets/transcription_sessions to rstrip(api_base). Fallback headers are Authorization
+  Bearer key and Content-Type application/json. extra_headers is applied last and may replace auth.
+  Calls use the ephemeral key, multipart sdp/text/plain and session/application/json, with no filenames.
+  Supply default session.type=realtime and model only when absent, preserving explicit null values.
+  Logging uses api_key="" and the complete request/session and URL with B012's header redaction.
+
+  decode_realtime_sdp(bytes,limits) validates UTF-8 before send and is fuzzed/replayed in this crate;
+  B1087 supplies the body cap. There is no SDP grammar parser. Add sdk_http.realtime_http_transport
+  through B2401, capturing actual JSON and multipart requests. Count196 nonblank/non-comment lines;
+  budget 155 transport,120 tests,115 fixtures,90 adapters,55 fuzz/replay and 25 wiring =560 lines.
+scope:
+  paths:
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/api/realtime_http_transport.rs
+  - crates/betterlite-provider/src/api/realtime_http_transport/**
+  - crates/betterlite-provider/fuzz/Cargo.toml
+  - crates/betterlite-provider/fuzz/fuzz_targets/realtime_sdp.rs
+  - crates/betterlite-provider/fuzz/corpus/realtime_sdp/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/realtime_http_transport.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/realtime_http_transport.py
+  - tools/oracle/cases/sdk-http/realtime-http-transport/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-transport-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6297-L6511
+  why: All four complete HTTP methods, including shared POST, multipart fields and exception boundaries.
+dod:
+- text: >-
+    realtime_session_http sends {session:{model:m}} to both endpoints. With no config and base=http://mock/v1/,
+    expect /v1/v1/realtime/client_secrets or /v1/v1/realtime/transcription_sessions, Authorization=Bearer key,
+    Content-Type=application/json and the unchanged JSON body. A finite config chooses /custom and headers
+    {api-key:configured}; extra_headers={api-key:override,x:test} wins. model=None passes "" to config methods,
+    api_version is forwarded unchanged. Mock200/201 responses retain status, bytes and headers without JSON
+    transformation. Log pre_call before exactly one POST, with input=request_data and api_key="".
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    realtime_sdp_multipart sends sdp bytes "v=0\r\n",ephemeral key=ep-test,model=m,session={voice:alloy}.
+    Expect a multipart sdp part text/plain with those bytes and no filename, and session part application/json
+    encoding {voice:alloy,type:realtime,model:m}. No long-lived API key is used. Existing type=transcription
+    or model=null is retained; model=None does not insert a model; session={} gains only available defaults.
+    Extra Authorization overrides the generated ephemeral Bearer header. pre_call input is realtime_sdp_offer,
+    api_key="",additional_args has api_base,headers,session. Invalid UTF-8 fails before pre_call/HTTP.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    realtime_http_client_and_failure reuses an async client, replaces a sync client with the OPENAI pool,
+    and forwards the supplied timeout unchanged. A mock429 body=slow with retry-after=2 enters B2402 only
+    when provider_config exists; without one the original HTTP exception propagates. Compare SDK class,
+    status,type,param,code and headers without fabricating a proxy envelope. Config URL/header errors,
+    SDP decode errors and pre_call exceptions happen outside the send catch and make zero HTTP requests.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: New SDP bytes, SDK operation seeds and HTTP captures verify the complete transport boundary.
+  proof: [decoder-corpus, sdk-corpus, new-cases, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: Session POST and multipart SDP differ in auth, serialization and logging inputs.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::realtime_http_transport::tests::/) - test(/::replays_corpus$/)'
+  - id: decoder-corpus
+    why: Arbitrary SDP bytes must reach the bounded UTF-8 decoder used in production.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/realtime_sdp)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::realtime_http_transport::tests::replays_corpus$/)'
+  - id: sdk-python
+    why: Realtime HTTP methods require actual mock-provider requests in their parity adapter.
+    run: test -f tools/oracle/sdk_http/realtime_http_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-corpus
+    why: The realtime_http_transport call variant must decode from a newly added seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: JSON, SDP and failure branches need new HTTP captures.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/realtime-http-transport)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/realtime-http-transport/realtime-session-http.yaml
+- tools/oracle/cases/sdk-http/realtime-http-transport/realtime-sdp-multipart.yaml
+- tools/oracle/cases/sdk-http/realtime-http-transport/realtime-http-client-and-failure.yaml
+deviations: []
+out_of_scope:
+- B1010 owns SDK model/credential/default resolution; B084/B1126 own routes and encrypted tokens; B2402 owns _handle_error.
+- B2457 owns async_realtime and _open_realtime_backend_ws; _append_query_params has no caller at the pin. Other llm_http_handler.py endpoint methods retain their API transport owners.
+pitfalls:
+- extra_headers is merged after authentication, including Authorization; silently reversing the order changes caller-visible credentials.
+- The fallback HTTP URLs append /v1 even when api_base already has that suffix.
+- A nonempty caller session dict is mutated by inserted defaults in the source; do not claim it remains unchanged.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

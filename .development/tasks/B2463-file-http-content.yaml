@@ -1,0 +1,98 @@
+id: B2463
+title: Generic file byte and stream HTTP execution
+description: >-
+  Build betterlite-core::api::file_http_content for complete retrieve_file_content,
+  async_retrieve_file_content, async_retrieve_file_content_streaming and
+  _prepare_file_content_request, plus _PreparedFileContentRequest, _aiter_bytes_then_close
+  and _decoded_body_headers. This supplies B1030's generic transport path without making
+  it depend on the proxy route that consumes it. B1015 provides provider transforms,
+  B173 the response stream and B2402 the shared exception mapper.
+
+  Keep buffered and streamed content separate through the transport boundary. Buffered calls
+  intentionally omit the per-call timeout at GET; streaming passes it explicitly or selects
+  the client default. Decoder ownership stays with transport and the concrete provider; this
+  service forwards bytes and typed headers. Add SDK HTTP operation file_http_content in B2401,
+  including binary bodies, compressed bodies and interrupted streams, with independently
+  captured network requests. Tests live under api::file_http_content::tests. The complete
+  386-417 and 5007-5197 ranges contain 200 nonblank, non-comment lines; allocate 205
+  implementation, 150 tests, 120 cases, 90 adapters and 35 wiring lines, totaling 600.
+scope:
+  paths:
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/file_http_content.rs
+  - crates/betterlite-core/src/api/file_http_content/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/file_http_content.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/file_http_content.py
+  - tools/oracle/cases/sdk-http/file-http-content/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/file-http-content-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L386-L417
+  why: Prepared content request, closing byte iterator and encoding-aware response headers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5007-L5197
+  why: Whole buffered and streaming content methods with their distinct deadline and error-body paths.
+dod:
+- text: >-
+    content_request_preparation sends file_id=f and extra provider data. Request transform runs
+    with optional_params={}, environment validation with api_key from litellm_params, model="",
+    messages=[],optional_params={}, then pre_call input="",api_key="", and api_base/headers/file_id.
+    Both buffered modes GET transformed URL/headers/query without timeout; binary b"\x00\xff"
+    reaches the provider response transform unchanged. A setup failure produces no request.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    content_failure_body returns mock status=404 and body="missing": the provider error receives
+    message="missing", status_code=404 and response headers, with no success transform. Buffered
+    transport exceptions use B2402. Streaming 400 with invalid UTF-8 reads the complete bounded
+    error body, replaces invalid bytes with U+FFFD, closes the response, then constructs the same
+    provider error. A non-error 3xx reaches the transform if the configured transport returns it.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    streaming_content_transport requests GET with stream=true, chunk_size=3, and timeout=2;
+    prepared query x=new overrides URL x=old on this streaming path. A null timeout uses the
+    client default. Bytes arrive before completion and the transform receives the actual request
+    URL, decoded headers, iterator and logging context. EOF, iterator failure and cancellation each
+    close the response exactly once. Do not buffer a successful response merely to transform headers.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: >-
+    decoded_content_headers retains all headers when content-encoding is absent or case-insensitive
+    IDENTITY; gzip or empty content-encoding removes every content-encoding and content-length
+    occurrence after decompression. Other repeated headers retain order and values. Header names
+    are compared case-insensitively; content-disposition and content-type survive.
+  proof: [behavior-tests, oracle, sdk-python]
+- text: Byte transport cases and typed operation seeds are new, and streamed bodies are compared as bytes.
+  proof: [new-cases, sdk-seeds, oracle, sdk-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: buffered deadlines, stream cleanup or decoded header rules lack assertions
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_http_content::tests::/) - test(/replays_/)'
+  - id: sdk-python
+    why: byte-stream SDK adapter is missing or untyped
+    run: test -f tools/oracle/sdk_http/file_http_content.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: sdk-seeds
+    why: the binary SDK input has no new corpus seed
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-http-content-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: content execution has no new provider mock cases
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/file-http-content)"
+oracle_cases:
+- tools/oracle/cases/sdk-http/file-http-content/content-request-preparation.yaml
+- tools/oracle/cases/sdk-http/file-http-content/content-failure-body.yaml
+- tools/oracle/cases/sdk-http/file-http-content/streaming-content-transport.yaml
+- tools/oracle/cases/sdk-http/file-http-content/decoded-content-headers.yaml
+deviations: []
+out_of_scope:
+- B2461 owns upload and B2462 metadata/delete/list execution. B2402 owns _handle_error and B173 owns compression, client policy and raw network errors; unrelated endpoint methods keep their existing owners.
+- B1030 selects file providers; B1080 wraps logging; B1033 chooses HTTP streaming and filters proxy response headers.
+pitfalls:
+- Streaming query merging gives prepared parameters precedence, unlike B173's ordinary URL-query merge.
+- Stripping content-length without checking content-encoding would change identity response headers.
+- A failed stream open and a later failed byte iterator use different error paths.
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

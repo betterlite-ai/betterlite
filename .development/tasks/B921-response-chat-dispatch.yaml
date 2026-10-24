@@ -1,163 +1,112 @@
 id: B921
-title: Response chat dispatch
+title: Execute the chat-to-Responses bridge
 description: >-
-  Wire chat calls backed by a native Responses provider through B014. Resolve bridge direction once, build request
-  and stream/nonstream response using the split converters, and expose the existing logging/context result seam
-  without a second terminal log.
+  Implement api::response_chat_dispatch for every function in the bridge handler, including
+  validation, sync/async execution, stream collection, cached-result handling and provider
+  post-processing. Compose B918 request mapping, B919 results, B920 streaming, B1078 sync
+  Responses and B932 async Responses. B010 supplies MockResponseIterator, B005 the stream
+  wrapper, B012 logging, B2230 chat-config selection and B2202 its default post-processing.
+  Use typed constructor inputs for response/config objects; validation still reports the
+  same missing/wrong-type fields at the SDK boundary. This layer decodes no bytes.
 
-
-  Implement crates/betterlite-core/src/api/response_chat_dispatch.rs. Use ResponseChatDispatchInput and ResponseChatDispatchResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions native_responses_chat_dispatch, stream_chat_dispatch, provider_error_once,
-  previous_response_forwarding under api::response_chat_dispatch::tests. Each named function drives production code
-  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponseChatDispatch in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {response_chat_dispatch: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/completion_extras/litellm_responses_transformation/handler.py: _restore_routing_prefix
-  (L28-L30); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.__init__
-  (L34-L38); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._resolve_stream_flag
-  (L41-L45); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._is_preformatted_cached_chat_stream
-  (L48-L51); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._coerce_response_object
-  (L54-L75); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._collect_response_from_stream
-  (L77-L90); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._collect_response_from_stream_async
-  (L92-L105); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.validate_input_kwargs
-  (L107-L155); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.completion
-  (L157-L257); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler.acompletion
-  (L259-L353); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._completed_response_as_stream
-  (L355-L372); litellm/completion_extras/litellm_responses_transformation/handler.py: ResponsesToCompletionBridgeHandler._apply_post_stream_processing
-  (L375-L393). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 332 owned nonblank/non-comment/non-docstring Python lines (337 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 352 implementation,
-  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 584 total within the 590-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B014 (Call dispatch across providers and call types, shared settings and helpers), B171
-  (Direct helper oracle and URL path encoding), B918 (Response chat request), B919 (Response chat result), B920
-  (Responses to chat stream), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
-  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  Extend B2401 with response_chat_dispatch and capture both sync and async requests to
+  the mock provider. Nonstreaming calls that receive a stream must actually consume that
+  HTTP stream. Unit tests may inject completed/cached result variants to cover dispatch
+  branches, but provider execution cases must not stub responses()/aresponses(). The
+  handler contains 330 nonblank/non-comment lines. Budget 310 implementation, 180 tests,
+  155 HTTP fixtures, 115 adapters and 30 wiring: 790 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/response_chat_dispatch.rs
   - crates/betterlite-core/src/api/response_chat_dispatch/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/response_chat_dispatch.rs
-  - tools/oracle/src/helpers/response_chat_dispatch/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/response_chat_dispatch.py
-  - tools/oracle/helpers/response_chat_dispatch/**
-  - tools/oracle/fuzz/corpus/helper_case/response_chat_dispatch-*
-  - tools/oracle/cases/helpers/response-chat-dispatch/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/response_chat_dispatch.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/response_chat_dispatch.py
+  - tools/oracle/cases/sdk-http/response-chat-dispatch/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/handler.py#L1-L396
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Entire handler preserves validation order, prefix restoration, sync/async client difference and all stream branches.
 dod:
-- text: 'native responses chat dispatch: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-native-responses-chat-dispatch
-  - oracle
-- text: 'stream chat dispatch: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-stream-chat-dispatch
-  - oracle
-- text: 'provider error once: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-provider-error-once
-  - oracle
-- text: 'previous response forwarding: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-previous-response-forwarding
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    bridge_input_validation removes or gives the wrong type to each required field in
+    order model,custom_llm_provider,messages,optional_params,litellm_params,headers,
+    model_response,logging_obj. The first invalid field raises ValueError "<field> is required"
+    and makes zero provider requests; SDK projection has no status/type/param/code on the
+    direct handler exception. Empty string model/provider,empty list messages and empty
+    dict options/headers are accepted by this validator. encoding is optional and defaults null.
+  proof: [dispatch-tests, oracle, dispatch-adapter]
+- text: >-
+    prefixed_provider_execution sends model=gpt-4o-mini,provider=openai,user hello,
+    api_key=sk-test to exactly one POST /v1/responses with Bearer sk-test and Responses
+    input from B918. The SDK receives model=openai/gpt-4o-mini and custom_llm_provider=openai,
+    overwriting conflicting sanitized kwargs without duplicate arguments; the provider
+    receives model=gpt-4o-mini. Mock response resp_a with text hi becomes chat id=resp_a,
+    model=gpt-4o-mini,content=hi via B919. completion(acompletion=true) uses the async path
+    only for boolean true. Sync passes client to B918; async omits it, so client=null there.
+  proof: [dispatch-tests, oracle, dispatch-adapter]
+- text: >-
+    stream_flag_and_collection injects outer stream=true only when optional_params has
+    no stream key; existing false or null is retained. _resolve_stream_flag uses the
+    optional value unless null, then SDK stream default false, and finally bool conversion.
+    optional stream=false plus litellm_params.stream=true makes B918 request a provider
+    stream but this handler collect it to a final chat response. Capture SSE text hi and
+    response.completed; both sync/async fully drain it and use completed_response.response.
+    EOF without that object raises ValueError "Stream ended without a completed response".
+  proof: [dispatch-tests, oracle, dispatch-adapter]
+- text: >-
+    collected_response_coercion keeps a ResponsesAPIResponse, constructs a dict normally,
+    and falls back to model_construct when dict validation fails. A string payload raises
+    ValueError "Unexpected responses stream payload". Existing nonempty hidden parameters
+    win per key over stream hidden parameters; absent/empty/non-dict maps are replaced by
+    a copy. The defensive "Stream completed response is invalid" guard is unreachable
+    with the closed coercion result, so it is not a new user-facing failure path.
+  proof: [dispatch-tests]
+- text: >-
+    streaming_result_dispatch returns a direct ResponsesAPIResponse through B919 even
+    when stream=true. A direct ModelResponse passes through when false and uses B010's
+    MockResponseIterator when true. A cached_response CustomStreamWrapper bypasses B920
+    translation but still receives post-processing. Ordinary streams use B920 with
+    sync_stream=true/false matching the entry mode, then B005 wrapping. Capture two
+    provider chunks split inside JSON and verify the translated text remains hi with one
+    stable ID, one terminal finish reason and no duplicate content; cancellation closes
+    the mock connection through the underlying B005/B010 stream owner.
+  proof: [dispatch-tests, oracle, dispatch-adapter]
+- text: >-
+    post_stream_and_failure selects provider config with the unprefixed model and provider
+    enum. ValueError/KeyError during selection or no config returns the stream unchanged;
+    other errors propagate. A present config's post_stream_processing return value is
+    returned verbatim. Provider 401 with error message=bad key,type=invalid_api_key,
+    code=invalid_api_key,param=null makes one request at retries=0 and preserves B011's
+    AuthenticationError,status=401,body/type/param/code null and declared message policy.
+  proof: [dispatch-tests, oracle, dispatch-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::/)
-      - test(/::replays_corpus$/)'
-  - id: case-native-responses-chat-dispatch
-    why: the native-responses-chat-dispatch behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::native_responses_chat_dispatch($|::)/)'
-  - id: case-stream-chat-dispatch
-    why: the stream-chat-dispatch behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::stream_chat_dispatch($|::)/)'
-  - id: case-provider-error-once
-    why: the provider-error-once behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::provider_error_once($|::)/)'
-  - id: case-previous-response-forwarding
-    why: the previous-response-forwarding behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::tests::previous_response_forwarding($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/response_chat_dispatch.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/response_chat_dispatch-*)"
-      && grep -qE "^[[:space:]]+response_chat_dispatch:" tools/oracle/fuzz/corpus/helper_case/response_chat_dispatch-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/response-chat-dispatch)"
+  - id: dispatch-tests
+    why: execution dispatch drops validation, result variants or stream collection semantics
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::/)'
+  - id: dispatch-adapter
+    why: the bridge lacks independently captured SDK provider requests
+    run: test -f tools/oracle/sdk_http/response_chat_dispatch.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/response-chat-dispatch)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/response-chat-dispatch/native-responses-chat-dispatch.yaml
-- tools/oracle/cases/helpers/response-chat-dispatch/stream-chat-dispatch.yaml
-- tools/oracle/cases/helpers/response-chat-dispatch/provider-error-once.yaml
-- tools/oracle/cases/helpers/response-chat-dispatch/previous-response-forwarding.yaml
+- tools/oracle/cases/sdk-http/response-chat-dispatch/bridge-input-validation.yaml
+- tools/oracle/cases/sdk-http/response-chat-dispatch/prefixed-provider-execution.yaml
+- tools/oracle/cases/sdk-http/response-chat-dispatch/stream-flag-and-collection.yaml
+- tools/oracle/cases/sdk-http/response-chat-dispatch/streaming-result-dispatch.yaml
+- tools/oracle/cases/sdk-http/response-chat-dispatch/post-stream-and-failure.yaml
 deviations: []
 out_of_scope:
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1078/B932 own Responses SDK preparation and provider execution; B918/B919/B920 own transformations, B005/B010 transport iteration and cleanup.
+- Provider-specific post_stream_processing implementations remain with their provider tasks; this handler invokes the selected typed config seam.
+- B158-B161 own Python coroutine/event-loop facades; this task preserves observable sync/async behavior in its native execution modes.
 pitfalls:
-- ResponsesToCompletionBridgeHandler._resolve_stream_flag uses optional_params.get('stream'); retain its missing-value
-  behavior and field spelling in the typed projection.
-- ResponsesToCompletionBridgeHandler._resolve_stream_flag uses litellm_params.get('stream', False); retain its missing-value
-  behavior and field spelling in the typed projection.
+- The request builder ORs stream flags, but this handler resolves an explicit false differently and may need to drain a stream.
+- The async path does not pass client to transform_request although the sync path does.
+- Completed Responses objects bypass stream wrapping even when the caller requested streaming.
 review_level: standard
 budget:
-  max_changed_lines: 590
+  max_changed_lines: 790
   max_new_expects: 1

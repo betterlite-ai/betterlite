@@ -1,193 +1,127 @@
 id: B1113
 title: Responses streaming event records
 description: >-
-  Define native Responses event records and the public event decoder in the wire crate, including terminal usage
-  and all pinned event discriminants. Reuse B902 response objects through a lower common record dependency, not
-  a reverse orchestration dependency.
+  Add the event records and complete ResponsesAPIStreamingResponse union from openai.py
+  L1509-L1929 to betterlite-openai::api::responses_event_records. The old range stopped in
+  the union; this task owns its closing discriminator too. Reuse B1138 response objects and
+  B902 WireDecodeLimits. decode_responses_event_record(bytes, limits) decodes one JSON event;
+  SSE framing and event selection remain B925. The parser must preserve generic provider
+  fields and the difference between required nullable fields and defaults.
 
+  Cover every enum literal with a named rstest row and a helper oracle input. The pinned
+  Python adapter constructs the corresponding event model or GenericEvent; it must not
+  replace the union's permissive generic path with a stricter invented schema. ErrorEvent
+  is an event value, not a raised HTTP exception. Private _hidden_params on a completed
+  event is empty and absent from JSON. Feed arbitrary bytes to this same decoder from
+  responses_event_records fuzzing and replay committed corpus seeds with replays_corpus.
 
-  Implement crates/betterlite-openai/src/api/responses_event_records.rs. Use ResponsesEventRecordsInput and ResponsesEventRecordsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions terminal_usage_records, event_discriminants, tool_call_delta_record,
-  reasoning_summary_record, unknown_event_shape under api::responses_event_records::tests. Each named function drives
-  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
-  separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-openai::api::responses_event_records::decode_responses_event_record(bytes:
-  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
-  in crates/betterlite-openai/src/api/responses_event_records.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-openai/fuzz/fuzz_targets/responses_event_records.rs passes arbitrary bounded bytes to
-  that exact decoder; api::responses_event_records::tests::replays_corpus replays newly committed seeds through
-  the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::ResponsesEventRecords in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_event_records: <typed input>};
-  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
-  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 261 owned nonblank/non-comment/non-docstring Python lines (266 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 281 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 591 total within the 600-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B004 (OpenAI chat completions without streaming), B171 (Direct helper oracle and URL path
-  encoding), B1087 (Api boundaries), B1138 (Responses objects and usage). These are callable/type/config owners,
-  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
-  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
-  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
-
-
-  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
-  convert B1087 limits into it. This record has no dependency on the core crate.
+  There are 295 nonblank, non-comment lines including the union tail. Budget 305 native
+  declarations/decoder, 145 behavior tests, 130 compact oracle fixtures, 85 adapters,
+  60 fuzz/replay and 25 wiring: 750 lines.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api.rs
   - crates/betterlite-openai/src/api/responses_event_records.rs
   - crates/betterlite-openai/src/api/responses_event_records/**
-  - crates/betterlite-openai/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/responses_event_records.rs
   - crates/betterlite-openai/fuzz/corpus/responses_event_records/**
+  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_event_records.rs
-  - tools/oracle/src/helpers/responses_event_records/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_event_records.py
-  - tools/oracle/helpers/responses_event_records/**
   - tools/oracle/fuzz/corpus/helper_case/responses_event_records-*
   - tools/oracle/cases/helpers/responses-event-records/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1509-L1900
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1509-L1929
+  why: Every event discriminant, concrete record and the whole discriminator union, including GenericEvent fallback.
 dod:
-- text: 'terminal usage records: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-terminal-usage-records
-  - oracle
-- text: 'event discriminants: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-event-discriminants
-  - oracle
-- text: 'tool call delta record: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-call-delta-record
-  - oracle
-- text: 'reasoning summary record: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-reasoning-summary-record
-  - oracle
-- text: 'unknown event shape: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-unknown-event-shape
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    lifecycle_events sends each of response.created,response.in_progress,response.completed,
+    response.failed,response.incomplete with response={id:resp_a,created_at:1,output:[],
+    usage:{input_tokens:2,output_tokens:1,total_tokens:3}}; expect unchanged type and token counts.
+    Only completed,incomplete,failed belong to ResponsesTerminalEvent. Hidden fields are omitted.
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    item_content_events round-trips response.output_item.added with output_index=2,item=null;
+    response.output_item.done with item={type:message} defaults sequence_number=1.
+    response.content_part.added/done preserve item_id=msg_a,output_index=2,content_index=3.
+    Done parts accept {type:output_text,text:hi,annotations:[],logprobs:null},
+    {type:refusal,refusal:no} and {type:reasoning_text,reasoning:think}. Missing required
+    logprobs in the concrete output-text part fails. Logprob objects retain token="a",
+    logprob=-1,bytes=[97],top_logprobs=[{token:b,logprob:-2}].
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    text_tool_events preserves item_id=i,output_index=0,content_index=1 and payloads for
+    response.output_text.delta(delta=hi),response.output_text.done(text=hi),
+    response.output_text.annotation.added(annotation_index=2,annotation={type:url_citation,url:https://a.test}),
+    response.refusal.delta(delta=no),response.refusal.done(refusal=no).
+    response.function_call_arguments.delta uses delta="{" and .done uses arguments="{}";
+    neither requires content_index. response.custom_tool_call_input.delta(delta=patch),
+    response.custom_tool_call_input.done(input=patch),response.shell_call.in_progress,
+    response.shell_call.completed,response.shell_call_output.done use GenericEvent and retain extra fields.
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    reasoning_events supplies item_id=rs_a,output_index=1 to response.reasoning_summary_part.added
+    with part={type:summary_text,text:hi}; response.reasoning_summary_text.delta adds delta=hi
+    and defaults summary_index=0. response.reasoning_summary_text.done(text=hi,sequence_number=7)
+    and response.reasoning_summary_part.done(part={type:summary_text,text:hi},sequence_number=8)
+    also default summary_index=0; explicit summary_index=3 survives. Concrete done models
+    reject missing sequence_number rather than inventing it.
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    search_mcp_events sends output_index=2,item_id=tool_a for response.file_search_call.in_progress,
+    .searching,.completed and response.web_search_call.in_progress,.searching,.completed;
+    expect the exact type and indices. response.mcp_list_tools.in_progress,.completed,.failed
+    and response.mcp_call.in_progress,.completed,.failed additionally require sequence_number=4.
+    response.mcp_call_arguments.delta(delta="{") and .done(arguments="{}") retain that sequence
+    and do not parse the payload string as JSON. image_generation.partial_image carries
+    partial_image_index=1,b64_json=YQ== without requiring item_id.
+  proof: [event-tests, oracle, event-adapter]
+- text: >-
+    error_and_generic sends type=error,sequence_number=9,error={type:invalid_request_error,
+    code:context_length_exceeded,message:too long}; param defaults null, with explicit param=input
+    and param={field:input} both accepted. GenericEvent(type=vendor.future,extra=7) preserves
+    extra=7, including protected-name keys such as model_debug. Missing type fails that concrete
+    model. Record validation errors remain validation failures, not fabricated HTTP status codes.
+  proof: [event-tests, oracle, event-adapter]
+- text: Event JSON over the supplied byte limit is rejected and malformed/new event corpus files replay without panics.
+  proof: [event-corpus]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::/)
-      - test(/::replays_corpus$/)'
-  - id: case-terminal-usage-records
-    why: the terminal-usage-records behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::tests::terminal_usage_records($|::)/)'
-  - id: case-event-discriminants
-    why: the event-discriminants behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::tests::event_discriminants($|::)/)'
-  - id: case-tool-call-delta-record
-    why: the tool-call-delta-record behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::tests::tool_call_delta_record($|::)/)'
-  - id: case-reasoning-summary-record
-    why: the reasoning-summary-record behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::tests::reasoning_summary_record($|::)/)'
-  - id: case-unknown-event-shape
-    why: the unknown-event-shape behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::tests::unknown_event_shape($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/responses_event_records)"
-      && test -f crates/betterlite-openai/fuzz/fuzz_targets/responses_event_records.rs && grep -qF "decode_responses_event_record"
-      crates/betterlite-openai/fuzz/fuzz_targets/responses_event_records.rs && cargo nextest run --locked -p betterlite-openai
-      --no-tests=fail -E 'test(/^api::responses_event_records::tests::replays_corpus$/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_event_records.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_event_records-*)"
-      && grep -qE "^[[:space:]]+responses_event_records:" tools/oracle/fuzz/corpus/helper_case/responses_event_records-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-event-records)"
+  - id: event-tests
+    why: a discriminant, required field or event-specific default is wrong
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::/) - test(/::replays_corpus$/)'
+  - id: event-adapter
+    why: the event oracle cannot construct the pinned event classes independently
+    run: test -f tools/oracle/helpers/responses_event_records.py && grep -qE '^[[:space:]]+responses_event_records:' tools/oracle/fuzz/corpus/helper_case/responses_event_records-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: event-corpus
+    why: external event bytes have no production-decoder fuzz replay
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/responses_event_records)" && grep -qF decode_responses_event_record crates/betterlite-openai/fuzz/fuzz_targets/responses_event_records.rs && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_event_records::tests::replays_corpus$/)'
 oracle_cases:
-- tools/oracle/cases/helpers/responses-event-records/terminal-usage-records.yaml
-- tools/oracle/cases/helpers/responses-event-records/event-discriminants.yaml
-- tools/oracle/cases/helpers/responses-event-records/tool-call-delta-record.yaml
-- tools/oracle/cases/helpers/responses-event-records/reasoning-summary-record.yaml
-- tools/oracle/cases/helpers/responses-event-records/unknown-event-shape.yaml
+- tools/oracle/cases/helpers/responses-event-records/lifecycle-events.yaml
+- tools/oracle/cases/helpers/responses-event-records/item-content-events.yaml
+- tools/oracle/cases/helpers/responses-event-records/text-tool-events.yaml
+- tools/oracle/cases/helpers/responses-event-records/reasoning-events.yaml
+- tools/oracle/cases/helpers/responses-event-records/search-mcp-events.yaml
+- tools/oracle/cases/helpers/responses-event-records/error-and-generic.yaml
 deviations: []
 out_of_scope:
-- 'litellm/types/llms/openai.py: B004 owns HttpxBinaryResponseContent.__init__ L124-L126, HttpxBinaryResponseContent.logging_summary
-  L128-L133, HttpxBinaryResponseContent._num_bytes L135-L139, HttpxBinaryResponseContent.set_response_cost L141-L145,
-  NotGiven.__bool__ L166-L167, NotGiven.__repr__ L170-L171, OpenAIFileObject._omit_absent_batch_guardrail L411-L417,
-  OpenAIFileObject.__contains__ L419-L421, OpenAIFileObject.get L423-L425, OpenAIFileObject.__getitem__ L427-L429,
-  OpenAIFileObject.json L431-L436, OpenAIChatCompletionChunk.__init__ L1112-L1115, OpenAIVideoObject.__contains__
-  L2563-L2564, OpenAIVideoObject.get L2566-L2567, OpenAIVideoObject.__getitem__ L2569-L2570, OpenAIVideoObject.json
-  L2572-L2576.'
-- 'litellm/types/llms/openai.py: B1138 owns ResponseAPIUsage.parse_cost L1360-L1364, ResponsesAPIResponse.validate_reasoning_to_dict
-  L1428-L1436, ResponsesAPIResponse.validate_usage L1440-L1446, ResponsesAPIResponse._serialize_output_filter_reasoning_nulls
-  L1450-L1473, ResponsesAPIResponse.output_text L1476-L1506.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1138 owns parse_cost, reasoning/usage validators, reasoning-null serialization and output_text in openai.py; B004 owns all remaining methods in that file, outside L1273-L1929.
+- B925 chooses event classes during SSE processing; B937 constructs client-facing stream errors and B927 drives provider streams.
 pitfalls:
-- ResponsesAPIStreamEvents discriminants distinguish output_item.done from response.completed; terminal usage belongs
-  to the response object supplied by B1138.
-- Preserve optional output_index/content_index fields and provider extension fields instead of guessing indexes
-  from event order.
+- image_generation.partial_image has no response. prefix, unlike most event strings.
+- summary_index defaults to 0, but most output/content indices and MCP sequence numbers are required.
+- Custom-tool and shell enum members have no dedicated record class here and must survive through GenericEvent.
 review_level: standard
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 750
   max_new_expects: 1

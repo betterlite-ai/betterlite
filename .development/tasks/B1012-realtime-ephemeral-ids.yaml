@@ -1,184 +1,110 @@
 id: B1012
-title: Realtime ephemeral ids
+title: Realtime token payloads and authorized session selection
 description: >-
-  Prepare realtime session model candidates and encode/decode proxy ephemeral-token payloads through B061 encryption.
-  Bind model, session type, user and team to the returned credential; keep legacy raw-token recognition without
-  granting additional permissions.
+  Own the seven complete helpers at realtime_endpoints/endpoints.py:43-213 in
+  betterlite-core::api::realtime_ephemeral_ids. They select/authorize session models and encode/decode
+  the plaintext routing payload; encryption itself is B061 and is invoked by the route owners.
+  Session types realtime/transcription are accepted exactly; every other value becomes realtime.
+  Defaults are gpt-4o-realtime-preview and gpt-realtime-whisper. Token version is the string realtime_v1.
+  Preserve the distinction between missing session and an empty supplied session record.
 
+  For transcription, collect nonempty string models from GA audio.input.transcription first, then
+  flat input_audio_transcription, deduplicating without trimming. If neither exists, try session.model
+  then root model; otherwise use the transcription default. Authorize every candidate through B886
+  before rewriting both nested shapes to the first candidate and removing session.model. Ordinary
+  realtime authorizes session.model or root model or its default once. B1004 owns request types.
 
-  Implement crates/betterlite-core/src/api/realtime_ephemeral_ids.rs. Use RealtimeEphemeralIdsInput and RealtimeEphemeralIdsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions ephemeral_token_roundtrip, legacy_token, transcription_model_candidates,
-  payload_user_team, malformed_token under api::realtime_ephemeral_ids::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  The production external-byte decoder is betterlite-core::api::realtime_ephemeral_ids::decode_realtime_ephemeral_ids(bytes:
-  &[u8], limits: &ApiLimits), for json.loads input decrypted_value at litellm/proxy/realtime_endpoints/endpoints.py:201.
-  Place its implementation in crates/betterlite-core/src/api/realtime_ephemeral_ids.rs and call it from the actual
-  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/realtime_ephemeral_ids.rs passes arbitrary
-  bounded bytes to that exact decoder; api::realtime_ephemeral_ids::tests::replays_corpus replays newly committed
-  seeds through the same function. Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::RealtimeEphemeralIds in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {realtime_ephemeral_ids: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/proxy/realtime_endpoints/endpoints.py: _coerce_realtime_session_type (L43-L46); litellm/proxy/realtime_endpoints/endpoints.py:
-  _append_model_candidate (L49-L51); litellm/proxy/realtime_endpoints/endpoints.py: _transcription_model_candidates_from_session
-  (L54-L72); litellm/proxy/realtime_endpoints/endpoints.py: _set_transcription_model_on_session (L75-L120); litellm/proxy/realtime_endpoints/endpoints.py:
-  _prepare_client_secret_session (L123-L167); litellm/proxy/realtime_endpoints/endpoints.py: _encode_realtime_token_payload
-  (L170-L191); litellm/proxy/realtime_endpoints/endpoints.py: _decode_realtime_token_payload (L194-L213). Abstract/protocol
-  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
-  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 141 owned nonblank/non-comment/non-docstring Python lines (148 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 161 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 471 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B061 (Stored credentials and their encryption), B171 (Direct helper oracle and URL path
-  encoding), B1004 (Realtime contracts), B1087 (Api boundaries), B732 (Typed authentication principals and grant
-  resolution), B855 (Authenticated request admission and budget handoff), B756 (Authentication header selection
-  and mode dispatch). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
-  ids retain ownership on the provider and keys/data branches.
+  HelperCall::RealtimeEphemeralIds compares the pure type/candidate/setter/token functions through B171.
+  _prepare_client_secret_session has native B886 invocation-order tests; B1126's secret_authorized_models
+  HTTP case supplies composed authorization parity without introducing a reverse route dependency here.
+  decode_realtime_token_payload(bytes,limits) is the production bounded decrypted-token decoder; fuzz
+  and replay it with JSON and raw legacy tokens. A failure returns None, not an HTTP error, because
+  B084 decides whether to use legacy-token fallback. Source functions contain 148 nonblank/non-comment
+  lines; budget 145 implementation,125 tests,95 fixtures,80 adapters,60 fuzz/replay and 25 wiring =530 lines.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/realtime_ephemeral_ids.rs
   - crates/betterlite-core/src/api/realtime_ephemeral_ids/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-core/fuzz/Cargo.toml
-  - crates/betterlite-core/fuzz/fuzz_targets/realtime_ephemeral_ids.rs
-  - crates/betterlite-core/fuzz/corpus/realtime_ephemeral_ids/**
-  - tools/oracle/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/realtime_token_payload.rs
+  - crates/betterlite-core/fuzz/corpus/realtime_token_payload/**
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/realtime_ephemeral_ids.rs
-  - tools/oracle/src/helpers/realtime_ephemeral_ids/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/realtime_ephemeral_ids.py
-  - tools/oracle/helpers/realtime_ephemeral_ids/**
-  - tools/oracle/fuzz/corpus/helper_case/realtime_ephemeral_ids-*
   - tools/oracle/cases/helpers/realtime-ephemeral-ids/**
+  - tools/oracle/fuzz/corpus/helper_case/realtime-ephemeral-ids-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L43-L213
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/realtime_endpoints/endpoints.py#L37-L213
+  why: Exact defaults, all seven helpers, authorization-before-rewrite and deliberately permissive token decoding.
 dod:
-- text: 'ephemeral token roundtrip: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-ephemeral-token-roundtrip
-  - oracle
-- text: 'legacy token: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-legacy-token
-  - oracle
-- text: 'transcription model candidates: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-transcription-model-candidates
-  - oracle
-- text: 'payload user team: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-payload-user-team
-  - oracle
-- text: 'malformed token: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-malformed-token
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    realtime_session_candidate_order maps None,"",Realtime,unknown to realtime and preserves exact realtime/
+    transcription. Nested GA model=a then flat model=b yields [a,b]; duplicate a yields [a]. Empty or nonstring
+    model is ignored, but " " is retained without trimming. Setter rewrites both existing dictionary shapes
+    to model=a, retaining language and siblings. create_if_missing=false creates nothing; true with no valid
+    transcription object creates audio.input.transcription={model:a}, replacing nonobject audio/input as needed.
+    If a flat object exists, it is updated and no GA shape is created.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    authorized_realtime_session_selection uses native authorizer snapshots: no session/root model chooses
+    gpt-4o-realtime-preview with session_data=None; an empty supplied session gains type=realtime. Realtime
+    session.model beats root model and is authorized once. Transcription nested candidates [allowed,forbidden]
+    cause both B886 checks in order and propagate the second denial before mutation. Both allowed rewrite
+    both nested models to the first and remove session.model. Without nested candidates, distinct session/root
+    models are both authorized; without any candidates authorize gpt-realtime-whisper and create GA transcription.
+    Every call carries the same principal,model list and router. B1126 owns the matching booted-proxy HTTP case.
+  proof: [behavior-tests]
+- text: >-
+    realtime_token_encoding emits compact JSON in order v,ephemeral_key,model_id,user_id,team_id,expires_at,
+    session_type. For key=ep,model=m,user=None,team="",expiry=None expect
+    {"v":"realtime_v1","ephemeral_key":"ep","model_id":"m","user_id":"","team_id":"","expires_at":null,"session_type":"realtime"}.
+    Explicit transcription is retained, Unicode uses JSON's ASCII escapes, empty ephemeral/model strings are
+    allowed. Even ephemeral_key=null or 7 is serialized unchanged despite the annotation; the decoder later
+    rejects it. No encryption, signing, expiry check or owner authorization occurs in this function.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    realtime_token_legacy_decoding returns None for raw ep-test,malformed JSON,[],null,wrong/missing v,
+    nonstring/missing ephemeral_key or model_id. Correct version with empty string key/model is accepted.
+    Unknown fields and malformed ancillary user_id/team_id/expires_at/session_type values pass through:
+    only the version and two string fields are checked. expires_at=true remains true and is not converted
+    here. Decoding a valid compact payload returns its fields unchanged. No error status is manufactured.
+  proof: [behavior-tests, oracle, helper-python]
+- text: Token bytes and pure helper seeds are newly added and use the production decoder.
+  proof: [decoder-corpus, helper-corpus, new-cases, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::/)
-      - test(/::replays_corpus$/)'
-  - id: case-ephemeral-token-roundtrip
-    why: the ephemeral-token-roundtrip behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::ephemeral_token_roundtrip($|::)/)'
-  - id: case-legacy-token
-    why: the legacy-token behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::legacy_token($|::)/)'
-  - id: case-transcription-model-candidates
-    why: the transcription-model-candidates behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::transcription_model_candidates($|::)/)'
-  - id: case-payload-user-team
-    why: the payload-user-team behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::payload_user_team($|::)/)'
-  - id: case-malformed-token
-    why: the malformed-token behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::malformed_token($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/realtime_ephemeral_ids)"
-      && test -f crates/betterlite-core/fuzz/fuzz_targets/realtime_ephemeral_ids.rs && grep -qF "decode_realtime_ephemeral_ids"
-      crates/betterlite-core/fuzz/fuzz_targets/realtime_ephemeral_ids.rs && cargo nextest run --locked -p betterlite-core
-      --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::replays_corpus$/)'
+    why: Authorization order, nested model rewrites and permissive legacy detection need production assertions.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::/) - test(/::replays_corpus$/)'
+  - id: decoder-corpus
+    why: Decrypted token bytes are still untrusted and must reach the bounded production parser.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/realtime_token_payload)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_ephemeral_ids::tests::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/realtime_ephemeral_ids.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: Pure payload transforms must run against the pinned helpers without invoking FastAPI routes.
+    run: test -f tools/oracle/helpers/realtime_ephemeral_ids.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime_ephemeral_ids-*)"
-      && grep -qE "^[[:space:]]+realtime_ephemeral_ids:" tools/oracle/fuzz/corpus/helper_case/realtime_ephemeral_ids-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: The realtime_ephemeral_ids tag must appear under call in a new seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/realtime-ephemeral-ids-*)" && grep -qE '^[[:space:]]+realtime_ephemeral_ids:' tools/oracle/fuzz/corpus/helper_case/realtime-ephemeral-ids-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: Token encoding/decoding and candidate selection require fresh pure parity fixtures.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/realtime-ephemeral-ids)"
 oracle_cases:
-- tools/oracle/cases/helpers/realtime-ephemeral-ids/ephemeral-token-roundtrip.yaml
-- tools/oracle/cases/helpers/realtime-ephemeral-ids/legacy-token.yaml
-- tools/oracle/cases/helpers/realtime-ephemeral-ids/transcription-model-candidates.yaml
-- tools/oracle/cases/helpers/realtime-ephemeral-ids/payload-user-team.yaml
-- tools/oracle/cases/helpers/realtime-ephemeral-ids/malformed-token.yaml
+- tools/oracle/cases/helpers/realtime-ephemeral-ids/realtime-session-candidate-order.yaml
+- tools/oracle/cases/helpers/realtime-ephemeral-ids/realtime-token-encoding.yaml
+- tools/oracle/cases/helpers/realtime-ephemeral-ids/realtime-token-legacy-decoding.yaml
 deviations: []
 out_of_scope:
-- 'litellm/proxy/realtime_endpoints/endpoints.py: B1126 owns create_realtime_client_secret L231-L359, create_realtime_transcription_session
-  L536-L658.'
-- 'litellm/proxy/realtime_endpoints/endpoints.py: B084 owns proxy_realtime_calls L374-L518.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1126 owns both secret/transcription handlers at 216-359 and 521-658; B084 owns the complete WebRTC calls handler at 362-518. B061 owns encrypt_value_helper/decrypt_value_helper and key management.
 pitfalls:
-- Within _coerce_realtime_session_type\'s session_type in _ALLOWED_SESSION_TYPES branch, preserve return session_type
-  and its nested guards.
-- _transcription_model_candidates_from_session uses session.get('audio'); retain its missing-value behavior and
-  field spelling in the typed projection.
+- A malformed versioned token payload returns None and the route treats its decrypted text as a legacy key.
+- Transcription authorizes every distinct candidate before normalizing to the first; authorizing only the chosen model weakens the pin.
+- The token encoder converts absent user/team IDs to empty strings but keeps expiry=None as JSON null.
 review_level: security
 budget:
-  max_changed_lines: 480
-  max_new_expects: 1
+  max_changed_lines: 550
+  max_new_expects: 0

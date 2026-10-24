@@ -1,240 +1,134 @@
 id: B926
-title: Responses stream hooks
+title: Preserve Responses stream cache, billing and callback order
 description: >-
-  Implement terminal Responses stream side effects through B012 logging and injected B125 cache operations: completed
-  response restoration, post-stream deployment hooks, cache persistence and ordered failure callbacks. Use owned
-  task tracking and exactly-once completion/failure markers.
+  Implement api::responses_stream_hooks for all live base methods L534-L799 and L809-L952.
+  The two testing-only hook facades are excluded after checking production callers.
+  Consume B2413 state/error/task primitives and B928 detached logging/cost helpers; neither
+  depends on this task. B250/B251 provide success/failure handlers, B068 cost calculation,
+  B125 cache eligibility/writes, B189 callback registry/converted-stream flags, B004 response
+  metadata, B157 async_post_call_success_deployment_hook and B198 async/thread execution.
+  B125/B068/B157 have no detailed task files yet: consume those exact injected interfaces,
+  not local copies of their implementations. Python callbacks remain supported per README.
 
-
-  Implement crates/betterlite-core/src/api/responses_stream_hooks.rs. Use ResponsesStreamHooksInput and ResponsesStreamHooksResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions completed_cache_write, failed_usage_captured, post_success_hook_order,
-  provider_header_restoration, failure_handler_order under api::responses_stream_hooks::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesStreamHooks in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_stream_hooks: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._log_completed_response
-  (L534-L576); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._restore_provider_response_headers
-  (L578-L606); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._handle_logging_completed_response
-  (L608-L609); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._handle_logging_failed_response
-  (L611-L625); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._record_failed_response_usage
-  (L627-L645); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._map_error_event_exception
-  (L647-L648); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._maybe_raise_for_error_event
-  (L650-L671); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._get_completed_response_object
-  (L673-L683); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._persist_completed_response_to_cache
-  (L685-L757); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._call_post_streaming_deployment_hook
-  (L759-L799); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator.call_post_streaming_hooks_for_testing
-  (L801-L807); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._run_post_success_hooks
-  (L809-L884); litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._handle_failure (L886-L918);
-  litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._run_failure_handlers_in_order (L920-L931);
-  litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._submit_sync_failure_handler (L933-L943);
-  litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._record_pending_logging_task (L945-L946);
-  litellm/responses/streaming_iterator.py: BaseResponsesAPIStreamingIterator._await_pending_logging (L948-L952).
-  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
-  partial function span is the explicit preparation/transition stage described above, with typed values passed to
-  the following stage.
-
-
-  Sizing: 344 owned nonblank/non-comment/non-docstring Python lines (371 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 364 implementation,
-  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 614 total within the 620-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B012 (Logging pipeline, callback registry and redaction), B125 (Response caching core,
-  in-memory and disk caches, cache API), B171 (Direct helper oracle and URL path encoding), B925 (Responses stream
-  events), B1087 (Api boundaries), B928 (Response synthetic events), B906 (Responses usage), B002 (Load LiteLLM
-  config.yaml into typed config). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
+  Use B171 responses_stream_hooks with recording cache/logging/callback dependencies and
+  deterministic barriers. Compare invocation order, arguments, mutations and diagnostics;
+  actual provider I/O is B927's HTTP oracle. Do not wait with wall-clock sleeps or conflate
+  success-handler scheduling with completion of the callback. Reuse settings from their
+  owners, including litellm.cache and callbacks; add no new config key or parser. The live
+  methods contain 364 nonblank/non-comment lines. Budget 330 implementation, 190 tests,
+  125 fixtures, 95 adapters and 25 wiring lines: 765 total.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_stream_hooks.rs
   - crates/betterlite-core/src/api/responses_stream_hooks/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_stream_hooks.rs
-  - tools/oracle/src/helpers/responses_stream_hooks/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_stream_hooks.py
-  - tools/oracle/helpers/responses_stream_hooks/**
   - tools/oracle/fuzz/corpus/helper_case/responses_stream_hooks-*
   - tools/oracle/cases/helpers/responses-stream-hooks/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L534-L943
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L945-L946
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L948-L952
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L534-L799
+  why: Complete success/cache/header/failure-event and deployment-chunk-hook methods, with no split cache call.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L809-L952
+  why: Metadata precedes post-success hooks and failure callbacks run async-before-sync with tracked tasks.
 dod:
-- text: 'completed cache write: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-completed-cache-write
-  - oracle
-- text: 'failed usage captured: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-failed-usage-captured
-  - oracle
-- text: 'post success hook order: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-post-success-hook-order
-  - oracle
-- text: 'provider header restoration: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-provider-header-restoration
-  - oracle
-- text: 'failure handler order: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-failure-handler-order
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    terminal_cache_write stores only response.completed with a typed response,cache handler,
+    dict request kwargs,global cache and positive eligibility. Require stream exactly true
+    OR a truthy _websearch_interception_converted_stream,_compression_interception_converted_stream,
+    _headroom_interception_converted_stream or _code_interpreter_interception_converted_stream.
+    Copy kwargs,remove custom_llm_provider and null metadata,choose preset_cache_key over
+    popped cache_key unless preset is null,then pass that key to eligibility and write.
+    Nonnull metadata survives. Serialize the complete response and pass dual_cache as
+    dynamic_cache_object. Set cached=true only after sync write or async scheduling;
+    skipped/serialization-failed writes remain retryable. Async failure logs
+    "Responses stream cache write failed: broken" and does not clear the flag.
+  proof: [hook-tests, oracle, hook-adapter]
+- text: >-
+    completed_logging_once sets logged=true before cache work,then caches,creates a detached
+    B928 event,restores headers and dispatches success with start/end/cache_hit. Async uses
+    prefer_async_handlers=true; when _on_deferred_stream_complete is nonnull store the
+    coroutine in _deferred_stream_complete_args instead of scheduling it. Sync starts
+    async_success_handler then submits success_handler. Post-success hooks run after this
+    dispatch setup. A second call does nothing even if the first cache operation raised.
+    cached_response state skips persistence and passes cache_hit=true.
+  proof: [hook-tests, oracle, hook-adapter]
+- text: >-
+    logging_header_isolation leaves the caller event untouched. If B928 returned that same
+    object or nested response is not typed, restoration does nothing. Otherwise source
+    hidden additional_headers/headers win when truthy,with iterator processed/raw snapshots
+    as fallback; nonmapping candidates become {}. Copy only these header maps,then overlay
+    existing target hidden keys,so target headers win. Do not copy source response_cost
+    into the logging clone. Mutating restored headers must not mutate client-visible headers.
+  proof: [hook-tests, oracle, hook-adapter]
+- text: >-
+    failed_usage_and_error maps typed/dict usage via B928 then B906 into
+    model_call_details.combined_usage_object and records calculator result or 0.0 as
+    response_cost before failure handling. Missing/invalid usage skips billing; conversion
+    TypeError/ValueError logs "could not record usage for failed responses stream: %s".
+    error and response.failed events use B2413 mapping; other types pass. Eligible failures
+    raise MidStreamFallbackError carrying original status,generated_content equal to text
+    only and is_pre_first_chunk=!yielded_first_chunk; ineligible 400/401/404 raises the mapped
+    error directly. A created event already yielded makes is_pre_first_chunk=false even
+    though output_started is false. Preserve SDK type/param/code through B011's mapper.
+  proof: [hook-tests, oracle, hook-adapter]
+- text: >-
+    deployment_chunk_hooks uses explicit valid call_type,then valid logging.call_type,
+    otherwise null; truthy request_data wins over model_call_details. Run installed hooks
+    in order,carry each nonnull replacement forward and ignore null returns. On complete
+    hook traversal set _post_streaming_hooks_ran=true if any hook ran. A thrown exception
+    stops later hooks and returns the latest chunk silently,without setting that flag;
+    test replace a->b then fail then c to expect b and no c invocation.
+  proof: [hook-tests, oracle, hook-adapter]
+- text: >-
+    post_success_metadata overlays logging details onto request_data,ensures litellm_params
+    exists and invokes B004 update_response_metadata with include_overhead=false. Metadata
+    errors are ignored. Post-success call_type uses valid explicit value or responses,
+    not logging.call_type. With a loop,track the spawned task named
+    "Responses stream post-call success hook"; without one,run synchronously and swallow
+    errors. No completed_response means no effects. Hook return values do not replace
+    the completed event here; B157 owns callback-specific exception policy.
+  proof: [hook-tests, oracle, hook-adapter]
+- text: >-
+    failure_callback_order marks failure_handled before any work and dispatches exactly once.
+    With a loop,await async_failure_handler then submit failure_handler in finally,even
+    when async fails; record task name "Responses stream failure logging". Without a loop,
+    swallow async runner failure and still submit sync; submission failures are swallowed.
+    Both receive the same exception,traceback,start/end times. Await-pending clears the
+    stored tuple before waiting for every task and does not rethrow task exceptions;
+    task completion diagnostics remain B2413's responsibility.
+  proof: [hook-tests, oracle, hook-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_hooks::/)
-      - test(/::replays_corpus$/)'
-  - id: case-completed-cache-write
-    why: the completed-cache-write behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_hooks::tests::completed_cache_write($|::)/)'
-  - id: case-failed-usage-captured
-    why: the failed-usage-captured behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_hooks::tests::failed_usage_captured($|::)/)'
-  - id: case-post-success-hook-order
-    why: the post-success-hook-order behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_hooks::tests::post_success_hook_order($|::)/)'
-  - id: case-provider-header-restoration
-    why: the provider-header-restoration behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_hooks::tests::provider_header_restoration($|::)/)'
-  - id: case-failure-handler-order
-    why: the failure-handler-order behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_hooks::tests::failure_handler_order($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_stream_hooks.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_stream_hooks-*)"
-      && grep -qE "^[[:space:]]+responses_stream_hooks:" tools/oracle/fuzz/corpus/helper_case/responses_stream_hooks-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-stream-hooks)"
+  - id: hook-tests
+    why: cache or callback ordering mutates client output or duplicates side effects
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_hooks::/)'
+  - id: hook-adapter
+    why: ordered callback/cache effects have no independent pinned execution
+    run: test -f tools/oracle/helpers/responses_stream_hooks.py && grep -qE '^[[:space:]]+responses_stream_hooks:' tools/oracle/fuzz/corpus/helper_case/responses_stream_hooks-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-stream-hooks/completed-cache-write.yaml
-- tools/oracle/cases/helpers/responses-stream-hooks/failed-usage-captured.yaml
-- tools/oracle/cases/helpers/responses-stream-hooks/post-success-hook-order.yaml
-- tools/oracle/cases/helpers/responses-stream-hooks/provider-header-restoration.yaml
-- tools/oracle/cases/helpers/responses-stream-hooks/failure-handler-order.yaml
+- tools/oracle/cases/helpers/responses-stream-hooks/terminal-cache-write.yaml
+- tools/oracle/cases/helpers/responses-stream-hooks/completed-logging-once.yaml
+- tools/oracle/cases/helpers/responses-stream-hooks/logging-header-isolation.yaml
+- tools/oracle/cases/helpers/responses-stream-hooks/failed-usage-and-error.yaml
+- tools/oracle/cases/helpers/responses-stream-hooks/deployment-chunk-hooks.yaml
+- tools/oracle/cases/helpers/responses-stream-hooks/post-success-metadata.yaml
+- tools/oracle/cases/helpers/responses-stream-hooks/failure-callback-order.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/streaming_iterator.py: B925 owns ProjectQuotaCallback.enforce_project_io_token_quota_for_frame
-  L64-L70, _get_openai_response_types L74-L77, _is_json_object L80-L81, _is_json_array L84-L85, _optional_str L88-L90,
-  _json_array_or_empty L93-L95, _is_str_mapping L98-L99, _MutableJsonObject.get L104-L104, _MutableJsonObject.get
-  L106-L106, _MutableJsonObject.__getitem__ L107-L107, _MutableJsonObject.__setitem__ L108-L108, _MutableJsonObject.__contains__
-  L109-L109, _MutableJsonObject.items L110-L110, _GetsLitellmParams.__call__ L114-L114, _UnmasksPiiText.__call__
-  L118-L118, _ShouldStoreResultInCache.__call__ L122-L122, _PostStreamingDeploymentHook.__call__ L126-L132, _typed_gets_litellm_params
-  L140-L141, _load_json_object L148-L150, _load_json_value L153-L155, _model_id_from_metadata L158-L161, _log_background_task_failure
-  L164-L169, _running_loop L175-L179, _spawn_logging_task L182-L189, _error_event_fields L221-L237, _status_code_for_error_field
-  L240-L243, _status_code_for_error_fields L246-L250, stream_error_status_and_message L253-L255, _map_stream_error_to_exception
-  L258-L278, _mid_stream_fallback_eligible L281-L285, BaseResponsesAPIStreamingIterator.__init__ L300-L349, BaseResponsesAPIStreamingIterator._check_max_streaming_duration
-  L351-L361, BaseResponsesAPIStreamingIterator._process_chunk L363-L532.'
-- 'litellm/responses/streaming_iterator.py: B927 owns BaseResponsesAPIStreamingIterator._process_chunk L363-L532,
-  BaseResponsesAPIStreamingIterator._note_yielded_event L954-L957, BaseResponsesAPIStreamingIterator._fallback_error
-  L959-L967, BaseResponsesAPIStreamingIterator._stream_ended_early_error L969-L977, BaseResponsesAPIStreamingIterator._raise_if_ended_without_terminal_event
-  L979-L986, BaseResponsesAPIStreamingIterator._raise_for_transport_error L988-L992, call_post_streaming_hooks_for_testing
-  L995-L1006, ResponsesAPIStreamingIterator.__init__ L1014-L1035, ResponsesAPIStreamingIterator.__aiter__ L1037-L1038,
-  ResponsesAPIStreamingIterator.__anext__ L1040-L1045, ResponsesAPIStreamingIterator._next_event L1047-L1092, ResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1094-L1096, SyncResponsesAPIStreamingIterator.__init__ L1104-L1125, SyncResponsesAPIStreamingIterator.__iter__
-  L1127-L1128, SyncResponsesAPIStreamingIterator.__next__ L1130-L1175, SyncResponsesAPIStreamingIterator._handle_logging_completed_response
-  L1177-L1179, MockResponsesAPIStreamingIterator.__init__ L1192-L1218, MockResponsesAPIStreamingIterator._set_events_from_response
-  L1220-L1231, MockResponsesAPIStreamingIterator.__aiter__ L1233-L1234, MockResponsesAPIStreamingIterator.__anext__
-  L1236-L1245, MockResponsesAPIStreamingIterator.__iter__ L1247-L1248, MockResponsesAPIStreamingIterator.__next__
-  L1250-L1259, CachedResponsesAPIStreamingIterator.__init__ L1263-L1285, CachedResponsesAPIStreamingIterator._set_events_from_response
-  L1287-L1298, CachedResponsesAPIStreamingIterator.__aiter__ L1300-L1301, CachedResponsesAPIStreamingIterator.__anext__
-  L1303-L1312, CachedResponsesAPIStreamingIterator.__iter__ L1314-L1315, CachedResponsesAPIStreamingIterator.__next__
-  L1317-L1326.'
-- 'litellm/responses/streaming_iterator.py: B928 owns _HasModelDump.model_dump L1331-L1331, _HasModelDumpJson.model_dump_json
-  L1336-L1336, _dump_response_object L1339-L1344, _build_response_status_event L1347-L1361, _build_content_part_done_event
-  L1364-L1403, _add_text_like_part_events L1406-L1473, _billed_terminal_response L1476-L1490, _dump_json_safely
-  L1493-L1498, _logging_copy L1501-L1511, _detached_shallow_copy L1514-L1518, _usage_as_model L1521-L1529, _estimate_usage_from_text
-  L1541-L1561, _estimate_usage_safely L1564-L1579, _stamp_responses_usage_cost L1582-L1598, build_synthetic_response_events
-  L1601-L1732.'
-- 'litellm/responses/streaming_iterator.py: B942 owns _extract_frame_quota_estimate_inputs L1752-L1784, _enforce_frame_project_quota
-  L1787-L1814, _ws_event_error L1832-L1836, _restore_input_item_ids L1839-L1840, _restored_container_fields L1843-L1854,
-  _restore_wrapped_ids_in_response_create L1857-L1866, _wrap_output_item_encrypted_content L1869-L1884, ResponsesWebSocketStreaming._enforce_authorized_model
-  L2101-L2126, ResponsesWebSocketStreaming._with_request_defaults L2128-L2134, ResponsesWebSocketStreaming._mask_response_create
-  L2136-L2238, ResponsesWebSocketStreaming._unmask_response_event L2265-L2328, ResponsesWebSocketStreaming._mask_response_completed
-  L2330-L2408, ResponsesWebSocketStreaming._enforce_or_reject_frame L2410-L2437.'
-- 'litellm/responses/streaming_iterator.py: B943 owns ResponsesWebSocketStreaming.__init__ L1900-L1932, ResponsesWebSocketStreaming._should_store_event
-  L1934-L1935, ResponsesWebSocketStreaming._store_event L1937-L1949, ResponsesWebSocketStreaming._collect_input_from_client_event
-  L1951-L1984, ResponsesWebSocketStreaming._store_input L1986-L1989, ResponsesWebSocketStreaming._failure_exception
-  L1991-L1999, ResponsesWebSocketStreaming._log_messages L2001-L2016, ResponsesWebSocketStreaming._record_usage_for_failure
-  L2018-L2031, ResponsesWebSocketStreaming._wrap_response_event L2033-L2049, ResponsesWebSocketStreaming.backend_to_client
-  L2051-L2099, ResponsesWebSocketStreaming.client_to_backend L2439-L2458, ResponsesWebSocketStreaming.bidirectional_forward
-  L2460-L2477.'
-- 'litellm/responses/streaming_iterator.py: B944 owns ManagedResponsesWebSocketHandler.__init__ L2519-L2556, ManagedResponsesWebSocketHandler._serialize_chunk
-  L2563-L2575, ManagedResponsesWebSocketHandler._send_error L2577-L2583, ManagedResponsesWebSocketHandler._get_history_messages
-  L2585-L2594, ManagedResponsesWebSocketHandler._store_history L2596-L2603, ManagedResponsesWebSocketHandler._extract_response_id
-  L2606-L2617, ManagedResponsesWebSocketHandler._extract_output_messages L2620-L2654, ManagedResponsesWebSocketHandler._input_to_messages
-  L2657-L2672, ManagedResponsesWebSocketHandler._parse_message L2678-L2688, ManagedResponsesWebSocketHandler._is_warmup_frame
-  L2691-L2695, ManagedResponsesWebSocketHandler._is_warmup_response_id L2698-L2704, ManagedResponsesWebSocketHandler._warmup_source_params
-  L2707-L2711, ManagedResponsesWebSocketHandler._build_warmup_response L2713-L2729, ManagedResponsesWebSocketHandler._send_warmup_ack
-  L2731-L2751, ManagedResponsesWebSocketHandler._build_base_call_kwargs L2754-L2768, ManagedResponsesWebSocketHandler._apply_history
-  L2770-L2801, ManagedResponsesWebSocketHandler._resolve_provider L2804-L2814, ManagedResponsesWebSocketHandler._same_provider
-  L2816-L2823, ManagedResponsesWebSocketHandler._inject_credentials L2825-L2841, ManagedResponsesWebSocketHandler._update_proxy_request
-  L2844-L2860.'
-- 'litellm/responses/streaming_iterator.py: B945 owns ManagedResponsesWebSocketHandler._stream_and_forward L2862-L2890,
-  ManagedResponsesWebSocketHandler._save_turn_history L2892-L2911, ManagedResponsesWebSocketHandler._process_response_create
-  L2917-L2990, ManagedResponsesWebSocketHandler.run L2996-L3016.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2413 owns primitives/state L73-L361; B925 _process_chunk L363-L532; B927 live/synthetic iteration L954-L1326; B928 synthetic/billing helpers L1329-L1732; B942-B945 websocket methods after L1732.
+- Both call_post_streaming_hooks_for_testing facades L801-L807 and L995-L1006 have no production caller at the pin; their tested live callee remains owned here.
+- B125 owns cache backend/eligibility/task creation, B068 the calculator and B157 the shared post-success callback dispatcher; their missing detailed plans are explicit integration seams.
 pitfalls:
-- 'streaming_iterator.py:638 emits the diagnostic ''could not record usage for failed responses stream: %s''; retain
-  its level and fallback instead of turning it into a hard error.'
-- Within BaseResponsesAPIStreamingIterator._log_completed_response\'s self._completed_response_logged branch, preserve
-  return and its nested guards.
+- logged is latched before the cache write, so a failed write must not enable a second success dispatch.
+- A chunk hook exception stops the chain silently and keeps any earlier replacement.
+- Error-event fallback uses yielded_first_chunk, while transport fallback also considers whether output actually started.
 review_level: security
 budget:
-  max_changed_lines: 620
+  max_changed_lines: 765
   max_new_expects: 1

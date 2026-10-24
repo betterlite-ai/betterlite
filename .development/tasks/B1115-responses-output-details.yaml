@@ -1,197 +1,94 @@
 id: B1115
-title: Responses output detail conversion
+title: Responses image, citation and usage details
 description: >-
-  Convert image-generation, annotation and usage details for Responses output assembly; operate on typed chat records
-  with no I/O.
+  Add the five output-detail methods from LiteLLMCompletionResponsesConfig to
+  betterlite-core::api::responses_output_details. Convert parsed chat choices, annotations
+  and Usage into B902 output items and B1138 usage. Inject UUID generation for ig_ IDs.
+  These methods do no downloads: the image helper removes a data-URL prefix without
+  validating or decoding base64. A URL string is treated as an opaque result string too.
+  B906 is not called; this is the opposite direction of usage conversion and preserves
+  the supplied total instead of recomputing it.
 
-
-  Implement crates/betterlite-core/src/api/responses_output_details.rs. Use ResponsesOutputDetailsInput and ResponsesOutputDetailsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions image_data_url_result, annotation_citation, cached_usage under api::responses_output_details::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::ResponsesOutputDetails in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
-  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_output_details: <typed
-  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
-  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
-  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
-  route tasks.
-
-
-  Callable ownership: litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._extract_image_generation_output_items
-  (L2600-L2646); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._map_finish_reason_to_image_generation_status
-  (L2649-L2666); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._extract_base64_from_data_url
-  (L2669-L2690); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._transform_chat_completion_annotations_to_response_output_annotations
-  (L2785-L2808); litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._transform_chat_completion_usage_to_responses_usage
-  (L2811-L2894). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 141 owned nonblank/non-comment/non-docstring Python lines (168 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 161 implementation,
-  58 behavior tests, 36 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 375 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B906 (Responses usage), B171 (Direct helper oracle and URL path encoding), B1087 (Api
-  boundaries). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
-  retain ownership on the provider and keys/data branches.
+  Add the responses_output_details B171 adapter and domain tests image_results,
+  image_finish_status, citation_fields and usage_details. Mask only the random ig_ UUID
+  in oracle output. The 168 nonblank/non-comment source lines fit 180 implementation,
+  125 tests, 90 fixtures, 75 adapters and 20 wiring lines: 490 total. Work on decoded
+  records requires no new byte decoder or fuzz target.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
   - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/responses_output_details.rs
   - crates/betterlite-core/src/api/responses_output_details/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_output_details.rs
-  - tools/oracle/src/helpers/responses_output_details/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_output_details.py
-  - tools/oracle/helpers/responses_output_details/**
   - tools/oracle/fuzz/corpus/helper_case/responses_output_details-*
   - tools/oracle/cases/helpers/responses-output-details/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2600-L2690
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2785-L2894
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2599-L2690
+  why: Own image extraction, image-status mapping and the first-comma data-URL operation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2784-L2894
+  why: Own URL-citation projection and chat-to-Responses usage including grounding/cache counters.
 dod:
-- text: 'image data url result: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-image-data-url-result
-  - oracle
-- text: 'annotation citation: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-annotation-citation
-  - oracle
-- text: 'cached usage: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-cached-usage
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    image_results supplies message.images=[{image_url:{url:"data:image/png;base64,YQ=="}}];
+    expect one {type:image_generation_call,id:ig_<UUID>,status:completed,result:YQ==}.
+    Raw "YQ==" stays unchanged; "data:x,a,b" yields "a,b"; empty URL,missing image_url,
+    "data:missing-comma" and a data URL with empty suffix produce no item. No images yields [].
+    image_url=7 or url=7 fails the pinned type adapter, while https://a.test/image is returned
+    verbatim without fetching. Preserve input order for multiple images.
+  proof: [detail-tests, oracle, detail-adapter]
+- text: >-
+    image_finish_status maps stop->completed,length->incomplete,content_filter/error->failed,
+    null/tool_calls/unknown->completed. It never emits queued,cancelled or in_progress from a
+    finish reason, even though in_progress is an allowed image-output status.
+  proof: [detail-tests, oracle, detail-adapter]
+- text: >-
+    citation_fields turns {type:url_citation,url_citation:{start_index:1,end_index:4,url:https://a.test,title:A}}
+    into the flat annotation with those fields. An empty nested citation produces null
+    start_index,end_index,url,title. Null annotations become []; a non-url type or missing
+    url_citation is silently omitted. It does not fetch the cited URL or invent a title.
+  proof: [detail-tests, oracle, detail-adapter]
+- text: >-
+    usage_details supplies prompt=2,completion=3,total=99,cost=0.125; expect input=2,output=3,
+    total=99,cost=0.125. Missing ModelResponse.usage yields zeros with null details. Input
+    cached_tokens=null becomes 0; audio,text,image,video counts and a typed CachedTokensDetails
+    survive. A raw untyped cached_tokens_details mapping is dropped by the isinstance check.
+    cache_write_tokens=0 with cache_creation_tokens=7 selects 7, while cache_write_tokens=4
+    selects 4. web_search_requests=0 and google_maps_grounding_requests=2 both survive.
+    Output reasoning_tokens=null becomes 0; provided audio_tokens=0,text_tokens=5,image_tokens=2
+    survive, absent ones remain null and unrelated provider usage extras are not copied.
+  proof: [detail-tests, oracle, detail-adapter]
 checks:
   optional: []
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_output_details::/)
-      - test(/::replays_corpus$/)'
-  - id: case-image-data-url-result
-    why: the image-data-url-result behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_output_details::tests::image_data_url_result($|::)/)'
-  - id: case-annotation-citation
-    why: the annotation-citation behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_output_details::tests::annotation_citation($|::)/)'
-  - id: case-cached-usage
-    why: the cached-usage behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_output_details::tests::cached_usage($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_output_details.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_output_details-*)"
-      && grep -qE "^[[:space:]]+responses_output_details:" tools/oracle/fuzz/corpus/helper_case/responses_output_details-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-output-details)"
+  - id: detail-tests
+    why: image status, annotation flattening or usage counter projection changes
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_output_details::/)'
+  - id: detail-adapter
+    why: output detail fixtures do not invoke the pinned transformation independently
+    run: test -f tools/oracle/helpers/responses_output_details.py && grep -qE '^[[:space:]]+responses_output_details:' tools/oracle/fuzz/corpus/helper_case/responses_output_details-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-output-details/image-data-url-result.yaml
-- tools/oracle/cases/helpers/responses-output-details/annotation-citation.yaml
-- tools/oracle/cases/helpers/responses-output-details/cached-usage.yaml
+- tools/oracle/cases/helpers/responses-output-details/image-results.yaml
+- tools/oracle/cases/helpers/responses-output-details/image-finish-status.yaml
+- tools/oracle/cases/helpers/responses-output-details/citation-fields.yaml
+- tools/oracle/cases/helpers/responses-output-details/usage-details.yaml
 deviations: []
 out_of_scope:
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B908 owns _SupportsIter.__iter__ L152-L152,
-  _ResponsesToolCallItem.get L169-L169, LiteLLMCompletionResponsesConfig.get_supported_openai_params L205-L225,
-  LiteLLMCompletionResponsesConfig._should_drop_derived_web_search_options L311-L324, LiteLLMCompletionResponsesConfig._completion_bridges_back_to_responses_api
-  L327-L357, LiteLLMCompletionResponsesConfig._transform_reasoning_for_chat_completion L360-L397, LiteLLMCompletionResponsesConfig.transform_responses_api_request_to_chat_completion_request
-  L400-L484, LiteLLMCompletionResponsesConfig._transform_text_format_to_response_format L2897-L2945.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B907 owns _attribute_fields L179-L182,
-  _input_item_role L185-L186, LiteLLMCompletionResponsesConfig._transform_tool_choice L228-L287, LiteLLMCompletionResponsesConfig._transform_tool_choice_for_responses_api_response
-  L290-L296, LiteLLMCompletionResponsesConfig._chat_tool_choice_as_responses_api_tool_choice L299-L308.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B909 owns LiteLLMCompletionResponsesConfig.transform_responses_api_input_to_messages
-  L487-L532, LiteLLMCompletionResponsesConfig._transform_response_input_param_to_chat_completion_message L603-L729,
-  LiteLLMCompletionResponsesConfig._transform_responses_api_input_item_to_chat_completion_message L1326-L1423, LiteLLMCompletionResponsesConfig._reasoning_text_from_content
-  L1426-L1448, LiteLLMCompletionResponsesConfig._reasoning_text_from_summary L1451-L1466, LiteLLMCompletionResponsesConfig._extract_reasoning_text_from_input_item
-  L1469-L1478, LiteLLMCompletionResponsesConfig._decode_thinking_blocks_from_input_item L1481-L1515, LiteLLMCompletionResponsesConfig._is_replayable_thinking_block
-  L1518-L1529, LiteLLMCompletionResponsesConfig._is_input_item_tool_call_output L1532-L1541, LiteLLMCompletionResponsesConfig._is_input_item_function_call
-  L1544-L1550, LiteLLMCompletionResponsesConfig._resolve_file_id L1741-L1747, LiteLLMCompletionResponsesConfig._transform_input_file_item_to_file_item
-  L1750-L1772, LiteLLMCompletionResponsesConfig._transform_input_image_item_to_image_item L1775-L1785, LiteLLMCompletionResponsesConfig._transform_responses_api_content_to_chat_completion_content
-  L1788-L1842, LiteLLMCompletionResponsesConfig._get_chat_completion_request_content_type L1845-L1875, LiteLLMCompletionResponsesConfig.transform_instructions_to_system_message
-  L1878-L1884.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B915 owns LiteLLMCompletionResponsesConfig.async_responses_api_session_handler
-  L535-L600.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B910 owns LiteLLMCompletionResponsesConfig._reasoning_only_assistant_message
-  L732-L746, LiteLLMCompletionResponsesConfig._merge_reasoning_only_assistant_messages L749-L872, LiteLLMCompletionResponsesConfig._merged_trailing_assistant_message
-  L875-L922.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: LiteLLMCompletionResponsesConfig._deduplicate_tool_call_output_messages
-  L925-L985, LiteLLMCompletionResponsesConfig._ensure_tool_call_output_has_corresponding_tool_call L988-L997, LiteLLMCompletionResponsesConfig._transform_responses_api_outputs_to_chat_completion_messages
-  L2725-L2752 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B911 owns LiteLLMCompletionResponsesConfig._find_previous_assistant_idx
-  L1000-L1014, LiteLLMCompletionResponsesConfig._recover_tool_call_id_from_assistant L1017-L1043, LiteLLMCompletionResponsesConfig._get_tool_calls_list
-  L1046-L1065, LiteLLMCompletionResponsesConfig._check_tool_call_exists L1068-L1078, LiteLLMCompletionResponsesConfig._reconstruct_tool_call_from_tools
-  L1081-L1097, LiteLLMCompletionResponsesConfig._get_mapping_or_attr_value L1100-L1117, LiteLLMCompletionResponsesConfig._create_tool_call_chunk
-  L1120-L1143, LiteLLMCompletionResponsesConfig._normalize_tool_use_definition L1146-L1184, LiteLLMCompletionResponsesConfig._add_tool_call_to_assistant
-  L1187-L1200, LiteLLMCompletionResponsesConfig._ensure_tool_results_have_corresponding_tool_calls L1203-L1323.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B912 owns LiteLLMCompletionResponsesConfig._transform_responses_api_tool_call_output_to_chat_completion_message
-  L1553-L1686, LiteLLMCompletionResponsesConfig._transform_responses_api_function_call_to_chat_completion_message
-  L1689-L1738, LiteLLMCompletionResponsesConfig._tool_call_id_from_responses_item L2307-L2316, LiteLLMCompletionResponsesConfig.convert_response_function_tool_call_to_chat_completion_tool_call
-  L2319-L2370, LiteLLMCompletionResponsesConfig.convert_apply_patch_tool_call_to_chat_completion_tool_call L2373-L2403.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B913 owns LiteLLMCompletionResponsesConfig._build_ns_chat_tool
-  L1887-L1926, LiteLLMCompletionResponsesConfig._namespace_chat_tools L1929-L1951, LiteLLMCompletionResponsesConfig._validate_namespace_name_collisions
-  L1954-L1972, LiteLLMCompletionResponsesConfig._responses_tool_to_chat_form L1975-L2034, LiteLLMCompletionResponsesConfig.responses_tools_to_chat_forms
-  L2037-L2039, LiteLLMCompletionResponsesConfig.transform_responses_api_tools_to_chat_completion_tools L2042-L2058,
-  LiteLLMCompletionResponsesConfig.transform_chat_completion_tool_params_to_responses_api_tools L2061-L2099, LiteLLMCompletionResponsesConfig.namespace_tool_name_map
-  L2102-L2129, LiteLLMCompletionResponsesConfig._restore_namespace_tool_name L2132-L2137, LiteLLMCompletionResponsesConfig.transform_chat_completion_tools_to_responses_tools
-  L2140-L2235, LiteLLMCompletionResponsesConfig._web_search_calls_by_call_id L2238-L2264.'
-- 'litellm/responses/litellm_completion_transformation/transformation.py: B914 owns LiteLLMCompletionResponsesConfig._map_chat_completion_finish_reason_to_responses_status
-  L2267-L2292, LiteLLMCompletionResponsesConfig._incomplete_details_for_finish_reason L2295-L2304, LiteLLMCompletionResponsesConfig.transform_chat_completion_response_to_responses_api_response
-  L2406-L2468, LiteLLMCompletionResponsesConfig._transform_chat_completion_choices_to_responses_output L2471-L2526,
-  LiteLLMCompletionResponsesConfig._extract_tool_result_output_items L2529-L2557, LiteLLMCompletionResponsesConfig._encode_thinking_blocks
-  L2560-L2563, LiteLLMCompletionResponsesConfig._extract_reasoning_output_items L2566-L2597, LiteLLMCompletionResponsesConfig._extract_message_output_items
-  L2693-L2722, LiteLLMCompletionResponsesConfig._transform_responses_output_tool_call_to_chat_completion_output_tool_call
-  L2755-L2765, LiteLLMCompletionResponsesConfig._transform_chat_message_to_response_output_text L2768-L2782.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- In the same transformation.py, B907 owns custom-tool helpers, B908 request options, B909 input dispatch, B910 reasoning merging, B911 tool repair, B912 tool-result conversion, B913 namespaces, B914 response assembly/status and B915 session-backed input preparation.
+- B904 wraps container IDs after assembly and B906 normalizes Responses usage into chat usage; neither is called by these detail methods.
 pitfalls:
-- Within LiteLLMCompletionResponsesConfig._extract_image_generation_output_items\'s not images branch, preserve
-  return image_generation_items and its nested guards.
-- LiteLLMCompletionResponsesConfig._extract_image_generation_output_items uses _ANY_KEY_DICT_ADAPTER.validate_python(image_item.get('image_url',
-  {})).get('url', ''); retain its missing-value behavior and field spelling in the typed projection.
+- cache_write_tokens uses Python or, so an explicit zero falls through to cache_creation_tokens.
+- The base64 extractor accepts arbitrary nonempty strings; validating a URL or fetching it changes this method's behavior.
+- Missing output reasoning tokens become zero only when a completion-details object exists; absent details remain null.
 review_level: standard
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 490
   max_new_expects: 1

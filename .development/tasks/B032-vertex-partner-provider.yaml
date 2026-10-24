@@ -8,13 +8,13 @@ description: >-
   already B1306/B1332. Acquire B1302 credentials once, normalize stream=False, then select
   OpenAI-like partners first, mistral/codestral, jamba and claude. B1304 forms the URL before
   stripping @ suffixes from Mistral/Codestral models. Codestral with litellm_params.text_completion
-  true sets optional_params.model and executes B036's FIM text adapter. Claude copies headers,
+  true sets optional_params.model and executes B1412's FIM text adapter. Claude copies headers,
   forces Bearer auth, sets anthropic_version=vertex-2023-10-16 and is_vertex_request=true, then
   uses B1333 with B582's Anthropic execution. OpenAI-like partners run B1335 via the base HTTP
   executor; remaining Jamba/Mistral calls use B038's OpenAILike handler with custom_endpoint=true.
   Preserve status-bearing errors and wrap other failures as Vertex 500. Install B1337 Gemma,
   B1338 Model Garden, B1339 native Messages and B1332 counts as distinct operation arms.
-  Direct calls to currently unsplit B036/B038 are the only dependencies on those entries;
+  Direct calls to B1412 and the currently unsplit B038 are the only dependencies on those entries;
   retarget them to their owning leaves when those batches are planned, without changing this
   source ownership. Compose routes through their existing owners, registering none here.
   Own the package's get_vertex_ai_partner_model_config factory too: anthropic selects B1333,

@@ -1,192 +1,108 @@
 id: B977
-title: Messages chat stream
+title: Expose async Messages events and SSE from chat streams
 description: >-
-  Drive the chat-to-Messages stream using the chunk splitter and usage/block decision service. Implement one native
-  transition loop for both source sync and async facades, preserve message_start/content_block/message_delta/message_stop
-  order and cancellation, and emit typed mid-stream errors.
+  Own the complete __anext__, anthropic_sse_wrapper, async_anthropic_sse_wrapper and AnthropicSSEStream methods
+  at adapters/streaming_iterator.py L783-L1044,L1212-L1233. B2434 owns __next__ whole and the reusable transition
+  engine; B976 owns state and B975 splitting/error helpers. Preserve async exceptions until the async SSE
+  boundary, where they become one Anthropic error event. Do not copy the sync method's catch-and-stop behavior.
+  B967 constructs this wrapper; there is no dependency on its later B974 caller.
 
-
-  Implement crates/betterlite-core/src/api/messages_chat_stream.rs. Use MessagesChatStreamInput and MessagesChatStreamResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions text_block_lifecycle, thinking_then_tool, usage_at_message_delta, midstream_error,
-  empty_stream_stop, client_disconnect under api::messages_chat_stream::tests. Each named function drives production
-  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
-  replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesChatStream in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_chat_stream: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper.__next__
-  (L548-L781); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper.__anext__
-  (L783-L1011); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper.anthropic_sse_wrapper
-  (L1013-L1027); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicStreamWrapper.async_anthropic_sse_wrapper
-  (L1029-L1044); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicSSEStream.__init__
-  (L1212-L1215); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicSSEStream.chunks (L1218-L1219);
-  litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicSSEStream.messages (L1222-L1223);
-  litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: AnthropicSSEStream.model (L1226-L1227); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  AnthropicSSEStream.__anext__ (L1229-L1230); litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py:
-  AnthropicSSEStream.aclose (L1232-L1233). Abstract/protocol declarations map to native types and synchronous/async
-  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
-  above, with typed values passed to the following stage.
-
-
-  Sizing: 357 owned nonblank/non-comment/non-docstring Python lines (366 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 377 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 645 total within the 650-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B974 (Messages chat call), B975 (Messages
-  stream split), B976 (Messages stream usage), B1087 (Api boundaries). These are callable/type/config owners, not
-  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+  SdkHttpCall::MessagesChatStream through B2401 obtains actual B005 streaming responses and drives these methods.
+  Compare ordered event/data values, raw framing artifacts, completion pull/cancel observations and terminal
+  errors, with only generated UUIDs normalized. Fixtures may seed typed queued events or held state to exercise
+  branches that real providers seldom produce, but still start their own mock-provider request. No helper oracle
+  or B171 dependency is needed. Event encoding is not a decoder; B005 owns incoming SSE parsing/fuzzing.
+  Own 212 nonblank/non-comment physical lines after the sync split. Budget 220 implementation, 150 tests,
+  155 fixtures, 100 adapters and 30 wiring, 655 total; tests use api::messages_chat_stream.
 scope:
   paths:
-  - crates/betterlite-core/Cargo.toml
-  - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_chat_stream.rs
   - crates/betterlite-core/src/api/messages_chat_stream/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
-  - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
-  - tools/oracle/src/helpers.rs
-  - tools/oracle/src/helpers/messages_chat_stream.rs
-  - tools/oracle/src/helpers/messages_chat_stream/**
-  - tools/oracle/helpers/dispatch.py
-  - tools/oracle/helpers/messages_chat_stream.py
-  - tools/oracle/helpers/messages_chat_stream/**
-  - tools/oracle/fuzz/corpus/helper_case/messages_chat_stream-*
-  - tools/oracle/cases/helpers/messages-chat-stream/**
+  - tools/oracle/src/sdk_http.rs
+  - tools/oracle/src/sdk_http/messages_chat_stream.rs
+  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/sdk_http/messages_chat_stream.py
+  - tools/oracle/cases/sdk-http/messages-chat-stream/**
+  - tools/oracle/fuzz/corpus/sdk_http_case/messages-chat-stream-*
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L548-L1044
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1212-L1233
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L783-L1011
+  why: Whole async iterator, including delayed finish/usage flush and exception propagation distinct from __next__.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1013-L1044
+  why: Both SSE encoders and the async-only catch that emits a structured error event.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py#L1204-L1233
+  why: The public async byte view retains wrapper metadata and closes its byte generator.
 dod:
-- text: 'text block lifecycle: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-text-block-lifecycle
-  - oracle
-- text: 'thinking then tool: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thinking-then-tool
-  - oracle
-- text: 'usage at message delta: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-usage-at-message-delta
-  - oracle
-- text: 'midstream error: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-midstream-error
-  - oracle
-- text: 'empty stream stop: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-empty-stream-stop
-  - oracle
-- text: 'client disconnect: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-client-disconnect
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    async_event_lifecycle captures one POST /v1/chat/completions stream=true,stream_options.include_usage=true
+    for gpt-4o-mini. Before the first body pull emit message_start with the wrapper model,msg_<UUID>,assistant,
+    empty content,null stops and all four zero usage counters. Mock text A,reasoning R and named tool t with
+    arguments {} each emit start/delta/stop in index order; transition-trigger payloads are not lost. A tool
+    start with empty arguments is returned without waiting for a later provider chunk. Blank/choiceless metadata
+    yields no block, while B976 compaction emits its three events before ordinary content.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    async_terminal_usage sends stop followed by choices=[] usage5/2 and gets one block stop then one message_delta
+    with end_turn,usage5/2,context edits and summary iterations, then message_stop. After that usage delta,
+    trailing provider content is dropped. Without usage, EOF flushes held content before held stop, closes an
+    unclosed block first, augments zero usage without a message iteration and emits message_stop once. A typed
+    held-state fixture checks repeated __anext__ never re-emits the held delta and ultimately raises StopAsyncIteration.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    sse_frame_encoding queues {type:ping} and expects UTF-8 bytes "event: ping\ndata: {\"type\": \"ping\"}\n\n".
+    A dict with no type uses event: message; type=null uses event: None. JSON follows Python json.dumps escaping,
+    including ASCII escapes for non-ASCII text, while its decoded values are unchanged. A non-dict byte chunk
+    passes byte-for-byte. Sync SSE delegates to B2434; async SSE delegates to this task's iterator.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    async_error_event_ends_stream makes an upstream BaseLLMException(status429,message="busy") occur after A.
+    Direct __anext__ propagates that exception; async SSE logs exception-level
+    "Anthropic Adapter - mid-stream error, emitting Anthropic error event: <exception>" then yields exactly
+    event:error with {type:error,error:{type:rate_limit_error,message:busy}}. Generic empty exception yields
+    api_error and "Upstream stream ended before completion" via B975. No message_delta/message_stop is fabricated
+    after error and no retry request occurs. A source "None"/null chunk takes the generic error path.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: >-
+    async_byte_view_metadata creates AnthropicSSEStream with _hidden_params={}, forwards chunks/messages/model
+    from its wrapper and returns the underlying SSE bytes from __anext__. aclose closes the byte generator once
+    without synthesizing a terminal frame. The source method does not explicitly close the completion_stream;
+    test the observable generator close separately from provider-owned transport cancellation. Concurrent views
+    retain their own ids, tool names and queued events.
+  proof: [behavior-tests, oracle, python-adapter]
+- text: New HTTP stream cases select messages_chat_stream and preserve the upstream capture even when output fails midstream.
+  proof: [new-cases, corpus, oracle, python-adapter]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::/)
-      - test(/::replays_corpus$/)'
-  - id: case-text-block-lifecycle
-    why: the text-block-lifecycle behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::tests::text_block_lifecycle($|::)/)'
-  - id: case-thinking-then-tool
-    why: the thinking-then-tool behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::tests::thinking_then_tool($|::)/)'
-  - id: case-usage-at-message-delta
-    why: the usage-at-message-delta behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::tests::usage_at_message_delta($|::)/)'
-  - id: case-midstream-error
-    why: the midstream-error behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::tests::midstream_error($|::)/)'
-  - id: case-empty-stream-stop
-    why: the empty-stream-stop behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::tests::empty_stream_stop($|::)/)'
-  - id: case-client-disconnect
-    why: the client-disconnect behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::tests::client_disconnect($|::)/)'
-  - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_chat_stream.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_chat_stream-*)"
-      && grep -qE "^[[:space:]]+messages_chat_stream:" tools/oracle/fuzz/corpus/helper_case/messages_chat_stream-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-stream)"
+    why: async event order, SSE literals or error termination is missing
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_stream::/)'
+  - id: python-adapter
+    why: async stream HTTP parity has no checked Python driver
+    run: test -f tools/oracle/sdk_http/messages_chat_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+  - id: corpus
+    why: sdk_http cannot select the Messages stream view
+    run: grep -qE '^[[:space:]]+messages_chat_stream:' tools/oracle/fuzz/corpus/sdk_http_case/messages-chat-stream-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
+  - id: new-cases
+    why: there are no added async stream HTTP scenarios
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/messages-chat-stream)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-chat-stream/text-block-lifecycle.yaml
-- tools/oracle/cases/helpers/messages-chat-stream/thinking-then-tool.yaml
-- tools/oracle/cases/helpers/messages-chat-stream/usage-at-message-delta.yaml
-- tools/oracle/cases/helpers/messages-chat-stream/midstream-error.yaml
-- tools/oracle/cases/helpers/messages-chat-stream/empty-stream-stop.yaml
-- tools/oracle/cases/helpers/messages-chat-stream/client-disconnect.yaml
+- tools/oracle/cases/sdk-http/messages-chat-stream/async-event-lifecycle.yaml
+- tools/oracle/cases/sdk-http/messages-chat-stream/async-terminal-usage.yaml
+- tools/oracle/cases/sdk-http/messages-chat-stream/sse-frame-encoding.yaml
+- tools/oracle/cases/sdk-http/messages-chat-stream/async-error-event-ends-stream.yaml
+- tools/oracle/cases/sdk-http/messages-chat-stream/async-byte-view-metadata.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: B975 owns _ChunkStream.__iter__ L51-L51,
-  _ChunkStream.__aiter__ L53-L53, _optional_attr L56-L57, _optional_attr_sequence L60-L62, _error_status_and_message
-  L65-L68, _mid_stream_error_sse_event L71-L77, _delta_payload_field L80-L91, _CombinedChunkSplitter.__init__ L114-L118,
-  _CombinedChunkSplitter.chunks L121-L124, _CombinedChunkSplitter.messages L127-L130, _CombinedChunkSplitter._is_combined
-  L133-L154, _CombinedChunkSplitter._clear_usage L163-L168, _CombinedChunkSplitter._split_by_payload_kind L171-L214,
-  _CombinedChunkSplitter._normalize_reasoning_fields L217-L238, _CombinedChunkSplitter._split L241-L261, _CombinedChunkSplitter.__iter__
-  L263-L264, _CombinedChunkSplitter.__next__ L266-L277, _CombinedChunkSplitter.__aiter__ L279-L280, _CombinedChunkSplitter.__anext__
-  L282-L293.'
-- 'litellm/llms/anthropic/pass_through/adapters/streaming_iterator.py: B976 owns AnthropicStreamWrapper.__init__
-  L320-L366, AnthropicStreamWrapper.chunks L369-L372, AnthropicStreamWrapper.messages L375-L378, AnthropicStreamWrapper._merge_usage_into_held_stop_reason_chunk
-  L380-L403, AnthropicStreamWrapper._handle_choiceless_chunk L405-L423, AnthropicStreamWrapper._ensure_context_management_attached
-  L425-L438, AnthropicStreamWrapper._augment_message_delta_usage L440-L472, AnthropicStreamWrapper._next_compaction_event
-  L474-L525, AnthropicStreamWrapper._create_initial_usage_delta L527-L546, AnthropicStreamWrapper._increment_content_block_index
-  L1046-L1047, AnthropicStreamWrapper._with_refusal_stop_details L1049-L1068, AnthropicStreamWrapper._delta_has_content
-  L1071-L1107, AnthropicStreamWrapper._is_blank_delta L1110-L1137, AnthropicStreamWrapper._should_start_new_content_block
-  L1139-L1201.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2434 owns the complete __next__ L548-L781; B976 owns the shared state and transition helpers L310-L546,L1046-L1201.
+- B975 owns L43-L293 protocols/splitter/error formatting; B966 translates chat chunks and B005 decodes provider SSE.
+- B967 owns adapter factory composition and B974 the main completion call; neither is called by this lower-level stream view.
 pitfalls:
-- Within AnthropicStreamWrapper.__next__\'s self.chunk_queue branch, preserve return self.chunk_queue.popleft()
-  and its nested guards.
-- Within AnthropicStreamWrapper.__next__\'s self.sent_first_chunk is False branch, preserve return self.chunk_queue.popleft()
-  and its nested guards.
+- Async exceptions must reach the SSE boundary; copying the sync iterator's broad catch silently truncates client output.
+- A dict without type uses the literal message event name, not an absent event line.
+- The byte view starts with empty hidden params and does not itself implement provider-header forwarding.
 review_level: standard
 budget:
-  max_changed_lines: 650
-  max_new_expects: 1
+  max_changed_lines: 700
+  max_new_expects: 0

@@ -1,167 +1,119 @@
 id: B1138
 title: Responses objects and usage
 description: >-
-  Define ResponsesAPIUsage, ResponsesAPIResponse and input/output response records below event/provider contracts.
-  Wire decoding belongs here and does not depend on any executor.
+  Implement the ResponsesAPIResponse and ResponseAPIUsage records in
+  betterlite-openai::api::responses_objects. Own parse_cost, validate_reasoning_to_dict,
+  validate_usage, _serialize_output_filter_reasoning_nulls and output_text in full.
+  Reuse B902's output records and wire limits and B004's common OpenAI types. All five
+  methods are reached by response construction, serialization or SDK property access.
 
+  A response requires id, created_at and output; its other declared fields default null.
+  In particular status is an optional string, even though ResponsesAPIStatus enumerates
+  completed, failed, in_progress, cancelled, queued and incomplete. Usage requires
+  input_tokens,output_tokens,total_tokens; detail records and cost default null.
+  InputTokensDetails.cached_tokens defaults 0; audio_tokens,cached_tokens_details,image_tokens,
+  text_tokens,video_tokens default null. Output audio_tokens,reasoning_tokens,text_tokens default
+  null. Preserve extra provider fields. Store cost as Decimal, including total_cost extracted
+  from a mapping. _hidden_params starts empty and never appears in serialized response JSON.
 
-  Implement crates/betterlite-openai/src/api/responses_objects.rs. Use ResponsesObjectsInput and ResponsesObjectsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
+  The optional request declarations retain omission versus explicit null for include,
+  instructions,max_output_tokens,metadata,parallel_tool_calls,previous_response_id,reasoning,
+  store,background,stream,temperature,text,tool_choice,tools,top_p,truncation,user,service_tier,
+  safety_identifier,prompt,max_tool_calls,prompt_cache_key,prompt_cache_retention,prompt_cache_options,
+  stream_options,top_logprobs,partial_images,context_management. input and model are required
+  by ResponsesAPIRequestParams; these TypedDict declarations do not validate bounds at runtime.
+  stream_options.include_obfuscation is optional. B905 owns parameter selection.
 
-
-  Write adjacent tests.rs behavior functions response_object_usage, response_object_status under api::responses_objects::tests.
-  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
-  Corpus replay has the separate name replays_corpus.
-
-
-  The production external-byte decoder is betterlite-openai::api::responses_objects::decode_responses_objects(bytes:
-  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
-  in crates/betterlite-openai/src/api/responses_objects.rs and call it from the actual boundary. The cargo-fuzz
-  target crates/betterlite-openai/fuzz/fuzz_targets/responses_objects.rs passes arbitrary bounded bytes to that
-  exact decoder; api::responses_objects::tests::replays_corpus replays newly committed seeds through the same function.
-  Transform-only helpers reuse the already decoded records.
-
-
-  Register HelperCall::ResponsesObjects in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_objects: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/types/llms/openai.py: ResponseAPIUsage.parse_cost (L1360-L1364); litellm/types/llms/openai.py:
-  ResponsesAPIResponse.validate_reasoning_to_dict (L1428-L1436); litellm/types/llms/openai.py: ResponsesAPIResponse.validate_usage
-  (L1440-L1446); litellm/types/llms/openai.py: ResponsesAPIResponse._serialize_output_filter_reasoning_nulls (L1450-L1473);
-  litellm/types/llms/openai.py: ResponsesAPIResponse.output_text (L1476-L1506). Abstract/protocol declarations map
-  to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
-  preparation/transition stage described above, with typed values passed to the following stage.
-
-
-  Sizing: 168 owned nonblank/non-comment/non-docstring Python lines (187 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 188 implementation,
-  52 behavior tests, 24 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 444 total within the 450-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B004 (OpenAI chat completions without streaming), B171 (Direct helper oracle and URL path
-  encoding), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external
-  B500-B859 ids retain ownership on the provider and keys/data branches.
-
-
-  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
-  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
-  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
-
-
-  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
-  convert B1087 limits into it. This record has no dependency on the core crate.
+  decode_responses_objects(bytes, WireDecodeLimits) is the provider-JSON boundary and fuzz entry.
+  The responses_objects helper operation constructs the pinned Pydantic records and returns
+  their dump plus output_text, independently of the Rust decoder. Tests live beside the
+  production module; replays_corpus is excluded from the behavior filter. Count 187 nonblank,
+  non-comment Python lines; budget 210 implementation, 155 tests, 100 oracle inputs, 80 adapters,
+  60 fuzz/replay and 25 wiring, totaling 630.
 scope:
   paths:
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/lib.rs
   - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api.rs
   - crates/betterlite-openai/src/api/responses_objects.rs
   - crates/betterlite-openai/src/api/responses_objects/**
-  - crates/betterlite-openai/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/responses_objects.rs
   - crates/betterlite-openai/fuzz/corpus/responses_objects/**
+  - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
   - tools/oracle/src/helpers/responses_objects.rs
-  - tools/oracle/src/helpers/responses_objects/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/responses_objects.py
-  - tools/oracle/helpers/responses_objects/**
   - tools/oracle/fuzz/corpus/helper_case/responses_objects-*
   - tools/oracle/cases/helpers/responses-objects/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1273-L1508
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+  why: Request declarations, token defaults, cost normalization and response serialization/property behavior owned here.
 dod:
-- text: 'response object usage: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-response-object-usage
-  - oracle
-- text: 'response object status: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-response-object-status
-  - oracle
-- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
-    replay.
-  proof:
-  - parser-corpus
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    usage_cost supplies tokens 3,2,5 and cost={total_cost:0.125,provider:ignored}; expect
+    cost=0.125. Numeric cost=0.25 stays 0.25, cost={} becomes null, absent details become null,
+    and input_tokens_details={} gains cached_tokens=0 and the listed null defaults.
+    Extra usage/detail key provider_count=7 survives. Omitting total_tokens is a validation error.
+  proof: [object-tests, oracle, helper-python]
+- text: >-
+    response_defaults decodes {id:resp_a,created_at:1,output:[]} into null optional fields,
+    empty output_text and no _hidden_params. Missing id,created_at or output each fails.
+    status=future_status is accepted; truncation=auto/disabled is accepted and truncation=other
+    fails. A reasoning dict with effort=none or xhigh and extra key detail=1 is unchanged;
+    a model_dump-capable reasoning object is converted to the same mapping. Null stays null.
+  proof: [object-tests, oracle, helper-python]
+- text: >-
+    reasoning_nulls serializes a reasoning item with status=null,content=null,encrypted_content=null,
+    summary=null and id=rs_a; only the first three keys disappear. Non-null values stay and
+    identically named null keys on a message item stay. usage supplied as a dict becomes the
+    same typed usage as direct construction, including cost normalization.
+  proof: [object-tests, oracle, helper-python]
+- text: >-
+    output_text_join supplies message output_text blocks "a",null,"b", a refusal and a
+    non-message output_text block; expect "ab" without separators. Missing text and missing
+    content contribute nothing. Exercise both dict and typed output items.
+  proof: [object-tests, oracle, helper-python]
+- text: >-
+    tool_usage_count accepts web_search=null or {num_requests:0} and {num_requests:2}; a
+    negative num_requests fails. Request declaration tests retain all named optional keys
+    without inventing runtime validation for partial_images or compact_threshold.
+  proof: [object-tests, oracle, helper-python]
+- text: Malformed response JSON and null/default seeds reach the production decoder in both fuzzing and replay.
+  proof: [object-corpus]
 checks:
-  optional:
-  - mutants
+  optional: [mutants]
   commands:
-  - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_objects::/) -
-      test(/::replays_corpus$/)'
-  - id: case-response-object-usage
-    why: the response-object-usage behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_objects::tests::response_object_usage($|::)/)'
-  - id: case-response-object-status
-    why: the response-object-status behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_objects::tests::response_object_status($|::)/)'
-  - id: parser-corpus
-    why: the named production decoder has no fuzz target/new seed, or its replay fails
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/responses_objects)"
-      && test -f crates/betterlite-openai/fuzz/fuzz_targets/responses_objects.rs && grep -qF "decode_responses_objects"
-      crates/betterlite-openai/fuzz/fuzz_targets/responses_objects.rs && cargo nextest run --locked -p betterlite-openai
-      --no-tests=fail -E 'test(/^api::responses_objects::tests::replays_corpus$/)'
+  - id: object-tests
+    why: response serialization, text aggregation or cost/default handling differs
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_objects::/) - test(/::replays_corpus$/)'
+  - id: object-corpus
+    why: no new response-object parser corpus reaches the production decoder
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/responses_objects)" && grep -qF decode_responses_objects crates/betterlite-openai/fuzz/fuzz_targets/responses_objects.rs && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::responses_objects::tests::replays_corpus$/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/responses_objects.py && uv run --locked --project tools/oracle/litellm ruff
-      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
-  - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_objects-*)"
-      && grep -qE "^[[:space:]]+responses_objects:" tools/oracle/fuzz/corpus/helper_case/responses_objects-* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-objects)"
+    why: response-object comparisons lack a typed pinned Python adapter
+    run: test -f tools/oracle/helpers/responses_objects.py && grep -qE '^[[:space:]]+responses_objects:' tools/oracle/fuzz/corpus/helper_case/responses_objects-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
 oracle_cases:
-- tools/oracle/cases/helpers/responses-objects/response-object-usage.yaml
-- tools/oracle/cases/helpers/responses-objects/response-object-status.yaml
+- tools/oracle/cases/helpers/responses-objects/usage-cost.yaml
+- tools/oracle/cases/helpers/responses-objects/response-defaults.yaml
+- tools/oracle/cases/helpers/responses-objects/reasoning-nulls.yaml
+- tools/oracle/cases/helpers/responses-objects/output-text-join.yaml
+- tools/oracle/cases/helpers/responses-objects/tool-usage-count.yaml
 deviations: []
 out_of_scope:
-- 'litellm/types/llms/openai.py: B004 owns HttpxBinaryResponseContent.__init__ L124-L126, HttpxBinaryResponseContent.logging_summary
-  L128-L133, HttpxBinaryResponseContent._num_bytes L135-L139, HttpxBinaryResponseContent.set_response_cost L141-L145,
-  NotGiven.__bool__ L166-L167, NotGiven.__repr__ L170-L171, OpenAIFileObject._omit_absent_batch_guardrail L411-L417,
-  OpenAIFileObject.__contains__ L419-L421, OpenAIFileObject.get L423-L425, OpenAIFileObject.__getitem__ L427-L429,
-  OpenAIFileObject.json L431-L436, OpenAIChatCompletionChunk.__init__ L1112-L1115, OpenAIVideoObject.__contains__
-  L2563-L2564, OpenAIVideoObject.get L2566-L2567, OpenAIVideoObject.__getitem__ L2569-L2570, OpenAIVideoObject.json
-  L2572-L2576.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B1113 owns the event records and union at openai.py L1509-L1929; B004 owns every other callable in that shared file, including binary/file/video accessors and chat-chunk initialization.
+- B902 owns the imported generic output, function, image, interpreter and custom-tool records in types/responses/main.py.
+- B905 selects request parameters; no request dispatch or provider HTTP belongs to these record constructors.
 pitfalls:
-- Within ResponseAPIUsage.parse_cost\'s isinstance(v, dict) branch, preserve return v.get('total_cost') and its
-  nested guards.
-- ResponseAPIUsage.parse_cost uses v.get('total_cost'); retain its missing-value behavior and field spelling in
-  the typed projection.
+- ResponsesAPIResponse.status accepts arbitrary strings; enforcing ResponsesAPIStatus on that field would reject provider extensions.
+- Null stripping applies only to reasoning output and exactly status, content and encrypted_content.
+- A cost mapping without total_cost yields null, not zero and not the original mapping.
 review_level: standard
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 630
   max_new_expects: 1

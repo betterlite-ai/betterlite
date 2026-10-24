@@ -1,226 +1,128 @@
 id: B965
-title: Messages chat options
+title: Messages system, metadata and thinking options for Chat
 description: >-
-  Translate Anthropic thinking, tool_choice, tool schemas, metadata, stop sequences and output_format into B175
-  chat parameter mappings. Expose target-capability decisions separately from message conversion, with checked reasoning
-  budgets and explicit dropped-field diagnostics.
+  Implement the remaining option translations in betterlite-core::api::messages_chat_options: thinking-to-effort
+  bucketing and summary wrapping, in-sequence/top-level system handling, target capability checks, metadata,
+  stop sequences, thinking carriers and untranslated parameter copying. B2431 owns all tool/schema methods;
+  B1117 provides cache/name/model primitives, B175 supported OpenAI parameters and budget bucketing, and B962
+  session cache-key extraction and the resolved auto-summary setting. Do not resolve a provider implicitly from
+  the model prefix: absent custom_llm_provider suppresses capability probes here.
 
+  A Claude-family model keeps thinking verbatim, but carrying an adaptive effort tier is a separate decision.
+  Bedrock-prefixed or ARN targets get output_config without format; other Claude targets get a plain effort
+  string only when their resolved provider declares reasoning_effort. Non-Claude targets use the bucketed effort
+  and optional summary object. This task adds no HTTP call or byte parser. Add messages_chat_options to B171's
+  helper dispatch, comparing both output kwargs and the input mutation from popping litellm_metadata.
 
-  LiteLLMAnthropicMessagesAdapter.translate_thinking_for_model (litellm/llms/anthropic/pass_through/adapters/transformation.py:L703-L737)
-  has no MIT runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and
-  no behavior case exercises that unused entry point.
-
-
-  Implement crates/betterlite-core/src/api/messages_chat_options.rs. Use MessagesChatOptionsInput and MessagesChatOptionsResult
-  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
-  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
-  resolution.
-
-
-  Write adjacent tests.rs behavior functions thinking_to_effort, bedrock_arn_target, strict_output_schema, tool_choice_any,
-  prompt_cache_key_metadata, unsupported_thinking_drop under api::messages_chat_options::tests. Each named function
-  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
-  has the separate name replays_corpus.
-
-
-  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
-  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
-  that owns it.
-
-
-  Register HelperCall::MessagesChatOptions in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
-  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_chat_options: <typed input>}; operation
-  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
-  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
-  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
-
-
-  Callable ownership: litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter.translate_anthropic_thinking_to_reasoning_effort
-  (L642-L669); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._apply_reasoning_summary_wrapping
-  (L740-L761); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter.translate_anthropic_tool_choice_to_openai
-  (L763-L779); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter.translate_anthropic_tools_to_openai
-  (L781-L848); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter.translate_anthropic_output_format_to_openai
-  (L850-L887); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._add_additional_properties_false
-  (L890-L921); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_midturn_system_message_to_openai
-  (L923-L944); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._add_system_message_to_messages
-  (L946-L979); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._supports_prompt_cache_key
-  (L982-L990); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._target_declares_reasoning_effort
-  (L993-L1015); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_metadata_to_openai
-  (L1017-L1037); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_tool_choice_to_openai
-  (L1039-L1052); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_stop_sequences_to_openai
-  (L1054-L1064); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_tools_to_openai
-  (L1066-L1099); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_thinking_to_openai
-  (L1101-L1173); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._translate_output_format_to_openai
-  (L1175-L1201); litellm/llms/anthropic/pass_through/adapters/transformation.py: LiteLLMAnthropicMessagesAdapter._copy_untranslated_anthropic_params
-  (L1203-L1212). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
-  a partial function span is the explicit preparation/transition stage described above, with typed values passed
-  to the following stage.
-
-
-  Sizing: 336 owned nonblank/non-comment/non-docstring Python lines (420 nonblank/non-comment physical lines, including
-  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 356 implementation,
-  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
-  30 wiring; 624 total within the 630-line cap. The estimate includes tests and adapters, not just production code.
-
-
-  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B175 (Provider parameter capabilities
-  and mapping), B178 (Tool argument parsing and schema transforms), B180 (Anthropic prompt and tool conversion helpers),
-  B1087 (Api boundaries), B1117 (Messages content primitives), B962 (Messages thinking). These are callable/type/config
-  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
-  branches.
+  Own 230 nonblank/non-comment lines after the B2431 split. Reserve 225 implementation, 155 tests, 155 fixtures,
+  85 adapters and 30 wiring, 650 lines; the source bounds below do not bisect any function.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/lib.rs
-  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api.rs
   - crates/betterlite-core/src/api/messages_chat_options.rs
   - crates/betterlite-core/src/api/messages_chat_options/**
-  - crates/betterlite-core/src/api.rs
-  - Cargo.toml
-  - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
   - tools/oracle/src/helpers/messages_chat_options.rs
-  - tools/oracle/src/helpers/messages_chat_options/**
   - tools/oracle/helpers/dispatch.py
   - tools/oracle/helpers/messages_chat_options.py
-  - tools/oracle/helpers/messages_chat_options/**
   - tools/oracle/fuzz/corpus/helper_case/messages_chat_options-*
   - tools/oracle/cases/helpers/messages-chat-options/**
+  - Cargo.lock
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L642-L670
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L683-L683
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L697-L697
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L701-L702
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L738-L1212
-  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L641-L669
+  why: Thinking defaults to disabled, enabled budgets delegate to shared thresholds and adaptive defaults to medium.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L739-L761
+  why: Disabled thinking bypasses both explicit and automatic summary wrapping.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L923-L1037
+  why: Own system insertion, provider capability probes and metadata pop/user/cache-key behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1054-L1064
+  why: Only truthy stop_sequences becomes Chat stop.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1101-L1173
+  why: Keep the entire provider-sensitive thinking-carrier decision together.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L1203-L1212
+  why: The final copy can overwrite earlier translated values with unrecognized passthrough keys.
 dod:
-- text: 'thinking to effort: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-thinking-to-effort
-  - oracle
-- text: 'bedrock arn target: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-bedrock-arn-target
-  - oracle
-- text: 'strict output schema: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-strict-output-schema
-  - oracle
-- text: 'tool choice any: the named production behavior test asserts the result and effects described above.'
-  proof:
-  - case-tool-choice-any
-  - oracle
-- text: 'prompt cache key metadata: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-prompt-cache-key-metadata
-  - oracle
-- text: 'unsupported thinking drop: the named production behavior test asserts the result and effects described
-    above.'
-  proof:
-  - case-unsupported-thinking-drop
-  - oracle
-- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
-  proof:
-  - oracle
-  - helper-python
-  - helper-corpus
-- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
-  proof:
-  - new-oracle-cases
-  - oracle
-  - helper-python
-  - helper-corpus
+- text: >-
+    thinking_budget_buckets maps non-dict thinking to none, {} and type=disabled to effort=none, type=adaptive
+    to medium and unknown type to none. Enabled budget absent/0/1023 maps minimal; 1024/2047 low; 2048/4095 medium;
+    4096/8192 high under B175's default thresholds. A changed B175 threshold is consumed, not duplicated here.
+    Disabled thinking with summary=detailed stays plain none; enabled summary=concise yields {effort:low,summary:concise},
+    empty summary falls through to the auto-summary flag, and enabled auto-summary produces summary=detailed.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    system_text_selection keeps nonempty in-sequence strings and text blocks, but skips empty text, non-text blocks
+    and non-list/nonstring content. A top-level system list differs: a text block missing text becomes text=""
+    and is inserted at messages index 0. Empty top-level system is skipped. Cache_control follows B1117 model rules;
+    prompt_cache_breakpoint=false survives both paths. Top-level insertion does not merge an existing system message.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    metadata_user_and_session sets user to metadata.user_id verbatim, even null or empty when the key exists.
+    A JSON user_id containing session_id=session_a additionally sets prompt_cache_key=session_a only for a nonempty
+    model and resolved provider whose supported params contain prompt_cache_key. provider=litellm_proxy always
+    suppresses that key; missing provider/model and a null capability list also suppress it. litellm_metadata={x:1}
+    is popped from the input and stored in output metadata, independently of Anthropic metadata and even if null.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    claude_thinking_carriers keeps thinking={type:adaptive,display:updates} for a Claude target. For
+    bedrock/anthropic.claude-sonnet-4-5, converse/anthropic.claude-sonnet-4-5, invoke/anthropic.claude-sonnet-4-5 or
+    a Bedrock application-profile ARN, output_config={effort:high,format:{},other:7} becomes {effort:high,other:7}
+    and no reasoning_effort is set. For vertex_ai/claude-sonnet-4-5 with reasoning_effort declared, effort=high
+    becomes the plain string high while thinking keeps display; no effort produces no tier. A provider declaring
+    thinking alone, or an absent provider, gets only thinking. litellm_proxy is allowed for this capability probe.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    nonclaude_thinking_carriers sends adaptive thinking and output_config.effort=high to gpt-4o and gets
+    reasoning_effort=high, with summary wrapping when requested. Enabled thinking ignores output_config.effort
+    and buckets budget_tokens instead. Falsey thinking skips the operation; disabled gives none without summary.
+    For a Claude target with a non-adaptive thinking block, a supplied output_config.effort alone does not create
+    reasoning_effort; the tier is carried only for adaptive thinking.
+  proof: [behavior-tests, oracle, helper-python]
+- text: >-
+    passthrough_option_order maps stop_sequences=[END] to stop=[END], skips empty/null stop sequences, and copies
+    max_tokens=0,stream=false,temperature=null and unknown=7 unchanged. The excluded keys are exactly messages,
+    metadata,system,tool_choice,tools,thinking,output_format,output_config,stop_sequences. Explicit passthrough
+    reasoning_effort=low or stop=[OVERRIDE] overwrites an earlier translated value when the final copy runs.
+  proof: [behavior-tests, oracle, helper-python]
+- text: The registered option helper compares capability-probe effects, metadata mutation and exact resulting kwargs.
+  proof: [new-cases, helper-corpus, oracle, helper-python]
 checks:
   optional: []
   commands:
   - id: behavior-tests
-    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::/)
-      - test(/::replays_corpus$/)'
-  - id: case-thinking-to-effort
-    why: the thinking-to-effort behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::tests::thinking_to_effort($|::)/)'
-  - id: case-bedrock-arn-target
-    why: the bedrock-arn-target behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::tests::bedrock_arn_target($|::)/)'
-  - id: case-strict-output-schema
-    why: the strict-output-schema behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::tests::strict_output_schema($|::)/)'
-  - id: case-tool-choice-any
-    why: the tool-choice-any behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::tests::tool_choice_any($|::)/)'
-  - id: case-prompt-cache-key-metadata
-    why: the prompt-cache-key-metadata behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::tests::prompt_cache_key_metadata($|::)/)'
-  - id: case-unsupported-thinking-drop
-    why: the unsupported-thinking-drop behavior or its assertions are absent
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::tests::unsupported_thinking_drop($|::)/)'
+    why: system or reasoning carrier branches have no native regression tests
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_options::/)'
   - id: helper-python
-    why: the operation adapter is missing or fails strict Python checks
-    run: test -f tools/oracle/helpers/messages_chat_options.py && uv run --locked --project tools/oracle/litellm
-      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    why: option parity lacks the independent pinned method calls
+    run: test -f tools/oracle/helpers/messages_chat_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
-    why: the new external enum tag has no added seed or the shared parser rejects it
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_chat_options-*)"
-      && grep -qE "^[[:space:]]+messages_chat_options:" tools/oracle/fuzz/corpus/helper_case/messages_chat_options-*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-  - id: new-oracle-cases
-    why: no new domain case exists on this branch
+    why: the chat-options tag is absent from shared parser replay
+    run: grep -qE '^[[:space:]]+messages_chat_options:' tools/oracle/fuzz/corpus/helper_case/messages_chat_options-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: no new option-transform cases were committed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-chat-options)"
 oracle_cases:
-- tools/oracle/cases/helpers/messages-chat-options/thinking-to-effort.yaml
-- tools/oracle/cases/helpers/messages-chat-options/bedrock-arn-target.yaml
-- tools/oracle/cases/helpers/messages-chat-options/strict-output-schema.yaml
-- tools/oracle/cases/helpers/messages-chat-options/tool-choice-any.yaml
-- tools/oracle/cases/helpers/messages-chat-options/prompt-cache-key-metadata.yaml
-- tools/oracle/cases/helpers/messages-chat-options/unsupported-thinking-drop.yaml
+- tools/oracle/cases/helpers/messages-chat-options/thinking-budget-buckets.yaml
+- tools/oracle/cases/helpers/messages-chat-options/system-text-selection.yaml
+- tools/oracle/cases/helpers/messages-chat-options/metadata-user-and-session.yaml
+- tools/oracle/cases/helpers/messages-chat-options/claude-thinking-carriers.yaml
+- tools/oracle/cases/helpers/messages-chat-options/nonclaude-thinking-carriers.yaml
+- tools/oracle/cases/helpers/messages-chat-options/passthrough-option-order.yaml
 deviations: []
 out_of_scope:
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B1117 owns _optional_attr L25-L26, _as_string_mapping
-  L29-L32, _thought_signature L35-L40, _compaction_blocks L43-L54, _is_openai_function_tool L62-L63, is_provider_native_tool_dict
-  L66-L70, truncate_tool_name L73-L91, target_supports_mid_conversation_system L213-L216, _chat_tool_param L219-L225,
-  LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_call L357-L370, LiteLLMAnthropicMessagesAdapter._extract_signature_from_tool_use_content
-  L372-L380, LiteLLMAnthropicMessagesAdapter._add_cache_control_if_applicable L382-L412, LiteLLMAnthropicMessagesAdapter._add_prompt_cache_breakpoint_if_present
-  L415-L418, LiteLLMAnthropicMessagesAdapter.translatable_anthropic_params L420-L434, LiteLLMAnthropicMessagesAdapter._is_web_search_tool
-  L436-L454, LiteLLMAnthropicMessagesAdapter.is_anthropic_claude_model L672-L682, LiteLLMAnthropicMessagesAdapter.is_bedrock_arn_model
-  L685-L696, LiteLLMAnthropicMessagesAdapter.target_consumes_cache_control L699-L700, LiteLLMAnthropicMessagesAdapter._translate_anthropic_image_to_openai
-  L1290-L1302, LiteLLMAnthropicMessagesAdapter._tool_result_content L1304-L1317, LiteLLMAnthropicMessagesAdapter._tool_result_part
-  L1319-L1335, LiteLLMAnthropicMessagesAdapter._tool_result_image_part L1337-L1343.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: create_tool_name_mapping L94-L114, LiteLLMAnthropicMessagesAdapter.translate_thinking_for_model
-  L703-L737 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B967 owns AnthropicAdapter.__init__ L229-L230,
-  AnthropicAdapter.translate_completion_input_params L232-L243, AnthropicAdapter.translate_completion_input_params_with_tool_mapping
-  L245-L282, AnthropicAdapter.translate_completion_output_params L284-L304, AnthropicAdapter.translate_completion_output_params_streaming
-  L306-L345, LiteLLMAnthropicMessagesAdapter.translate_anthropic_to_openai L1214-L1288.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B964 owns LiteLLMAnthropicMessagesAdapter.__init__
-  L352-L353, LiteLLMAnthropicMessagesAdapter.translate_anthropic_messages_to_openai L456-L639.'
-- 'litellm/llms/anthropic/pass_through/adapters/transformation.py: B966 owns LiteLLMAnthropicMessagesAdapter._translate_openai_content_to_anthropic
-  L1345-L1430, LiteLLMAnthropicMessagesAdapter._translate_openai_finish_reason_to_anthropic L1432-L1441, LiteLLMAnthropicMessagesAdapter._positive_int
-  L1444-L1451, LiteLLMAnthropicMessagesAdapter._first_positive_usage_value L1454-L1459, LiteLLMAnthropicMessagesAdapter._first_positive_prompt_tokens_detail_value
-  L1462-L1474, LiteLLMAnthropicMessagesAdapter._get_cache_read_input_tokens L1477-L1481, LiteLLMAnthropicMessagesAdapter._get_cache_creation_input_tokens
-  L1484-L1490, LiteLLMAnthropicMessagesAdapter._get_web_search_request_count L1493-L1501, LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage_delta
-  L1504-L1526, LiteLLMAnthropicMessagesAdapter._translate_openai_usage_to_anthropic_usage L1529-L1533, LiteLLMAnthropicMessagesAdapter.translate_openai_response_to_anthropic
-  L1535-L1616, LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic_content_block L1618-L1676,
-  LiteLLMAnthropicMessagesAdapter._translate_streaming_openai_chunk_to_anthropic L1678-L1727, LiteLLMAnthropicMessagesAdapter.translate_streaming_openai_response_to_anthropic
-  L1729-L1766.'
-- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
-  operations. Python package export/event-loop facades remain B158-B161.
-- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
-  never stand in for those HTTP comparisons.
+- B2431 owns tools/schema methods L763-L921,L1039-L1052,L1066-L1099,L1175-L1201 in adapters/transformation.py.
+- B1117 owns primitives L25-L93,L213-L225,L357-L454,L672-L700,L1290-L1343; B964 owns L352-L353,L456-L639 messages.
+- B966 owns output L1345-L1766; B967 owns L229-L345,L1214-L1288 composition. create_tool_name_mapping and translate_thinking_for_model have no caller at the pin.
+- B962 owns reasoning_auto_summary config and session JSON parsing; B175 owns the threshold env vars and capability dispatch.
 pitfalls:
-- Within LiteLLMAnthropicMessagesAdapter.translate_anthropic_thinking_to_reasoning_effort\'s not isinstance(thinking,
-  dict) branch, preserve return None and its nested guards.
-- Within LiteLLMAnthropicMessagesAdapter.translate_anthropic_thinking_to_reasoning_effort\'s thinking_type == 'disabled'
-  branch, preserve return 'none' and its nested guards.
-review_level: security
+- litellm_proxy is excluded from derived prompt cache keys but remains eligible for declared reasoning_effort.
+- The system-list branch keeps empty text in the top-level prompt and drops it from an in-sequence system turn.
+- The last passthrough copy can overwrite a translated effort or stop value; preserve that order.
+review_level: standard
 budget:
-  max_changed_lines: 630
-  max_new_expects: 1
+  max_changed_lines: 680
+  max_new_expects: 0

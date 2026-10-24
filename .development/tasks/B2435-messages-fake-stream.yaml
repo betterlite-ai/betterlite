@@ -1,0 +1,163 @@
+id: B2435
+title: Render completed Messages as the legacy fake stream
+description: >-
+  Implement the complete FakeAnthropicMessagesStreamIterator class in
+  litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py, lines 20-214, as
+  api::messages_fake_stream. The constructor stores the decoded B958 Messages response, immediately
+  builds every frame, and starts current_index at integer 0. Own _create_content_block_chunks,
+  _create_streaming_chunks, __aiter__, __anext__, __iter__ and __next__ together; this class has no
+  provider I/O, byte decoder, HTTP status, environment variable, config key, query parameter, database
+  write, warning or delay. The output is UTF-8 bytes whose lines are `event: <name>`, `data: <json>` and
+  a blank line. Use Python json.dumps defaults: comma-space and colon-space separators and ensure_ascii=True.
+  Preserve this legacy renderer instead of using B978's response_as_sse_events behavior: redacted-thinking
+  data is silently discarded, unknown blocks are copied into content_block_start, message_stop carries
+  usage, thinking emits no empty delta, and sync and async iteration consume one shared cursor.
+
+  Register HelperCall::MessagesFakeStream and compare the native implementation with independently invoked
+  pinned Python. The helper input is an already decoded response record; B958 owns record typing and B1087
+  owns the response boundary, so this task does not add a second input limit or validate provider bytes.
+  Own 165 nonblank/non-comment physical LiteLLM lines; budget 180 production, 125 tests, 120 fixtures,
+  90 adapters and 30 wiring lines, 545 total.
+scope:
+  paths:
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-core/src/api/messages_fake_stream.rs
+  - crates/betterlite-core/src/api/messages_fake_stream/**
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/messages_fake_stream.rs
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_fake_stream.py
+  - tools/oracle/cases/helpers/messages-fake-stream/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_fake_stream-*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py#L20-L127
+  why: >-
+    The class constructor and per-block renderer define the exact block-type dispatch: text always has
+    an empty start and one text delta, thinking conditionally adds thinking/signature deltas, redacted
+    thinking omits data, tool_use serializes input separately, and every branch ends with one stop.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py#L129-L192
+  why: >-
+    The response renderer fixes message_start defaults, truthy usage tests, null-sensitive cache
+    projection, content-array indexes, message_delta ordering and message_stop's original usage object.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py#L194-L214
+  why: >-
+    The async and sync iterator methods both read and increment current_index and raise their respective
+    exhaustion exceptions only after the precomputed chunk list is consumed.
+dod:
+- text: >-
+    message_lifecycle constructs response={type:message,id:msg_a,model:claude-sonnet-4-20250514,role:assistant,
+    content:[{type:text,text:Hi}],usage:{input_tokens:5,output_tokens:2},stop_reason:end_turn,extra:7}.
+    The ordered UTF-8 frames are message_start with payload {type:message_start,message:{id:msg_a,type:message,
+    role:assistant,model:claude-sonnet-4-20250514,content:[],stop_reason:null,stop_sequence:null,
+    usage:{input_tokens:5,output_tokens:0}}}; content_block_start index=0 with content_block {type:text,text:""};
+    content_block_delta index=0 with delta {type:text_delta,text:Hi}; content_block_stop index=0;
+    message_delta with delta {stop_reason:end_turn,stop_sequence:null} and usage {output_tokens:2,input_tokens:5};
+    and message_stop with usage {input_tokens:5,output_tokens:2}. The response field extra=7 is absent from
+    message_start. Every frame is `event: name\\ndata: ` followed by json.dumps output and `\\n\\n`.
+  proof: [case-message-lifecycle, oracle, helper-python]
+- text: >-
+    usage_projection runs response={} and response={usage:null}, response={usage:{}}, and response={role:null}.
+    Missing or null or empty usage produces message_start.message.usage={input_tokens:0,output_tokens:0},
+    message_delta.usage={output_tokens:0}, and message_stop.usage={}; response={} also has id=null, role=assistant,
+    model=null, stop_reason=null and stop_sequence=null, while explicit role=null remains null. A truthy usage
+    map {input_tokens:0,output_tokens:0,cache_creation_input_tokens:0,cache_read_input_tokens:3,extra:7}
+    produces start usage {input_tokens:0,output_tokens:0}, delta usage
+    {output_tokens:0,input_tokens:0,cache_creation_input_tokens:0,cache_read_input_tokens:3}, and stop usage
+    equal to the complete input map including extra=7. A truthy map
+    {input_tokens:null,output_tokens:null,cache_creation_input_tokens:null} produces start usage
+    {input_tokens:null,output_tokens:0}, delta usage {output_tokens:null}, with no input_tokens or
+    cache_creation_input_tokens keys, and stop usage equal to that complete map. Thus present null values follow
+    usage.get(key, default) for message_start and output_tokens, while the delta's `is not None` checks omit
+    null input/cache counters rather than coercing them to 0.
+  proof: [case-usage-projection, oracle, helper-python]
+- text: >-
+    content_block_variants sends content=[{type:text},{type:text,text:null},{type:thinking,thinking:Thought,
+    signature:sig},{type:thinking,thinking:"",signature:""},{type:redacted_thinking,data:cipher},
+    {type:tool_use,id:tool_1,name:lookup,input:{x:1}},{type:tool_use,input:null}]. The first text block emits
+    start text="" and one text_delta text=""; the second emits one text_delta text=null. Thinking emits its
+    start with thinking="" and signature="", then thinking_delta thinking=Thought followed by signature_delta
+    signature=sig; empty strings emit neither delta. Redacted thinking emits only content_block_start
+    content_block {type:redacted_thinking}, so data=cipher never appears. Tool use emits start id=tool_1,
+    name=lookup,input={} then one input_json_delta partial_json="{\\"x\\": 1}"; absent id/name become null and
+    input=null becomes partial_json="null". Each block emits exactly one stop, and indexes are its position
+    0 through 6. A block with input absent instead has partial_json="{}".
+  proof: [case-content-block-variants, oracle, helper-python]
+- text: >-
+    passthrough_and_invalid_content sends content=[{type:future,x:1},{x:1}] and then content=null. The future
+    block and the block with no type each appear unchanged as content_block_start.content_block, with no delta;
+    their stops use indexes 0 and 1. The explicit content=null input raises the typed helper error corresponding
+    to Python TypeError with message "'NoneType' object is not iterable" before an iterator is returned; missing
+    content is instead the empty list and emits no block frames. A response content=[null] raises the corresponding
+    Python AttributeError with message "'NoneType' object has no attribute 'get'" while creating its chunks.
+    A text block with text="é" is encoded as the JSON escape "\\u00e9", not a literal UTF-8 character; no
+    [DONE] marker, frame delay or warning is emitted, and no block is split into multiple deltas.
+  proof: [case-passthrough-and-invalid, oracle, helper-python]
+- text: >-
+    shared_cursor constructs one response with content=[{type:text,text:A}] and alternates next(iterator) and
+    await anext(iterator) on the same instance. They return successive message_start and content_block_start
+    frames, not duplicate starts, because both modes read current_index. Further synchronous exhaustion raises
+    StopIteration and further asynchronous exhaustion raises StopAsyncIteration after the final message_delta and
+    message_stop. Mutating the response map after construction does not change any already encoded frame because
+    the constructor populated chunks before either iterator method is called; __iter__ and __aiter__ return the
+    iterator object itself.
+  proof: [case-shared-cursor, oracle, helper-python]
+- text: >-
+    The five listed helper fixtures select messages_fake_stream in both dispatchers and exercise the production
+    native renderer plus the pinned Python class, including the explicit-null usage counters and malformed-content
+    error cases. The comparison checks ordered event names, exact JSON fields and literal values, UTF-8 frame bytes,
+    error class/message fields, and cursor exhaustion rather than comparing a fixture to itself.
+  proof: [new-cases, corpus, oracle, helper-python]
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: The native fake-stream module lacks coverage outside its corpus replay.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_fake_stream::/) - test(/::replays_corpus$/)'
+  - id: case-message-lifecycle
+    why: The complete ordered start/block/delta/stop lifecycle is missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_fake_stream::tests::message_lifecycle($|::)/)'
+  - id: case-usage-projection
+    why: Missing, empty, extra and explicit-null usage projections are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_fake_stream::tests::usage_projection($|::)/)'
+  - id: case-content-block-variants
+    why: Text, thinking, redacted-thinking and tool-use branch outputs are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_fake_stream::tests::content_block_variants($|::)/)'
+  - id: case-passthrough-and-invalid
+    why: Unknown-block passthrough, null content errors and JSON escaping are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_fake_stream::tests::passthrough_and_invalid_content($|::)/)'
+  - id: case-shared-cursor
+    why: Shared sync/async cursor advancement and exhaustion are missing.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_fake_stream::tests::shared_cursor($|::)/)'
+  - id: helper-python
+    why: The pinned fake-stream adapter is not checked by the locked Python tooling.
+    run: test -f tools/oracle/helpers/messages_fake_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: corpus
+    why: The helper corpus cannot select the messages_fake_stream operation.
+    run: grep -qE '^[[:space:]]+messages_fake_stream:' tools/oracle/fuzz/corpus/helper_case/messages_fake_stream-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-cases
+    why: No independent fake-stream fixtures were added for the renderer branches.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-fake-stream)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-fake-stream/fake-message-lifecycle.yaml
+- tools/oracle/cases/helpers/messages-fake-stream/fake-usage-fields.yaml
+- tools/oracle/cases/helpers/messages-fake-stream/fake-block-variants.yaml
+- tools/oracle/cases/helpers/messages-fake-stream/fake-unknown-block-passthrough.yaml
+- tools/oracle/cases/helpers/messages-fake-stream/fake-cursor-is-shared.yaml
+deviations: []
+out_of_scope:
+- B958 owns Anthropic Messages response and usage record definitions; this task consumes their already decoded map shape and does not reimplement record validation.
+- B1087 owns accepted-response size limits and boundary decoding; this file receives a completed response and performs no read, allocation guard or limit check.
+- B978 owns response_as_sse_events and raw Messages event classification; B979 owns live upstream relaying, cancellation, queueing and billing. The fake iterator has no HTTP client or provider call.
+- B981, B982, B987 and B988 own the agentic, native-handler, advisor and MCP callers that choose when to wrap a response; this task owns only the imported fake iterator class.
+pitfalls:
+- A truthy usage map with input_tokens=null yields message_start input_tokens=null but omits delta input_tokens, while output_tokens=null remains in message_delta; normalizing all null counters to zero changes two separate get()/is-not-None paths.
+- redacted_thinking data=cipher is intentionally absent from the start payload, whereas B978's newer renderer retains redacted data; copying that renderer leaks a field LiteLLM drops here.
+- tool_use input=null is serialized as the string partial_json="null", while an absent input is partial_json="{}"; both still emit an input_json_delta after input={}.
+- A block with type=future or no type is passed through unchanged and receives only start/stop; treating unknown blocks as text adds an unintended text_delta.
+- current_index is one mutable cursor shared by __next__ and __anext__; alternating them consumes frames once, and changing response after construction cannot affect the byte list.
+review_level: standard
+budget:
+  max_changed_lines: 580
+  max_new_expects: 0
