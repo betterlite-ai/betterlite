@@ -9,7 +9,8 @@ description: >-
   projection for provider resolution without importing betterlite-provider. Dynamic catalog model/provider strings
   are validated data, separate from executable provider enums. Add model_fields helper cases comparing normalized
   pinned JSON projections, with field-inventory tests and a model_fields fuzz target. Budget 360 types/projections,
-  60 wiring and 300 tests.
+  60 wiring and 300 tests. Seed B171's shared helper_case corpus with every added operation and replay it through
+  the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -28,6 +29,7 @@ scope:
   - tools/oracle/src/helpers/**
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/model-fields/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.schema.json#L1-L120
@@ -50,6 +52,9 @@ dod:
 - text: The metadata parser replays its malformed, duplicate-field and depth-limit corpus.
   proof:
   - model-fields-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -67,6 +72,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/model-fields/limits.yaml
 - tools/oracle/cases/helpers/model-fields/omitted-false.yaml
