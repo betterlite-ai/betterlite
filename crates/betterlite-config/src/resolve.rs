@@ -98,8 +98,9 @@ fn number_text(
         RawNumber::Integer(integer) => Ok(integer.to_string()),
         RawNumber::Float(float) => Ok(float.to_string()),
         RawNumber::Text(text) => resolve_string(text, path, lookup),
-        RawNumber::Boolean => Err(ConfigError::InvalidScalar {
+        RawNumber::Boolean(boolean) => Err(ConfigError::InvalidScalar {
             path: path.to_owned(),
+            value: boolean,
         }),
     }
 }
