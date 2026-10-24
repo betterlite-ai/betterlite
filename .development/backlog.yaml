@@ -1893,13 +1893,15 @@ tasks:
     title: Deployment catalog, aliases and wildcard routes
     status: todo
     depends_on:
-    - B008
-    - B010
+    - B368
+    - B367
+    - B006
     - B301
-    - B361
+    - B401
+    - B002
     file: tasks/B302-deployment-catalog.yaml
     covers:
-    - litellm/router_utils/pattern_match_deployments.py
+    - litellm/router.py
   - id: B303
     milestone: M2 routing
     title: Deployment client reuse and parallel request guards
@@ -2732,6 +2734,30 @@ tasks:
     file: tasks/B366-complexity-pipeline.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
+  - id: B367
+    milestone: M2 routing
+    title: Wildcard deployment matching
+    status: todo
+    depends_on:
+    - B008
+    - B301
+    file: tasks/B367-wildcard-catalog.yaml
+    covers:
+    - litellm/router_utils/pattern_match_deployments.py
+  - id: B368
+    milestone: M2 routing
+    title: Transactional deployment catalog updates
+    status: todo
+    depends_on:
+    - B008
+    - B002
+    - B010
+    - B367
+    - B301
+    - B401
+    file: tasks/B368-catalog-updates.yaml
+    covers:
+    - litellm/router.py
   - id: B391
     milestone: M2 routing
     title: Scripted routing mock replies and trace capture
@@ -2773,3 +2799,15 @@ tasks:
     file: tasks/B396-passthrough-selection.yaml
     covers:
     - litellm/router.py
+  - id: B401
+    milestone: M2 routing
+    title: Deployment construction and stable identity
+    status: todo
+    depends_on:
+    - B002
+    - B010
+    - B301
+    file: tasks/B401-deployment-identity.yaml
+    covers:
+    - litellm/router.py
+    - litellm/types/router.py
