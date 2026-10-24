@@ -1,25 +1,23 @@
+use crate::connection_limit::BoundedListener;
 use crate::error_body::request_timeout_error;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
 use axum::error_handling::HandleErrorLayer;
-use axum::serve::Listener;
 use betterlite_config::types::Config;
+use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
+use hyper_util::server::conn::auto::Builder;
+use hyper_util::service::TowerToHyperService;
 use std::io;
-use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use std::task::{Context, Poll};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tokio::time::sleep;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tower::ServiceBuilder;
 use tower::timeout::TimeoutLayer;
 
-const MAX_CONNECTIONS: usize = 1024;
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Error)]
 pub enum ServerError {
@@ -56,86 +54,48 @@ pub async fn run(config: Config, host: &str, port: u16) -> Result<(), ServerErro
             }))
             .layer(TimeoutLayer::new(Duration::from_secs(30))),
     );
-    let bounded_listener = BoundedListener {
-        listener: tcp_listener,
-        permits: Arc::new(Semaphore::new(MAX_CONNECTIONS)),
-    };
-    axum::serve(bounded_listener, application)
-        .with_graceful_shutdown(shutdown_signal.wait(shutting_down))
-        .await
-        .map_err(|source| ServerError::Bind {
-            address: format!("{host}:{port}"),
-            source,
-        })
-}
+    let mut listener = BoundedListener::new(tcp_listener);
+    let mut connections = JoinSet::new();
+    let mut connection_builder = Builder::new(TokioExecutor::new());
+    let mut http1 = connection_builder.http1();
+    http1.timer(TokioTimer::new());
+    http1.header_read_timeout(HEADER_READ_TIMEOUT);
+    http1.keep_alive(false);
+    let shutdown = shutdown_signal.wait(shutting_down);
+    tokio::pin!(shutdown);
 
-struct BoundedListener {
-    listener: TcpListener,
-    permits: Arc<Semaphore>,
-}
-
-impl Listener for BoundedListener {
-    type Io = BoundedStream;
-    type Addr = SocketAddr;
-
-    async fn accept(&mut self) -> (Self::Io, Self::Addr) {
-        loop {
-            let Ok(permit) = Arc::clone(&self.permits).acquire_owned().await else {
-                continue;
-            };
-            match self.listener.accept().await {
-                Ok((stream, address)) => {
-                    return (
-                        BoundedStream {
-                            stream,
-                            _permit: permit,
-                        },
-                        address,
-                    );
-                }
-                Err(error) => {
-                    drop(permit);
-                    tracing::error!(%error, "failed to accept connection");
-                    sleep(Duration::from_secs(1)).await;
+    loop {
+        tokio::select! {
+            _ = &mut shutdown => break,
+            result = listener.accept() => {
+                let (stream, address) = result.map_err(|source| ServerError::Bind {
+                    address: format!("{host}:{port}"),
+                    source,
+                })?;
+                let application = application.clone();
+                let builder = connection_builder.clone();
+                connections.spawn(async move {
+                    let service = TowerToHyperService::new(application);
+                    if let Err(error) = builder
+                        .serve_connection(TokioIo::new(stream), service)
+                        .await
+                    {
+                        tracing::debug!(%address, %error, "HTTP connection stopped");
+                    }
+                });
+            }
+            result = connections.join_next() => {
+                if let Some(Err(error)) = result {
+                    tracing::error!(%error, "HTTP connection task stopped");
                 }
             }
         }
     }
 
-    fn local_addr(&self) -> io::Result<Self::Addr> {
-        self.listener.local_addr()
+    while let Some(result) = connections.join_next().await {
+        if let Err(error) = result {
+            tracing::error!(%error, "HTTP connection task stopped during shutdown");
+        }
     }
-}
-
-struct BoundedStream {
-    stream: TcpStream,
-    _permit: OwnedSemaphorePermit,
-}
-
-impl AsyncRead for BoundedStream {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_read(cx, buf)
-    }
-}
-
-impl AsyncWrite for BoundedStream {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
-        Pin::new(&mut self.get_mut().stream).poll_write(cx, buf)
-    }
-
-    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_flush(cx)
-    }
-
-    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        Pin::new(&mut self.get_mut().stream).poll_shutdown(cx)
-    }
+    Ok(())
 }

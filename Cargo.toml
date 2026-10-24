@@ -14,12 +14,14 @@ axum = { version = "0.8.9", default-features = false, features = ["http1", "json
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_ignored = "0.1.14"
+regex = "1.13.1"
 secrecy = "0.10.3"
 subtle = "2.6.1"
 thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["json"] }
+hyper-util = "0.1.21"
 tower = "0.5.3"
 
 [workspace.lints.rust]

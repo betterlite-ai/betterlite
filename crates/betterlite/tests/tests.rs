@@ -83,6 +83,61 @@ async fn malformed_config_logs_no_secret() {
     assert!(!stderr.contains(secret));
 }
 #[tokio::test]
+async fn unsupported_config_logs_paths() {
+    let port = free_port().await;
+    let (_, config_path) = fixture(
+        port,
+        "general_settings:\n  master_key: test-master\n  unsupported: true\n",
+    )
+    .await;
+    let output = Command::new("setpriv")
+        .args(["--pdeathsig", "KILL", "--"])
+        .arg(binary_path())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("unsupported_key"));
+    assert!(stderr.contains("general_settings.unsupported"));
+}
+#[tokio::test]
+async fn missing_environment_logs_variable_and_path() {
+    let port = free_port().await;
+    let (_, config_path) = fixture(
+        port,
+        "general_settings:\n  master_key: os.environ/MISSING_MASTER_KEY\n",
+    )
+    .await;
+    let output = Command::new("setpriv")
+        .args(["--pdeathsig", "KILL", "--"])
+        .arg(binary_path())
+        .args([
+            "--config",
+            config_path.to_str().unwrap(),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            &port.to_string(),
+        ])
+        .output()
+        .await
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("missing_environment"));
+    assert!(stderr.contains("MISSING_MASTER_KEY"));
+    assert!(stderr.contains("general_settings.master_key"));
+}
+#[tokio::test]
 async fn dropping_server_guard_kills_server() {
     let port = free_port().await;
     let (_, config_path) = fixture(port, STANDARD_CONFIG).await;
@@ -91,6 +146,27 @@ async fn dropping_server_guard_kills_server() {
     drop(server);
     sleep(Duration::from_millis(100)).await;
     TcpStream::connect(("127.0.0.1", port)).await.unwrap_err();
+}
+#[tokio::test]
+async fn partial_headers_are_closed_after_the_read_deadline() {
+    let port = free_port().await;
+    let (_, config_path) = fixture(port, STANDARD_CONFIG).await;
+    let server = spawn_server(&config_path, port);
+    wait_until_ready(port, 100).await;
+    let mut connection = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    connection
+        .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
+        .await
+        .unwrap();
+    let mut response = Vec::new();
+    tokio::time::timeout(
+        Duration::from_secs(5),
+        connection.read_to_end(&mut response),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    drop(server);
 }
 fn assert_json_logs(stderr: &[u8]) {
     let events = String::from_utf8(stderr.to_owned())

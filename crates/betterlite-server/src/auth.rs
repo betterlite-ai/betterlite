@@ -4,6 +4,7 @@ use axum::extract::State;
 use axum::http::{HeaderMap, Request, header};
 use axum::middleware::Next;
 use axum::response::Response;
+use regex::Regex;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 #[derive(Clone)]
@@ -85,30 +86,16 @@ fn strip_prefix(value: &str) -> Option<String> {
     None
 }
 fn aws_credential(value: &str) -> Option<String> {
-    let first_credential_part = |credential: &str| {
-        let token = credential
-            .split(|character: char| {
-                character == '/' || character == ',' || character.is_whitespace()
-            })
-            .next()?;
-        if token.is_empty() {
-            return None;
-        }
-        Some(token.to_owned())
-    };
-    for (start, _) in value.match_indices("Credential=Bearer") {
-        let Some(candidate) = value.get(start..) else {
-            continue;
-        };
-        let Some(remaining) = candidate.strip_prefix("Credential=Bearer") else {
-            continue;
-        };
-        if remaining.chars().next().is_some_and(char::is_whitespace)
-            && let Some(token) = first_credential_part(str::trim_start(remaining))
-        {
-            return Some(token);
-        }
+    let bearer_pattern = Regex::new(r"Credential=Bearer\s+([^/\s,]+)").ok()?;
+    if let Some(token) = bearer_pattern
+        .captures(value)
+        .and_then(|captures| captures.get(1))
+    {
+        return Some(token.as_str().to_owned());
     }
-    let credential = value.split_once("Credential=")?.1;
-    first_credential_part(credential)
+    let credential_pattern = Regex::new(r"Credential=([^/\s,]+)").ok()?;
+    credential_pattern
+        .captures(value)?
+        .get(1)
+        .map(|token| token.as_str().to_owned())
 }

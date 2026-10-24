@@ -34,11 +34,7 @@ fn main() -> ExitCode {
             return ExitCode::FAILURE;
         }
         Err(ConfigLoadError::Config { source }) => {
-            tracing::error!(
-                category = config_error_category(&source),
-                location = %cli.config.display(),
-                "failed to load configuration"
-            );
+            log_config_error(&source, &cli.config);
             return ExitCode::FAILURE;
         }
     };
@@ -94,5 +90,33 @@ const fn config_error_category(error: &ConfigError) -> &'static str {
         ConfigError::InvalidFloat { .. } => "invalid_float",
         ConfigError::InvalidInteger { .. } => "invalid_integer",
         ConfigError::InvalidScalar { .. } => "invalid_scalar",
+    }
+}
+fn log_config_error(error: &ConfigError, location: &Path) {
+    match error {
+        ConfigError::Unsupported { paths } => {
+            tracing::error!(
+                category = "unsupported_key",
+                paths = ?paths,
+                location = %location.display(),
+                "failed to load configuration"
+            );
+        }
+        ConfigError::MissingEnvironment { variable, path } => {
+            tracing::error!(
+                category = "missing_environment",
+                variable,
+                path,
+                location = %location.display(),
+                "failed to load configuration"
+            );
+        }
+        _ => {
+            tracing::error!(
+                category = config_error_category(error),
+                location = %location.display(),
+                "failed to load configuration"
+            );
+        }
     }
 }

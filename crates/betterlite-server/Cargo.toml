@@ -8,7 +8,9 @@ publish.workspace = true
 [dependencies]
 axum.workspace = true
 betterlite-config = { path = "../betterlite-config" }
+hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
 serde.workspace = true
+regex.workspace = true
 secrecy.workspace = true
 subtle.workspace = true
 thiserror.workspace = true
