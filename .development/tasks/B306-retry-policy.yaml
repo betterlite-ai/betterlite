@@ -1,0 +1,99 @@
+id: B306
+title: Retry policy selection and backoff decisions
+description: Implement a pure typed retry decision module over B011 errors, model-group policy, request
+  overrides and candidate availability. Include retry-after parsing and bounded backoff with an injected
+  random source and clock. Reuse a maintained backoff/date parser where it preserves the oracle's decisions;
+  do not put an async retry loop in this part. Add a parser corpus for Retry-After input and config corpus
+  seeds for each named exception policy. Use the existing Rust crate boundaries from B004 and B008; integrate
+  through the server when the provider dispatcher or callbacks live in another core crate. This task's
+  source slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases
+  and the matching adapters to B301's component runner where state is not observable over HTTP; adapters
+  call production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
+  for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
+  fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
+  full path. Add a cargo-fuzz target retry_after under crates/betterlite-router/fuzz and a normal replays_the_retry_after_corpus
+  test using the production parser. Keep the implementation, adapters and tests within 800 changed lines;
+  fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/retry-policy/**
+  - tools/oracle/src/router_probes/retry-policy/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/retry_policy.py
+  - tools/oracle/litellm/probes/registry.py
+  - Cargo.toml
+  - deny.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/get_retry_from_policy.py#L19-L70
+  why: 404 priority, subtype policy and explicit zero.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L114-L132
+  why: Retry policy field names.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7915-L8049
+  why: Error eligibility and sleep selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7660-L7847
+  why: Request, deployment and policy precedence.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(retry_policy)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/retry_after.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/retry_after)"
+      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_retry_after_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/retry-policy/policy-404-before-bad-request.yaml
+- tools/oracle/cases/routing/retry-policy/model-group-replaces-global.yaml
+- tools/oracle/cases/routing/retry-policy/explicit-zero.yaml
+- tools/oracle/cases/routing/retry-policy/subclass-content-policy.yaml
+- tools/oracle/cases/routing/retry-policy/auth-single-and-multiple.yaml
+- tools/oracle/cases/routing/retry-policy/retry-after-seconds-and-date.yaml
+- tools/oracle/cases/routing/retry-policy/healthy-alternative-delay.yaml
+- tools/oracle/cases/routing/retry-policy/last-error-becomes-nonretryable.yaml
+deviations: []
+out_of_scope:
+- Provider calls and stream retries.
+pitfalls:
+- A per-model retry policy replaces the global policy rather than merging unset fields.
+- Retry count excludes the initial attempt.
+- Do not let a policy override a request's explicit num_retries zero.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

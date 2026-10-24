@@ -198,6 +198,7 @@ tasks:
     depends_on:
     - B016
     - B305
+    - B306
     file: null
     covers:
     - litellm/timeout.py
@@ -1911,3 +1912,14 @@ tasks:
     covers:
     - litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py
     - litellm/timeout.py
+
+  - id: B306
+    milestone: M2 routing
+    title: Retry policy selection and backoff decisions
+    status: todo
+    depends_on:
+    - B305
+    - B011
+    file: tasks/B306-retry-policy.yaml
+    covers:
+    - litellm/router_utils/get_retry_from_policy.py
