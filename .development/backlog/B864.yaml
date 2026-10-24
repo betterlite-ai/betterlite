@@ -1,0 +1,8 @@
+id: B864
+milestone: M4 keys, spend and management
+title: Feature and organization key generation switches
+status: todo
+depends_on: [B002, B003, B171, B732, B856, B863]
+file: tasks/B864-management-rbac.yaml
+covers:
+  - "litellm/proxy/common_utils/rbac_utils.py"

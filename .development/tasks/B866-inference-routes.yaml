@@ -1,11 +1,44 @@
 id: B866
 title: Inference route permission tables
 description: >-
-  Define typed permission-route constants for openai_routes, anthropic_routes, llm_api_routes. Preserve
-  every pinned literal, alias, template and enum expansion; these are policy data, not HTTP route registrations.
-  Serve the named groups to route matching and role policy without importing endpoint modules. B207 still
-  owns call-type mapping; B124 no longer owns these table entries. No URL is fetched and no caller string
-  can create a new enum group.
+  Build immutable ordered permission data for openai_routes, anthropic_routes and llm_api_routes.
+  These arrays neither register HTTP routes nor check methods, fetch URLs or implement file/batch
+  storage. B741/B882 consume their literals for matching; B207 call-type mapping is not called here.
+  Use B868's lower route slices for the composite; do not depend on authentication or endpoint modules.
+
+  Preserve openai_routes in the cited order: engine and openai/deployments {model} chat/completions,
+  /chat/completions, /v1/chat/completions, /cursor/chat/completions, /cursor/models, /cursor/v1/models;
+  engine and openai/deployments {model} completions then /completions and /v1/completions; the same
+  four embeddings forms. Then unversioned followed by /v1 forms for /images/generations, /images/edits,
+  /videos, /videos/{video_id}, /videos/{video_id}/content, /videos/{video_id}/remix,
+  /audio/transcriptions, /audio/speech and /moderations. Batches and files instead put /v1 FIRST for
+  each pair: /batches, /batches/{batch_id}, /batches/{batch_id}/cancel; /files, /files/{file_id},
+  /files/{file_id}/content. Then unversioned first /fine_tuning/jobs and
+  /fine_tuning/jobs/{fine_tuning_job_id}/cancel. Do not add fine-tuning retrieve/checkpoint paths.
+
+  Continue /assistants then /v1/assistants, but /v1/assistants/{assistant_id} before its unversioned
+  peer; unversioned-first pairs /threads, /threads/{thread_id}, /threads/{thread_id}/messages,
+  /threads/{thread_id}/runs and /models. Then /utils/token_counter, /utils/model_info,
+  /utils/transform_request, /rerank, /v1/rerank, /v2/rerank. Realtime uses prefixes '', /v1,
+  /openai/v1 in that order for /realtime, then /realtime?{model}, /realtime/client_secrets,
+  /realtime/calls and /realtime/transcription_sessions. The question-mark form is literally
+  ?{model}, not ?model={model}, and is not a URL parser input here.
+
+  Responses use those same three prefixes for /responses, /responses/{response_id},
+  /responses/{response_id}/input_items, /responses/{response_id}/cancel and /responses/input_tokens.
+  Finish unversioned-first /v1 pairs for /vector_stores, /vector_stores/{vector_store_id},
+  /vector_stores/{vector_store_id}/search, /vector_stores/{vector_store_id}/files,
+  /vector_stores/{vector_store_id}/files/{file_id}, /vector_stores/{vector_store_id}/files/{file_id}/content,
+  /vector_store/list, /search, /search/{search_tool_name}, /decisions, /systemone, /ocr, /containers
+  and /containers/*. Keep singular vector_store/list distinct from plural vector_stores.
+
+  anthropic_routes is exactly /v1/messages, /v1/messages/count_tokens,
+  /claude_code_gateway/v1/messages, /claude_code_gateway/v1/messages/count_tokens, /v1/skills,
+  /v1/skills/{skill_id}, /claude-code/marketplace.json, /claude-code/plugins,
+  /claude-code/plugins/{plugin_name}. llm_api_routes concatenates openai, anthropic, google,
+  mapped_pass_through, passthrough_wildcard, apply_guardrail, mcp_inference, litellm_native,
+  agent_inference and model_info in precisely that order. Preserve duplicates and {model} versus
+  {model_name:path} spellings; never sort, deduplicate or expand templates into endpoint registrations.
 
 
   Build the production inference_routes module in betterlite-auth; reuse the typed dependencies listed
@@ -18,27 +51,15 @@ description: >-
   11 source lines), LiteLLMRoutes.llm_api_routes (L648-L659; 12 source lines).
 
 
-  Add the inference_routes operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a inference-routes-*
-  seed to B171 helper_case, which already owns this decoder.
+  The B856 inference_routes helper returns exact constant arrays; Python reads the named pinned enum
+  values and Rust returns production slices. No algorithm is copied into the adapter. Each family case
+  compares the complete ordered table, not representative membership alone; native literal_cases uses
+  a named rstest row for every literal and alias, plus nonmembers. B171 rejects unknown operation tags.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 152 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  152 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 389 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The three declarations contain 152 nonblank noncomment source lines. Budget 155 production,
+  180 table/decoder tests, 80 adapters and 30 wiring lines, 445 within 500. No Postgres fixture or
+  setting is consumed; the existing HelperCase decoder owns the only input boundary.
 scope:
   paths:
     - crates/betterlite-auth/src/inference_routes.rs
@@ -62,6 +83,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L648-L659
     why: Own LiteLLMRoutes.llm_api_routes; preserve caller-visible values and failure ordering.
 dod:
+  - text: Full-array comparisons and per-literal rstest rows prove source order, every alias, template spelling and the ten-part concatenation without de-duplication.
+    proof: [behavior-tests, oracle, helper-python]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: literal_membership,
       alias_membership, group_expansion, unknown_group.'
     proof:
@@ -90,20 +113,17 @@ checks:
         && grep -rlq "inference_routes" tools/oracle/fuzz/corpus/helper_case/inference-routes-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/inference-routes/literal-membership.yaml
-  - tools/oracle/cases/helpers/inference-routes/alias-membership.yaml
-  - tools/oracle/cases/helpers/inference-routes/group-expansion.yaml
-  - tools/oracle/cases/helpers/inference-routes/unknown-group.yaml
+  - tools/oracle/cases/helpers/inference-routes/openai-complete-ordered-table.yaml
+  - tools/oracle/cases/helpers/inference-routes/anthropic-complete-ordered-table.yaml
+  - tools/oracle/cases/helpers/inference-routes/llm-api-ten-part-concatenation.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
     (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
   - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
     GenerateKeyResponse (L1399-L1438), UpdateKeyRequest (L1441-L1484).'
-  - 'litellm/proxy/_types.py: B867 owns LiteLLMRoutes.mcp_management_routes (L583-L587), LiteLLMRoutes.agent_management_routes
-    (L606-L612), LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
+  - 'litellm/proxy/_types.py: B867 owns KeyManagementRoutes (L287-L325),
+    LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
     (L694-L719), LiteLLMRoutes.team_service_account_key_routes (L721-L724), LiteLLMRoutes.management_routes
     (L726-L782), LiteLLMRoutes.spend_tracking_routes (L784-L805), LiteLLMRoutes.global_spend_tracking_routes
     (L807-L821), LiteLLMRoutes.internal_user_routes (L885-L913), LiteLLMRoutes.internal_user_view_only_routes
@@ -111,8 +131,9 @@ out_of_scope:
     (L1050-L1126), LiteLLMRoutes.org_admin_allowed_routes (L1129-L1129).'
   - 'litellm/proxy/_types.py: B868 owns LiteLLMRoutes.openai_route_names (L329-L338), LiteLLMRoutes.mapped_pass_through_routes
     (L492-L521), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527), LiteLLMRoutes.litellm_native_routes
-    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_routes (L591-L591),
-    LiteLLMRoutes.agent_inference_routes (L594-L601), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
+    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_management_routes
+    (L583-L587), LiteLLMRoutes.mcp_routes (L591-L591), LiteLLMRoutes.agent_inference_routes (L594-L601),
+    LiteLLMRoutes.agent_management_routes (L606-L612), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
     (L618-L636), LiteLLMRoutes.apply_guardrail_routes (L638-L640), LiteLLMRoutes.model_info_routes (L642-L646),
     LiteLLMRoutes.info_routes (L660-L685), LiteLLMRoutes.public_routes (L823-L844), LiteLLMRoutes.ui_routes
     (L849-L871), LiteLLMRoutes.compliance_check_routes (L875-L878), LiteLLMRoutes.self_managed_routes
@@ -151,9 +172,10 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
-  - Preserve every pinned literal, alias, template and enum expansion; these are policy data, not HTTP
-    route registrations.
+  - Batches/files put versioned paths first, while most OpenAI pairs put them second.
+  - Realtime's literal ?{model} entries must not be normalized into ordinary query parameters.
+  - llm_api_routes includes model-info and native trace paths but excludes MCP and agent CRUD groups.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 500
   max_new_expects: 0
 review_level: security

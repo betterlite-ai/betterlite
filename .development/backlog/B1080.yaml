@@ -1,0 +1,9 @@
+id: B1080
+milestone: M5 api families
+title: File stream logging
+status: todo
+depends_on: [B012, B171, B1020, B1128, B173, B2401]
+file: tasks/B1080-file-stream-logging.yaml
+covers:
+  - "litellm/files/streaming.py"
+  - "litellm/proxy/openai_files_endpoints/file_content_streaming_handler.py"

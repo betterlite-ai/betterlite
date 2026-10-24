@@ -1,0 +1,8 @@
+id: B1217
+milestone: M4 keys, spend and management
+title: Database service-unavailable error projection
+status: todo
+depends_on: [B002, B129, B171, B732, B856, B872]
+file: tasks/B1217-database-availability.yaml
+covers:
+  - "litellm/proxy/db/exception_handler.py"

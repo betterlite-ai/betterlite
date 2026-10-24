@@ -1,0 +1,8 @@
+id: B1000
+milestone: M5 api families
+title: Image variations
+status: todo
+depends_on: [B010, B174, B176, B2220, B997, B513, B011, B002, B2401]
+file: tasks/B1000-image-variations.yaml
+covers:
+  - "litellm/images/main.py"

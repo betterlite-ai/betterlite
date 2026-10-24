@@ -1,0 +1,8 @@
+id: B2402
+milestone: M5 API families
+title: Vector store HTTP writes and transport error conversion
+status: todo
+depends_on: [B173, B1058, B1131, B527, B668, B171, B012, B011, B2401]
+file: tasks/B2402-vector-store-http-write.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

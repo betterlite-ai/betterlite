@@ -1,0 +1,8 @@
+id: B2463
+milestone: M5 API families
+title: Generic file byte and stream HTTP execution
+status: todo
+depends_on: [B1015, B173, B012, B2401, B2402]
+file: tasks/B2463-file-http-content.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

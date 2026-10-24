@@ -1,0 +1,9 @@
+id: B1363
+milestone: M3 providers
+title: Studio Veo input mapping and API-key precedence
+status: todo
+depends_on: [B1331, B1361, B525, B171]
+file: tasks/B1363-studio-veo-input.yaml
+covers:
+  - "litellm/llms/gemini/videos/transformation.py"
+  - "litellm/types/llms/gemini.py"

@@ -1,92 +1,97 @@
 id: B826
 title: Organization creation and nested budget writes
 description: >-
-  Implement organization create types, scope checks, nested budget writes, _set_object_permission and
-  POST /organization/new. Preserve source order without a transaction: create budget, create object permission,
-  validate model access and then create the organization. Failed later checks may leave earlier rows behind.
-  Remove only the enterprise-license guard; all ordinary validation and authorization stays.
+  Implement organization_create and the shared organization access/write contracts. Own
+  organization_endpoints.py L96-L357 (the router license dependency, repository/transaction protocols,
+  _table overloads, _verify_org_access and budget transforms), new_organization L366-L557 with its
+  L360 decorator, and _set_object_permission L666-L690. POST /organization/new uses B052 authentication
+  and B124's NewOrganizationRequest/NewOrganizationResponse. The router-level premium_user guard
+  returns 403 in MIT before authenticated handlers run; omit only that guard per README Decisions.
+  Native HTTP tests exercise the resulting handlers, while the MIT equality corpus contains only
+  authentication failures that precede the license guard. Do not fake an enterprise installation or
+  claim an authorized creation success matches the unmodified MIT router.
 
+  NewOrganizationRequest requires organization_alias, defaults models=[] and organization_id,
+  budget_id, metadata, model_rpm_limit, model_tpm_limit and object_permission to null. B124/B725 own
+  the request and budget row schemas, including null defaults for max_budget, soft_budget,
+  max_parallel_requests, tpm_limit, rpm_limit, tpd_limit, model_max_budget, budget_duration,
+  allowed_models, temp_budget_increase and temp_budget_expiry. Cases create_request_defaults and
+  inherited_budget_fields_preserved verify those projections. The source's .json() returns a mapping,
+  not serialized JSON text; use B124's jsonify_object conversion when preparing DB records.
 
-  Build the production organization_create module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Handler checks are ordered: missing database gives HTTPException 500 detail.error="DB not connected.
+  This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...)
+  to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys"; role other than exact proxy_admin,
+  including null and proxy_admin_view_only, gives 401 "Only admins can create orgs. Your role is = <role>";
+  missing router gives 500 "No models configured on proxy". Then max_budget and soft_budget, in that
+  order, reject negative or nonfinite values as 400 "<field> must be a non-negative finite number.
+  Received: <value>". Zero is valid; there is no soft-versus-max comparison. Cases create_guard_order,
+  create_role_matrix and create_budget_number_matrix name every branch and wire detail.
 
+  If caller.user_id is nonnull, read B723.UserRepository by that ID and validate its row. Swallow ALL
+  lookup or validation exceptions silently and continue with no user object. When budget_id is null,
+  select only LiteLLM_BudgetTable fields from the exclude-none request, validate the budget record,
+  jsonify it, create it through B725, and mutate data.budget_id to its returned ID. Actor columns are
+  caller.user_id or litellm_proxy_admin_name. Even a request without budget values creates a budget;
+  an explicit ID, including empty string, bypasses creation without a handler existence check.
+  Cases user_lookup_failure_is_silent, empty_request_budget_created, explicit_budget_bypasses_create
+  and budget_actor_fallback verify exact calls and surviving rows.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/organization_endpoints.py:
-  _enterprise_license_required (L96-L108; 12 source lines), _ObjectPermissionRow.object_permission_id
-  (L116-L116; 1 source lines), _UserTableClient.find_unique (L120-L120; 1 source lines), _BudgetTableClient.create
-  (L124-L124; 1 source lines), _ObjectPermissionTableClient.create (L128-L128; 1 source lines), _OrganizationTableClient.create
-  (L132-L134; 3 source lines), _OrganizationTableClient.find_unique (L136-L138; 3 source lines), _OrganizationTableClient.find_many
-  (L140-L144; 5 source lines), _OrganizationTableClient.update (L146-L151; 6 source lines), _OrganizationTableClient.delete
-  (L153-L155; 3 source lines), _OrganizationMembershipTableClient.create (L159-L159; 1 source lines),
-  _OrganizationMembershipTableClient.find_unique (L161-L163; 3 source lines), _OrganizationMembershipTableClient.find_many
-  (L165-L167; 3 source lines), _OrganizationMembershipTableClient.update (L169-L171; 3 source lines),
-  _OrganizationMembershipTableClient.delete (L173-L173; 1 source lines), _OrganizationMembershipTableClient.delete_many
-  (L175-L175; 1 source lines), _TeamTableClient.delete_many (L179-L179; 1 source lines), _VerificationTokenTableClient.find_many
-  (L183-L183; 1 source lines), _VerificationTokenTableClient.delete_many (L185-L185; 1 source lines),
-  _ObjectPermissionTxClient.upsert (L193-L195; 3 source lines), _BudgetTxClient.update (L199-L199; 1 source
-  lines), _TransactionTables.litellm_objectpermissiontable (L204-L204; 1 source lines), _TransactionTables.litellm_budgettable
-  (L207-L207; 1 source lines), _TransactionTables.litellm_organizationtable (L210-L210; 1 source lines),
-  _TransactionManager.__aenter__ (L214-L214; 1 source lines), _TransactionManager.__aexit__ (L216-L221;
-  6 source lines), _table (L225-L225; 1 source lines), _table (L229-L229; 1 source lines), _table (L233-L233;
-  1 source lines), _table (L237-L237; 1 source lines), _table (L241-L241; 1 source lines), _table (L245-L245;
-  1 source lines), _table (L249-L249; 1 source lines), _table (L252-L262; 11 source lines), _verify_org_access
-  (L265-L306; 36 source lines), build_budget_write_data (L317-L333; 17 source lines), handle_nested_budget_structure_in_organization_update_request
-  (L336-L357; 17 source lines), new_organization (L366-L557; 152 source lines), _set_object_permission
-  (L666-L690; 23 source lines).
+  Next _set_object_permission returns null without DB or when object_permission is null. A nonnull
+  permission, including {}, calls B816.reject_ambiguous_mcp_tool_permission_keys with existing=None,
+  then creates a B725 permission row from exclude-none fields, removes the request's object_permission
+  field and returns its ID. It never encrypts these grant lists. Cases permission_none_and_empty,
+  ambiguous_permission_stops_after_budget and permission_removed_from_org_payload prevent the docstring's
+  incorrect claim that {} means no row from becoming behavior.
 
+  Only after those writes, a caller with models=[] skips model checks. Otherwise requested models=[]
+  raises 400 "User not allowed to give access to all models. Select models you want org to have access to.";
+  each requested model is checked in order by B886.can_user_call_model with llm_router and the optional
+  fetched user object. It does not directly compare the requested list to caller.models. Cases
+  unrestricted_caller_skips_model_checks, restricted_caller_all_models_denied and model_check_inputs_order
+  verify this boundary. budget_survives_permission_failure and permission_survives_model_denial prove
+  that neither earlier write rolls back when a later validation fails.
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Construct LiteLLM_OrganizationTable from the remaining exclude-none payload plus object_permission_id
+  and actor columns. For every nonnull field in _ORG_METADATA_FIELDS call B861._set_object_metadata_field:
+  model_rpm_limit, model_tpm_limit, model_itpm_limit, model_otpm_limit, default_estimated_output_tokens,
+  default_estimated_output_tokens_per_model, mcp_rpm_limit, tag_rpm_limit, rpm_limit_type, tpm_limit_type,
+  enforced_params, allowed_vector_store_indexes, enforced_batch_output_expires_after,
+  enforced_file_expires_after, throttle_on_budget_exceeded, enable_prompt_caching and end_user_budget_id.
+  temp_budget_increase/expiry belong to the budget and are excluded from this list. B124's schema decides
+  which attributes are representable; unknown inputs do not acquire new fields here. Jsonify, log
+  "new_organization_row: %s" with indent=2 JSON, then create the B723 organization with
+  include.litellm_budget_table=true and return it. Cases metadata_field_partition, organization_row_defaults,
+  creation_log_before_insert and organization_failure_keeps_children cover that final stage. No duplicate
+  alias precheck, cache invalidation, audit wrapper or handle_exception_on_proxy exists here; repository
+  errors propagate through B003's server error boundary with prior rows intact.
 
+  _verify_org_access first allows B2314._user_has_admin_view, including view-only proxy administrators.
+  Others need a truthy user_id and B736.get_user_object(user_id_upsert=false), then at least one exact
+  organization_id membership with role org_admin. Missing user, absent/empty memberships, wrong org
+  or other role give 403 with STRING detail="You do not have access to this organization". Lookup
+  errors propagate. Cases org_access_admin_view_bypasses_lookup, org_access_missing_user,
+  org_access_membership_matrix and org_access_lookup_error protect callers in B827/B828/B1212.
 
-  Register these actual HTTP routes and aliases exactly once: POST /organization/new -> new_organization.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  _BUDGET_SETTABLE_FIELDS is the budget schema's fields minus budget_id; _ORG_COLUMN_FIELDS contains
+  organization_alias and models. build_budget_write_data preserves sent values, recomputes
+  budget_reset_at through B2317.get_budget_reset_time when a sent budget_duration is a string, clears
+  reset_at for a sent nonstring/null duration, and leaves it untouched when duration is omitted. Its
+  recomputed reset and supplied updated_by override input values. Cases budget_duration_omitted,
+  budget_duration_reset_and_clear and budget_actor_override use a fixed clock/current reset settings.
+  The nested-budget transformer shallow-copies input, removes litellm_budget_table, and, if its value
+  is truthy, overlays only recognized budget fields INCLUDING budget_id onto top-level values, with
+  nested null winning. Falsey nested values are discarded; a truthy nonmapping fails at .items(). Cases
+  nested_budget_precedence, nested_budget_falsey_removed and nested_budget_nonmapping_fail pin these rules.
 
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 328 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  328 production, 160 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 553 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
+  Keep native record/protocol declarations with these helpers so B827 and its v2 split depend downward.
+  Repositories remain B723/B725/B726/B724/B722, and the protocol adapters add no reads on construction.
+  B860's Postgres fixture consumes POSTGRES_TEST_URL and falls back to testcontainers only when absent;
+  an invalid configured URL fails. Money follows the workspace Decimal conversion rule. This task reads
+  no new environment setting: DATABASE_URL occurs in an error, and license state/admin name/reset
+  settings come from their existing owners. There is no new byte parser. Count 366 nonblank/noncomment
+  lines including complete declarations, decorators and docstrings; allow 330 implementation, 390 native
+  tests and 65 registration lines, 785 within 800, splitting Rust implementation files below 300 lines.
 scope:
   paths:
     - crates/betterlite-server/src/organization_create.rs
@@ -97,161 +102,58 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/organization-create/**
-    - crates/betterlite-server/src/organization_create/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L96-L557
-    why: Pinned implementation and exact ownership boundary for organization_create.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2432-L2444
-    why: NewOrganizationRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L96-L108
-    why: Own _enterprise_license_required; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L116-L116
-    why: Own _ObjectPermissionRow.object_permission_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L120-L120
-    why: Own _UserTableClient.find_unique; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L124-L124
-    why: Own _BudgetTableClient.create; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L128-L128
-    why: Own _ObjectPermissionTableClient.create; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L132-L134
-    why: Own _OrganizationTableClient.create; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L136-L138
-    why: Own _OrganizationTableClient.find_unique; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L140-L144
-    why: Own _OrganizationTableClient.find_many; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L146-L151
-    why: Own _OrganizationTableClient.update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L153-L155
-    why: Own _OrganizationTableClient.delete; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L159-L159
-    why: Own _OrganizationMembershipTableClient.create; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L161-L163
-    why: Own _OrganizationMembershipTableClient.find_unique; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L165-L167
-    why: Own _OrganizationMembershipTableClient.find_many; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L169-L171
-    why: Own _OrganizationMembershipTableClient.update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L173-L173
-    why: Own _OrganizationMembershipTableClient.delete; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L175-L175
-    why: Own _OrganizationMembershipTableClient.delete_many; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L179-L179
-    why: Own _TeamTableClient.delete_many; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L183-L183
-    why: Own _VerificationTokenTableClient.find_many; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L185-L185
-    why: Own _VerificationTokenTableClient.delete_many; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L193-L195
-    why: Own _ObjectPermissionTxClient.upsert; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L199-L199
-    why: Own _BudgetTxClient.update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L204-L204
-    why: Own _TransactionTables.litellm_objectpermissiontable; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L207-L207
-    why: Own _TransactionTables.litellm_budgettable; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L210-L210
-    why: Own _TransactionTables.litellm_organizationtable; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L214-L214
-    why: Own _TransactionManager.__aenter__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L216-L221
-    why: Own _TransactionManager.__aexit__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L225-L225
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L229-L229
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L233-L233
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L237-L237
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L241-L241
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L245-L245
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L249-L249
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L252-L262
-    why: Own _table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L265-L306
-    why: Own _verify_org_access; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L317-L333
-    why: Own build_budget_write_data; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L336-L357
-    why: Own handle_nested_budget_structure_in_organization_update_request; preserve caller-visible values
-      and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L366-L557
-    why: Own new_organization; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L96-L357
+    why: Real router license guard, repository contracts, scope checks and budget transformations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L360-L557
+    why: Creation decorator and nontransactional budget-permission-model-organization sequence.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L666-L690
-    why: Own _set_object_permission; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+    why: Nonnull empty permission creates a record and removes the original request field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2432-L2452
+    why: Organization creation defaults and required alias.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4389-L4398
+    why: Exact database, router and license diagnostic constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5069-L5090
+    why: Metadata field iteration after removing budget fields.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: no_license_required,
-      new_organization, budget_nested_create, object_permission_create, duplicate_alias, unauthorized_caller,
-      budget_survives_later_failure, permission_survives_model_denial, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
-    proof:
-      - behavior-tests
+  - text: All named creation cases run through native HTTP with real Postgres, proving status/detail,
+      null/absent fields, sequential writes, silent user-lookup failure and no new exception translation.
+    proof: [behavior-tests]
+  - text: Every org-access and budget-transform case exercises the production helpers; failures prove
+      membership scope, null presence and nested-field precedence independently of the create route.
+    proof: [behavior-tests]
+  - text: native_organization_routes_without_license proves only the license guard is omitted, and the
+      MIT equality authentication-before-license case never enables premium_user.
+    proof: [behavior-tests, oracle]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^organization_create::tests::/)
-        - test(/replays_the_/)'
-    - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/organization_create::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/organization_create::tests::postgres_failure_effects$/)'
+      why: Organization creation, shared authorization or ordered-failure tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
+        'test(/^organization_create::tests::/) - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/organization-create/post--organization-new-success.yaml
-  - tools/oracle/cases/management/organization-create/post--organization-new-invalid-target.yaml
-  - tools/oracle/cases/management/organization-create/post--organization-new-unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-create/new-organization.yaml
-  - tools/oracle/cases/management/organization-create/budget-nested-create.yaml
-  - tools/oracle/cases/management/organization-create/object-permission-create.yaml
-  - tools/oracle/cases/management/organization-create/duplicate-alias.yaml
-  - tools/oracle/cases/management/organization-create/unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-create/budget-survives-later-failure.yaml
-  - tools/oracle/cases/management/organization-create/permission-survives-model-denial.yaml
+  - tools/oracle/cases/management/organization-create/authentication-before-license.yaml
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L96-L557
+  - what: Authenticated callers reach the organization routes without a license; MIT instead rejects
+      them with 403 detail.error beginning Organizations are only available for LiteLLM Enterprise users.
+      The subsequent admin checks, database errors and writes are retained.
+    why: README Decisions removes the paid tier. native_organization_routes_without_license tests this
+      difference; authenticated handler results cannot enter an equality corpus against the MIT router.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L96-L111
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B058 owns get_organization_daily_activity
-    (L565-L613), resolve_organization_daily_activity_scope (L621-L663).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B827 owns update_organization (L699-L808),
-    handle_update_object_permission (L811-L835), update_organization_v2 (L844-L997), delete_organization
-    (L1006-L1057), _delete_organization_keys (L1060-L1079).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B828 owns organization_member_add (L1281-L1397),
-    find_member_if_email (L1400-L1420), organization_member_update (L1430-L1572), organization_member_delete
-    (L1580-L1621), add_member_to_organization (L1624-L1706).'
-  - 'litellm/proxy/management_endpoints/organization_endpoints.py: B1212 owns list_organization (L1088-L1185),
-    info_organization (L1194-L1232), deprecated_info_organization (L1240-L1271).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B058 owns get_organization_daily_activity L565-L613 and resolve_organization_daily_activity_scope
+    L621-L663 in organization_endpoints.py.
+  - B827 owns update_organization L699-L808, handle_update_object_permission L811-L835,
+    delete_organization L1006-L1057 and _delete_organization_keys L1060-L1079; B2342 owns v2 update L844-L997.
+  - B828 owns organization_member_add L1281-L1397, find_member_if_email L1400-L1420,
+    organization_member_update L1430-L1572, organization_member_delete L1580-L1621 and
+    add_member_to_organization L1624-L1706; B1212 owns list/info/deprecated-info L1088-L1271.
 pitfalls:
-  - new_organization has no transaction around its budget/object-permission writes, so rollback-all would
-    break parity.
+  - An empty object_permission creates a row despite the create-route docstring saying otherwise.
+  - The swallowed user-row lookup failure changes what can_user_call_model receives after child rows exist.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

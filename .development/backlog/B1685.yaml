@@ -1,0 +1,8 @@
+id: B1685
+milestone: M4 keys, spend and management
+title: Price built-in tool usage and compose exclusive tool billing paths
+status: todo
+depends_on: [B002, B171, B204, B1678, B1684]
+file: tasks/B1685-built-in-tool-prices.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/tool_call_cost_tracking.py"

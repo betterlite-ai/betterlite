@@ -1,0 +1,9 @@
+id: B254
+milestone: M1 openai data plane
+title: Typed standard logging fields and normalization
+status: todo
+depends_on: [B188, B011, B005, B006, B212]
+file: tasks/B254-logging-fields.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+  - "litellm/types/utils.py"

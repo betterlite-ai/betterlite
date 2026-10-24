@@ -1,0 +1,8 @@
+id: B904
+milestone: M5 api families
+title: Response id traversal
+status: todo
+depends_on: [B171, B902, B903, B905, B1138]
+file: tasks/B904-response-id-traversal.yaml
+covers:
+  - "litellm/responses/utils.py"

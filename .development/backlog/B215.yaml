@@ -1,0 +1,9 @@
+id: B215
+milestone: M1 openai data plane
+title: Bounded local Jinja prompt rendering
+status: todo
+depends_on: [B214, B171]
+file: tasks/B215-jinja-prompts.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/factory.py"
+  - "litellm/litellm_core_utils/prompt_templates/huggingface_template_handler.py"

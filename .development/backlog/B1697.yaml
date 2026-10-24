@@ -1,0 +1,10 @@
+id: B1697
+milestone: M4 keys, spend and management
+title: Build daily spend batches and atomic auto-router turn upserts
+status: todo
+depends_on: [B171, B204, B700, B703, B707, B708, B860]
+file: tasks/B1697-daily-and-session-upserts.yaml
+covers:
+  - "litellm/proxy/db/daily_spend_bulk_upsert.py"
+  - "litellm/proxy/db/autorouter_session_rollup.py"
+  - "litellm/proxy/_types.py"

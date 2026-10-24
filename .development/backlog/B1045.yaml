@@ -1,0 +1,8 @@
+id: B1045
+milestone: M5 api families
+title: Batch limit counters
+status: todo
+depends_on: [B022, B126, B171, B1042, B1044, B1087]
+file: tasks/B1045-batch-limit-counters.yaml
+covers:
+  - "litellm/proxy/hooks/batch_rate_limiter.py"

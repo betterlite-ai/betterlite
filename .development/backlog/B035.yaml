@@ -1,0 +1,9 @@
+id: B035
+milestone: M3 providers
+title: Gemini through Google AI Studio
+status: todo
+depends_on: [B031, B010, B678, B1325, B1330, B1331, B1341, B1350, B1351, B1363, B1364, B1366, B1367, B1368, B1370, B1378, B1379, B1381, B1382, B1390, B1391, B1392, B998, B999, B1120, B1122, B1001, B1028, B1029, B1064, B1115, B1008, B206, B173, B009, B004, B005, B006, B082, B083, B1032, B1034, B087, B1067, B1125, B900, B901]
+file: tasks/B035-google-ai-studio-provider.yaml
+covers:
+  - "litellm/llms/gemini/context_caching/README.md"
+  - "litellm/main.py"

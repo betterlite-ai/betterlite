@@ -1,0 +1,8 @@
+id: B382
+milestone: M2 routing
+title: Request-scoped routing read batches
+status: todo
+depends_on: [B360, B301]
+file: tasks/B382-routing-read-batch.yaml
+covers:
+  - "litellm/router_utils/routing_read_batch.py"

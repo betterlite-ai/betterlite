@@ -1,0 +1,9 @@
+id: B1521
+milestone: M3 providers
+title: Prepare Recraft generation and image-to-image requests
+status: todo
+depends_on: [B002, B997, B1120, B068, B171]
+file: tasks/B1521-recraft-images.yaml
+covers:
+  - "litellm/llms/recraft/**"
+  - "litellm/types/llms/recraft.py"

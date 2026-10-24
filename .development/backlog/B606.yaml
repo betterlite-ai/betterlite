@@ -1,0 +1,8 @@
+id: B606
+milestone: M3 providers
+title: Bedrock Converse tool content and citations
+status: todo
+depends_on: [B218, B598, B005, B171, B220]
+file: tasks/B606-bedrock-converse-content.yaml
+covers:
+  - "litellm/llms/bedrock/chat/converse_transformation.py"

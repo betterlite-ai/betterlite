@@ -1,10 +1,55 @@
 id: B780
 title: Reset key spend and budget windows
 description: >-
-  Implement /key/{key}/reset_spend using Decimal validation, per-window advancement and writer transaction.
-  Apply source spend-floor and invalidation broadcast semantics through injected SpendCounterWrite port;
-  B070/B071 supply aggregate counter/reservation stores later. Keep administrator/team administrator scope
-  and reject nonfinite, negative and unauthorized resets.
+  Implement POST /key/{key:path}/reset_spend with the source's separate writes, not an encompassing
+  transaction. B124 ResetSpendRequest requires reset_to and rejects booleans before float coercion
+  with 422. The helper accepts numbers, rejects nonnumbers with 400, negative values with 400,
+  values greater than (current spend or 0.0) with 400, then values above the lower non-null key or
+  related-budget maximum with 400. Equality is allowed. Validation happens before authorization:
+  only proxy admins or admins of the existing key team may proceed, never an ordinary owner.
+  Cases reset_required_field, reset_bool_422, reset_number_coercion, reset_negative,
+  reset_above_current, reset_lower_budget_ceiling, reset_equal_boundary,
+  reset_validation_before_permission, reset_proxy_admin, reset_team_admin and reset_owner_denied
+  pin those branches. Error messages identify the numeric constraint and relevant limit, or
+  proxy/team-admin requirement; use betterlite wording as permitted by README Decisions.
+
+
+  The path is hashed when it contains the substring sk anywhere, not just an sk- prefix;
+  otherwise it is already the stored hash. Query the key including its budget relation.
+  The route's explicit HTTPExceptions escape unchanged: absent database 500, missing key 404,
+  invalid reset 400, denied role 403 and a null update result 500 use the standard detail.error
+  envelope without OpenAI type/param/code. Its final except maps other failures through B124
+  handle_exception_on_proxy to 500 internal_server_error with openai_error_param/code 500.
+  Cases reset_substring_hash, reset_database_absent, reset_key_absent,
+  reset_null_update and reset_unexpected_error compare the exact envelope distinction.
+
+
+  First write spend=reset_to, then set lifetime counter spend:key:<hash> to that value. Set local
+  counter TTL 60; try Redis with TTL 60, warn and continue on Redis failure. Set local
+  spend_db_floor:<counter> with B734 SPEND_DB_FLOOR_CACHE_TTL_SECONDS=5. Publish the counter
+  then floor values with their respective TTLs through B878; do not delete them. Cases
+  reset_partial_lifetime_value, reset_counter_floor_ttls, reset_redis_warning_continues and
+  reset_broadcast_order capture both effects and warning.
+
+
+  Parse budget_limits with B770's shared decoder. Empty windows cause no window write. For each
+  nonempty string duration, use B199 duration_in_seconds and a fresh aware UTC now plus duration,
+  storing its ISO reset_at; preserve other fields and leave missing/empty/non-string durations
+  unchanged. These are floating windows, not calendar reset boundaries. Persist the whole JSON
+  window array before setting each valid window counter spend:key:<hash>:window:<duration> to
+  0.0 with its floor and broadcasts. Only after all writes call B734 _delete_cache_key_object.
+  Cases reset_windows_floating, reset_windows_invalid_duration_unchanged,
+  reset_empty_windows_no_write, reset_window_persist_before_counters and reset_auth_eviction_last
+  prove the order. Invalid duration parsing propagates, not warn-and-drop. Return key_hash,
+  spend, previous_spend, max_budget and budget_reset_at from the first updated key, without
+  changing the lifetime reset timestamp or returning new per-window reset times.
+
+
+  Postgres cases reset_spend_write_failure, reset_window_write_failure,
+  reset_broadcast_failure and reset_auth_eviction_failure inspect all preceding durable effects:
+  a failed later step never rolls back the initial spend update. The optional litellm-changed-by
+  header is accepted for the wrapper but unused in this handler; reset_changed_by_no_extra_write
+  checks it does not add an audit database mutation.
 
 
   Reuse B895 trailing /key/{*tail} dispatcher; strip only the final /reset_spend suffix and keep the same
@@ -18,8 +63,8 @@ description: >-
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/key_management_endpoints.py:
   _check_proxy_or_team_admin_for_key (L5989-L6015; 25 source lines), _validate_reset_spend_value (L6018-L6053;
-  30 source lines), _set_spend_counter_with_floor_and_broadcast (L6056-L6087; 28 source lines), _budget_limit_windows
-  (L6090-L6104; 14 source lines), _advance_one_key_budget_window (L6107-L6131; 24 source lines), _reset_key_budget_windows
+  30 source lines), _set_spend_counter_with_floor_and_broadcast (L6056-L6087; 28 source lines),
+  _advance_one_key_budget_window (L6107-L6131; 24 source lines), _reset_key_budget_windows
   (L6134-L6172; 33 source lines), reset_key_spend_fn (L6181-L6278; 77 source lines).
 
 
@@ -27,13 +72,9 @@ description: >-
   column type; retain source storage types.
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /key/{key:path}/reset_spend -> reset_key_spend_fn.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Route cases use B001 HTTP, including slash-containing keys and dispatcher suffix precedence.
+  Counter failure cases inject the production counter/publication ports; no adapter calls the
+  FastAPI handler outside a running proxy.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -60,9 +101,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 231 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  231 production, 157 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 453 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  Sizing: 217 nonblank, noncomment pinned source lines including docstrings before Rust translation;
+  allow 217 production, 350 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 632 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -92,20 +133,19 @@ references:
     why: Own _validate_reset_spend_value; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6056-L6087
     why: Own _set_spend_counter_with_floor_and_broadcast; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6090-L6104
-    why: Own _budget_limit_windows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2771-L2771
+    why: B734 owns the five-second floor TTL; it is a constant, not an environment setting.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6107-L6131
     why: Own _advance_one_key_budget_window; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6134-L6172
     why: Own _reset_key_budget_windows; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6181-L6278
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6175-L6278
     why: Own reset_key_spend_fn; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: reset_zero, reset_explicit_value,
-      negative_rejected, window_advance, team_admin_scope, floor_broadcast, db_failure_no_counter_write,
-      postgres_pinned_rows, postgres_failure_effects.'
+  - text: Every named reset case above passes, plus postgres_pinned_rows and postgres_failure_effects;
+      failures prove separate writes and the exact counter/floor/publication order.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -128,9 +168,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_spend_reset::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_spend_reset::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/key-spend-reset/post--key-key-path-reset-spend-success.yaml
-  - tools/oracle/cases/management/key-spend-reset/post--key-key-path-reset-spend-invalid-target.yaml
-  - tools/oracle/cases/management/key-spend-reset/post--key-key-path-reset-spend-unauthorized-caller.yaml
+  - tools/oracle/cases/management/key-spend-reset/validation-before-authorization.yaml
+  - tools/oracle/cases/management/key-spend-reset/http-detail-versus-proxy-error.yaml
+  - tools/oracle/cases/management/key-spend-reset/subpath-and-substring-hash.yaml
+  - tools/oracle/cases/management/key-spend-reset/window-write-partial-failure.yaml
   - tools/oracle/cases/management/key-spend-reset/reset-zero.yaml
   - tools/oracle/cases/management/key-spend-reset/reset-explicit-value.yaml
   - tools/oracle/cases/management/key-spend-reset/negative-rejected.yaml
@@ -138,10 +179,15 @@ oracle_cases:
   - tools/oracle/cases/management/key-spend-reset/team-admin-scope.yaml
   - tools/oracle/cases/management/key-spend-reset/floor-broadcast.yaml
   - tools/oracle/cases/management/key-spend-reset/db-failure-no-counter-write.yaml
-deviations: []
+deviations:
+  - what: Reject nonfinite reset amounts at the monetary decoder instead of allowing NaN through
+      comparisons or waiting for a database error; return a 422 request validation error.
+    why: README requires Decimal monetary values. Native reset_nonfinite_422 covers the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L6018-L6053
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B770 owns _budget_limit_windows (L6090-L6104); B124 owns ResetSpendRequest and exception mapping;
+    B2314 owns hash_token, B734 cache-object eviction and the floor TTL, B878 publication, and
+    B199 duration parsing. Spend aggregation is not implemented by this reset endpoint.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -235,8 +281,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Resetting one counter must publish the spend floor only after the matching DB write succeeds.
+  - Reusing the scheduled calendar reset boundary would include old spend in a manually reset window.
+  - A Redis write failure is a warning, while a subsequent broadcast failure can fail an already persisted reset.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

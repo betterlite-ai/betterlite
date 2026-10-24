@@ -1,0 +1,8 @@
+id: B176
+milestone: M1 openai data plane
+title: Trusted controls, provider headers and affinity
+status: todo
+depends_on: [B174, B213, B2228]
+file: tasks/B176-provider-controls.yaml
+covers:
+  - "litellm/litellm_core_utils/{get_litellm_params,llm_request_utils,provider_affinity,get_provider_specific_headers}.py"

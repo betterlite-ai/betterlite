@@ -1,0 +1,8 @@
+id: B397
+milestone: M2 routing
+title: Router success and failure callback integration
+status: todo
+depends_on: [B012, B014, B301]
+file: tasks/B397-router-observations.yaml
+covers:
+  - "litellm/router.py"

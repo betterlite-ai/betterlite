@@ -1,0 +1,8 @@
+id: B1388
+milestone: M3 providers
+title: Vertex RAG vector search and corpus creation
+status: todo
+depends_on: [B1058, B1301, B1302, B1305, B1384, B171]
+file: tasks/B1388-vertex-rag-vector-store.yaml
+covers:
+  - "litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py"

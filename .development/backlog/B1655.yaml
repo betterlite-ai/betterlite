@@ -1,0 +1,8 @@
+id: B1655
+milestone: M4 keys, spend and management
+title: Report the latest release with cached unavailable results
+status: todo
+depends_on: [B001, B003, B009, B052, B125, B171, B173, B860, B1630]
+file: tasks/B1655-release-info.yaml
+covers:
+  - "litellm/proxy/ui_crud_endpoints/latest_release_endpoints.py"

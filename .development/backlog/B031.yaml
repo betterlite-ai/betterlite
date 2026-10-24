@@ -1,0 +1,8 @@
+id: B031
+milestone: M3 providers
+title: Vertex AI Gemini, context caching and token counting
+status: todo
+depends_on: [B010, B678, B002, B004, B005, B1301, B1331, B1306, B1327, B1320, B032, B1386, B1387, B1330, B1319, B206, B196, B125]
+file: tasks/B031-vertex-gemini-provider.yaml
+covers:
+  - "litellm/main.py"

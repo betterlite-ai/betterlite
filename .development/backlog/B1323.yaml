@@ -1,0 +1,8 @@
+id: B1323
+milestone: M3 providers
+title: Gemini grounding annotations and streamed metadata
+status: todo
+depends_on: [B1306, B171]
+file: tasks/B1323-gemini-response-metadata.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"

@@ -1,0 +1,10 @@
+id: B1071
+milestone: M5 api families
+title: Vector file contracts
+status: todo
+depends_on: [B171, B204]
+file: tasks/B1071-vector-file-contracts.yaml
+covers:
+  - "litellm/llms/base_llm/vector_store_files/transformation.py"
+  - "litellm/types/vector_store_files.py"
+  - "litellm/vector_store_files/utils.py"

@@ -1,0 +1,8 @@
+id: B546
+milestone: M3 providers
+title: Azure web search via Responses
+status: todo
+depends_on: [B531, B530, B508, B173, B171, B529, B677, B091, B668, B129, B002, B2202]
+file: tasks/B546-azure-search.yaml
+covers:
+  - "litellm/llms/azure/search/transformation.py"

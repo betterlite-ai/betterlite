@@ -1,0 +1,8 @@
+id: B206
+milestone: M1 openai data plane
+title: Common call metadata and response helpers
+status: todo
+depends_on: [B198, B175, B184, B2204]
+file: tasks/B206-call-helpers.yaml
+covers:
+  - "litellm/litellm_core_utils/core_helpers.py"

@@ -1,0 +1,8 @@
+id: B1014
+milestone: M5 api families
+title: Async rerank SDK wrapper
+status: todo
+depends_on: [B011, B012, B174, B209, B1079, B2401]
+file: tasks/B1014-rerank-call.yaml
+covers:
+  - "litellm/rerank_api/main.py"

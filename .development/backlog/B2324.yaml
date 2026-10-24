@@ -1,0 +1,11 @@
+id: B2324
+milestone: M4 keys, spend and management
+title: Resource and provider path hints below authentication
+status: todo
+depends_on: [B171, B302, B856]
+file: tasks/B2324-auth-resource-hints.yaml
+covers:
+  - "litellm/types/videos/utils.py"
+  - "litellm/llms/azure/passthrough/transformation.py"
+  - "litellm/llms/nvidia_nim/passthrough/transformation.py"
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"

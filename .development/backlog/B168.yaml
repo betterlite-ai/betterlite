@@ -1,0 +1,9 @@
+id: B168
+milestone: M12 python
+title: Python MCP and A2A clients
+status: todo
+depends_on: [B158, B140, B142]
+file: null
+covers:
+  - "litellm/experimental_mcp_client/**"
+  - "litellm/a2a_protocol/{client,main,card_resolver}.py"

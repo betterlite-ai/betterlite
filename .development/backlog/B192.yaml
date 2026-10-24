@@ -1,0 +1,8 @@
+id: B192
+milestone: M1 openai data plane
+title: Private JSON serialization and atomic files
+status: todo
+depends_on: [B187, B188]
+file: tasks/B192-private-json.yaml
+covers:
+  - "litellm/litellm_core_utils/{safe_json_dumps,safe_json_loads,private_json}.py"

@@ -1,0 +1,14 @@
+id: B071
+milestone: M4 keys, spend and management
+title: Budgets, budget resets and reservations
+status: todo
+depends_on: [B2311, B2313, B2316, B2317]
+file: null
+covers:
+  - "litellm/budget_manager.py"
+  - "litellm/proxy/common_utils/reset_budget_job.py"
+  - "litellm/proxy/spend_tracking/{budget_reservation,carried_budget_state}.py"
+  - "litellm/proxy/middleware/budget_reservation_release_middleware.py"
+  - "litellm/proxy/hooks/{max_budget_per_session_limiter,model_max_budget_limiter}.py"
+  - "litellm/proxy/auth/{budget_throttle,fallback_budget}.py"
+  - "litellm/types/proxy/carried_budget_state.py"

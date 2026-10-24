@@ -1,0 +1,9 @@
+id: B078
+milestone: M4 keys, spend and management
+title: Discovery endpoints for the UI and agent skills
+status: todo
+depends_on: [B060]
+file: null
+covers:
+  - "litellm/proxy/discovery_endpoints/**"
+  - "litellm/types/proxy/discovery_endpoints/**"

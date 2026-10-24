@@ -1,0 +1,9 @@
+id: B1687
+milestone: M4 keys, spend and management
+title: Route image charges and grounding fees through provider price policies
+status: todo
+depends_on: [B171, B204, B1670, B1674, B1675, B1685, B1686]
+file: tasks/B1687-image-price-routing.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/utils.py"
+  - "litellm/llms/__init__.py"

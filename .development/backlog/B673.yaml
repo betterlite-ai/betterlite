@@ -1,0 +1,8 @@
+id: B673
+milestone: M3 providers
+title: Azure client-secret grant
+status: todo
+depends_on: [B173, B171, B187, B129, B2202, B002]
+file: tasks/B673-azure-client-secret.yaml
+covers:
+  - "litellm/llms/azure/common_utils.py"

@@ -1,15 +1,48 @@
 id: B807
 title: Resolve and authorize team membership changes
 description: >-
-  Implement MemberChangePlan with duplicate checks, caller permission, user-id/email canonicalization,
-  provisioning checks, existing-member roles and audit projections. Use writer-locked rosters and avoid
-  creating users for unauthorized additions. Keep all source user lookup and supplied-role precedence
-  rules.
+  Implement membership preflight, locked roster updates, metrics and audit scheduling. team_call_validation_checks
+  rejects missing database (500 No db connected), null team_id (400 No team id passed in), then null
+  member (400 No member/members passed in). Empty lists and empty IDs are not null. Omit the
+  _check_team_member_admin_add premium_user restriction for both a Member and list entries as the
+  declared deviation; preserve every other check and let caller routes map HTTPException.
 
+  team_member_add_duplication_check counts EACH matching nonnull user_id and EACH matching nonnull
+  email separately across the existing roster; it does not compare request entries to one another.
+  If a list's match count equals its length, or a scalar's count is exactly one, raise 400
+  team_member_already_in_team, param member, code "400". Otherwise a positive match count only logs
+  Some users are already in team and continues. Thus a scalar matching both ID and email logs instead
+  of raising, and an empty list raises the all-users error (0==0). Preserve these counterintuitive cases.
 
-  Build the production team_member_identity module in betterlite-server; reuse the typed dependencies
-  listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
-  with adjacent tests.rs files.
+  _validate_team_member_add_permissions first accepts B800 proxy/team/org admins. Others need a team
+  in B803's default_internal_user_params.available_teams, else 403 naming /team/member_add and team ID.
+  Self-join rejects any nonnull max_budget_in_team, budget_duration or allowed_models (including zero,
+  empty duration and []), then rejects any role other than user, then requires truthy caller/member
+  user_id equality for every entry. These are separate HTTP 403 messages; email-only self-join fails.
+  The helper itself lets an empty member list through after its earlier checks; duplication preflight
+  may reject it at the route. Do not provision a user before this permission step.
+
+  _update_team_members_list resolves every requested identity using B1206._resolve_member_identity,
+  then appends sequentially only when B1206._member_already_in_team says absent, deduplicating against
+  additions made by this same call. _add_team_members_to_team opens one transaction, takes B819's
+  TEAM_ADVISORY_LOCK_SQL for team_id, rereads the roster on that connection, and replaces the stale
+  snapshot before B1206._process_team_members. User, membership and roster writes share that transaction.
+  A vanished locked team or None result from the final roster update gives 404 Team=<id> was deleted
+  while this member add was running. JSON-store members_with_roles and return team/users/memberships
+  only after commit. Failed user processing or roster write rolls back all these transaction writes.
+
+  _update_team_member_role uses the caller's transaction and same lock/reread; missing team and missing
+  roster user have distinct 404 details. Rewrite every matching ID with the requested admin/user role
+  and user_email or old email, preserving other members and order; empty new email preserves the old.
+  Return before/after tuples after the roster write. No standalone role transaction is added here.
+
+  _emit_team_members_metric skips an absent B111 PrometheusLogger and debug-logs/swallow failures from
+  set_team_members_metric. Audit projection is an object with team_alias (including null) and
+  members_with_roles retaining null member fields and order. B065 owns audit enablement/configuration.
+  Membership audits skip disabled logging and exactly equal before/after tuples; otherwise schedule
+  updated TEAM_TABLE_NAME with litellm_changed_by=None. Add audits first schedule created USER_TABLE_NAME
+  rows for updated users absent from the original existing_user_ids set, using exclude_none=True and
+  before_value=None, then schedule the membership change. No later user-created hook is called.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -21,32 +54,19 @@ description: >-
   (L3170-L3197; 26 source lines), _schedule_team_member_add_audit_logs (L3200-L3242; 40 source lines).
 
 
-  Add the team_member_identity operation under B856 Management::teams. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a team-member-identity-* seed to B171 helper_case, which already owns this decoder.
+  The team_member_identity operation compares pure validation, duplicate counting, roster merge and
+  audit projection. Test transaction, permission lookup, metrics and scheduling with native collaborators
+  and real Postgres from POSTGRES_TEST_URL or, only when absent, testcontainers. Lock contention tests
+  use a constrained pool and concurrent add/delete so a second connection under the lock cannot hide.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Sizing: 315 nonblank, noncomment lines include docstrings; allow 300 production, 350 tests,
+  85 adapters and 30 wiring lines, 765 within 800.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 315 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  315 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 552 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  Native-only deviation tests in this production module: scalar_admin_without_license and batch_admin_without_license.
+  Both native cases permit role=admin without a license while retaining duplicate detection and caller
+  scope checks; MIT equality exercises non-admin additions and unchanged policy branches.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_identity.rs
@@ -90,8 +110,14 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L3200-L3242
     why: Own _schedule_team_member_add_audit_logs; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: duplicate_member, admin_add_denied,
-      roster_merge, audit_before_after.'
+  - text: 'Named tests: duplicate_member, missing_db, missing_team_id, missing_member,
+      empty_member_list_duplicate, double_match_logs, request_duplicates_not_preflighted,
+      duplicate_param_code, available_team_self_join, unavailable_team_403, self_join_controls_403,
+      self_join_admin_403, self_join_identity_403, admin_scope_bypass, roster_merge,
+      locked_roster_replaces_snapshot, deleted_team_before_write, missing_role_team,
+      missing_role_member, role_email_fallback, role_update_order, absent_metric_noop,
+      metric_failure_debug, audit_before_after, unchanged_roster_no_audit, audit_disabled,
+      new_users_before_team_audit and audit_null_fields.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -100,9 +126,13 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+  - text: 'scalar_admin_without_license and batch_admin_without_license exercise the removed entitlement
+      check; self-join role restrictions must still fail independently.'
     proof:
       - behavior-tests
+  - text: postgres_roster_rollback, postgres_add_delete_lock and postgres_role_reread prove atomic
+      transaction writes, deleted-team rejection and preservation of concurrent roster changes.
+    proof: [postgres-tests]
 checks:
   optional: []
   commands:
@@ -120,19 +150,21 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-member-identity-*")"
         && grep -rlq "team_member_identity" tools/oracle/fuzz/corpus/helper_case/team-member-identity-*
         && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Prove same-connection locked roster writes, rollback and add/delete serialization on Postgres.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_member_identity::tests::postgres_/)'
 oracle_cases:
   - tools/oracle/cases/helpers/team-member-identity/duplicate-member.yaml
-  - tools/oracle/cases/helpers/team-member-identity/admin-add-denied.yaml
+  - tools/oracle/cases/helpers/team-member-identity/required-input-errors.yaml
   - tools/oracle/cases/helpers/team-member-identity/roster-merge.yaml
   - tools/oracle/cases/helpers/team-member-identity/audit-before-after.yaml
+  - tools/oracle/cases/helpers/team-member-identity/duplicate-count-edge-cases.yaml
+  - tools/oracle/cases/helpers/team-member-identity/roster-self-dedup.yaml
 deviations:
-  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
-      entitlement.
-    why: README Decisions specifies no paid tier and no user/team cap.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2690-L3346
+  - what: Adding an admin member does not require premium_user; the source's ValueError or wrapped HTTP 400 is omitted.
+    why: README Decisions removes paid-tier checks; roster authorization and available-team restrictions remain.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L2690-L2726
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -212,8 +244,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Permission validation runs before provisioning an unknown member user.
+  - Matching both ID and email increments duplicate count twice, so a scalar duplicate can pass preflight.
+  - The advisory-lock holder must reuse its transaction connection for user writes or a small pool can deadlock.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

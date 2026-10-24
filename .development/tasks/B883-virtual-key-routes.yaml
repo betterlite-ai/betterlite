@@ -1,10 +1,11 @@
 id: B883
 title: Virtual-key route grants and pass-through policy
 description: >-
-  Authorize virtual-key allowed_routes and pass-through route grants with method-aware RouteMatch. Inject
-  PassThroughRegistry::lookup(&RouteIdentity,Method)->Option<RegisteredRoute>; B102 supplies registrations
-  later. A route without a configured auth key defaults to protected. Drop should_call_route premium-user
-  rejection while preserving every route denial. Do not depend on the B102 umbrella, whose endpoint installation
+  Authorize virtual-key allowed_routes and pass-through route grants with method-aware RouteMatch. Call
+  B2302's concrete PassThroughRegistry lookup; B102 later supplies its handler registrations to that same
+  registry. This check enforces protection only when registered metadata has auth exactly true; absent auth
+  does not pass that identity check. should_call_route skips a failed enterprise import, then checks the
+  virtual-key grants for every role; there is no premium_user branch or deviation here. Do not depend on the B102 umbrella, whose endpoint installation
   requires auth.
 
 
@@ -20,6 +21,27 @@ description: >-
   (L697-L707; 11 source lines), RouteChecks._jwt_team_allowed_routes (L710-L717; 6 source lines), RouteChecks._require_auth_pass_through_access
   (L720-L733; 14 source lines), RouteChecks.check_passthrough_route_access (L736-L762; 23 source lines).
 
+
+  None, non-list and empty allowed_routes return true before any denial, including password-reset metadata.
+  For a nonempty list, try explicit path/prefix matches, named LiteLLMRoutes groups from B866/B867/B868,
+  then wildcard matches through B882. openai_routes and llm_api_routes group matches require a separate
+  grant for registered auth=true pass-through routes. llm_api_routes also grants GET /auto_router/session,
+  registered unprotected pass-throughs, GET /v1/mcp/server and /v1/mcp/server/{server_id}, and the agent
+  registry routes in B867. It does not waive the agent handler's write authorization. Exact and wildcard
+  matches return before the remembered protected-pass-through denial; preserve that ordering.
+
+  If no grant matches, protected pass-through gets HTTP 403 with instructions to configure
+  allowed_passthrough_routes. Otherwise metadata.password_reset_required is True gives a separate 403
+  directing the user to POST /user/password/change or /ui/change-password and then another login; only
+  after this branch is the ordinary virtual-route 403 used. B757 translates each HTTPException to
+  auth_error, param string None and code 403; compare those fields and ignore /error/message wording.
+
+  Metadata grants choose the key's truthy allowed_passthrough_routes, otherwise the team's, otherwise [].
+  Missing keys or two null values deny. A nonempty key list overrides the team rather than unioning with
+  it. JWT team grants apply only with jwt_claims present, token absent and team_id present; mapped virtual
+  keys stay key-scoped. JWT path grants skip * and /* and never expand group names such as openai_routes.
+  _require_auth_pass_through_access tries the metadata grant before those explicit JWT paths, then raises
+  the protected-pass-through 403.
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.team_allowed_routes=['openai_routes',
   'info_routes', 'mcp_routes', '/v1/messages', '/v1/messages/count_tokens'].
@@ -46,7 +68,9 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::virtual_key_routes::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::virtual_key_routes::tests::loads_team_routes, default_team_routes,
+  empty_team_routes and malformed_team_routes. Missing uses the five-route default; [] is accepted;
+  null, a scalar or a non-string item fails the list[str] settings validation instead of falling back.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -64,14 +88,9 @@ description: >-
 
 
   Sizing: 173 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  173 production, 145 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 498 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  173 production, 265 behavior tests, 80 helper adapters, 65 route/manifests/wiring and 60 config lines,
+  643 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_should_call_route_does_not_require_a_premium_license.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
 
 
   Server wiring tests live under betterlite-server::auth::virtual_key_routes::tests: stage_is_registered
@@ -80,9 +99,9 @@ description: >-
   called. These tests are part of the behavior-test allowance already budgeted above.
 
 
-  PassThroughRegistry grant/registration scenarios remain direct MIT helper cases with an injected registry.
-  General pass_through_endpoints configuration stays rejected until B102 installs its concrete registry
-  and routes; B102 owns those enabled-route HTTP cases. This task pins its static virtual-route denial
+  Registry grant scenarios use B2302's completed lookup against equivalent snapshots in the helper cases.
+  General pass_through_endpoints configuration stays rejected until B102 installs its handlers;
+  B102 owns those enabled-route HTTP cases. This task pins its static virtual-route denial
   through real HTTP before downstream dispatch.
 scope:
   paths:
@@ -133,13 +152,19 @@ references:
       ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L736-L762
     why: Own RouteChecks.check_passthrough_route_access; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L1-L6
-    why: litellm_jwtauth.team_allowed_routes default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5369-L5375
+    why: Five-route team_allowed_routes default; the owned _jwt_team_allowed_routes reads it at line 717.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: route_grants_without_license,
-      team_pass_through_grant, mcp_discovery_get, virtual_route_denied, registered_protected_route.'
+  - text: 'Named grant cases: mit_enterprise_import_absent, routes_none_allows, routes_nonlist_allows,
+      routes_empty_allows, explicit_route_grant, named_group_grant, wildcard_before_denial,
+      team_pass_through_grant, empty_key_uses_team, nonempty_key_overrides_team, missing_metadata_grant,
+      null_metadata_grants, jwt_team_only, jwt_mapped_key_excluded, jwt_blanket_denied, jwt_group_denied,
+      jwt_explicit_prefix, mcp_discovery_get, mcp_discovery_write_denied, auto_router_get,
+      auto_router_write_denied, agent_compatibility_grant, password_reset_denied,
+      password_reset_allowed_route, virtual_route_denied, registered_protected_route,
+      absent_auth_unprotected and passthrough_denial_precedes_reset.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -158,9 +183,6 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_should_call_route_does_not_require_a_premium_license.'
-    proof:
-      - behavior-tests
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -203,13 +225,15 @@ oracle_cases:
   - tools/oracle/cases/helpers/virtual-key-routes/virtual-route-denied.yaml
   - tools/oracle/cases/helpers/virtual-key-routes/registered-protected-route.yaml
   - tools/oracle/cases/auth/virtual-key-routes/virtual-route-denied.yaml
-deviations:
-  - what: should_call_route does not require a premium license.
-    why: The architect removed the license guard, not virtual-key route permission checks.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L72-L91
+  - tools/oracle/cases/auth/virtual-key-routes/password-reset-denied.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/empty-and-legacy-grants.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/auto-router-method.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/agent-registry-compatibility.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/key-team-precedence.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/jwt-explicit-grants.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/denial-precedence.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/route_checks.py: B742 owns RouteChecks._mask_user_id (L213-L231), RouteChecks._raise_admin_only_route_exception
     (L234-L257), RouteChecks.non_proxy_admin_allowed_routes_check (L260-L365), RouteChecks.custom_admin_only_route_check
     (L368-L382), RouteChecks._check_proxy_admin_viewer_access (L835-L951).'
@@ -221,9 +245,10 @@ out_of_scope:
     (L784-L794), RouteChecks._get_request_method (L655-L666).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Inject PassThroughRegistry::lookup(&RouteIdentity,Method)->Option<RegisteredRoute>; B102 supplies
-    registrations later.
+  - Empty allowed_passthrough_routes on a key falls back to the team's list; it is not an explicit deny.
+  - password_reset_required changes only the final denial, so allowed password-change routes still work.
+  - JWT team wildcard filtering strips stars and slashes before matching, excluding blanket grants.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

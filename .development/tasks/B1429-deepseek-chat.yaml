@@ -1,0 +1,99 @@
+id: B1429
+title: DeepSeek reasoning history, vision messages and tool filtering
+description: >-
+  Implement deepseek_chat in betterlite-openai over B503/B668 and B2221 capabilities.
+  Extend supported options with thinking and reasoning_effort, then run parent mapping,
+  remove both fields and rebuild thinking. An enabled/disabled thinking object wins and
+  loses budget_tokens; otherwise a non-None effort maps exact none to disabled and every
+  other value to enabled. Thinking history repair runs only when the model supports
+  reasoning and the final thinking.type is enabled. For each assistant with falsey
+  reasoning_content, promote a truthy provider_specific_fields.reasoning_content and
+  remove just that nested field; otherwise warn and insert one space. Existing truthy
+  reasoning_content and other roles are unchanged. Preserve sync/async ordering.
+
+  Vision forwarding requires any list content and supports_vision for deepseek. A user
+  list qualifies only when every block is text with string payload or image_url with a
+  nonempty string URL, directly or inside an object, and at least one image exists.
+  Append B218's extracted search-results text as a final text block and remove the
+  search_results key only when that extraction is truthy. Other messages use B218's
+  content collapse; if it is falsey or identical, retain the original message, including
+  a textless list. Then apply the parent message transform. These operations preserve
+  forwardable image references and introduce no downloader.
+
+  Before request assembly, filter a nonempty tools list to dictionary entries with
+  type=function. If nothing is removed, return options unchanged, including malformed
+  tool_choice. Otherwise warn with sorted distinct dropped type names. When functions
+  survive, retain string tool choices but remove a dictionary choice unless it names
+  a surviving function through a valid function object. If none survive, remove tools,
+  tool_choice and parallel_tool_calls. Keep empty/non-list tools unchanged. Do not treat
+  namespace or other Responses-native tools as function tools.
+
+  Identity resolves explicit/DEEPSEEK_API_BASE/https://api.deepseek.com/beta and
+  explicit/DEEPSEEK_API_KEY, with env values absent by default. get_complete_url itself
+  uses the supplied truthy base or that beta default and adds /chat/completions only
+  when absent, without trimming. Add deepseek_settings loader tests for both keys and
+  explicit precedence. Port the cost_calculator wrapper by forwarding model/Usage and
+  provider=deepseek to an injected generic pricing function; B068 later supplies that
+  function, so no billing-to-provider dependency is reversed here.
+
+  Helper deepseek_request_policy calls the pinned mapping, history, tool and message
+  methods and captures warning records; native tests also cover callback pricing identity.
+  New HelperCase seeds assert call.deepseek_request_policy. All inputs here are parsed
+  records or delegated parent transforms, so add no byte fuzz target. The chat file's
+  326 lines plus 12 cost-wrapper lines yield a 338-line source slice; reserve 270
+  production, 220 tests, 145 adapters and 85 settings/export lines, maximum 775.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,deepseek_chat}.rs
+    - crates/betterlite-openai/src/deepseek_chat/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,deepseek}.rs
+    - crates/betterlite-config/tests/deepseek_settings.rs
+    - tools/oracle/src/helpers/{mod,deepseek_request_policy}.rs
+    - tools/oracle/helpers/{dispatch,deepseek_request_policy}.py
+    - tools/oracle/cases/helpers/deepseek-request-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/deepseek_request_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/chat/transformation.py#L20-L372
+    why: Thinking promotion, capability-gated image forwarding and conditional tool-choice cleanup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepseek/cost_calculator.py#L1-L17
+    why: Pricing delegates unchanged usage to the generic calculator with a DeepSeek provider tag.
+dod:
+  - text: Thinking options and repaired assistant history preserve precedence and warning fallback.
+    proof: [deepseek-policy-tests, deepseek-policy-python, oracle]
+  - text: Vision/search messages and dropped tools retain the source's conditional cleanup behavior.
+    proof: [deepseek-policy-tests, deepseek-policy-python, oracle]
+  - text: DeepSeek settings and fresh policy helper seeds load through their production parsers.
+    proof: [deepseek-settings, deepseek-policy-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: deepseek-policy-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^deepseek_chat::/)'
+      why: History warnings and tool-choice cleanup depend on separate request gates.
+    - id: deepseek-settings
+      run: cargo nextest run --locked -p betterlite-config --test deepseek_settings --no-tests=fail
+      why: The beta endpoint and credential alias must resolve through actual configuration loading.
+    - id: deepseek-policy-python
+      run: test -f tools/oracle/helpers/deepseek_request_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Source warnings and mutations must be recorded rather than reconstructed in expected fixtures.
+    - id: deepseek-policy-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/deepseek_request_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::deepseek_request_policy::/)'
+      why: At least one newly added seed must select the deepseek_request_policy tag.
+oracle_cases:
+  - tools/oracle/cases/helpers/deepseek-request-policy/thinking-precedence-and-none.yaml
+  - tools/oracle/cases/helpers/deepseek-request-policy/reasoning-promotion-and-space-warning.yaml
+  - tools/oracle/cases/helpers/deepseek-request-policy/user-vision-and-search-tail.yaml
+  - tools/oracle/cases/helpers/deepseek-request-policy/textless-collapse-unchanged.yaml
+  - tools/oracle/cases/helpers/deepseek-request-policy/mixed-tools-and-dangling-choice.yaml
+  - tools/oracle/cases/helpers/deepseek-request-policy/all-functions-skip-choice-cleanup.yaml
+deviations: []
+out_of_scope:
+  - B1430 owns deepseek/messages/transformation.py; B038 owns DeepSeek execution binding and generic OpenAI dispatch.
+pitfalls:
+  - A malformed specific tool_choice survives when the tools list contains only function entries.
+  - Missing reasoning_content becomes a single space with a warning only for explicitly enabled thinking.
+  - Search-results removal happens only when extracted search text is nonempty.
+budget: {max_changed_lines: 775, max_new_expects: 0}
+review_level: security

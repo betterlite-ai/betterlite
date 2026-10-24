@@ -1,0 +1,9 @@
+id: B133
+milestone: M8 platform
+title: Memory API
+status: todo
+depends_on: [B052]
+file: null
+covers:
+  - "litellm/proxy/memory/**"
+  - "litellm/types/memory_management.py"

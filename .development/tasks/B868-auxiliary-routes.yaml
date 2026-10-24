@@ -1,63 +1,102 @@
 id: B868
 title: Public and auxiliary route permission tables
 description: >-
-  Define typed permission-route constants for openai_route_names, mapped_pass_through_routes, passthrough_routes_wildcard,
-  litellm_native_routes, mcp_inference_routes, mcp_routes, agent_inference_routes, agent_routes, google_routes,
-  apply_guardrail_routes, model_info_routes, info_routes, public_routes, ui_routes, compliance_check_routes,
-  self_managed_routes. Preserve every pinned literal, alias, template and enum expansion; these are policy
-  data, not HTTP route registrations. Serve the named groups to route matching and role policy without
-  importing endpoint modules. B207 still owns call-type mapping; B124 no longer owns these table entries.
-  No URL is fetched and no caller string can create a new enum group.
+  Implement the lower-level auxiliary permission tables in betterlite-auth. They supply data to B866
+  and B867 without loading settings or invoking auth/endpoint services. Own mcp_management_routes and
+  agent_management_routes here as well: their local unions and self_managed_routes need those literals.
+  Keep list/tuple ordering and duplicates, while public_routes retains set membership semantics.
 
+  openai_route_names contains chat_completion, completion, embeddings, image_generation,
+  video_generation, audio_transcriptions, moderations, model_list. mapped_pass_through_routes has
+  slash-prefixed bedrock, comprehendmedical, azure_speech, transcribe, vertex-ai, vertex_ai, cohere,
+  cursor, gemini, anthropic, langfuse, azure, azure_ai, openai, openai_passthrough, assemblyai,
+  eu.assemblyai, tinyfish, vllm, mistral, typesafe, openrouter, milvus, gigachat, watsonx, nvidia_nim,
+  deepgram, fal_ai in that order; passthrough_routes_wildcard appends /* to each, without fetching URLs.
 
-  Build the production auxiliary_routes module in betterlite-auth; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  litellm_native_routes begins /rag/ingest, /v1/rag/ingest, /rag/query, /v1/rag/query. Continue
+  /lens, /lens/{lens_id}, /lens/{lens_id}/runs, /lens/{lens_id}/runs/{job_id},
+  /lens/{lens_id}/executions/{execution_id}, /lens/{lens_id}/cancel,
+  /lens/{lens_id}/findings/{finding_id}, /lens/preview/sample, /lens/workers/register,
+  /lens/workers/{worker_id}; /v1/traces, /v1/traces/query, /v1/traces/query/help,
+  /v1/traces/{trace_id}, /v1/traces/{trace_id}/spans/{span_id}.
+
+  mcp_inference_routes is /mcp, /mcp/, /mcp/sse/, /mcp/sse/messages, /mcp/sse/messages/,
+  /mcp/proxy, /mcp/{subpath}, /mcp/tools, /mcp/tools/list, /mcp/tools/call, /mcp-rest/tools/list,
+  /mcp-rest/tools/call, /v1/mcp/tools, /introspect, /token. Its management peer is /v1/mcp/server,
+  /v1/mcp/server/{path:path}, /v1/mcp/sessions; mcp_routes concatenates inference then management.
+  agent_inference_routes is the tuple /agents, /a2a/{agent_id}, /a2a/{agent_id}/message/send,
+  /v1/a2a/{agent_id}/message/send, /a2a/{agent_id}/message/stream,
+  /a2a/{agent_id}/.well-known/agent-card.json. The management tuple is /v1/agents,
+  /v1/agents/{agent_id}, /v1/agents/make_public, /v1/agents/{agent_id}/make_public,
+  /v1/agents/{agent_id}/kill_switch; agent_routes concatenates both tuples.
+
+  google_routes first has /v1beta/models/{model_name:path} with :countTokens, :generateContent,
+  :streamGenerateContent, then /models/{model_name:path} with the same suffixes. Follow with
+  unversioned then /v1beta pairs for /interactions, /interactions/{interaction_id} and
+  /interactions/{interaction_id}/cancel; then /v1beta/agents, /v1beta/agents/{name},
+  /v1beta/agents/{name}/versions. apply_guardrail_routes contains only /guardrails/apply_guardrail;
+  model_info_routes contains /model/info, /v1/model/info, /model_group/info, without /v2/model/info.
+
+  info_routes contains /key/info, /key/health, /team/info, /team/list, /v2/team/list,
+  /organization/list, /team/available, /team/metadata_schema, /user/info, /v2/user/info,
+  /model/info, /v1/model/info, /v2/model/info, /v2/key/info, /model_group/info, /health,
+  /health/services, /key/list, /user/filter/ui, /models, /v1/models, /sso/get/ui_settings,
+  /get/user_banner, /get/latest_release_info. The constant public_routes set contains /routes, /,
+  /health/liveliness, /health/liveness, /test, /config/yaml, /litellm/.well-known/litellm-ui-config,
+  /.well-known/litellm-ui-config, /public/model_hub, /public/v1/model_hub,
+  /public/v1/model_hub/providers, /public/v1/model_hub/modes, /public/v1/model_hub/features,
+  /public/model_hub/info, /public/agent_hub, /public/mcp_hub, /public/skill_hub,
+  /public/litellm_model_cost_map. It is not a public_routes=[] config read.
+
+  ui_routes starts /sso, /sso/get/ui_settings, /get/ui_settings, /login, /key/info, /config,
+  /spend, /model/info, /v2/model/info, /v2/key/info, /models, /v1/models, /global/spend,
+  /global/spend/logs, /global/spend/keys, /global/spend/models, /global/spend/tags,
+  /global/predict/spend/logs, /global/activity, /gateway/daily/activity, /health/services,
+  then appends info_routes with duplicates. This legacy JWT group does not bypass UI-token RBAC.
+  compliance_check_routes contains /compliance/eu-ai-act and /compliance/gdpr.
+
+  self_managed_routes starts /team/update, /team/member_add, /team/member_delete,
+  /management/v1/teams/{team_id}/members/bulk_delete, the same prefix with /bulk_update,
+  /team/member_update, /team/{team_id}/member/{user_id}/reset_spend and /reset_budget,
+  /team/permissions_list, /team/permissions_update. Then /team/daily/activity with suffixes '',
+  /aggregated, /aggregated/keys, /aggregated/search, /aggregated/model_top_keys, /export;
+  /team/spend/by_user, /team/{team_id}/members/me, /team/{team_id:path}/callback,
+  /team/{team_id:path}/callback/{callback_name}, /model/new, /model/update, /model/delete.
+  Continue the six daily-family literals under /user and /user/daily/activity/aggregated/cache_leakage_keys,
+  then the six under /organization; /user/available_roles, /claude_code_gateway/managed/settings,
+  /claude_code_gateway/v1/metrics, /claude_code_gateway/v1/logs, /claude_code_gateway/v1/traces,
+  /user/list, /management/v1/users/bulk_delete, /user/password/change, /session/logout,
+  /model/{model_id}/update, /prompt/list, /prompt/info, /vector_store/info, /project/list,
+  /project/info, /project/new, /project/update, /health/test_connection, /invitation/new,
+  /invitation/delete, /guardrails/register, /guardrails/submissions,
+  /guardrails/submissions/{guardrail_id}, /auto_router/test_routing,
+  /auto_router/validate_complexity_router_config, /auto_router/availability, /auto_router/session,
+  /cost/predict-cache, followed by all five agent management literals. These paths defer permission
+  checks to their handlers; membership does not make them public.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/_types.py:
   LiteLLMRoutes.openai_route_names (L329-L338; 10 source lines), LiteLLMRoutes.mapped_pass_through_routes
   (L492-L521; 30 source lines), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527; 1 source lines),
   LiteLLMRoutes.litellm_native_routes (L529-L549; 21 source lines), LiteLLMRoutes.mcp_inference_routes
-  (L564-L580; 17 source lines), LiteLLMRoutes.mcp_routes (L591-L591; 1 source lines), LiteLLMRoutes.agent_inference_routes
-  (L594-L601; 8 source lines), LiteLLMRoutes.agent_routes (L616-L616; 1 source lines), LiteLLMRoutes.google_routes
+  (L564-L580; 17 source lines), LiteLLMRoutes.mcp_management_routes (L583-L587; 5 source lines),
+  LiteLLMRoutes.mcp_routes (L591-L591; 1 source lines), LiteLLMRoutes.agent_inference_routes
+  (L594-L601; 8 source lines), LiteLLMRoutes.agent_management_routes (L606-L612; 7 source lines),
+  LiteLLMRoutes.agent_routes (L616-L616; 1 source lines), LiteLLMRoutes.google_routes
   (L618-L636; 17 source lines), LiteLLMRoutes.apply_guardrail_routes (L638-L640; 3 source lines), LiteLLMRoutes.model_info_routes
   (L642-L646; 5 source lines), LiteLLMRoutes.info_routes (L660-L685; 26 source lines), LiteLLMRoutes.public_routes
   (L823-L844; 22 source lines), LiteLLMRoutes.ui_routes (L849-L871; 23 source lines), LiteLLMRoutes.compliance_check_routes
   (L875-L878; 4 source lines), LiteLLMRoutes.self_managed_routes (L931-L1019; 67 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): public_routes=[].
+  The auxiliary_routes helper under Management::auth reads original enum values in Python and
+  production tables in Rust. Cases compare complete arrays per group and sorted membership solely for
+  the frozenset. Add per_literal named rstest rows, wildcard_suffix, legacy_union_order,
+  ui_duplicates_retained, model_info_excludes_v2, and self_managed_is_not_public. The existing B171
+  helper decoder accepts the operation; replay its auxiliary-routes seeds without adding a parser.
 
-
-  Add the auxiliary_routes operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auxiliary-routes-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Write betterlite-config::auxiliary_routes::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 256 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  256 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 543 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The owned declarations total 268 nonblank noncomment lines. Allow 270 production, 230 table tests,
+  80 adapters and 30 wiring lines, 610 within 650, split into submodules below 300 lines.
 scope:
   paths:
     - crates/betterlite-auth/src/auxiliary_routes.rs
@@ -72,12 +111,6 @@ scope:
     - tools/oracle/helpers/management/auth.py
     - tools/oracle/cases/helpers/auxiliary-routes/**
     - tools/oracle/fuzz/corpus/helper_case/auxiliary-routes-*
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/auxiliary_routes.rs
-    - crates/betterlite-config/src/auxiliary_routes/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/auxiliary-routes-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L329-L338
@@ -92,6 +125,10 @@ references:
     why: Own LiteLLMRoutes.mcp_inference_routes; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L591-L591
     why: Own LiteLLMRoutes.mcp_routes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L583-L587
+    why: The MCP CRUD list is needed below both management and auxiliary composites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L606-L612
+    why: Agent CRUD tuple shared by the agent union, self-managed and management groups.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L594-L601
     why: Own LiteLLMRoutes.agent_inference_routes; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L616-L616
@@ -112,27 +149,17 @@ references:
     why: Own LiteLLMRoutes.compliance_check_routes; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L931-L1019
     why: Own LiteLLMRoutes.self_managed_routes; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1-L6
-    why: public_routes default and read site.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: literal_membership,
-      alias_membership, group_expansion, unknown_group.'
-    proof:
-      - behavior-tests
+  - text: Complete-table cases and per_literal tests prove every literal, public set, wildcard expansion, duplicate and exclusion described above.
+    proof: [behavior-tests, oracle, helper-python]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
@@ -148,32 +175,35 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auxiliary-routes-*")"
         && grep -rlq "auxiliary_routes" tools/oracle/fuzz/corpus/helper_case/auxiliary-routes-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^auxiliary_routes::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auxiliary-routes-*")"
-        && grep -rlq "public_routes" crates/betterlite-config/fuzz/corpus/config_yaml/auxiliary-routes-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/auxiliary-routes/literal-membership.yaml
-  - tools/oracle/cases/helpers/auxiliary-routes/alias-membership.yaml
-  - tools/oracle/cases/helpers/auxiliary-routes/group-expansion.yaml
-  - tools/oracle/cases/helpers/auxiliary-routes/unknown-group.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/openai-route-names.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/mapped-passthrough-prefixes.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/passthrough-wildcards.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/native-rag-lens-traces.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/mcp-inference-slashes.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/mcp-management.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/mcp-union.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/agent-inference.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/agent-management.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/agent-union.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/google-path-converters.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/apply-guardrail.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/model-info-without-v2.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/info-routes.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/public-set.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/ui-legacy-duplicates.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/compliance-checks.yaml
+  - tools/oracle/cases/helpers/auxiliary-routes/self-managed-with-agent-registry.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
     (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
   - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
     GenerateKeyResponse (L1399-L1438), UpdateKeyRequest (L1441-L1484).'
   - 'litellm/proxy/_types.py: B866 owns LiteLLMRoutes.openai_routes (L339-L490), LiteLLMRoutes.anthropic_routes
     (L551-L561), LiteLLMRoutes.llm_api_routes (L648-L659).'
-  - 'litellm/proxy/_types.py: B867 owns LiteLLMRoutes.mcp_management_routes (L583-L587), LiteLLMRoutes.agent_management_routes
-    (L606-L612), LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
+  - 'litellm/proxy/_types.py: B867 owns KeyManagementRoutes (L287-L325),
+    LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
     (L694-L719), LiteLLMRoutes.team_service_account_key_routes (L721-L724), LiteLLMRoutes.management_routes
     (L726-L782), LiteLLMRoutes.spend_tracking_routes (L784-L805), LiteLLMRoutes.global_spend_tracking_routes
     (L807-L821), LiteLLMRoutes.internal_user_routes (L885-L913), LiteLLMRoutes.internal_user_view_only_routes
@@ -213,9 +243,10 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
-  - Preserve every pinned literal, alias, template and enum expansion; these are policy data, not HTTP
-    route registrations.
+  - /mcp/sse/messages and /mcp/sse/messages/ are separate literals; normalizing slashes changes matching.
+  - public_routes is a frozenset, so an ordered oracle assertion would depend on Python hash randomization.
+  - self_managed_routes includes writes whose handlers still authorize the caller; it is not a public-route expansion.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

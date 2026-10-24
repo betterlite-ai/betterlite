@@ -1,0 +1,9 @@
+id: B624
+milestone: M3 providers
+title: Bedrock Mantle Claude chat and Messages
+status: todo
+depends_on: [B591, B690, B2205, B618, B622, B962, B581, B183, B598, B171]
+file: tasks/B624-bedrock-mantle-chat.yaml
+covers:
+  - "litellm/llms/bedrock/chat/mantle/transformation.py"
+  - "litellm/llms/bedrock/messages/mantle_transformation.py"

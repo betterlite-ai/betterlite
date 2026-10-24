@@ -3,9 +3,27 @@ title: Bulk user management HTTP routes
 description: >-
   Register POST /management/v1/users/bulk and /management/v1/users/bulk_delete over B793/B794. Preserve
   the 500-row limit, per-row result indexing, unknown-body-field 422 rejection, unknown-query rejection
-  on delete, and application/problem+json errors (503 without a DB, 500 driver failure), not the ordinary
-  OpenAI management error envelope. Omit the license-seat cap while retaining per-target organization
-  authorization. management_endpoint_wrapper supplies ordered completion effects.
+  on delete, and application/problem+json errors (503 without a DB, 500 driver failure). B793 owns the
+  license-seat policy, including the approved removal of quotas; this route only passes its collaborator.
+  B865 management_endpoint_wrapper supplies ordered completion effects.
+
+  Both handlers check DB inside try. Missing DB raises ManagementProblem with type
+  urn:litellm:error:database-not-connected, title Database not connected and status 503. ManagementProblem
+  from the helper passes through unchanged. Any other Exception, including HTTPException/ProxyException
+  raised INSIDE the handler, logs a route-specific exception and becomes a 500 problem with type
+  urn:litellm:error:internal-server-error, title Internal server error, and creation/deletion-specific
+  detail. Failures in FastAPI dependencies/validation occur outside that catch. These are RFC 9457
+  documents, not error.type/param/code envelopes; preserve type/title/status and field presence, with
+  betterlite's own detail wording.
+
+  Create passes data.users, auth, DB, license collaborator, litellm_proxy_admin_name and cache to B793
+  and returns BulkNewUserResponse unchanged, including ordered data and meta totals. B793 owns
+  auto_create_key=false, the unsupported send_invite_email field, row validation and partial team joins.
+  Delete passes the entire typed request plus cache/logging/admin-name and litellm-changed-by (None by
+  default) to B794, then wraps its ordered results in BulkDeleteUsersResponse(data=results). B007's
+  reject_unknown_query_params is installed ONLY on delete: any undeclared query name gives a 400
+  urn:litellm:error:unknown-query-parameter problem with sorted names and allowed=[]. Create ignores
+  undeclared query parameters. Body/schema limits and per-row permissions stay in the named dependencies.
 
 
   Build the production bulk_user_routes module in betterlite-server; reuse the typed dependencies listed
@@ -18,14 +36,10 @@ description: >-
   lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /users/bulk -> bulk_create_users_route;
-  POST /users/bulk_delete -> bulk_delete_users_action. For each route send a typed successful request,
-  an invalid or missing target, and a caller lacking that route permission through B001 HttpCase against
-  the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
-  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
-  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
-  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
-  partial writes visible in fixture inspection.
+  Register POST /management/v1/users/bulk and POST /management/v1/users/bulk_delete once. The /users/*
+  decorator strings are relative to MANAGEMENT_V1_PREFIX, not additional aliases. B001 HTTP cases compare
+  JSON successes and application/problem+json failures plus B860 row effects, using POSTGRES_TEST_URL
+  or testcontainers. The changed-by header affects deletion audit attribution only.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -45,8 +59,8 @@ description: >-
 
 
   Sizing: 146 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  146 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 359 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  146 production, 220 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 431 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -64,11 +78,16 @@ references:
     why: Own bulk_create_users_route; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/users.py#L111-L187
     why: Own bulk_delete_users_action; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/list_api/common.py#L18-L106
+    why: Problem content type, URN base and delete query rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/management_v1.py#L12-L20
+    why: B1665 ProblemDetail fields; these routes construct this response rather than an OpenAI error envelope.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: bulk_create_mixed, bulk_delete_mixed,
-      unknown_body_422, unknown_delete_query, no_db_problem_503, non_admin_route_denied.'
+      unknown_body_422, unknown_delete_query, create_ignores_unknown_query, no_db_problem_503,
+      non_admin_route_denied, management_problem_passthrough, create_driver_problem_500,
+      delete_driver_problem_500, inner_http_error_becomes_problem, changed_by_forwarded,
+      default_no_key, five_hundred_boundary, prefixed_routes_only.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -84,12 +103,10 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bulk_user_routes::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-success.yaml
-  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-invalid-target.yaml
-  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-unauthorized-caller.yaml
-  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-delete-success.yaml
-  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-delete-invalid-target.yaml
-  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/bulk-user-routes/create-ignores-query.yaml
+  - tools/oracle/cases/management/bulk-user-routes/driver-problem-documents.yaml
+  - tools/oracle/cases/management/bulk-user-routes/changed-by-audit.yaml
+  - tools/oracle/cases/management/bulk-user-routes/size-and-key-default.yaml
   - tools/oracle/cases/management/bulk-user-routes/bulk-create-mixed.yaml
   - tools/oracle/cases/management/bulk-user-routes/bulk-delete-mixed.yaml
   - tools/oracle/cases/management/bulk-user-routes/unknown-body-422.yaml
@@ -98,14 +115,12 @@ oracle_cases:
   - tools/oracle/cases/management/bulk-user-routes/non-admin-route-denied.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B007 owns ManagementProblem, problem_response and reject_unknown_query_params; B1665 owns ProblemDetail and MANAGEMENT_V1_PREFIX; B067 composes this router and is never a dependency.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve the 500-row limit, per-row result indexing, unknown-body-field 422 rejection, unknown-query
-    rejection on delete, and application/problem+json errors (503 without a DB, 500 driver failure), not
-    the ordinary OpenAI management error envelope.
+  - A helper's non-ManagementProblem exception becomes 500 even when it carries a 4xx status; dependency authentication failures occur before that catch.
+  - Adding the router's relative /users/bulk path as a public alias would expose a route absent from LiteLLM.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 450
   max_new_expects: 0
 review_level: security

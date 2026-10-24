@@ -28,6 +28,7 @@ deny = [
   { crate = "openssl", use-instead = "rustls" },
   { crate = "openssl-sys", use-instead = "rustls" },
   { crate = "native-tls", use-instead = "rustls" },
+  { crate = "betterlite-server", wrappers = ["betterlite"] },
 ]
 
 [sources]

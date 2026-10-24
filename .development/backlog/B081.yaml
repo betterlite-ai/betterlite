@@ -1,0 +1,21 @@
+id: B081
+milestone: M5 api families
+title: Anthropic messages routes
+status: todo
+depends_on: [B002, B003, B004, B011, B104, B124, B958, B1132, B1100, B1134, B855, B756, B2401]
+file: tasks/B081-anthropic-messages-routes.yaml
+covers:
+  - "litellm/proxy/anthropic_endpoints/endpoints.py"
+  - "litellm/messages/dispatch.py"
+  - "litellm/anthropic_interface/messages/__init__.py"
+  - "litellm/anthropic_interface/__init__.py"
+  - "litellm/anthropic_interface/readme.md"
+  - "litellm/llms/anthropic/pass_through/adapters/__init__.py"
+  - "litellm/llms/anthropic/pass_through/architecture.md"
+  - "litellm/llms/anthropic/pass_through/context_management/__init__.py"
+  - "litellm/llms/anthropic/pass_through/context_management/editors/__init__.py"
+  - "litellm/llms/anthropic/pass_through/messages/interceptors/README.md"
+  - "litellm/llms/anthropic/pass_through/responses_adapters/__init__.py"
+  - "litellm/messages/__init__.py"
+  - "litellm/proxy/anthropic_endpoints/claude_code_endpoints/__init__.py"
+  - "litellm/proxy/anthropic_endpoints/gateway_endpoints.py"

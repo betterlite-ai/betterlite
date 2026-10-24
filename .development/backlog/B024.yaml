@@ -1,0 +1,34 @@
+id: B024
+milestone: M3 providers
+title: OpenAI provider, every remaining endpoint
+status: todo
+depends_on: [B010, B004, B006, B668, B669, B670, B671, B507, B508, B510, B500, B198, B196, B249, B187, B184, B129, B002, B171, B2237, B2238]
+file: tasks/B024-openai-provider.yaml
+covers:
+  - "litellm/llms/openai/openai.py"
+  - "litellm/llms/openai/chat/gpt_transformation.py"
+  - "litellm/llms/openai/chat/guardrail_translation/README.md"
+  - "litellm/llms/openai/chat/guardrail_translation/__init__.py"
+  - "litellm/llms/openai/chat/o_series_handler.py"
+  - "litellm/llms/openai/completion/guardrail_translation/README.md"
+  - "litellm/llms/openai/completion/guardrail_translation/__init__.py"
+  - "litellm/llms/openai/completion/handler.py"
+  - "litellm/llms/openai/completion/transformation.py"
+  - "litellm/llms/openai/completion/utils.py"
+  - "litellm/llms/openai/embeddings/guardrail_translation/__init__.py"
+  - "litellm/llms/openai/evals/__init__.py"
+  - "litellm/llms/openai/image_generation/guardrail_translation/README.md"
+  - "litellm/llms/openai/image_generation/guardrail_translation/__init__.py"
+  - "litellm/llms/openai/organization_costs.py"
+  - "litellm/llms/openai/responses/count_tokens/__init__.py"
+  - "litellm/llms/openai/responses/guardrail_translation/README.md"
+  - "litellm/llms/openai/responses/guardrail_translation/__init__.py"
+  - "litellm/llms/openai/responses/guardrail_translation/tool_merge.py"
+  - "litellm/llms/openai/speech/guardrail_translation/README.md"
+  - "litellm/llms/openai/speech/guardrail_translation/__init__.py"
+  - "litellm/llms/openai/transcriptions/guardrail_translation/README.md"
+  - "litellm/llms/openai/transcriptions/guardrail_translation/__init__.py"
+  - "litellm/llms/openai/videos/guardrail_translation/__init__.py"
+  - "litellm/main.py"
+  - "litellm/utils.py"
+  - "litellm/litellm_core_utils/core_helpers.py"

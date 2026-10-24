@@ -1,0 +1,8 @@
+id: B302
+milestone: M2 routing
+title: Deployment catalog, aliases and wildcard routes
+status: todo
+depends_on: [B368, B367, B006, B301, B401, B002]
+file: tasks/B302-deployment-catalog.yaml
+covers:
+  - "litellm/router.py"

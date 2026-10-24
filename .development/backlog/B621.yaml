@@ -1,0 +1,8 @@
+id: B621
+milestone: M3 providers
+title: Bedrock Messages cache thinking and beta policy
+status: todo
+depends_on: [B688, B690, B171]
+file: tasks/B621-bedrock-message-options.yaml
+covers:
+  - "litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py"

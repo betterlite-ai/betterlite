@@ -1,0 +1,7 @@
+id: B900
+milestone: M5 api families
+title: Multipart oracle
+status: todo
+depends_on: [B171]
+file: tasks/B900-multipart-oracle.yaml
+covers: []

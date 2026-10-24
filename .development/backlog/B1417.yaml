@@ -1,0 +1,8 @@
+id: B1417
+milestone: M3 providers
+title: Cohere embedding input selection and billed usage
+status: todo
+depends_on: [B006, B183, B193, B249, B1414, B171]
+file: tasks/B1417-cohere-embedding-v2.yaml
+covers:
+  - "litellm/llms/cohere/embed/transformation.py"

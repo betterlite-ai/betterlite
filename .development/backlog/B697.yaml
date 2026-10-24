@@ -1,0 +1,9 @@
+id: B697
+milestone: M3 providers
+title: Azure message creation and attachment policy
+status: todo
+depends_on: [B520, B686, B184, B002, B171]
+file: tasks/B697-azure-message-attachments.yaml
+covers:
+  - "litellm/llms/azure/assistants.py"
+  - "litellm/llms/azure/azure.py"

@@ -1,0 +1,9 @@
+id: B1748
+milestone: M4 keys, spend and management
+title: Elect Redis spend flushers and restore only uncommitted cohorts
+status: todo
+depends_on: [B198, B700, B860, B1690, B1708, B1735, B1737, B1738, B1744, B1745, B1746, B1747, B1749]
+file: tasks/B1748-redis-spend-flush.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"
+  - "litellm/proxy/utils.py"

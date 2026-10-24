@@ -1,0 +1,144 @@
+id: B2318
+title: Shared team-membership loads and negative cache entries
+description: >-
+  Implement MembershipLookup in betterlite-auth::membership_load, below user/JWT auth and team
+  management. Own auth_checks.py L402-L406 and L2328-L2442. B734 supplies the shared 10000-entry
+  inflight index also used by spend resets; B733 supplies cache keys/TTL and B859 the membership
+  model. Use B726 TeamMembershipRepository through B2315's bounded read boundary, with B715
+  metrics. No endpoint, policy stage or membership mutation belongs here.
+
+  The cache result is three-way: cached None means miss, the exact string __no_team_membership__
+  means known absence, and a successfully decoded LiteLLM_TeamMembership means present. Every
+  other payload goes through B125 CacheCodec.deserialize; a typed instance or valid mapping
+  succeeds; invalid mappings warn and mean miss, while unsupported scalar types mean miss without
+  a codec warning. Do not mistake
+  an empty mapping, false, zero or an invalid membership for a cached negative result. The
+  private _TeamMembershipCacheMiss marker is an enum variant, never a serialized cache value.
+
+  get_team_membership returns None immediately if either ID is None, even without a database;
+  empty IDs remain valid key components. Read team_membership:{user_id}:{team_id} with
+  local_only=true first. A local member or negative sentinel returns before checking DB
+  connectivity or the inflight index. A miss joins an existing load only when that index entry
+  is a task; a malformed/non-task entry does not count. Joining precedes the missing-DB check,
+  so a caller without a DB handle may still share a running load. No joinable task and no DB
+  produces the source generic No db connected failure, with no HTTP status/type/code here.
+
+  Otherwise create one tracked load, install it in B734's index, attach completion cleanup
+  and await it through a cancellation shield. The load repeats a normal cache read, including
+  Redis, before issuing SQL; it uses the same three-way decoder. A second-level hit or negative
+  result avoids SQL. Cache/read/decode failures propagate; only CacheCodec's documented invalid
+  payload path becomes a miss. Do not add a new catch-and-continue branch.
+
+  The DB lookup uses find_unique where user_id_team_id contains both exact IDs and includes
+  litellm_budget_table=true. Its bounded label is team_membership and it uses normal read routing,
+  not a forced writer. A missing row writes __no_team_membership__ with B733's management TTL.
+  A present row is validated from its dictionary, then written with model_type=TeamMembership
+  and NO explicit TTL, preserving the selected cache backend's default. Do not replace that
+  asymmetry with the auth-prefetch membership TTL of 5 seconds. Neither path writes to Postgres;
+  validation or cache-write failure prevents a successful return and never creates a negative.
+  The optional tracing/logging arguments are ignored by the owned body; do not invent extra spans.
+
+  Completion removes the index entry only if it still identifies that exact load. A later load
+  at the same key must survive an old callback. Waiter cancellation does not cancel the shared
+  DB/cache work; completion and exceptions are shared with remaining waiters. B2315's shared
+  result projection returns only an already typed membership, otherwise None, without decoding
+  a matching dictionary again. Eviction from the bounded index does not stop its running task.
+  Preserve these races with B734 reset: reset pops and waits for an old load before its writes,
+  while a new lookup may install a replacement which the old callback must not remove.
+
+  Spawn into the caller-injected server TaskTracker/JoinSet and drain it on shutdown, as required
+  by the async rule. No mutex is held across an await. Keep the source index bound and B715 read
+  deadline; a task evicted from the index is still tracked until completion. Native tests prove
+  request cancellation, error delivery and shutdown cleanup, not just a successful future.
+
+  The membership_cache helper compares only the pure cached-payload classification against the
+  pinned source helper and existing model codec. It does not run async lookups under fake
+  proxy_server globals. Native cache-port tests observe call order, flags, TTL omission, writes,
+  concurrent joins and error effects. Real Postgres tests use B860's POSTGRES_TEST_URL, falling
+  back to testcontainers only when the variable is absent; a provided broken URL fails. Seed
+  present/absent membership and related budget rows, and verify no writes or extra user/team
+  join. B754/B887/B891 and team route owners cover the HTTP translation at their actual callers.
+
+  The owned logic is 99 nonblank noncomment lines excluding docstrings. Allow 140 production,
+  300 native/Postgres tests, 90 pure oracle adapters and 35 exports/fixture wiring, 565 within
+  650. Inputs are typed IDs/cache records; B733 owns Redis bytes decoding, so add no parser or
+  redundant fuzz workspace. This task introduces no config setting.
+scope:
+  paths:
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
+    - crates/betterlite-auth/src/membership_load.rs
+    - crates/betterlite-auth/src/membership_load/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/membership_cache.rs
+    - tools/oracle/helpers/membership_cache.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/membership-cache/**
+    - tools/oracle/fuzz/corpus/helper_case/membership-cache-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L398-L412
+    why: Own only the private cache-miss marker at L402-L406; B734 owns the index and B2315 the shared result projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2328-L2367
+    why: Three-way cache decoding, metrics-decorated membership read and differing positive/negative TTL arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2370-L2442
+    why: Local read, shielded shared load, Redis recheck, DB gate and identity-checked completion cleanup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L2872-L2985
+    why: B734 reset pops and waits for this task before mutating spend guards and evicting memberships.
+dod:
+  - text: 'Pure cache cases name cache_none_is_miss, exact_sentinel_is_absence,
+      typed_membership_present, dictionary_membership_present, malformed_dictionary_is_miss,
+      scalar_is_miss_without_warning, codec_warning_preserved and negative_result_differs_from_miss.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Read-order cases name missing_id_short_circuit, empty_ids_are_used,
+      local_member_without_db, local_negative_without_db, join_before_db_requirement,
+      non_task_entry_does_not_join, no_database_after_miss, redis_hit_before_sql,
+      redis_negative_before_sql, exact_composite_lookup_with_budget,
+      normal_read_routing, membership_lookup_deadline_and_metric,
+      negative_uses_management_ttl, positive_omits_ttl and optional_trace_inputs_unused.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Failure/race cases name local_read_error_propagates, redis_read_error_propagates,
+      database_error_does_not_cache_negative, row_validation_does_not_cache_negative,
+      cache_write_failure_prevents_return, simultaneous_requests_share_load,
+      waiter_cancel_keeps_load_running, all_waiters_observe_failure,
+      completed_task_removed, replacement_survives_old_completion,
+      reset_waits_for_load_before_writes, index_eviction_keeps_task_tracked,
+      shared_projection_rejects_dictionary and shutdown_drains_loads.'
+    proof: [behavior-tests]
+  - text: 'Postgres cases membership_with_budget, absent_membership_cached and lookup_does_not_mutate
+      run on a real database; provided_database_url_failure_is_fatal proves fixture selection.'
+    proof: [postgres-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Cache classification, ordered reads and shared-task lifetime need tests in their production module.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^membership_load::/) - test(/^membership_load::postgres::/)'
+    - id: postgres-tests
+      why: The repository must return the joined budget and preserve the database, with no skipped fixture path.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^membership_load::postgres::/)'
+    - id: helper-python
+      why: The cache classification adapter must import the source helper and pass strict Python checks.
+      run: test -f tools/oracle/helpers/membership_cache.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new pure operation requires new seeds in the existing typed helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/membership-cache-*")" && grep -rlq membership_cache tools/oracle/fuzz/corpus/helper_case/membership-cache-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/membership-cache/three-way-result.yaml
+  - tools/oracle/cases/helpers/membership-cache/typed-and-mapping.yaml
+  - tools/oracle/cases/helpers/membership-cache/invalid-payload.yaml
+deviations: []
+out_of_scope:
+  - B734 owns the shared inflight index and spend-reset wait/eviction sequence; this task owns load creation and completion.
+  - B733 owns cache key generation, backend byte decoding and management TTL settings; B125 owns CacheCodec warning behavior.
+  - B2315 owns typed shared-result projection and the deadline-bound repository adapter.
+  - B736 owns the user lookup and its last_db_access_time cadence state; the remaining auth_checks.py ownership is enumerated there.
+pitfalls:
+  - A present membership write omits ttl even though an absent membership write explicitly uses the management TTL.
+  - A reset can remove a running load and let a replacement begin before the old load callback runs.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

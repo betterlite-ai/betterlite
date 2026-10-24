@@ -1,0 +1,9 @@
+id: B513
+milestone: M3 providers
+title: OpenAI image variation requests
+status: todo
+depends_on: [B511, B173, B171, B668, B249, B2230]
+file: tasks/B513-openai-image-variations.yaml
+covers:
+  - "litellm/llms/openai/image_variations/handler.py"
+  - "litellm/llms/openai/image_variations/transformation.py"

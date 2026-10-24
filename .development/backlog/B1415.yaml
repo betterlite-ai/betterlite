@@ -1,0 +1,9 @@
+id: B1415
+milestone: M3 providers
+title: Cohere v1 chat history and tool schema conversion
+status: todo
+depends_on: [B004, B182, B668, B1414, B171]
+file: tasks/B1415-cohere-chat-v1.yaml
+covers:
+  - "litellm/llms/cohere/chat/transformation.py"
+  - "litellm/types/llms/cohere.py"

@@ -1,0 +1,8 @@
+id: B061
+milestone: M4 keys, spend and management
+title: Migrate legacy ciphertext and attest residual encryption across stores
+status: todo
+depends_on: [B722, B724, B860, B1600, B1602, B1700]
+file: tasks/B061-encryption-migration.yaml
+covers:
+  - "litellm/proxy/management_endpoints/credential_migration.py"

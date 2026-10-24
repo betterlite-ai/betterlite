@@ -1,0 +1,8 @@
+id: B518
+milestone: M3 providers
+title: OpenAI fine-tuning jobs
+status: todo
+depends_on: [B500, B173, B171, B185]
+file: tasks/B518-openai-fine-tuning.yaml
+covers:
+  - "litellm/llms/openai/fine_tuning/handler.py"

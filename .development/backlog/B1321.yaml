@@ -1,0 +1,12 @@
+id: B1321
+milestone: M3 providers
+title: Gemini request bodies after cache and system extraction
+status: todo
+depends_on: [B1310, B1311, B1312, B1317, B1324, B1325, B1306, B177, B171]
+file: tasks/B1321-gemini-request-body.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/transformation.py"
+  - "litellm/types/llms/vertex_ai.py"
+  - "litellm-proxy-extras/litellm_proxy_extras/migrations/migration_lock.toml"
+  - "litellm-proxy-extras/litellm_proxy_extras/py.typed"
+  - "migrations/Dockerfile"

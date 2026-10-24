@@ -27,6 +27,8 @@ description: >-
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DEFAULT_MAX_RECURSE_DEPTH=100.
+  Reuse the DEFAULT_MAX_RECURSE_DEPTH config field installed by B730; this task consumes that
+  field and must not register a second environment binding or a YAML alias.
 
 
   Add the auth_model_patterns operation under B856 Management::auth. Python calls only the owned MIT helper

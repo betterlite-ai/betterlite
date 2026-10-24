@@ -1,0 +1,94 @@
+id: B1408
+title: Mistral option mapping and Magistral prompt policy
+description: >-
+  Add mistral_options to betterlite-openai, owning _accepted_reasoning_effort and
+  MistralConfig methods through _get_openai_compatible_provider_info, plus
+  _clean_tool_schema_for_mistral. Keep the nine class defaults absent rather than inserting
+  API documentation defaults such as temperature=0.7; compatibility callers pass configured
+  class values as immutable per-client defaults. The supported list adds thinking for
+  case-insensitive magistral and reasoning_effort for magistral or a positive capability
+  result. Resolve nearest declared effort through an injected B323 selector and debug when
+  it changes the value; B036 supplies the real selector without a leaf-to-router import.
+  Magistral thinking/reasoning options instead set _add_reasoning_prompt. Preserve the
+  source prompt bytes as a bundled fixture consumed by B1409.
+
+  Map string tool_choice auto/none unchanged and all other strings to any; non-string
+  choices are omitted. seed replaces extra_body with only random_seed. max_tokens and
+  max_completion_tokens both write max_tokens in input iteration order. stream is inserted
+  only for literal true. Schema cleanup deep-copies the tools and calls _remove_json_schema_refs;
+  extract that 31-line utility from the broad B157 utils.py ownership into this leaf because
+  this is its only production caller. Remove only $id and $schema, walking dict values and
+  list items while remaining depth is positive; strict and additionalProperties survive.
+  Its standalone default is 10, but Mistral passes DEFAULT_MAX_RECURSE_DEPTH, env default
+  100. Reuse an existing resolved setting when available; config test mistral_options_settings
+  loads that variable and MISTRAL_AZURE_API_BASE, MISTRAL_AZURE_API_KEY, MISTRAL_API_KEY.
+  Provider-info base uses explicit, Azure base, https://api.mistral.ai/v1, appending /v1
+  unless the literal suffix already matches; key uses explicit, Azure key, Mistral key.
+  Helper mistral_options compares these pure methods with supplied catalog callbacks.
+  Count 179 nonblank/noncomment lines in the two Mistral spans and 21 in the utility; budget 250 code,
+  210 tests/config, 120 adapters and 60 wiring, capped at 700. This task receives parsed
+  schemas; shared YAML/JSON parsers retain byte-decoding ownership.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,mistral_options}.rs
+    - crates/betterlite-openai/src/mistral_options/**
+    - crates/betterlite-openai/fixtures/mistral_reasoning.txt
+    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/mistral.rs
+    - crates/betterlite-config/src/providers/mistral/options.rs
+    - crates/betterlite-config/src/tests/mistral_options.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/mistral_options*
+    - tools/oracle/src/helpers/{mod,mistral_options}.rs
+    - tools/oracle/helpers/{dispatch,mistral_options}.py
+    - tools/oracle/cases/helpers/mistral-options/**
+    - tools/oracle/fuzz/corpus/helper_case/mistral_options*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L38-L225
+    why: Optional defaults, effort mapping, exact prompt and Azure-compatible precedence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L374-L404
+    why: Actual schema cleanup differs from its docstring's claim about strict fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4148-L4178
+    why: Shared recursive utility extracted here from its former broad Python-package owner.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85-L85
+    why: The runtime recursion default is 100 despite the utility's default argument of 10.
+dod:
+  - text: Mistral options preserve iteration order, schema depth and Magistral reasoning behavior.
+    proof: [mistral-options-tests, mistral-options-python, oracle]
+  - text: Azure-hosted credentials and recursion depth load through Config with their source defaults.
+    proof: [mistral-options-config]
+  - text: New option fixtures use the mistral_options helper variant.
+    proof: [mistral-options-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: mistral-options-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^mistral_options::/)'
+      why: Reversed max-token order and nested schema boundaries expose incorrect cleanup or precedence.
+    - id: mistral-options-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(mistral_options_settings)'
+      why: Every introduced env name must resolve through the actual loader.
+    - id: mistral-options-python
+      run: test -f tools/oracle/helpers/mistral_options.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference must call the pinned sanitizer instead of encoding its misleading docstring.
+    - id: mistral-options-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mistral_options*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mistral_options::/)'
+      why: New parser seeds must select this option mapper explicitly.
+oracle_cases:
+  - tools/oracle/cases/helpers/mistral-options/absent-class-defaults.yaml
+  - tools/oracle/cases/helpers/mistral-options/reversed-token-option-order.yaml
+  - tools/oracle/cases/helpers/mistral-options/tool-choice-and-seed-replacement.yaml
+  - tools/oracle/cases/helpers/mistral-options/strict-survives-schema-cleanup.yaml
+  - tools/oracle/cases/helpers/mistral-options/recursion-boundary.yaml
+  - tools/oracle/cases/helpers/mistral-options/magistral-versus-declared-effort.yaml
+  - tools/oracle/cases/helpers/mistral-options/azure-base-trailing-slash.yaml
+deviations: []
+out_of_scope:
+  - B1409 owns the remaining callable chat methods and MistralChatResponseIterator; _convert_thinking_block_to_reasoning_content has no caller at the pin.
+  - Other utils.py functions retain their existing backlog owners; this task claims only _remove_json_schema_refs.
+pitfalls:
+  - Tool cleanup does not remove strict or additionalProperties despite the method documentation.
+  - A base ending in /v1/ becomes /v1//v1 under the literal suffix test.
+  - The seed option replaces an existing extra_body mapping instead of merging random_seed into it.
+budget: {max_changed_lines: 700, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,8 @@
+id: B1381
+milestone: M3 providers
+title: Gemini Live tool correlation and usage accounting
+status: todo
+depends_on: [B1378, B1379, B1322, B1115, B1004, B171]
+file: tasks/B1381-gemini-live-accounting.yaml
+covers:
+  - "litellm/llms/gemini/realtime/transformation.py"

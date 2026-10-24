@@ -1,0 +1,8 @@
+id: B1209
+milestone: M4 keys, spend and management
+title: Team list scope and response query preparation
+status: todo
+depends_on: [B171, B724, B732, B736, B742, B801, B856, B860, B1231, B2314]
+file: tasks/B1209-team-list-query.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"

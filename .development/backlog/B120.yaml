@@ -1,0 +1,13 @@
+id: B120
+milestone: M8 platform
+title: Every config key, config includes and config reloads
+status: todo
+depends_on: [B002]
+file: null
+covers:
+  - "litellm/proxy/config_resolvers/**"
+  - "litellm/proxy/read_model_list.py"
+  - "litellm/proxy/*.yaml"
+  - "litellm/proxy/common_utils/{load_config_utils,config_includes,config_sync_pubsub,periodic_reload_schedule}.py"
+  - "litellm/types/litellm_params.py"
+  - ".env.example"

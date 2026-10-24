@@ -1,0 +1,9 @@
+id: B1421
+milestone: M3 providers
+title: Voyage multimodal embeddings and token-priced reranking
+status: todo
+depends_on: [B002, B193, B249, B1013, B1420, B171]
+file: tasks/B1421-voyage-media-rerank.yaml
+covers:
+  - "litellm/llms/voyage/embedding/transformation_multimodal.py"
+  - "litellm/llms/voyage/rerank/**"

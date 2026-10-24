@@ -1,0 +1,9 @@
+id: B727
+milestone: M4 keys, spend and management
+title: Daily spend query and rollup builders
+status: todo
+depends_on: [B171, B856, B2312]
+file: tasks/B727-daily-activity-sql.yaml
+covers:
+  - "litellm/repositories/daily_activity_sql.py"
+  - "litellm/types/repositories/daily_activity.py"

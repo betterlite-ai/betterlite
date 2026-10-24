@@ -1,0 +1,9 @@
+id: B853
+milestone: M4 keys, spend and management
+title: Offline spend-log partition conversion
+status: todo
+depends_on: [B700, B701, B860, B1232]
+file: tasks/B853-spend-partitions.yaml
+covers:
+  - "db_scripts/partition_spend_logs.sql"
+  - "db_scripts/unpartition_spend_logs.sql"

@@ -1,0 +1,8 @@
+id: B1026
+milestone: M5 api families
+title: File azure storage
+status: todo
+depends_on: [B002, B173, B115, B171, B1025, B2460, B2401]
+file: tasks/B1026-file-azure-storage.yaml
+covers:
+  - "litellm/llms/base_llm/files/azure_blob_storage_backend.py"

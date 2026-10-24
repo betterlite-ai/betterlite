@@ -1,10 +1,29 @@
 id: B1225
 title: Budget admission handoff after authentication
 description: >-
-  Define the concrete BudgetAdmission handoff after common auth checks, using injected reservation storage
-  owned by B071. Preserve disable_budget_reservation, fail_closed_budget_enforcement and apply_user_budget_to_team_keys
-  policy; no configured missing reservation implementation is silently accepted. Apply key default end-user
-  budget and free-model skip decisions before requesting a lease.
+  Hand off to B071 reserve_budget_for_request after auth checks; use its actual implementation, not an
+  uninstalled callback port. First clear token.budget_reservation even if skipping. Reserve only when
+  skip_budget_checks is false and general_settings.disable_budget_reservation is not boolean true.
+  Pass request body, route/router, token, team/user/end-user objects, DB/cache/logging context and
+  B1100 read_raw_json_body(request), including request=None. apply_user_budget_to_team_keys is enabled
+  only for boolean true; fail_closed_budget_enforcement is enabled for boolean true OR any non-null
+  token.billing_agent_policy. Absent settings are None and effectively false; string true does not satisfy
+  these identity comparisons. There are no top-level aliases or environment reads. After success or a
+  skipped reservation, copy token.budget_reservation to request.state if a request exists. If reservation
+  raises, propagate it without writing request.state; B757 owns its final HTTP envelope.
+
+  Overlay a key default end-user budget by taking end_user_object.litellm_budget_table when an end-user
+  object exists, even if that relation is None; only an absent object invokes B739
+  resolve_default_end_user_budget. No budget means no changes. With keep_token_limits=false replace all
+  five token fields end_user_max_budget, end_user_tpm_limit, end_user_rpm_limit, end_user_tpd_limit and
+  end_user_model_max_budget, including None values. With true fill only None fields, preserving zero or
+  empty maps supplied by custom auth. _noop_none supplies an empty result slot for B1221's gather.
+
+  _should_skip_budget_checks resolves the model through B881 request context, with team_id default
+  None, and calls B750 _is_model_cost_zero only if both model and router exist; otherwise false.
+  A zero-cost result bypasses reservations but still clears old token/request reservation state.
+  Source helper equality covers only this pure decision with a configured router; stateful reservation
+  and overlay use native tests and booted HTTP cases with POSTGRES_TEST_URL or testcontainers.
 
 
   Build the production budget_admission_handoff module in betterlite-auth; reuse the typed dependencies
@@ -22,16 +41,12 @@ description: >-
   column type; retain source storage types.
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.disable_budget_reservation=None;
-  general_settings.apply_user_budget_to_team_keys=None; general_settings.fail_closed_budget_enforcement=None;
-  disable_budget_reservation=None; apply_user_budget_to_team_keys=None; fail_closed_budget_enforcement=None.
+  The B002 loader retains the three general_settings flags' explicit boolean identity semantics.
 
 
-  Add the budget_admission_handoff operation under B856 Management::auth. Python calls only the owned
-  MIT helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the
-  expected algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a budget-admission-handoff-* seed to B171 helper_case, which already owns this decoder.
+  Limit B856 Management::auth helper comparisons to _should_skip_budget_checks with the real configured
+  router and typed request context. Seed that operation in B171 helper_case; native and HTTP tests own
+  reservations and budget lookups. No Python helper adapter calls a management handler or reservation DB path.
 
 
   The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
@@ -48,8 +63,8 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::budget_admission_handoff::tests::loads_settings, defaults_and_precedence and
-  invalid_value_fallback. Each must call the production B002 config loader, set every listed key/env binding,
+  Write betterlite-config::budget_admission_handoff::tests::absent_flags, boolean_flags and
+  string_true_is_not_boolean_true. Each must call the production B002 config loader, set each listed field,
   assert the resulting typed value is consumed by this component, and exercise the specified warning/ignore/error
   branch. A grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml
   with the actual nested key and an env-resolution case; no new config parser or fuzz workspace.
@@ -66,8 +81,8 @@ description: >-
 
 
   Sizing: 101 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  101 production, 142 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 423 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  101 production, 230 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 511 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -117,13 +132,17 @@ references:
     why: general_settings.apply_user_budget_to_team_keys default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3195-L3200
     why: general_settings.fail_closed_budget_enforcement default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1-L6
-    why: fail_closed_budget_enforcement default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: reserve_after_policy,
-      reservation_disabled, fail_closed, key_default_end_user_budget.'
+  - text: >-
+      Cases noop_slot, present_end_user_null_budget_no_lookup, missing_end_user_resolves_budget,
+      no_budget_keeps_token, replace_all_five_fields, custom_caps_fill_only_none,
+      reservation_clears_old_state, reservation_disabled, skip_no_raw_body_read,
+      strict_boolean_reservation_flags, billing_policy_forces_fail_closed,
+      reserve_passes_raw_and_typed_context, request_none, request_state_after_success,
+      reservation_error_no_state_write, missing_model_or_router_not_free and zero_cost_skip
+      exercise the handoff and exact field mutation. reserve_after_policy is proved by server wiring.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -179,18 +198,14 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::budget_admission_handoff::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/budget-admission-handoff/reserve-after-policy.yaml
-  - tools/oracle/cases/helpers/budget-admission-handoff/reservation-disabled.yaml
-  - tools/oracle/cases/helpers/budget-admission-handoff/fail-closed.yaml
-  - tools/oracle/cases/helpers/budget-admission-handoff/key-default-end-user-budget.yaml
+  - tools/oracle/cases/helpers/budget-admission-handoff/free-priced-and-missing-model.yaml
+  - tools/oracle/cases/helpers/budget-admission-handoff/team-model-alias-context.yaml
   - tools/oracle/cases/auth/budget-admission-handoff/reserve-after-policy.yaml
   - tools/oracle/cases/auth/budget-admission-handoff/reservation-disabled.yaml
   - tools/oracle/cases/auth/budget-admission-handoff/fail-closed.yaml
   - tools/oracle/cases/auth/budget-admission-handoff/key-default-end-user-budget.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/user_api_key_auth.py: B052 owns user_api_key_auth (L3433-L3529), authorize_internal_virtual_key
     (L3938-L3977), _user_api_key_auth_builder.preflight (L1475-L1602), _user_api_key_auth_builder.credential_gate
     (L1858-L1895), _user_api_key_auth_builder.master_and_database (L2078-L2208), user_api_key_auth_websocket_for_model
@@ -235,9 +250,9 @@ out_of_scope:
   - 'litellm/proxy/auth/user_api_key_auth.py: B1221 owns _run_centralized_common_checks (L2755-L3110).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve disable_budget_reservation, fail_closed_budget_enforcement and apply_user_budget_to_team_keys
-    policy; no configured missing reservation implementation is silently accepted.
+  - An existing end-user with no budget relation prevents a fallback budget lookup; an absent end-user does not.
+  - Reservation failure leaves request.state untouched although token.budget_reservation was already cleared.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: security

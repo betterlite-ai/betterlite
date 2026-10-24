@@ -1,0 +1,10 @@
+id: B1319
+milestone: M3 providers
+title: Google character pricing and grounded-request charges
+status: todo
+depends_on: [B1300, B193, B171]
+file: tasks/B1319-google-pricing.yaml
+covers:
+  - "litellm/llms/vertex_ai/cost_calculator.py"
+  - "litellm/llms/vertex_ai/gemini/cost_calculator.py"
+  - "litellm/llms/gemini/cost_calculator.py"

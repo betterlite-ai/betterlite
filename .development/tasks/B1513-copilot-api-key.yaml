@@ -1,0 +1,78 @@
+id: B1513
+title: Refresh Copilot API keys and discover the authenticated endpoint
+description: >-
+  Implement copilot::api_key in betterlite-openai for get_api_key, get_api_base and _refresh_api_key
+  in the shared Authenticator. Consume B1512's paths, access-token service, GitHub headers and endpoint
+  setting. A cached expires_at strictly greater than now returns its token field without checking
+  truthiness; equality expires. Missing files, malformed JSON and expired records warn and refresh.
+  Endpoint discovery independently reads endpoints.api and returns None with a warning on the caught
+  file/JSON/key errors; it must never start login or refresh.
+
+  Refresh obtains the access token once, then makes up to three immediate GET attempts. A JSON object
+  containing token succeeds even if its value is empty. HTTP failures and token-less bodies consume
+  attempts; exhaustion raises RefreshAPIKeyError 401. get_api_key writes the entire refreshed record
+  before checking a truthy token. File write failure is GetAPIKeyError 500, failed refresh is 401, and
+  a persisted empty token also raises 401. Preserve ordinary write ordering and the distinct warning
+  paths, with secret fields redacted through B187. Do not repair malformed field types into valid keys.
+
+  decode_copilot_key_record consumes file or HTTP JSON bytes with the shared bounded JSON machinery,
+  explicit token/expiry/endpoints fields and an additional-fields map for the write-back record.
+  Add a copilot_key cargo-fuzz target and replays_the_copilot_key_corpus. Use the copilot_key helper
+  with scripted storage and HTTP effects for future_expiry_missing_token, equality_expired,
+  third_attempt_key, empty_token_written, disk_error_is_500 and endpoint_lookup_no_login. The adapter
+  normalizes secrets into stable opaque markers without logging them. Register call.copilot_key.
+  These three methods contain 93 nonblank/non-comment lines; reserve 150 implementation, 180 tests,
+  100 oracle and 60 decoder/fuzz lines, capped at 550.
+scope:
+  paths:
+    - crates/betterlite-openai/src/copilot.rs
+    - crates/betterlite-openai/src/copilot/api_key.rs
+    - crates/betterlite-openai/src/copilot/api_key/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/copilot_key.rs
+    - crates/betterlite-openai/fuzz/corpus/copilot_key/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/copilot_key.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/copilot_key.py
+    - tools/oracle/cases/helpers/copilot-key/**
+    - tools/oracle/fuzz/corpus/helper_case/copilot_key*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L79-L183
+    why: API-key cache validity, retry loop, independent endpoint lookup and write-before-validation.
+dod:
+  - text: API-key reuse and refresh reproduce the source's persisted contents, exception status and attempt counts.
+    proof: [key-tests, oracle, key-python]
+  - text: File and HTTP replies pass through the fuzzed key-record decoder, including malformed endpoint and expiry fields.
+    proof: [key-tests, key-corpus]
+checks:
+  optional: []
+  commands:
+    - id: key-tests
+      why: API-key state transitions or endpoint discovery are not implemented
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^copilot::api_key::/) - test(replays_the_copilot_key_corpus)'
+    - id: key-corpus
+      why: new key-record inputs are not replayed through the boundary decoder
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/copilot_key)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_copilot_key_corpus)'
+    - id: key-python
+      why: the key lifecycle oracle adapter lacks checked executable coverage
+      run: grep -qE '^[[:space:]]+copilot_key:' tools/oracle/fuzz/corpus/helper_case/copilot_key* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/copilot_key.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/copilot-key/future-expiry-missing-token.yaml
+  - tools/oracle/cases/helpers/copilot-key/equality-expired.yaml
+  - tools/oracle/cases/helpers/copilot-key/third-attempt-key.yaml
+  - tools/oracle/cases/helpers/copilot-key/empty-token-written.yaml
+  - tools/oracle/cases/helpers/copilot-key/disk-error-is-500.yaml
+  - tools/oracle/cases/helpers/copilot-key/endpoint-lookup-no-login.yaml
+deviations: []
+out_of_scope:
+  - B1512 provides the constructor and access-token/device methods in authenticator.py; inference request policy belongs to B1514 through B1516.
+pitfalls:
+  - A future-dated cache entry can return None and must be rejected only by callers that check it.
+  - Refresh retries have no sleep or backoff in this implementation.
+  - The refreshed record reaches disk before the missing-token error is raised.
+review_level: security
+budget:
+  max_changed_lines: 550
+  max_new_expects: 1

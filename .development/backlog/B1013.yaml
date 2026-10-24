@@ -1,0 +1,10 @@
+id: B1013
+milestone: M5 api families
+title: Rerank contracts
+status: todo
+depends_on: [B010, B171, B2202, B204, B1087]
+file: tasks/B1013-rerank-contracts.yaml
+covers:
+  - "litellm/llms/base_llm/rerank/transformation.py"
+  - "litellm/rerank_api/rerank_utils.py"
+  - "litellm/types/rerank.py"

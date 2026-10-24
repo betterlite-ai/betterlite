@@ -1,0 +1,11 @@
+id: B093
+milestone: M5 api families
+title: Videos API
+status: todo
+depends_on: [B087]
+file: null
+covers:
+  - "litellm/videos/**"
+  - "litellm/llms/base_llm/videos/**"
+  - "litellm/proxy/video_endpoints/**"
+  - "litellm/types/videos/**"

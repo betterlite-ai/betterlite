@@ -1,0 +1,10 @@
+id: B715
+milestone: M4 keys, spend and management
+title: Bounded database lookups and safe database metrics
+status: todo
+depends_on: [B002, B012, B110, B171, B700, B856, B860, B872]
+file: tasks/B715-database-failures.yaml
+covers:
+  - "litellm/proxy/db/exception_handler.py"
+  - "litellm/proxy/db/db_lookup_gate.py"
+  - "litellm/proxy/db/log_db_metrics.py"

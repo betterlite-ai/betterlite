@@ -1,0 +1,8 @@
+id: B1547
+milestone: M3 providers
+title: Execute Riva recognition through the optional streaming SDK
+status: todo
+depends_on: [B1545, B1546, B165, B1001, B004, B249, B171]
+file: tasks/B1547-riva-streaming-call.yaml
+covers:
+  - "litellm/llms/nvidia_riva/{__init__.py,audio_transcription/{__init__.py,handler.py}}"

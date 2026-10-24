@@ -1,0 +1,9 @@
+id: B1308
+milestone: M3 providers
+title: Gemini function tools, search and Maps retrieval
+status: todo
+depends_on: [B1307, B171]
+file: tasks/B1308-gemini-tool-mapping.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"
+  - "litellm/types/llms/vertex_ai.py"

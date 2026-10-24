@@ -1,0 +1,8 @@
+id: B2219
+milestone: M3 providers
+title: Provider-aware model metadata resolution
+status: todo
+depends_on: [B174, B209, B193, B2217, B2218, B2220, B2222, B2223, B2224, B2229, B2203, B2207, B171]
+file: tasks/B2219-model-metadata-resolution.yaml
+covers:
+  - "litellm/utils.py"

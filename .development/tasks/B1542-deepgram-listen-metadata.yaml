@@ -1,0 +1,91 @@
+id: B1542
+title: Normalize Deepgram listen targets and streaming billing metadata
+description: >-
+  Add api::deepgram::listen_metadata for all common_utils.py functions and DeepgramException.
+  Keep the query/URL helpers usable by the future passthrough consumer without depending on its
+  route. decode_listen_query parses URL-encoded query bytes preserving order and duplicates;
+  parse_listen_target parses upstream URL strings through the existing URL library. Put both in
+  the listen_query fuzz target with percent-encoding, duplicate model/language and invalid URL seeds,
+  replayed by replays_the_listen_query_corpus.
+
+  Requested model is the first query value or nova-3. Target construction uses a falsey-base fallback
+  https://api.deepgram.com/v1, appends /listen, maps https/http to wss/ws, and preserves other schemes.
+  Keep only the first model and language occurrences while preserving all other duplicates. A falsey
+  first model removes it and appends model=nova-3. Callback detection returns sorted present names
+  from callback/callback_method, including blank values. Upstream pricing extraction follows parse_qs
+  blank-value removal, unlike the target's QueryParams handling.
+
+  Build streaming/{model}, add -multilingual when the first retained language trims/lowercases to
+  multi, and prefix deepgram/ for catalog lookup. B2225 get_model_info must return exactly that key;
+  any failure or fallback entry is unpriced. Addon rates are sorted unique streaming/{addon} for
+  redact, keyterm, detect_entities and diarize/diarize_model; any value other than trimmed empty or
+  false enables its addon, so 0 is enabled. This task returns registry names and metadata, not charges.
+
+  From typed websocket frames, channel count uses the last valid positive integer Metadata.channels,
+  else maximum valid Results.channel_index[1] from exactly two-element lists, else first digit-only
+  channels query value, else one. Reject bool as a count. Audio seconds use the last positive finite
+  Metadata.duration; otherwise maximum nonnegative finite Results start+duration or zero. Use Decimal
+  arithmetic. Transcript concatenation joins nonempty first-alternative strings from Results with
+  is_final exactly true, preserving frame order and inserting a space. No websocket byte decoder
+  belongs here. call.deepgram_listen_metadata exercises query_identity, blank_model, callbacks,
+  exact_streaming_price, addon_flags, channel_precedence, duration_precedence and final_transcript.
+  Source size is 157 nonblank/non-comment lines; reserve 190 implementation, 200 tests and 170
+  oracle/fuzz lines, maximum 650.
+scope:
+  paths:
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/deepgram.rs
+    - crates/betterlite-core/src/api/deepgram/{common,listen_metadata}.rs
+    - crates/betterlite-core/src/api/deepgram/listen_metadata/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/listen_query.rs
+    - crates/betterlite-core/fuzz/corpus/listen_query/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/deepgram_listen_metadata.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/deepgram_listen_metadata.py
+    - tools/oracle/cases/helpers/deepgram-listen-metadata/**
+    - tools/oracle/fuzz/corpus/helper_case/deepgram_listen_metadata*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/common_utils.py#L14-L200
+    why: First-value authorization identity, exact streaming-price lookup and final frame aggregation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L347-L349
+    why: Fixed Deepgram listen base and nova-3 model defaults.
+dod:
+  - text: Normalized targets and streaming registry keys preserve the first authorized model/language and exact pricing identity.
+    proof: [listen-metadata-tests, listen-query-corpus, oracle, listen-metadata-python]
+  - text: Channel, duration and transcript metadata honor final-frame precedence and reject invalid numeric candidates.
+    proof: [listen-metadata-tests, oracle, listen-metadata-python]
+checks:
+  optional: []
+  commands:
+    - id: listen-metadata-tests
+      why: Deepgram target or streaming metadata rules have no production behavior coverage
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::deepgram::listen_metadata::/) - test(replays_the_listen_query_corpus)'
+    - id: listen-query-corpus
+      why: added query and URL bytes do not exercise both listen parsers
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/listen_query)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_listen_query_corpus)'
+    - id: listen-metadata-python
+      why: Deepgram common helpers lack independently executed oracle cases
+      run: grep -qE '^[[:space:]]+deepgram_listen_metadata:' tools/oracle/fuzz/corpus/helper_case/deepgram_listen_metadata* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/deepgram_listen_metadata.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/query-identity.yaml
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/blank-model.yaml
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/callbacks.yaml
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/exact-streaming-price.yaml
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/addon-flags.yaml
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/channel-precedence.yaml
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/duration-precedence.yaml
+  - tools/oracle/cases/helpers/deepgram-listen-metadata/final-transcript.yaml
+deviations: []
+out_of_scope:
+  - B094 owns passthrough WebSocket routes and their consumers; this task does not mount /deepgram/v1/listen or perform authorization itself.
+pitfalls:
+  - diarize_model and diarize activate a single streaming/diarize billing key.
+  - A prerecorded catalog fallback cannot authorize a streaming price match.
+  - A later zero-duration Metadata frame does not erase an earlier positive duration.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

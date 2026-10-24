@@ -1,0 +1,10 @@
+id: B656
+milestone: M3 providers
+title: Bedrock Claude Platform workspace routes
+status: todo
+depends_on: [B2211, B577, B570, B568, B688, B960, B962, B581, B129, B171]
+file: tasks/B656-bedrock-services-claude-platform.yaml
+covers:
+  - "litellm/llms/bedrock/claude_platform/common_utils.py"
+  - "litellm/llms/bedrock/claude_platform/transformation.py"
+  - "litellm/llms/bedrock/claude_platform/messages_transformation.py"

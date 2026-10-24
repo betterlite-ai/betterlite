@@ -1,0 +1,94 @@
+id: B1504
+title: Extract skill archives and construct injected prompts and tools
+description: >-
+  Add skills::content to betterlite-core, owning extract_skill_content, extract_all_files,
+  inject_skill_content_to_messages, convert_skill_to_tool and convert_skill_to_anthropic_tool from
+  prompt_injection.py, plus both get_litellm_code_execution_tool functions and their typed schemas
+  from code_execution.py. Use B858 skill rows and B178 schema records. ZIP lookup scans archive order
+  for names ending SKILL.md, then README.md, then .md, skipping empty text; prepend the source Skill
+  heading and fall back to instructions after missing content or a warned decode failure. File extraction
+  removes the first path component, normalizes with POSIX semantics, skips directories, and warns/drops
+  absolute paths or any normalized name starting '..', including '..notes'. Preserve files extracted
+  before a later archive error. Inject the Available Skills section into the first system message, insert
+  one when messages are nonempty without a system message, or append to top-level system for Anthropic.
+  Empty OpenAI messages stay empty.
+
+  Function tool names replace hyphens and spaces with underscores. Description precedence is instructions,
+  description, display_title, then Skill: id; truncate at 1021 Unicode characters plus three dots. A nonempty
+  metadata.parameters object replaces the empty object schema. Keep the distinct OpenAI function wrapper
+  and Anthropic input_schema. Internal execution tool name is exactly litellm_code_execution and both
+  definitions retain their code argument schema. The uncalled standalone CodeExecutionHandler is not
+  another hook implementation.
+
+  decode_skill_zip takes bounded archive bytes and feeds both extraction functions. Compare a maintained
+  ZIP crate with hand-written central-directory parsing before selecting the former if compatible; add
+  Cargo dependencies explicitly. Cap compressed input at 16 MiB, total expansion at 64 MiB and entries at
+  4096, with the fallback described below. Fuzz this decoder and replay its corpus in replays_skill_zip.
+  The skill_content helper invokes pinned methods with actual ZIP fixtures and parsed skill/message
+  records. Cases markdown_priority, corrupt_after_file, parent_prefix, system_placement, unicode_tool_limit
+  and metadata_schema compare outputs and existing warnings. Add a call.skill_content seed. The live
+  spans total 234 nonblank/non-comment lines; reserve 270 implementation, 210 tests, 110 adapters, 85
+  fuzz/replay and 55 dependency/wiring lines, capped at 750.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/content.rs
+    - crates/betterlite-core/src/skills/content/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/skill_zip.rs
+    - crates/betterlite-core/fuzz/corpus/skill_zip/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/skill_content.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/skill_content.py
+    - tools/oracle/cases/helpers/skill-content/**
+    - tools/oracle/fuzz/corpus/helper_case/skill_content*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L28-L307
+    why: Archive selection, path cleanup and the five live prompt/tool methods; create_execute_code_tool is unused.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/code_execution.py#L25-L403
+    why: Live internal tool schemas and the standalone loop excluded by caller analysis.
+dod:
+  - text: Skill extraction, message insertion and both tool encodings match the independently invoked source methods.
+    proof: [skill-content-tests, oracle, skill-content-python]
+  - text: Malformed and over-limit ZIPs cannot escape the decoder's byte/entry bounds, and every committed fuzz input replays.
+    proof: [skill-zip-corpus, skill-content-tests]
+checks:
+  optional: []
+  commands:
+    - id: skill-content-tests
+      why: archive fallback, unsafe path exclusion or prompt/tool shape is incorrect
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::content::/) - test(replays_skill_zip)'
+    - id: skill-content-python
+      why: the content helper has no variant seed or fails strict adapter checks
+      run: grep -qE '^[[:space:]]+skill_content:' tools/oracle/fuzz/corpus/helper_case/skill_content* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/skill_content.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: skill-zip-corpus
+      why: the ZIP decoder is not reachable from a new fuzz target and corpus replay
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/skill_zip.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/skill_zip)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_skill_zip)'
+oracle_cases:
+  - tools/oracle/cases/helpers/skill-content/markdown-priority.yaml
+  - tools/oracle/cases/helpers/skill-content/corrupt-after-file.yaml
+  - tools/oracle/cases/helpers/skill-content/parent-prefix.yaml
+  - tools/oracle/cases/helpers/skill-content/system-placement.yaml
+  - tools/oracle/cases/helpers/skill-content/unicode-tool-limit.yaml
+  - tools/oracle/cases/helpers/skill-content/metadata-schema.yaml
+deviations:
+  - what: Archive limits warn and use instructions for prompt text or retain only files already extracted; duplicate normalized paths warn before retaining the last entry, without changing the enclosing HTTP status or adding an error code.
+    why: Bounded input and no-silent-drops rules require limits and a visible collision diagnostic where Python permits unlimited expansion and silent replacement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/prompt_injection.py#L92-L126
+out_of_scope:
+  - prompt_injection.create_execute_code_tool has no caller at the pin.
+  - code_execution._parse_code_execution_arguments, CodeExecutionHandler.execute_with_code_execution, has_code_execution_tool and add_code_execution_tool have no live caller at the pin; constructor state and their private result/protocol declarations serve only this unused loop and are not implemented.
+  - B095 owns the live SkillsInjectionHook loop and B1506 owns SkillsSandboxExecutor, which that hook calls directly.
+pitfalls:
+  - endswith(SKILL.md) matches a suffix such as NOT_SKILL.md and does not require the basename to equal SKILL.md.
+  - The archive-wide exception returns the extracted prefix of files instead of discarding all earlier entries.
+  - Description truncation counts Unicode characters rather than UTF-8 bytes.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0

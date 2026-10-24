@@ -1,0 +1,13 @@
+id: B151
+milestone: M11 distribution
+title: Container images and Compose files
+status: todo
+depends_on: [B124]
+file: null
+covers:
+  - "Dockerfile"
+  - "docker-compose.yml"
+  - "docker-compose.hardened.yml"
+  - "proxy_server_config.yaml"
+  - "prometheus.yml"
+  - "docker/**"

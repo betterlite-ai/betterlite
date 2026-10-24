@@ -1,0 +1,8 @@
+id: B1051
+milestone: M5 api families
+title: Batch retrieval route
+status: todo
+depends_on: [B003, B004, B012, B002, B1037, B1041, B1087, B1112, B732, B855, B756, B1019, B1021, B1048, B1020, B1139, B856, B844, B162, B2400]
+file: tasks/B1051-batch-read-routes.yaml
+covers:
+  - "litellm/proxy/batches_endpoints/endpoints.py"

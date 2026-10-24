@@ -1,0 +1,8 @@
+id: B2361
+milestone: M4 keys, spend and management
+title: Budget window coercion and start instants
+status: todo
+depends_on: [B171, B192, B199, B733, B856]
+file: tasks/B2361-budget-window-start.yaml
+covers:
+  - "litellm/proxy/spend_tracking/budget_reservation.py"

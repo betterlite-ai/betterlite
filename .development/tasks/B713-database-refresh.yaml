@@ -1,253 +1,164 @@
 id: B713
 title: Drain and replace native Postgres pool generations
 description: >-
-  Implement PoolGeneration, transaction tracking, compare-and-swap replacement and bounded drain on native
-  SQLx pools. Replace Prisma engine/process inspection and orphan reaping with owned connection tasks;
-  preserve the 90-second drain deadline and current/previous generation invariants. This service never
-  mints tokens; DatabaseRefreshLoop supplies new credentials.
+  Build betterlite-db::database_refresh with native PoolGeneration ownership, operation/transaction
+  guards and serialized replacement. Reproduce the two different Prisma replacement paths: fault
+  recovery stops the old generation before connecting its replacement, while token refresh connects
+  a candidate before publishing it and drains the old generation afterward. Do not describe both as
+  atomic or promise the old writer remains usable after failed fault recovery. Reuse B700 sessions
+  and B712's auth descriptor; B854 supplies refresh behavior through an injected lower-layer port,
+  never a reverse dependency from this pool service to B854.
 
+  Constructor defaults are iam_token_db_auth=false, token_auth=None, db_url_env_var='DATABASE_URL',
+  iam_endpoint=None, recreate_uses_datasource=false and log_prefix=''. An explicit strategy wins over
+  the legacy boolean; true legacy IAM selects RDS. token_label falls back to 'database token' when
+  disabled, and iam_token_db_auth reports any active strategy, including Azure. A nonempty prefix
+  adds exactly one trailing space to log lines. Start generation at 0, no refresh task, no last-refresh
+  time, no replacement callback and no retirement tasks. Native endpoints are typed snapshots rather
+  than mutable process env, but preserve writer/reader selection supplied by the caller.
 
-  Injected port instead of a reverse dependency on B854: CredentialRefresh::before_checkout(PoolGeneration)->Result<(),DbError>;
-  B854 installs refresh without making the pool depend on its lifecycle owner. A configured but unregistered
-  implementation is a named startup error, never a success stub.
+  Drain tracking begins empty and drained. Every query increments before dispatch and decrements in
+  a finally-equivalent guard on success, error or cancellation. Starting a transaction holds one
+  operation until its terminal commit/rollback; failed or cancelled begin releases it immediately.
+  Queries within a transaction count separately. Commit and rollback add their own operation guard
+  and release both it and the tracked transaction even when the database operation errors or is
+  cancelled. Finishing an unknown transaction is a no-op and must not underflow. Re-instrumenting an
+  already tracked client reuses the tracker; an unconnected/absent engine yields no tracker until
+  connect succeeds. Connecting forwards an explicitly supplied timeout, omits None, and installs the
+  tracker only after success.
 
+  Expose a replacement lock shared by recovery and refresh. Recovery checks expected_generation only
+  after acquiring it; a mismatch logs an info message naming current/expected generations and returns
+  false without closing, connecting or invoking the callback. A matching or absent expectation closes
+  the old generation immediately, constructs and publishes the replacement handle, then connects it.
+  Only successful connection/instrumentation increments generation and calls the replacement callback.
+  Connection failure leaves the new disconnected handle selected with the old generation number;
+  there is no restoration of the stopped old pool. Return true after successful replacement. Native
+  reader construction explicitly uses the passed URL; writer construction consumes the caller's
+  resolved current writer URL, matching the source's env-vs-datasource distinction without global writes.
+  Optional transport overrides are forwarded only when present.
 
-  Build the production database_refresh module in betterlite-db; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Token refresh, already holding the same lock, instead constructs a private candidate and connects
+  it while the old pool stays active. Candidate failure or cancellation schedules candidate cleanup,
+  propagates the failure and leaves the old handle/tracker/generation unchanged. On success install
+  candidate tracker, publish handle, increment generation, invoke the callback, then schedule old-pool
+  retirement. Callback invocation is synchronous even though the source comment says 'scheduled';
+  the callback itself schedules its watcher. A callback error therefore occurs after publication and
+  generation increment, before retirement scheduling, and must not be represented as a rolled-back
+  swap. B854 owns restoring its credential snapshot when its enclosing refresh operation fails.
 
+  Retire an old generation as soon as its tracker drains, or immediately when no tracker exists.
+  ENGINE_RETIREMENT_DRAIN_TIMEOUT_SECONDS is 90. At the deadline warn that the replaced generation
+  did not drain within 90s and is being closed with work still in flight, then close only that old
+  generation. New work and its transactions must remain usable. Source PID<=0 schedules nothing;
+  the native equivalent is an absent retired handle. Track retirement tasks until their completion
+  callback removes them, and have the owner drain/cancel them during shutdown. The no-PID adaptation
+  is recorded below, not a fake Prisma engine or OS process watcher.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/prisma_client.py:
-  _PrismaEngine.process (L48-L48; 1 source lines), _PrismaEngine.query (L50-L50; 1 source lines), _PrismaEngine.start_transaction
-  (L52-L52; 1 source lines), _PrismaEngine.commit_transaction (L54-L54; 1 source lines), _PrismaEngine.rollback_transaction
-  (L56-L56; 1 source lines), _PrismaClient._engine (L63-L63; 1 source lines), _PrismaDrainTracker.__init__
-  (L67-L71; 5 source lines), _PrismaDrainTracker.begin_operation (L73-L76; 4 source lines), _PrismaDrainTracker.end_operation
-  (L78-L81; 4 source lines), _PrismaDrainTracker.transaction_started (L83-L84; 2 source lines), _PrismaDrainTracker.transaction_finished
-  (L86-L90; 5 source lines), _PrismaDrainTracker.wait_until_drained (L92-L93; 2 source lines), _TrackedPrismaEngine.__init__
-  (L97-L99; 3 source lines), _TrackedPrismaEngine.process (L102-L103; 2 source lines), _TrackedPrismaEngine.__getattr__
-  (L105-L106; 2 source lines), _TrackedPrismaEngine.query (L108-L113; 6 source lines), _TrackedPrismaEngine.start_transaction
-  (L115-L123; 9 source lines), _TrackedPrismaEngine.commit_transaction (L125-L131; 7 source lines), _TrackedPrismaEngine.rollback_transaction
-  (L133-L139; 7 source lines), PrismaWrapper.__init__ (L169-L220; 25 source lines), PrismaWrapper.token_auth
-  (L223-L225; 3 source lines), PrismaWrapper.token_label (L228-L230; 3 source lines), PrismaWrapper.iam_token_db_auth
-  (L233-L239; 6 source lines), PrismaWrapper._read_engine (L242-L243; 2 source lines), PrismaWrapper._write_engine
-  (L246-L247; 2 source lines), PrismaWrapper._instrument_prisma_client (L249-L260; 11 source lines), PrismaWrapper._retire_engine_when_drained
-  (L282-L296; 15 source lines), PrismaWrapper._schedule_engine_retirement (L298-L303; 6 source lines),
-  PrismaWrapper._retirement_finished (L305-L306; 2 source lines), PrismaWrapper.connect (L308-L313; 6
-  source lines), PrismaWrapper.engine_generation (L479-L487; 8 source lines), PrismaWrapper._reconnection_settled
-  (L489-L491; 3 source lines), PrismaWrapper.wait_for_planned_engine_replacement (L493-L508; 15 source
-  lines), PrismaWrapper.recreate_prisma_client (L510-L546; 33 source lines), PrismaWrapper._recreate_prisma_client_locked
-  (L548-L605; 39 source lines), PrismaWrapper._replace_prisma_client_for_token_refresh_locked (L607-L644;
-  32 source lines), PrismaWrapper.__getattr__ (L808-L871; 52 source lines).
+  wait_for_planned_engine_replacement returns immediately when its timeout is <=0 or the lock is
+  currently free. Otherwise it waits only for the lock to settle and silently returns on timeout;
+  it does not assert success. Callers compare generation afterward. Cancelling that waiter does not
+  cancel a replacement owned by another task. A failed replacement cannot increment the counter merely
+  to silence the health watchdog.
 
+  Preserve __getattr__'s caller-visible expired-token behavior through the injected refresh-trigger
+  port: resolve the current operation handle first; absent attributes fail before refresh checks.
+  With token auth disabled or a fresh token return it unchanged. With an expired token in an async
+  request, warn that proactive refresh may have failed, schedule the locked refresh and return the
+  stale handle immediately; the current request can fail and upper retry policy decides what follows.
+  Do not await a refresh in this path or automatically retry its SQL. The sync compatibility caller
+  warns, mints through the injected port, recreates, re-fetches the operation and logs completion;
+  a falsey minted URL raises 'Failed to get {token_label}', and mint/recreate failures propagate.
+  Token-enabled construction requires the port; it cannot install a success stub. Expose the sync
+  operation to its SDK caller without blocking a Tokio runtime thread.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Use B860 with POSTGRES_TEST_URL, otherwise testcontainers, for real concurrent queries and transactions.
+  Distinguish a deliberately failed candidate connection from a stopped old generation, and assert
+  which committed rows remain visible after each failure. Use an injected clock for the 90s deadline
+  and barriers around connect/publish/callback to prove races. No helper oracle can model these pool
+  lifecycle effects; tests run the actual native pools and use the pinned ordering as their contract.
+  This task consumes parsed endpoints and has no additional config or byte decoder.
 
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 327 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  327 production, 151 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 508 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The owned Python protocols, tracking, wrapper state, replacement and access paths total 327
+  nonblank noncomment lines including docstrings. Allow 300 native tracking/replacement code,
+  380 concurrency/Postgres tests and 45 wiring lines, 725 within 800. Separate tracking, replacement
+  and access-trigger modules to stay below 300 lines per Rust file.
 scope:
   paths:
     - crates/betterlite-db/src/database_refresh.rs
     - crates/betterlite-db/src/database_refresh/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/database_refresh/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L1-L347
-    why: Pinned implementation and exact ownership boundary for database_refresh.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L479-L644
-    why: Pinned implementation and exact ownership boundary for database_refresh.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L43-L139
+    why: Drain accounting and finally blocks for query/begin/commit/rollback, including cancellation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L167-L260
+    why: Drain deadline, constructor defaults, token descriptor and tracker reuse.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L282-L313
+    why: Retirement warning/deadline, task cleanup and post-connect instrumentation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L478-L644
+    why: Distinct stop-first and connect-first replacement orders, generation guard and synchronous callback call.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L808-L871
-    why: Own PrismaWrapper.__getattr__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/query_engine_reaper.py#L1-L212
-    why: Pinned implementation and exact ownership boundary for database_refresh.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L48-L48
-    why: Own _PrismaEngine.process; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L50-L50
-    why: Own _PrismaEngine.query; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L52-L52
-    why: Own _PrismaEngine.start_transaction; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L54-L54
-    why: Own _PrismaEngine.commit_transaction; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L56-L56
-    why: Own _PrismaEngine.rollback_transaction; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L63-L63
-    why: Own _PrismaClient._engine; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L67-L71
-    why: Own _PrismaDrainTracker.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L73-L76
-    why: Own _PrismaDrainTracker.begin_operation; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L78-L81
-    why: Own _PrismaDrainTracker.end_operation; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L83-L84
-    why: Own _PrismaDrainTracker.transaction_started; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L86-L90
-    why: Own _PrismaDrainTracker.transaction_finished; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L92-L93
-    why: Own _PrismaDrainTracker.wait_until_drained; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L97-L99
-    why: Own _TrackedPrismaEngine.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L102-L103
-    why: Own _TrackedPrismaEngine.process; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L105-L106
-    why: Own _TrackedPrismaEngine.__getattr__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L108-L113
-    why: Own _TrackedPrismaEngine.query; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L115-L123
-    why: Own _TrackedPrismaEngine.start_transaction; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L125-L131
-    why: Own _TrackedPrismaEngine.commit_transaction; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L133-L139
-    why: Own _TrackedPrismaEngine.rollback_transaction; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L169-L220
-    why: Own PrismaWrapper.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L223-L225
-    why: Own PrismaWrapper.token_auth; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L228-L230
-    why: Own PrismaWrapper.token_label; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L233-L239
-    why: Own PrismaWrapper.iam_token_db_auth; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L242-L243
-    why: Own PrismaWrapper._read_engine; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L246-L247
-    why: Own PrismaWrapper._write_engine; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L249-L260
-    why: Own PrismaWrapper._instrument_prisma_client; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L282-L296
-    why: Own PrismaWrapper._retire_engine_when_drained; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L298-L303
-    why: Own PrismaWrapper._schedule_engine_retirement; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L305-L306
-    why: Own PrismaWrapper._retirement_finished; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L308-L313
-    why: Own PrismaWrapper.connect; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L479-L487
-    why: Own PrismaWrapper.engine_generation; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L489-L491
-    why: Own PrismaWrapper._reconnection_settled; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L493-L508
-    why: Own PrismaWrapper.wait_for_planned_engine_replacement; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L510-L546
-    why: Own PrismaWrapper.recreate_prisma_client; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L548-L605
-    why: Own PrismaWrapper._recreate_prisma_client_locked; preserve caller-visible values and failure
-      ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L607-L644
-    why: Own PrismaWrapper._replace_prisma_client_for_token_refresh_locked; preserve caller-visible values
-      and failure ordering.
+    why: Async stale-handle return and separate synchronous expired-token fallback.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: transaction_drains,
-      stale_generation_rejected, cancel_releases_checkout, pool_replacement_failure, shutdown_deadline,
-      postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: 'Tracking tests prove constructor_defaults, explicit_strategy_over_legacy_flag,
+      azure_counts_as_token_auth, log_prefix_spacing, query_guard_on_error_and_cancel,
+      transaction_pins_idle_generation, begin_failure_releases_guard,
+      commit_failure_releases_transaction, rollback_cancel_releases_transaction,
+      unknown_transaction_no_underflow, tracker_reused and connect_timeout_forwarding.'
+    proof: [behavior-tests]
+  - text: 'Replacement tests prove stale_generation_no_effects, competing_recoveries_coalesce,
+      postgres_recovery_stops_old_before_connect, recovery_failure_keeps_counter,
+      postgres_refresh_candidate_failure_preserves_old, refresh_cancel_cleans_candidate,
+      refresh_publish_then_callback_then_retire, callback_error_after_publication,
+      writer_snapshot_vs_explicit_reader_url, retirement_waits_for_transaction,
+      retirement_timeout_warns_and_closes_old_only, missing_tracker_retires_immediately,
+      completed_retirement_removed and shutdown_releases_retirements.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Coordination/access tests prove wait_without_lock_returns, nonpositive_wait_returns,
+      wait_timeout_is_not_success, failed_replace_has_no_generation_change,
+      waiter_cancel_does_not_cancel_replace, missing_attribute_before_refresh,
+      async_expired_access_schedules_and_returns_stale, fresh_access_no_refresh,
+      sync_expired_access_refetches_after_recovery, sync_falsey_mint_exact_error,
+      refresh_port_required and native_generation_logs_without_process_ids.'
+    proof: [behavior-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_refresh::tests::/)
-        - test(/replays_the_/)'
+      why: Drain guards, race ordering and failure states must pass independently of connection smoke tests.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_refresh::tests::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_refresh::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_refresh::tests::postgres_failure_effects$/)'
+      why: Failed recovery and failed token rotation intentionally leave different live database states.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_refresh::tests::postgres_recovery_stops_old_before_connect$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_refresh::tests::postgres_refresh_candidate_failure_preserves_old$/)'
 oracle_cases: []
-deviations: []
+deviations:
+  - what: Replaced database connections are identified by native pool generation in diagnostics; no
+      prisma-query-engine PID, signal escalation, orphan reaper or expected-process-death set exists.
+    why: SQLx has no subprocess. Preserve stop-first recovery, connect-first rotation and the 90-second
+      old-work drain deadline through owned native tasks and connections.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L262-L347
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/db/prisma_client.py: B051 owns PrismaManager._apply_replica_identity_full_if_requested
-    (L883-L895), PrismaManager._raise_if_partitioned_spend_logs (L898-L911), PrismaManager.setup_database
-    (L914-L985), PrismaManager.build_request_log_indexes (L988-L997), PrismaManager.start_request_log_index_build
-    (L1000-L1009), should_update_prisma_schema (L1012-L1036).'
-  - 'litellm/proxy/db/prisma_client.py: B854 owns PrismaWrapper._extract_token_from_db_url (L349-L368),
-    PrismaWrapper._parse_token_expiration (L370-L378), PrismaWrapper._calculate_seconds_until_refresh
-    (L380-L415), PrismaWrapper.is_token_expired (L417-L430), PrismaWrapper.get_rds_iam_token (L432-L450),
-    PrismaWrapper._endpoint_from_env (L453-L476), PrismaWrapper.start_token_refresh_task (L646-L667),
-    PrismaWrapper.stop_token_refresh_task (L669-L688), PrismaWrapper._token_refresh_loop (L690-L744),
-    PrismaWrapper._safe_refresh_token (L746-L789), PrismaWrapper._token_refresh_not_needed (L791-L806).'
-  - 'litellm/proxy/db/prisma_client.py::PrismaManager._get_prisma_dir: Prisma filesystem/tool discovery
-    is absent from the native runner.'
-  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._get_engine_pid: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::set_child_subreaper: Prisma engine process supervision has
-    no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_read_comm_and_ppid: Prisma engine process supervision has
-    no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::list_orphaned_engine_pids: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_try_reap: Prisma engine process supervision has no equivalent
-    process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_send_signal: Prisma engine process supervision has no equivalent
-    process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_await_reaped: Prisma engine process supervision has no
-    equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::terminate_and_reap: Prisma engine process supervision has
-    no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::terminate_and_reap_all: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::reap_orphaned_engines: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_reaper_loop: Prisma engine process supervision has no equivalent
-    process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::start_query_engine_reaper: Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._get_engine_pid (L262-L280): Prisma engine process
-    supervision has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process (L316-L347): Prisma engine
-    process supervision has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::set_child_subreaper (L39-L53): Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_read_comm_and_ppid (L56-L74): Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::list_orphaned_engine_pids (L77-L93): Prisma engine process
-    supervision has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_try_reap (L96-L103): Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_send_signal (L106-L110): Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_await_reaped (L113-L122): Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::terminate_and_reap (L125-L128): Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::terminate_and_reap_all (L131-L160): Prisma engine process
-    supervision has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::reap_orphaned_engines (L163-L168): Prisma engine process
-    supervision has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::_reaper_loop (L171-L177): Prisma engine process supervision
-    has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - 'litellm/proxy/db/query_engine_reaper.py::start_query_engine_reaper (L183-L212): Prisma engine process
-    supervision has no equivalent process in native SQLx; owned pool tasks replace it.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B854 owns _extract_token_from_db_url, _parse_token_expiration, _calculate_seconds_until_refresh,
+    is_token_expired, get_rds_iam_token, _endpoint_from_env, start_token_refresh_task,
+    stop_token_refresh_task, _token_refresh_loop, _safe_refresh_token and _token_refresh_not_needed.
+    Their implementations are injected into this lower layer, not called through a dependency on B854.
+  - B051 owns PrismaManager setup/replica-identity/partition checks and index-build entry points,
+    plus should_update_prisma_schema. PrismaManager._get_prisma_dir is excluded by native migration setup.
+  - _PrismaProcess, _get_engine_pid, _kill_engine_process and the process members of _PrismaEngine,
+    _PrismaClient and _TrackedPrismaEngine are replaced by the native-generation deviation.
+  - query_engine_reaper.py set_child_subreaper, _read_comm_and_ppid, list_orphaned_engine_pids,
+    _try_reap, _send_signal, _await_reaped, terminate_and_reap, terminate_and_reap_all,
+    reap_orphaned_engines, _reaper_loop and start_query_engine_reaper have no native process to supervise.
+  - B124 owns proxy/utils.py's PrismaClient reconnect/watchdog and _handle_writer_engine_replaced
+    callback; B715 owns bounded lookup orchestration and B714 reader routing. Their services consume
+    this replacement port; the generation tracker does not import its callers.
 pitfalls:
-  - A generation cannot retire while one of its transactions remains active.
-  - The 90-second drain deadline does not authorize cancelling the new generation.
+  - A failed ordinary recovery has already stopped the old client; only the token-refresh candidate path retains it.
+  - commit_transaction releases its tracked transaction in finally even when COMMIT fails.
+  - Returning from wait_for_planned_engine_replacement is not evidence that generation changed.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

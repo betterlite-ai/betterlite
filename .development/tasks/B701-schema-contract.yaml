@@ -1,89 +1,123 @@
 id: B701
 title: Pinned LiteLLM Postgres schema contract
 description: >-
-  Define SchemaContract as pg_catalog introspection of an independently created database from all compiled
-  pinned migration cohorts B702-B709. Record exact relation, column, type, nullable/default, unique key,
-  foreign-key action and index facts for the ninety Prisma models. Copy the three byte-identical schema.prisma
-  files as hash-checked reference fixtures (SHA256 a17e69687d14d78dc7cee49770f1c1e8b2726cd8823d37c6dff48ae151533342);
-  do not parse Prisma in a Python oracle adapter. Expected facts come from applying the pinned SQL to
-  an isolated reference schema and introspecting it, while the tested catalog is separately applied to
-  the candidate schema. Preserve quoted names and existing data.
+  Build betterlite-db::schema_contract::SchemaContract, a read-only pg_catalog comparison used by the
+  native migration and drift services. Its expected database is created independently by B860 from
+  the byte-for-byte pinned SQL fixtures; its candidate is created from the compiled B709 catalog,
+  which assembles B702-B708. Never derive both sides from the candidate's Rust declarations. Copy all
+  three schema.prisma files as reference fixtures and require the same SHA256
+  a17e69687d14d78dc7cee49770f1c1e8b2726cd8823d37c6dff48ae151533342 and ninety model declarations.
+  Those files document the client contract, not executable SQL defaults. The migration owners name
+  and test each table's columns, literals, indexes and data backfills; this task checks their final
+  catalog as a whole and reports the exact relation, column or constraint that differs.
 
+  Record quoted, case-sensitive table and column names, ordinal positions, native type and typmod,
+  nullability, SQL default expressions, primary and unique key column order, foreign-key columns and
+  targets, delete/update actions, and index access method, key order, sort direction, uniqueness,
+  validity and predicate. Include sequences and enum labels, notably ModelTable.id's serial sequence
+  and JobStatus's ACTIVE/INACTIVE order. Compare schema-relative identities rather than OIDs, database
+  names, sequence current values, owners or planner statistics. Resolve identifiers through catalog
+  joins; bind the selected namespace as data. Quoted namespaces and unrelated tables in another
+  namespace must not alter the result. A comparison performs SELECTs only: it neither repairs a
+  missing default nor rewrites a secret, ledger row, user row or sequence value.
 
-  Build the production schema_contract module in betterlite-db; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Preserve the difference between Prisma's client-side uuid(), cuid() and @updatedAt and server-side
+  now(), numeric/boolean/text/array/JSON defaults. Do not invent UUID defaults, update triggers or
+  NOT NULL constraints for SQL-nullable String[] fields. Distinguish SQL NULL from JSON null, '{}'::jsonb,
+  '[]'::jsonb, TEXT '{}', and empty text arrays. ModelTable.model_aliases maps to the physical aliases
+  column. Relation fields without physical columns do not become columns, and scalar IDs without a
+  declared foreign key do not gain one. A global unique MemoryTable.key is not user/team-scoped;
+  nullable components of PostgreSQL unique keys keep their ordinary NULL-distinct behavior.
 
+  The compiled migration contract includes SQL-only partial indexes, including the final
+  ShadowEvalJob active-target uniqueness predicate stopped_at IS NULL and the baseline comparison
+  dirty-row predicate. It does not require LiteLLM_SpendLogs_api_key_startTime_idx or
+  LiteLLM_SpendLogs_litellm_call_id_idx before B718's separate build. Consume B2309's shared registry
+  and report those two as optional
+  managed facts when present; their absence is not core migration drift. Do not call B718 from this
+  lower layer: B718 uses B716, which itself consumes this contract. Migration-ledger, compatibility-view,
+  partition and managed-index lifecycle decisions remain in B716, B719, B857 and B718 respectively.
+  Preserve additional operator relations as reported extras without dropping them; callers decide
+  whether a particular difference prevents baseline adoption or merely produces diagnostics.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Use B860's independent temporary databases for complete reference/candidate histories, through
+  POSTGRES_TEST_URL when supplied and testcontainers otherwise. A single database with two schemas
+  is insufficient because the baseline's conname guards inspect pg_constraint database-wide.
+  Add differential fixtures that change exactly one catalog fact and assert the reported difference,
+  as well as a read-only connection test proving comparison succeeds without DDL privileges. These
+  are real Postgres tests, not a Python Prisma parser or helper oracle. Inputs are typed database
+  sessions and a namespace, so no new request/config decoder or fuzz target is added.
 
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: allow 280 native pg_catalog query/contract code, 200 independent reference/candidate database
-  tests and 60 catalog/wiring lines, 540 changed lines estimated within a 600-line gate. This native replacement
-  is larger than the pinned Prisma CLI call sites; SQL and generated production facts count, with only
-  repository fixture/corpus/lock exclusions.
+  The three 1,917-line Prisma files are reference data; no Prisma generator or datasource interpreter
+  is implemented. Budget 310 native catalog/query lines, 360 comparison and mutation-test lines and
+  40 wiring lines, 710 within an 800-line gate. Keep source files below 300 lines using catalog and
+  comparison submodules; the final SQL field behavior remains with the migration cohorts.
 scope:
   paths:
     - crates/betterlite-db/src/schema_contract.rs
     - crates/betterlite-db/src/schema_contract/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/schema_contract/fixtures/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1-L1917
-    why: Pinned implementation and exact ownership boundary for schema_contract.
+    why: Ninety client models, mapped physical columns, relation actions and client-side defaults.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L1-L1917
-    why: Pinned implementation and exact ownership boundary for schema_contract.
+    why: Byte-identical packaged schema fixture.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/schema.prisma#L1-L1917
-    why: Pinned implementation and exact ownership boundary for schema_contract.
+    why: Byte-identical migration-package fixture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L53-L56
+    why: These two indexes are intentionally built after the migration catalog has been applied.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: ninety_table_contract,
-      schema_fixture_hashes, null_defaults_and_foreign_keys, existing_database_no_rewrite, postgres_pinned_rows,
-      postgres_failure_effects.'
+  - text: 'All three fixture hashes and the full independently migrated catalog agree; named tests:
+      schema_fixture_hashes, ninety_model_inventory, postgres_independent_catalogs,
+      sql_only_partial_indexes, optional_managed_indexes_absent, optional_managed_indexes_present.'
     proof:
       - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+      - postgres-tests
+  - text: 'Each single-fact mutation produces a specific difference; named tests: missing_relation,
+      quoted_column_case, wrong_column_order, wrong_type_or_typmod, changed_nullability,
+      missing_sql_default, changed_default_literal, client_defaults_are_not_sql_defaults,
+      null_json_text_and_array_defaults, mapped_aliases_column, primary_key_column_order,
+      nullable_unique_components, global_memory_key, changed_foreign_key_target,
+      changed_delete_or_update_action, changed_index_direction, changed_index_predicate,
+      invalid_index, serial_sequence_and_enum_labels.'
     proof:
+      - behavior-tests
+  - text: 'Comparison cannot repair or mutate the database; named tests: postgres_read_only_comparison,
+      existing_rows_and_sequence_unchanged, quoted_namespace, unrelated_namespace_ignored,
+      extra_relations_reported_without_drop, different_oids_same_contract.'
+    proof:
+      - behavior-tests
       - postgres-tests
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_contract::tests::/)
-        - test(/replays_the_/)'
+      why: A catalog field, independent fixture or non-mutation assertion is absent or incorrect.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_contract::tests::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_contract::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_contract::tests::postgres_failure_effects$/)'
+      why: The contract must work against independent databases and a read-only database role.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_contract::tests::postgres_independent_catalogs$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_contract::tests::postgres_read_only_comparison$/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B702-B709 own executable migration statements, every per-column default and ordered backfill;
+    B709 exposes their assembled catalog. This task owns the schema.prisma reference contract only.
+  - B716 owns baseline acceptance and migration ledger writes; B857 owns boot-time drift warnings,
+    including the recorded replacement of the Prisma subprocess with native catalog inspection.
+  - B718 owns managed request-log index creation, attachment, repair and replica identity changes;
+    B719 owns compatibility views and repairs. Their additional objects are not silently created here.
+  - B710 and B711 own DATABASE_URL, DIRECT_URL and connection/TLS parsing. The schema datasource's
+    env calls do not create a second configuration path here.
+  - Prisma client generators, client-side IDs and @updatedAt writes belong to consuming repositories
+    and row models; a Prisma declaration alone does not authorize a database trigger or new FK.
 pitfalls:
-  - LiteLLM uses prisma migrate diff; a handwritten Python schema comparator would be a second expected
-    algorithm.
-  - The expected ninety-table contract is built after the final migration cohort, not before baseline
-    SQL.
+  - Two schemas in one database can give a false missing-FK result because baseline guards match conname globally.
+  - The schema.prisma index list both omits SQL partial indexes and includes two indexes built after migrations.
+  - Comparing raw sequence OIDs or nextval schema names makes equivalent independent databases appear different.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

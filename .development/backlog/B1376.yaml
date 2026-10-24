@@ -1,0 +1,9 @@
+id: B1376
+milestone: M3 providers
+title: Vertex native file upload targets and GCS metadata records
+status: todo
+depends_on: [B1393, B1375, B1302, B1306, B235, B1015, B516, B171]
+file: tasks/B1376-vertex-native-files.yaml
+covers:
+  - "litellm/llms/vertex_ai/files/transformation.py"
+  - "litellm/types/llms/vertex_ai.py"

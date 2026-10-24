@@ -1,9 +1,38 @@
 id: B891
 title: JWT database team fallback and membership validation
 description: >-
-  Resolve admin selected-team headers, single-team fallback and fallback_to_db_teams using live DB membership.
-  Do not upsert provisional header teams. Validate team route access after a database fallback and preserve
-  the 403 membership denial.
+  Resolve team context for JWT callers while preserving the three distinct failure policies. Admin
+  attachment reads exactly x-litellm-team-id and runs only for a truthy header on B882 LLM routes;
+  management routes ignore it. Pass the explicit team_id_upsert argument when nonnull, otherwise
+  use the handler setting (default False). Any exception from team lookup warns and returns with
+  admin access intact and no team attribution/limits. A successful call assigns the header id and
+  returned team object, even if that object is None. Do not turn this warning fallback into denial.
+
+  Single-team fallback requires user.teams length exactly one. Load with the supplied upsert value;
+  HTTPException debug-logs and returns (None,None,None), and a None row also returns that tuple.
+  Other team lookup errors escape. A falsey user_id returns id/row without membership; a truthy id
+  calls B2318. Membership failures propagate rather than falling back without member limits.
+
+  Database fallback reads teams in stored order and computes route permission once before the loop.
+  Skip only HTTPException from B737 team loading. Mark any_team_resolved after a successful call,
+  then, for a truthy requested_model, run B886.can_team_access_model with B871's team aliases and
+  the injected production router. Only ProxyException skips that candidate. Check route permission
+  after the model check; an excluded route still performs the model checks but no membership load.
+  The first usable team debug-logs selection and loads membership only for a truthy user_id. No
+  candidate plus enforce_team_based_model_access False returns the empty tuple. With enforcement
+  True, requested_model plus any resolved candidate raises HTTP 403 saying no member team can
+  access the requested model and referring to /models, even if the actual obstacle was route
+  permission. Otherwise raise HTTP 403 saying the user is not a member of any team. Both pass to
+  the caller as auth_error, string None param, code 403. Non-HTTP team failures, non-Proxy model
+  failures and membership errors propagate; the auth outage projector may turn DB failures into 503.
+
+  Route permission uppercases a string method, otherwise uses None. B883 auth-enforced passthrough
+  short-circuits to allowed; all other routes call B742.allowed_routes_check as TEAM with B869's
+  team_allowed_routes, whose default is openai_routes, info_routes, mcp_routes, /v1/messages and
+  /v1/messages/count_tokens. This exemption does not bypass the caller's later team passthrough
+  grant check. Header membership validation accepts only exact inclusion in the user's stored team
+  ids. Otherwise B764's common 403 names the original header value, never the resolved alias id,
+  with 'does not resolve to a team id or a unique team alias among your team memberships'.
 
 
   Build the production jwt_db_teams module in betterlite-auth; reuse the typed dependencies listed in
@@ -19,7 +48,11 @@ description: >-
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.team_id_upsert=False;
-  litellm_jwtauth.fallback_to_db_teams=False.
+  litellm_jwtauth.team_allowed_routes=['openai_routes','info_routes','mcp_routes','/v1/messages','/v1/messages/count_tokens'].
+  fallback_to_db_teams=False and enforce_team_based_model_access=False are caller-owned B877/B869
+  switches; this helper receives the selected fallback operation and enforcement boolean. It does
+  not reread fallback_to_db_teams. Provisional-header upsert suppression is B877's call argument,
+  not a universal ban on this task's upsert path.
 
 
   Add the jwt_db_teams operation under B856 Management::jwt. Python calls only the owned MIT helper with
@@ -29,40 +62,27 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Test the real native JWT stage with B732 server state for admin warning continuation, membership
+  denial and membership outage. These cases sit outside HTTP equality: MIT rejects enabled JWT
+  at B875's license gate before these helpers run. Pure helper comparisons still invoke the actual
+  MIT methods with injected repositories; do not call a FastAPI handler through the helper adapter.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Database-team selection uses native JWT integration with B860's POSTGRES_TEST_URL/testcontainers
+  fixture and deliberately ordered candidate rows. A forbidden first candidate must not hide a later
+  permitted team; a non-HTTP failure must still terminate selection where the source does.
 
 
-  Write betterlite-config::jwt_db_teams::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Exercise the shared B869 schema through B002 in jwt_db_teams::tests::team_defaults,
+  configured_upsert_and_routes_consumed and invalid_team_setting_shapes_fail. Invalid booleans or
+  route-list shapes fail config loading rather than choosing defaults. Postgres fixtures use
+  POSTGRES_TEST_URL and otherwise testcontainers; assert any upsert row survives later membership
+  failure, because these helpers open no encompassing transaction.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 219 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  219 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 538 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  Sizing: 219 nonblank, noncomment lines before docstring exclusion; allow 220 production,
+  300 behavior/Postgres tests, 65 helper adapters, 65 server wiring and 40 config lines,
+  690 within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -111,26 +131,36 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2374-L2388
     why: Own JWTAuthManager._validate_header_team_in_db_membership; preserve caller-visible values and
       failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
-    why: litellm_jwtauth.fallback_to_db_teams default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5366-L5375
+    why: Upsert and team-route defaults; actual reads are L2161 and L2354 of handle_jwt.py.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: single_team_fallback,
-      db_membership_header_denied, admin_header_team.'
+  - text: 'Cases admin_header_empty_or_management_skips, admin_upsert_override_and_default,
+      admin_all_lookup_errors_warn_continue, admin_success_assigns_header,
+      single_team_zero_one_many, single_team_http_debug_skip, single_team_none_row,
+      single_team_other_error_propagates, falsey_user_skips_membership,
+      membership_error_never_drops_limits, db_team_order_and_first_usable,
+      db_http_skip_proxy_model_skip, db_other_errors_propagate, model_check_before_route_reject,
+      db_no_candidates_optional_empty, db_enforced_no_membership_message,
+      db_enforced_model_message_even_for_route_denial, passthrough_method_uppercase,
+      team_route_group_defaults, header_alias_denial_uses_original_value and
+      postgres_upsert_survives_late_failure cover the five helpers.'
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
+      - helper-case-corpus
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
+  - text: Native server cases native_admin_lookup_warning_continues,
+      native_header_membership_denial and native_membership_outage_stops_downstream exercise
+      the B875 enabled-JWT behavior outside the MIT equality corpus.
+    proof: [stage-wiring-tests]
   - text: Every named setting loads through the production config boundary with its pinned default, precedence
       and invalid-value behavior.
     proof:
@@ -176,13 +206,14 @@ oracle_cases:
   - tools/oracle/cases/helpers/jwt-db-teams/single-team-fallback.yaml
   - tools/oracle/cases/helpers/jwt-db-teams/db-membership-header-denied.yaml
   - tools/oracle/cases/helpers/jwt-db-teams/admin-header-team.yaml
-  - tools/oracle/cases/auth/jwt-db-teams/single-team-fallback.yaml
-  - tools/oracle/cases/auth/jwt-db-teams/db-membership-header-denied.yaml
-  - tools/oracle/cases/auth/jwt-db-teams/admin-header-team.yaml
+  - tools/oracle/cases/helpers/jwt-db-teams/failure-classes.yaml
+  - tools/oracle/cases/helpers/jwt-db-teams/first-usable-and-route-denial.yaml
+  - tools/oracle/cases/helpers/jwt-db-teams/header-upsert-order.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B737 owns the actual team lookup/upsert, B2318 the membership read, B742 JWT route groups,
+    B883 passthrough classification, B871 aliases and B886 model authorization. B764 owns the
+    indistinguishable header denial; no helper is called through a later JWT umbrella task.
   - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
     (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
     (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
@@ -237,8 +268,9 @@ out_of_scope:
     (L642-L654), JWTHandler.get_scopes (L735-L746).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Do not upsert provisional header teams.
+  - Admin attachment catches every lookup exception; single-team fallback catches HTTPException only.
+  - A route-denied candidate still counts as a resolved team for the final model-denial message.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,9 @@
+id: B614
+milestone: M3 providers
+title: Bedrock and direct Amazon Nova chat
+status: todo
+depends_on: [B2205, B600, B602, B604, B607, B038, B129, B002, B171, B668]
+file: tasks/B614-bedrock-nova-chat.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_nova_transformation.py"
+  - "litellm/llms/amazon_nova/chat/transformation.py"

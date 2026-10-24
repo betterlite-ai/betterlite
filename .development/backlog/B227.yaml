@@ -1,0 +1,8 @@
+id: B227
+milestone: M1 openai data plane
+title: Bedrock image and MIME blocks
+status: todo
+depends_on: [B183]
+file: tasks/B227-bedrock-images.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/factory.py"

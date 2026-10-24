@@ -1,0 +1,8 @@
+id: B690
+milestone: M3 providers
+title: Bedrock model capabilities and Mantle endpoint policy
+status: todo
+depends_on: [B688, B2203, B2207, B129, B193, B171, B2225]
+file: tasks/B690-bedrock-model-capabilities.yaml
+covers:
+  - "litellm/llms/bedrock/common_utils.py"

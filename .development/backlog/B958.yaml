@@ -1,0 +1,12 @@
+id: B958
+milestone: M5 api families
+title: Messages errors
+status: todo
+depends_on: [B171, B184]
+file: tasks/B958-messages-errors.yaml
+covers:
+  - "litellm/anthropic_interface/exceptions/exception_mapping_utils.py"
+  - "litellm/anthropic_interface/exceptions/exceptions.py"
+  - "litellm/anthropic_interface/exceptions/__init__.py"
+  - "litellm/types/llms/anthropic_messages/anthropic_request.py"
+  - "litellm/types/llms/anthropic_messages/anthropic_response.py"

@@ -1,0 +1,9 @@
+id: B907
+milestone: M5 api families
+title: Responses codex tools
+status: todo
+depends_on: [B171, B004, B1087, B2410]
+file: tasks/B907-responses-codex-tools.yaml
+covers:
+  - "litellm/responses/litellm_completion_transformation/custom_tools.py"
+  - "litellm/responses/litellm_completion_transformation/transformation.py"

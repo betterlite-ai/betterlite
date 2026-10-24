@@ -1,0 +1,89 @@
+id: B2340
+title: Access-group assignment writes and cached object patches
+description: >-
+  Extract the assignment and cache-effect helpers below B822's access-group CRUD handlers. Own
+  access_group_endpoints.py _sync_add_access_group_to_teams (L317-L325),
+  _sync_remove_access_group_from_teams (L328-L336), _sync_add_access_group_to_keys (L339-L347),
+  _sync_remove_access_group_from_keys (L350-L358), _without_access_group (L361-L362),
+  _detach_access_group_from_agents (L365-L376), _detach_access_group_from_agent_registry (L379-L393),
+  _patch_team_caches_add_access_group (L401-L427), _patch_team_caches_remove_access_group (L430-L450),
+  _patch_key_caches_add_access_group (L453-L478) and _patch_key_caches_remove_access_group (L481-L500).
+  B821 provides the transaction protocols; this task never opens/commits a transaction or registers a route.
+
+  Team/key assignment helpers visit supplied IDs in order, reading each current row on the supplied
+  transaction. Missing rows are silently skipped. Add appends the group only when absent, treating a null
+  array as []; remove writes only when present and removes every occurrence while preserving unrelated
+  order/duplicates. These are read/modify/write helpers, not B819's guarded SQL, and acquire no advisory
+  lock. Tokens are already hashes and are not transformed. Cases assignment_missing_rows,
+  assignment_null_duplicate_and_order and assignment_transaction_failure use actual Postgres to inspect
+  rows and caller-controlled rollback.
+
+  Agent detachment selects rows whose access_group_ids hasSome the requested group, updates each with
+  _without_access_group, and returns IDs in query order. That pure filter maps null to () and removes
+  every exact occurrence. Registry detachment first resolves every supplied ID through B141, drops
+  missing entries, then deregisters by agent_name and registers a model_copy with only access_group_ids
+  changed. A registration failure leaves the prior deregistration in effect and stops later agents.
+  Cases agent_db_detach, filter_preserves_unrelated_order, registry_snapshot_and_missing and
+  registry_register_failure preserve these effects; the registry is not a database transaction participant.
+
+  Team cache patches use B737 _get_team_object_from_cache with key="team_id:<id>" and parent_otel_span=null;
+  key patches use B733 async_get_cache with the exact token and UserAPIKeyAuth type from B2314. A cache
+  miss does nothing: never fetch a missing object from Postgres. Add sets a null array to [group], appends
+  when absent and skips a write when already present. Remove skips falsey arrays but otherwise writes
+  the filtered list EVEN when the requested group was absent. Store through B734 _cache_team_object or
+  _cache_key_object, retaining every unrelated field. Process entries sequentially; a failure propagates
+  after any earlier patches, with no local warning/drop. Cases cache_miss_no_refill,
+  cache_add_null_existing_and_duplicate, cache_remove_nonempty_absent and cache_failure_stops_sequence
+  verify exact keys, calls and retained fields.
+
+  Build access_group_membership_effects in betterlite-server, keeping files below 300 lines. These
+  routines perform database/cache/global-registry work; use native tests rather than a Python helper
+  pretending to be pure. B860 uses POSTGRES_TEST_URL when configured and testcontainers only otherwise;
+  connection or startup failure fails the tests. This module reads no environment/config value and
+  parses no new external bytes. Source ownership totals 159 nonblank, noncomment lines including
+  function documentation; allow 160 implementation, 230 behavior/Postgres tests and 30 wiring lines,
+  420 within a 450-line gate.
+scope:
+  paths:
+    - crates/betterlite-server/src/access_group_membership_effects.rs
+    - crates/betterlite-server/src/access_group_membership_effects/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L317-L393
+    why: Assignment loops, agent database detach and deregister/register ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L401-L500
+    why: Distinct add/remove cache semantics and exact cache lookup keys.
+dod:
+  - text: The named assignment and agent cases prove source mutations and failure order against Postgres
+      and the injected B141 registry, including deregistration surviving failed registration.
+    proof: [behavior-tests, postgres-tests]
+  - text: All named cache cases prove missing entries are skipped and successful earlier patches survive
+      a later failure without fetching replacement rows or losing unrelated fields.
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Assignment, registry or cached-object behavior tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
+        'test(/^access_group_membership_effects::tests::/) - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual assignment and rollback tests are missing or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E
+        'test(/^access_group_membership_effects::tests::assignment_/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B821 owns access_group_endpoints.py L49-L309 declarations, guards and projections, plus GET handlers L584-L613.
+  - B822 owns create_access_group L513-L577, update_access_group L620-L710, delete_access_group L717-L813
+    and write aliases L817-L823/L836-L847; it controls transaction and post-commit ordering.
+  - B821 owns GET aliases L824-L835; B141 owns registry implementation, B733/B734/B737 own cache primitives.
+pitfalls:
+  - Removing an absent group from a nonempty cached array still rewrites that cache entry.
+  - Registry mutation deregisters first, so a failed register is not automatically reversible.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: security

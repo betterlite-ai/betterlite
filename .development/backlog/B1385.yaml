@@ -1,0 +1,8 @@
+id: B1385
+milestone: M3 providers
+title: Vertex RAG corpus file ingestion and chunking
+status: todo
+depends_on: [B1376, B1393, B1301, B002, B171]
+file: tasks/B1385-vertex-rag-ingestion.yaml
+covers:
+  - "litellm/llms/vertex_ai/rag_engine/**"

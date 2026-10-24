@@ -1,0 +1,9 @@
+id: B163
+milestone: M12 python
+title: Python exception classes raised with LiteLLM's names and fields
+status: todo
+depends_on: [B157, B011]
+file: null
+covers:
+  - "litellm/exceptions.py"
+  - "litellm/anthropic_interface/exceptions/**"

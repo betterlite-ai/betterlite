@@ -1,0 +1,90 @@
+id: B1407
+title: xAI file multipart operations and speech recognition
+description: >-
+  Port xai/files/transformation.py and audio_transcription/transformation.py into separate
+  xai_files and xai_stt modules in betterlite-openai. File operations reuse B1406 origin,
+  authorization and error helpers, B171 segment encoding, B235 extracted upload metadata
+  and B1015 records. Upload requires the file key, defaults missing filename to
+  file_<integer-time>.jsonl and MIME to application/octet-stream, and sends purpose as
+  a multipart field defaulting batch. Every returned file reports purpose=batch and
+  status=uploaded regardless of upstream purpose; created_at defaults to the injected
+  clock, bytes to zero and filename to empty. Delete defaults deleted=true. List ignores
+  the requested purpose and advances only with both pagination_token and nonempty data.
+  Retrieve/delete/content URLs encode file IDs; missing content file_id fails before HTTP.
+  Content responses remain binary, including their upstream status. Implement all config
+  methods and native records, including the no-op option mapper.
+
+  STT targets /v1/stt after stripping trailing slashes and one /v1 from the B1402 origin.
+  Resolve its nonlegacy API key without OAuth; absent key is ValueError. Only language
+  is an advertised OpenAI option. Accept B036's prepared audio tuple from B1001; keep the
+  provider leaf independent of betterlite-core. Flatten mapping extra_body first, then
+  overlay direct options, exclude model/OPENAI_TRANSCRIPTION_PARAMS/extra_body and None,
+  and send the selected model separately. Boolean scalars become lowercase true/false;
+  list members use Python string spelling, including True/False. Decode text default empty,
+  language default unknown, optional duration and word records; rename word.text to word,
+  preserve speaker zero, and retain the complete native payload in hidden metadata with
+  audio_transcription_duration when supplied. Non-2xx statuses retain their headers;
+  validation errors retain even a success HTTP status, as the source does.
+
+  Add bounded decode_xai_upload_reply and decode_xai_stt_reply with one tagged xai_uploads
+  fuzz target. Pure helpers xai_files/xai_stt compare request tuples and reply projections;
+  the file clock is fixed. Source ownership totals 377 nonblank/noncomment lines including
+  the STT export. Budget 330 implementation, 205 tests, 140 adapters and 105 fuzz/wiring,
+  under 800; native file registration and multipart HTTP scenarios remain B036.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,xai_files,xai_stt}.rs
+    - crates/betterlite-openai/src/{xai_files,xai_stt}/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/xai_uploads.rs
+    - crates/betterlite-openai/fuzz/corpus/xai_uploads/**
+    - tools/oracle/src/helpers/{mod,xai_files,xai_stt}.rs
+    - tools/oracle/helpers/{dispatch,xai_files,xai_stt}.py
+    - tools/oracle/cases/helpers/{xai-files,xai-stt}/**
+    - tools/oracle/fuzz/corpus/helper_case/xai_files*
+    - tools/oracle/fuzz/corpus/helper_case/xai_stt*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/files/transformation.py#L37-L247
+    why: Native upload tuples, file defaults, cursor handling and binary content projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/audio_transcription/transformation.py#L27-L203
+    why: STT form serialization, native word records, hidden duration and error status retention.
+dod:
+  - text: xAI file requests and returned objects preserve multipart defaults, cursor rules and batch purpose.
+    proof: [xai-upload-tests, xai-upload-python, oracle]
+  - text: STT direct options override extra_body and native words/duration reach the expected response fields.
+    proof: [xai-upload-tests, oracle, xai-upload-python]
+  - text: File and STT byte decoders and both helper variants have new corpus coverage.
+    proof: [xai-upload-corpus, xai-upload-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: xai-upload-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^xai_(files|stt)::/) - test(replays_xai_uploads_corpus)'
+      why: Shared auth cannot prove the distinct file and transcription transformations.
+    - id: xai-upload-python
+      run: test -f tools/oracle/helpers/xai_files.py && test -f tools/oracle/helpers/xai_stt.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Both native config classes must execute against fixture payloads.
+    - id: xai-upload-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/xai_uploads.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/xai_uploads)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_xai_uploads_corpus)'
+      why: The replay must dispatch tagged inputs to both production decoders.
+    - id: xai-upload-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_files*')" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/xai_stt*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::xai_(files|stt)::/)'
+      why: One operation's seeds cannot substitute for the other operation's parser coverage.
+oracle_cases:
+  - tools/oracle/cases/helpers/xai-files/upload-defaults.yaml
+  - tools/oracle/cases/helpers/xai-files/forced-purpose-and-clock.yaml
+  - tools/oracle/cases/helpers/xai-files/encoded-id-and-missing-content-id.yaml
+  - tools/oracle/cases/helpers/xai-files/list-stop-and-delete-default.yaml
+  - tools/oracle/cases/helpers/xai-stt/flatten-and-boolean-form.yaml
+  - tools/oracle/cases/helpers/xai-stt/speaker-zero-and-duration.yaml
+  - tools/oracle/cases/helpers/xai-stt/defaults-and-malformed-success.yaml
+deviations: []
+out_of_scope:
+  - B1406 supplies shared xAI resource helpers; B036 invokes B1001 audio preprocessing before this leaf and owns operation selection.
+pitfalls:
+  - A requested file purpose is sent on upload but never reflected in the normalized xAI file object.
+  - STT boolean list items retain Python's capitalized spelling even though scalar booleans do not.
+  - STT decode errors use raw_response.status_code rather than replacing a successful status with 500.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

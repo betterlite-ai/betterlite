@@ -1,0 +1,8 @@
+id: B201
+milestone: M1 openai data plane
+title: Bounded batch calls and race completion
+status: todo
+depends_on: [B198, B004]
+file: tasks/B201-batch-calls.yaml
+covers:
+  - "litellm/batch_completion/**"

@@ -1,0 +1,9 @@
+id: B678
+milestone: M3 providers
+title: Bedrock operation dispatcher foundation
+status: todo
+depends_on: [B171, B591, B598]
+file: tasks/B678-bedrock-dispatch-contract.yaml
+covers:
+  - "litellm/llms/bedrock/base_aws_llm.py"
+  - "litellm/llms/bedrock/common_utils.py"

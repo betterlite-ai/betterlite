@@ -1,0 +1,10 @@
+id: B512
+milestone: M3 providers
+title: OpenAI image edit multipart mapping
+status: todo
+depends_on: [B511, B173, B171, B1120, B668, B500, B129, B2202]
+file: tasks/B512-openai-image-edits.yaml
+covers:
+  - "litellm/llms/openai/image_edit/__init__.py"
+  - "litellm/llms/openai/image_edit/transformation.py"
+  - "litellm/llms/openai/image_edit/dalle2_transformation.py"

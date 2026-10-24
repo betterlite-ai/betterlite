@@ -1,0 +1,132 @@
+id: B2300
+title: Shared session cookie and login return destinations
+description: >-
+  Extract the return-destination and session-cookie code used by password login and SSO into
+  betterlite-server::login_return. B899 and B063 call this implementation directly; neither supplies a
+  deferred cookie-policy port. Own ui_sso.py _is_same_origin_return_path, _sso_return_to_redirect,
+  set_session_token_cookie and SSOAuthenticationHandler._validate_return_to including its _origin closure.
+  No new HTTP route is registered here. B899 proves the resulting browser flow through its login routes.
+
+  A same-origin return path starts with one slash, never two, contains no backslash, no character below
+  U+0020, no space and no DEL. Relative paths without the slash fail. Preserve the predicate's treatment
+  of percent escapes and Unicode instead of decoding twice. For absolute returns, read
+  general_settings.control_plane_url (default None); None returns false. Compare lowercase scheme and
+  hostname and explicit/default port, with 443 for https and 80 for every other scheme. Equal origins
+  ignore path, query and fragment. An unequal origin raises HTTPException 400 with the message that
+  return_to does not match control_plane_url; malformed ports propagate their parse error. This is URL
+  validation and redirect construction, never an outbound URL download.
+
+  None return_to yields no response. A safe same-origin path gives 303 Location to that exact path, sets
+  the token session cookie and deletes litellm_cp_return_to. The cookie is named token, Path=/,
+  SameSite=lax, lacks HttpOnly and has no explicit expiry or max-age. Its Secure flag comes from B743's
+  trust-aware IPAddressUtils.is_request_https. The dashboard needs JavaScript access to this cookie.
+  The deletion uses the response library's default cookie deletion attributes, including Path=/,
+  Max-Age=0 and SameSite=lax; compare normalized expiry presence rather than wall-clock bytes.
+
+  A matching control-plane origin mints token_urlsafe(32), writes login_code:<code> with token and the
+  original return_to as redirect_url for 60 seconds, and then returns 303. Redis is used when configured,
+  otherwise B733's local cache; errors propagate here so the caller decides whether to fall back.
+  Append login=success and code using ? when the original string has no ?, otherwise &. Clear the
+  return cookie but set no token cookie on this cross-origin response. Preserve the original concatenation
+  even for fragments. A disallowed absolute destination with no control plane yields None. Log the
+  handoff without exposing the token or code. B063 retains _persist_return_to_cookie, which calls these
+  validators when creating the one-shot cookie.
+
+  Use an injected typed setting, clock/random source and cache handles. Config tests return_url_default,
+  return_url_loaded and return_url_null call B002's loader. decode_return_destination receives untrusted
+  UTF-8 URL/path bytes and is shared by the production validators and cargo-fuzz login_return target;
+  seed safe relative, wrong origin, malformed port, backslash, control bytes, percent escapes and limits.
+  Inherit B009's HTTP limits; reject otherwise unbounded destination strings over 1048576 bytes with a
+  typed error, covered by return_destination_limit. No new fuzz workspace: B770 owns the server manifest.
+
+  Only pure path/origin predicates enter the B856 Management::users helper operation login_return.
+  Python calls the pinned validators with injected settings, and Rust calls production code; compare
+  the result and exception status, ignoring message wording. Native cookie_policy and return_cache_order
+  tests check response headers and cache effects, including failure before redirect, without invoking
+  a Python route. Helpers add a login-return-* seed to B171's existing HelperCase corpus.
+
+  The four source ranges contain 91 nonblank, noncomment lines including docstrings. Budget 130
+  implementation, 190 tests, 60 adapters, 45 config, 45 fuzz and 30 wiring lines: 500 total within 550.
+scope:
+  paths:
+    - crates/betterlite-server/src/login_return.rs
+    - crates/betterlite-server/src/login_return/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/login_return.rs
+    - crates/betterlite-server/fuzz/corpus/login_return/**
+    - crates/betterlite-config/src/login_return.rs
+    - crates/betterlite-config/src/login_return/**
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/login-return-*
+    - tools/oracle/src/helpers/login_return.rs
+    - tools/oracle/src/helpers/login_return/**
+    - tools/oracle/src/helpers/management/users.rs
+    - tools/oracle/helpers/management/users.py
+    - tools/oracle/helpers/login_return.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/login-return/**
+    - tools/oracle/fuzz/corpus/helper_case/login-return-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2784-L2862
+    why: Own the relative-path predicate, return resumer and token-cookie setter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2896-L2924
+    why: Own control-plane origin comparison and the setting read.
+dod:
+  - text: 'Path/origin cases are relative_single_slash, relative_double_slash, relative_backslash,
+      relative_controls, relative_percent_literal, relative_unicode, missing_control_plane,
+      same_origin_casefold, default_ports, non_https_port_80, different_origin and malformed_port.'
+    proof: [behavior-tests, oracle, helper-python, helper-corpus]
+  - text: 'cookie_policy covers HTTP, HTTPS and trusted forwarding; return_cache_order covers no destination,
+      relative_cookie_redirect, absolute_code_redirect, existing_query, fragment_concatenation,
+      redis_before_response, local_cache_ttl and failed_cache_no_redirect, including one-shot cookie deletion.'
+    proof: [behavior-tests]
+  - text: The config loader accepts the nullable control_plane_url consumed by origin comparison.
+    proof: [config-tests, config-corpus]
+  - text: The production byte boundary replays its corpus and return_destination_limit proves the bound.
+    proof: [behavior-tests, parser-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Cookie attributes, redirect decisions or cache write order changed.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^login_return::tests::/) - test(replays_the_login_return_corpus)'
+    - id: config-tests
+      why: The actual loader does not provide the configured control-plane origin.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^login_return::tests::/)'
+    - id: config-corpus
+      why: No new control-plane config seed exists or the shared decoder rejects it.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/login-return-*')" && grep -rlq control_plane_url crates/betterlite-config/fuzz/corpus/config_yaml/login-return-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The independent pinned predicate adapter is missing or untyped.
+      run: test -f tools/oracle/helpers/login_return.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-corpus
+      why: The login_return operation has no added seed or fails production helper decoding.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/login-return-*')" && grep -rlq login_return tools/oracle/fuzz/corpus/helper_case/login-return-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The actual URL/path decoder lacks its registered fuzz target or replay coverage.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/login_return.rs && grep -q login_return crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/login_return)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_login_return_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/login-return/relative-paths.yaml
+  - tools/oracle/cases/helpers/login-return/control-plane-origins.yaml
+  - tools/oracle/cases/helpers/login-return/malformed-ports.yaml
+deviations:
+  - what: A return destination over 1048576 bytes is rejected before URL parsing.
+    why: Bound the outside-byte decoder while retaining smaller inherited request limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2896-L2924
+out_of_scope:
+  - B063 owns the remaining ui_sso.py functions, including _persist_return_to_cookie, provider callbacks
+    and get_redirect_response_from_openid; it consumes these shared helpers.
+  - B899 owns the HTTP login/code-exchange routes and their catch-and-fallback behavior.
+pitfalls:
+  - A matching hostname is insufficient when the scheme or effective port differs.
+  - The token cookie deliberately lacks HttpOnly because the kept dashboard reads it from JavaScript.
+  - The resumer raises on a stale absolute origin; only the password-login caller swallows that failure.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

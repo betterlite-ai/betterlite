@@ -1,0 +1,10 @@
+id: B203
+milestone: M1 openai data plane
+title: Streaming text completions and completion bridge
+status: todo
+depends_on: [B202, B005, B014, B252, B2237, B2238]
+file: tasks/B203-text-streaming.yaml
+covers:
+  - "litellm/llms/base_llm/completion/**"
+  - "litellm/llms/openai/completion/handler.py"
+  - "litellm/llms/openai/completion/transformation.py"

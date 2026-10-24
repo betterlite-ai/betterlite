@@ -1,0 +1,93 @@
+id: B1532
+title: Prepare Fal queued video creation and provider-tagged job URLs
+description: >-
+  Add api::fal::video_prepare over B525 VideoObject, B672 identifiers and B171 path-segment encoding.
+  Own transformation.py lines 36-173, 228-230, 289-450, 525-546 and 727-733: profiles/constants,
+  duration/size/path helpers, JSON record access, create preparation/result, status/content request
+  builders, _decode_video_id and get_error_class. B1533 owns the client constructor and retrieval
+  execution. Define decode_fal_video_reply as the bounded production JSON decoder, retaining typed
+  status, request_id, video, detail and error values for both tasks; its fal_video_reply cargo-fuzz
+  target and replay test cover malformed objects and provider error fields.
+
+  Select H3 only for a model starting minimax/h3/ with matching case. H3 uses 480P/768P/2K/4K tiers,
+  default 2K, integer durations and reference_image_urls arrays; all other models use 480p/720p/1080p/4k,
+  default 720p, string durations and singular image_url. Duration accepts numeric strings/numbers,
+  truncates toward zero and rejects booleans; auto omits H3 duration but passes as a string for the
+  other profile. Use exact numeric representations, never floating point. Size accepts case-insensitive
+  named resolutions or positive digit-only WxH; resolution follows the shorter side's first containing
+  tier and aspect ratio is included only if its reduced GCD ratio belongs to the seven-value allowlist.
+
+  input_reference must be a string when its key exists; forward that string without fetching or
+  validating its URL. Map string user to end_user_id. Unknown provider options overlay derived fields
+  regardless of drop_params, while supported model/prompt/extra_headers do not pass through mapping.
+  Keys resolve explicit, typed litellm_params.api_key, then B1525's FAL_AI_API_KEY; overwrite Key
+  authorization and JSON content type. The URL base is explicit or literal https://queue.fal.run,
+  independent of FAL_AI_API_BASE and FAL_AI_QUEUE_API_BASE. Create appends the full model and overlays
+  mapped options on prompt except model. Its queued VideoObject wraps request_id with provider/model,
+  stamps now and derives seconds/size plus duration_seconds/video_resolution usage from the request.
+
+  Status/content URLs require a decoded model-bearing video ID, path-encode the request ID and keep
+  only two model path segments, or three for workflows/comfy. Extract response model/id from the first
+  requests segment when later used by B1533; preserve reverse-proxy path prefixes correctly. Add
+  call.fal_video_prepare with h3_auto_duration, seedance_decimal_duration, resolution_short_side,
+  provider_override, reference_type, queue_base_literal and workflow_job_path. Unit namespace is
+  api::fal::video_prepare. The owned spans contain 298 nonblank/non-comment lines; 280 implementation,
+  230 tests, 110 adapters and 70 fuzz lines fit an 800-line maximum.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/video_prepare.rs
+    - crates/betterlite-core/src/api/fal/video_prepare/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/fal_video_reply.rs
+    - crates/betterlite-core/fuzz/corpus/fal_video_reply/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_video_prepare.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_video_prepare.py
+    - tools/oracle/cases/helpers/fal-video-prepare/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_video_prepare*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L36-L173
+    why: Video profiles, exact duration behavior, path extraction and JSON record boundary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L289-L450
+    why: Parameter mapping, queued creation result and status URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L525-L546
+    why: Model-bearing identifiers and content URL construction.
+dod:
+  - text: Video creation selects the correct H3 or default profile and preserves override, duration, resolution and reference behavior.
+    proof: [fal-video-prepare-tests, oracle, fal-video-prepare-python]
+  - text: Job identifiers and queue URLs round-trip model paths, and external replies use the fuzzed decoder.
+    proof: [fal-video-prepare-tests, fal-video-corpus, oracle, fal-video-prepare-python]
+checks:
+  optional: []
+  commands:
+    - id: fal-video-prepare-tests
+      why: Fal video preparation or encoded job URL behavior is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::video_prepare::/) - test(replays_the_fal_video_reply_corpus)'
+    - id: fal-video-corpus
+      why: the Fal video record boundary has no new replay coverage
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/fal_video_reply)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_fal_video_reply_corpus)'
+    - id: fal-video-prepare-python
+      why: video profile and URL comparisons lack checked Python execution
+      run: grep -qE '^[[:space:]]+fal_video_prepare:' tools/oracle/fuzz/corpus/helper_case/fal_video_prepare* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_video_prepare.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-video-prepare/h3-auto-duration.yaml
+  - tools/oracle/cases/helpers/fal-video-prepare/seedance-decimal-duration.yaml
+  - tools/oracle/cases/helpers/fal-video-prepare/resolution-short-side.yaml
+  - tools/oracle/cases/helpers/fal-video-prepare/provider-override.yaml
+  - tools/oracle/cases/helpers/fal-video-prepare/reference-type.yaml
+  - tools/oracle/cases/helpers/fal-video-prepare/queue-base-literal.yaml
+  - tools/oracle/cases/helpers/fal-video-prepare/workflow-job-path.yaml
+deviations: []
+out_of_scope:
+  - B1533 covers _detail_item_text, _error_text, _result_error, _terminal_result_error, _get_fal_ai_async_httpx_client, _result_request, _status_video_object, constructor, status retrieval responses/fetch helpers, content response helpers and unsupported operations in the same file.
+pitfalls:
+  - H3 detection is a case-sensitive startswith check rather than a substring match.
+  - An explicitly present input_reference=null fails instead of being ignored.
+  - A status URL uses the model's queue namespace prefix, while submission uses its full endpoint path.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1

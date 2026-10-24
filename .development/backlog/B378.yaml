@@ -1,0 +1,8 @@
+id: B378
+milestone: M2 routing
+title: Member-owned automatic router writes
+status: todo
+depends_on: [B377, B052, B057, B058, B060, B301, B361]
+file: tasks/B378-member-router-writes.yaml
+covers:
+  - "litellm/proxy/management_helpers/auto_router_permissions.py"

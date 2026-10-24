@@ -1,0 +1,79 @@
+id: B1536
+title: Select Runway voices and download completed speech output
+description: >-
+  Add api::runway::speech implementing Runway's speech dispatch, supported-parameter query, voice
+  mapper and request/response transformations over B1135. Dispatch resolves base from explicit input,
+  litellm_params.api_base, litellm.api_base, RUNWAYML_API_BASE, then the default Runway host. Key
+  precedence is explicit, litellm_params.api_key, litellm.api_key, RUNWAYML_API_SECRET, RUNWAYML_API_KEY.
+  Consume B002's existing global fields and B1534's provider settings; update the effective parameter
+  record before B1084 execution, retain timeout/extra_headers/aspeech, and supply no caller client.
+
+  Only voice is supported. Map alloy/echo/fable/onyx/nova/shimmer to Maya/James/Bernard/Vincent/Serene/Ella
+  with type=runway-preset. Other strings are literal preset IDs; mapping objects pass through. Return
+  no string voice and a newly built optional map containing only runwayml_voice when present, ignoring
+  incoming optional parameters and drop_params. Request construction uses eleven_multilingual_v2 for
+  a falsey model and Bernard when runwayml_voice is absent or null. Preserve extra request options
+  except the internal runwayml_voice key, without overwriting model, promptText or voice.
+
+  Both response paths require a truthy submission id and use B1534 to poll the default host even for
+  an already completed submission. Carry just Authorization and X-Runway-Version from the submission
+  request. Require a nonempty output list and require its first member to be a string; do not search
+  later entries for a valid URL. Fetch that provider-produced URL with no job credentials and return
+  its binary HTTP response wrapper, retaining content type and status handling. B1087 bounds the
+  body and cancellation releases it. The source's two JSON-error prefixes and missing-ID/output/URL
+  ValueErrors stay distinct. This task consumes decode_runway_task and adds no new byte parser.
+
+  Exercise call.runway_speech through pinned methods and an injected HTTP handler, including
+  global_vs_provider_credentials, mapped_and_literal_voices, ignored_speed, null_voice_default,
+  first_output_only and audio_without_auth. About 270 source lines plus export-only initialization
+  become 210 production, 220 tests and 120 oracle lines; keep the change below 650 lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/speech.rs
+    - crates/betterlite-core/src/api/runway/speech/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/runway_speech.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/runway_speech.py
+    - tools/oracle/cases/helpers/runway-speech/**
+    - tools/oracle/fuzz/corpus/helper_case/runway_speech*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L43-L200
+    why: Dispatch precedence and voice-only parameter mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/text_to_speech/transformation.py#L385-L587
+    why: Default request voice and first-output audio retrieval.
+dod:
+  - text: Effective speech dispatch settings and Runway voice bodies match source behavior, including discarded unsupported options.
+    proof: [runway-speech-tests, oracle, runway-speech-python]
+  - text: Completed speech returns the first output's binary response without leaking job credentials to its host.
+    proof: [runway-speech-tests, oracle, runway-speech-python]
+checks:
+  optional: []
+  commands:
+    - id: runway-speech-tests
+      why: voice mapping, speech dispatch or credential-free audio retrieval lacks coverage
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::runway::speech::/)'
+    - id: runway-speech-python
+      why: Runway speech effects cannot be compared with the source handler
+      run: grep -qE '^[[:space:]]+runway_speech:' tools/oracle/fuzz/corpus/helper_case/runway_speech* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/runway_speech.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/runway-speech/global-vs-provider-credentials.yaml
+  - tools/oracle/cases/helpers/runway-speech/mapped-and-literal-voices.yaml
+  - tools/oracle/cases/helpers/runway-speech/ignored-speed.yaml
+  - tools/oracle/cases/helpers/runway-speech/null-voice-default.yaml
+  - tools/oracle/cases/helpers/runway-speech/first-output-only.yaml
+  - tools/oracle/cases/helpers/runway-speech/audio-without-auth.yaml
+deviations: []
+out_of_scope:
+  - B1534 implements speech task records at 35-40 and authentication, endpoint, timeout, status and polling methods at 201-384.
+  - B046 owns the Runway branch inside main.py speech dispatch and its HTTP composition cases.
+pitfalls:
+  - An arbitrary voice string becomes a runway-preset presetId rather than an ElevenLabs voice identifier.
+  - A null runwayml_voice chooses Bernard, while an empty mapping remains the selected voice object.
+  - A non-string first output fails even if a later output contains a usable audio URL.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

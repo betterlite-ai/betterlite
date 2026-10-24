@@ -1,9 +1,29 @@
 id: B1217
 title: Database service-unavailable error projection
 description: >-
-  Project native typed database-unavailable causes and HTTP service-unavailable errors, traversing preserved
-  error chains. Keep allow_requests_on_db_unavailable=false as policy metadata; B757 alone turns the classified
-  outage into a restricted principal when enabled. Pure classification never performs a query or retries.
+  Classify database outages and build their 503 projection without querying or retrying. Walk the current
+  exception then cause-or-context, preferring cause, for at most 20 links (including cycles). Ignore
+  BaseException-only links as classification candidates. Collect every accepted outage; choose the first
+  permanent fault anywhere in the chain, otherwise the first outage, otherwise None.
+
+  Accept B872 infrastructure, transport and Prisma-engine-internal predicates in that order, then a
+  case-insensitive cached plan must not change result type substring, OSError/asyncio.TimeoutError,
+  and asyncpg PostgresConnectionError/InterfaceError. An unavailable asyncpg import returns false at
+  this final step. Ordinary authentication/data errors stay unclassified. Native adapters preserve
+  equivalent typed causes; do not confuse stale plans with reconnectable transport failures.
+
+  Project the source ProxyException with status/code 503, type no_db_connection and param string None. Transient
+  faults get retry guidance; permanent faults identify the fault class and require deployment attention,
+  without suggesting retry. If no outage is found use the supplied error to select wording. Error
+  messages remain betterlite's own and the oracle ignores only /error/message.
+
+  general_settings.allow_requests_on_db_unavailable defaults False. Booleans pass through; B129 str_to_bool
+  accepts trimmed case-insensitive true/false, unrecognized strings or None become false. There is no
+  top-level alias or environment binding. Non-null values that are neither booleans nor strings fail
+  when the consumer tries string normalization; do not silently turn numbers/lists/maps into false.
+  handle_db_exception suppresses only a direct B872 connection
+  error when this setting is true; otherwise rethrow the original. It does not use the broader chain
+  classifier. B757 owns fallback principals, while this helper also serves health and proxy callers.
 
 
   Build the production database_availability module in betterlite-db; reuse the typed dependencies listed
@@ -21,8 +41,8 @@ description: >-
   12 source lines), PrismaDBExceptionHandler.handle_db_exception (L422-L435; 13 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.allow_requests_on_db_unavailable=False;
-  allow_requests_on_db_unavailable=False.
+  Load the single setting through betterlite-config and pass a typed policy input to the consumer,
+  preserving its accepted bool/string/null forms and its invalid-type failure branch.
 
 
   Add the database_availability operation under B856 Management::database. Python calls only the owned
@@ -32,7 +52,8 @@ description: >-
   a database-availability-* seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::database_availability::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::database_availability::tests::default_false, boolean_values, trimmed_true_false,
+  unrecognized_string_false and nonstring_policy_value_fails_at_consumer.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -50,8 +71,8 @@ description: >-
 
 
   Sizing: 127 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  127 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 411 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  127 production, 220 behavior tests, 65 helper adapters, 30 wiring, 0 decoder/fuzz
+  and 50 config lines, 492 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -102,11 +123,16 @@ references:
       ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L77-L82
     why: general_settings.allow_requests_on_db_unavailable default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L1-L6
-    why: allow_requests_on_db_unavailable default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L137
+    why: Boolean strings are trimmed and case-folded; other strings return None.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: unavailable_cause_chain,
-      outage_policy_off, service_unavailable_envelope.'
+  - text: >-
+      Cases cause_precedes_context, chain_stops_at_twenty, cyclic_chain_bounded, base_exception_skipped,
+      infrastructure_transport_engine, stale_plan_casefold, os_and_timeout, asyncpg_connection_interface,
+      asyncpg_unavailable_false, data_error_not_outage, permanent_beats_outer_transport,
+      first_transient_selected, no_outage_none, transient_retry_message, permanent_deployment_message,
+      service_unavailable_envelope, enabled_direct_connection_suppressed,
+      enabled_wrapped_outage_rethrown and outage_policy_off verify classification without SQL.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -151,10 +177,12 @@ oracle_cases:
   - tools/oracle/cases/helpers/database-availability/unavailable-cause-chain.yaml
   - tools/oracle/cases/helpers/database-availability/outage-policy-off.yaml
   - tools/oracle/cases/helpers/database-availability/service-unavailable-envelope.yaml
+  - tools/oracle/cases/helpers/database-availability/depth-and-cause-precedence.yaml
+  - tools/oracle/cases/helpers/database-availability/permanent-versus-transient.yaml
+  - tools/oracle/cases/helpers/database-availability/service-predicates.yaml
+  - tools/oracle/cases/helpers/database-availability/direct-handler-policy.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/db/exception_handler.py: B872 owns _batch_postgres_sqlstate (L47-L51), PrismaDBExceptionHandler.is_database_connection_error
     (L85-L112), PrismaDBExceptionHandler.is_database_infrastructure_error (L115-L149), PrismaDBExceptionHandler.is_prisma_data_error
     (L152-L172), PrismaDBExceptionHandler.is_database_transport_error (L175-L215), PrismaDBExceptionHandler.is_prisma_error
@@ -165,9 +193,9 @@ out_of_scope:
     (L54-L62).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Keep allow_requests_on_db_unavailable=false as policy metadata; B757 alone turns the classified outage
-    into a restricted principal when enabled.
+  - A permanent inner engine fault outranks the transient outer reconnect failure when selecting the 503 explanation.
+  - handle_db_exception uses the direct connection predicate, so enabling outage mode does not swallow every error classified as 503.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 525
   max_new_expects: 0
 review_level: security

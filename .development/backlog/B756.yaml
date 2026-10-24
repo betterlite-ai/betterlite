@@ -1,0 +1,8 @@
+id: B756
+milestone: M4 keys, spend and management
+title: Authentication header selection and mode dispatch
+status: todo
+depends_on: [B001, B002, B003, B171, B732, B733, B760, B856, B860, B869, B881, B882, B890, B1100, B2302]
+file: tasks/B756-auth-headers.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

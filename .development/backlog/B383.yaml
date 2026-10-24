@@ -1,0 +1,8 @@
+id: B383
+milestone: M2 routing
+title: Router budget configuration and windows
+status: todo
+depends_on: [B302, B071, B360, B301, B002, B361]
+file: tasks/B383-budget-windows.yaml
+covers:
+  - "litellm/router_strategy/budget_limiter.py"

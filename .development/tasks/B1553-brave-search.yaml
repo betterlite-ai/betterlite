@@ -1,0 +1,102 @@
+id: B1553
+title: Select Brave result sections and normalize their dates
+description: >-
+  Implement api::search_providers::brave for every Brave search callable, including to_yyyy_mm_dd.
+  Consume B091 search records and its server-key destination policy. Load BRAVE_API_KEY unset and
+  BRAVE_API_BASE default https://api.search.brave.com/res/v1/web/search; brave_search_settings checks
+  both. Preserve headers while setting X-Subscription-Token, Accept application/json, Accept-Encoding
+  gzip and Content-Type application/json. Explicit key/base and environment resolution follow the
+  shared policy. The display name is Brave Search and its request method is GET.
+
+  Join query lists with spaces. Set include_fetch_metadata=true except for an explicitly boolean
+  false; later passthrough cannot replace that chosen value. max_results becomes count capped only
+  above at 20, with no lower clamp at request time. Nonempty domain lists produce (query) AND
+  (site:a OR site:b). Copy other non-unified fields only when absent from the constructed body;
+  the unified country parameter is therefore ignored despite the request docstring claiming support.
+  Keep _brave_params for urlencode with doseq=true, appending ?query to the resolved base without
+  slash normalization.
+
+  Decode provider bytes with decode_brave_search. Read result_filter and count from the original
+  request URL. Filter section names case-insensitively after comma splitting/trim; keep duplicates
+  and their order. Empty or wholly unsupported filters select web, discussions, faqs, faq, news,
+  videos in that order. Clamp parsed response count to 1..20, default 20, across all sections together.
+  title/url default empty, description becomes snippet, page_age or age becomes date, and
+  fetched_content_timestamp becomes last_updated. Do not deduplicate repeated section results.
+
+  parse_brave_date preserves falsey input => null, including numeric zero but not string zero.
+  Numeric strings accept optional minus and decimal fraction; absolute values strictly above 1e11
+  are milliseconds, others seconds, interpreted in UTC. Other strings use dateutil's fuzzy parser,
+  forcing yearfirst=true/dayfirst=false only for YYYY-M-D or slash equivalents; expose the source's
+  two flags otherwise. Return the parsed calendar date without converting an explicit timezone to
+  UTC, and null on failure. Reuse python-dateutil via B165 for this grammar rather than substituting
+  dateparser's different format set; keep numeric SDK objects opaque to Rust and inject/freeze the
+  default date for incomplete inputs. Add brave_search fuzzing covering both reply and date decoders,
+  with replays_the_brave_search_corpus.
+
+  call.brave_search cases cover metadata_false, ignored_country, section_order_duplicates,
+  response_count_floor, timestamp_threshold, fuzzy_calendar_date, zero_date_distinction and
+  credential_host_guard. Run the pinned methods with a fixed date and original request URL.
+  The source contains 229 nonblank/non-comment lines; reserve 270 production/config/bridge,
+  230 tests and 170 oracle/fuzz lines, maximum 800 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/api/search_providers.rs
+    - crates/betterlite-core/src/api/search_providers/brave.rs
+    - crates/betterlite-core/src/api/search_providers/brave/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/brave.rs
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/brave_search.rs
+    - crates/betterlite-core/fuzz/corpus/brave_search/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/brave_search.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/brave_search.py
+    - tools/oracle/cases/helpers/brave-search/**
+    - tools/oracle/fuzz/corpus/helper_case/brave_search*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/brave/search/transformation.py#L15-L302
+    why: Fuzzy dates, GET mapping, ordered section filtering and reply-side count clamp.
+  - url: https://dateutil.readthedocs.io/en/stable/parser.html
+    why: Reusable fuzzy/ambiguous date parsing and missing-field defaults required by the source.
+  - url: https://docs.rs/dateparser/latest/dateparser/
+    why: Native alternative to compare; its UTC normalization and accepted grammar differ from dateutil.
+dod:
+  - text: Brave settings and GET mapping retain protected headers, metadata defaults and the ignored unified country field.
+    proof: [brave-tests, oracle, brave-python]
+  - text: Sections, global result limits and date normalization match pinned behavior through the production reply/date boundaries.
+    proof: [brave-tests, brave-corpus, oracle, brave-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: brave-tests
+      why: Brave mapping, date behavior or settings loading is missing
+      run: uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::search_providers::brave::/) - test(replays_the_brave_search_corpus) | test(brave_search_settings)'
+    - id: brave-corpus
+      why: Brave's reply and fuzzy-date decoders have no new corpus inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/brave_search)" && uv run --locked --project tools/oracle/litellm cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_brave_search_corpus)'
+    - id: brave-python
+      why: Brave sections and date outputs are not compared with actual source methods
+      run: grep -qE '^[[:space:]]+brave_search:' tools/oracle/fuzz/corpus/helper_case/brave_search* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/brave_search.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/brave-search/metadata-false.yaml
+  - tools/oracle/cases/helpers/brave-search/ignored-country.yaml
+  - tools/oracle/cases/helpers/brave-search/section-order-duplicates.yaml
+  - tools/oracle/cases/helpers/brave-search/response-count-floor.yaml
+  - tools/oracle/cases/helpers/brave-search/timestamp-threshold.yaml
+  - tools/oracle/cases/helpers/brave-search/fuzzy-calendar-date.yaml
+  - tools/oracle/cases/helpers/brave-search/zero-date-distinction.yaml
+  - tools/oracle/cases/helpers/brave-search/credential-host-guard.yaml
+deviations: []
+out_of_scope:
+  - B091 provides search HTTP execution and shared key trust checks; Brave's package initializer only exports this configuration.
+pitfalls:
+  - count=0 can be sent upstream even though reply projection returns at most one result for that request.
+  - A result_filter containing web twice can return the same web entries twice before the shared count cap.
+  - A timezone-bearing date string retains its own calendar day while numeric timestamps use UTC.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

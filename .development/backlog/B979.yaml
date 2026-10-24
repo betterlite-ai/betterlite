@@ -1,0 +1,8 @@
+id: B979
+milestone: M5 api families
+title: Messages native stream
+status: todo
+depends_on: [B002, B978, B1087, B2436, B102, B2401, B009]
+file: tasks/B979-messages-native-stream.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"

@@ -1,0 +1,10 @@
+id: B743
+milestone: M4 keys, spend and management
+title: Trusted proxies and client network identity
+status: todo
+depends_on: [B001, B002, B003, B171, B732, B733, B744, B856, B860]
+file: tasks/B743-trusted-network.yaml
+covers:
+  - "litellm/proxy/auth/network.py"
+  - "litellm/proxy/auth/ip_address_utils.py"
+  - "litellm/proxy/auth/trusted_proxy_utils.py"

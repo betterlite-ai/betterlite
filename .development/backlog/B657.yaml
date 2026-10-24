@@ -1,0 +1,8 @@
+id: B657
+milestone: M3 providers
+title: Bedrock Responses and inline-image policy
+status: todo
+depends_on: [B591, B595, B506, B507, B183, B171, B907, B682, B690, B193, B129, B2202]
+file: tasks/B657-bedrock-services-responses.yaml
+covers:
+  - "litellm/llms/bedrock/responses/transformation.py"

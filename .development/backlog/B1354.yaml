@@ -1,0 +1,9 @@
+id: B1354
+milestone: M3 providers
+title: Vertex Speech-to-Text recognition and duration metadata
+status: todo
+depends_on: [B1301, B1302, B1305, B175, B171]
+file: tasks/B1354-vertex-speech-recognition.yaml
+covers:
+  - "litellm/llms/vertex_ai/audio_transcription/transformation.py"
+  - "litellm/types/llms/vertex_ai_speech_to_text.py"

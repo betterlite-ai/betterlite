@@ -1,0 +1,8 @@
+id: B213
+milestone: M1 openai data plane
+title: Bounded dot-path lookup and deletion
+status: todo
+depends_on: [B171]
+file: tasks/B213-dot-paths.yaml
+covers:
+  - "litellm/litellm_core_utils/dot_notation_indexing.py"

@@ -1,0 +1,8 @@
+id: B971
+milestone: M5 api families
+title: Summary history
+status: todo
+depends_on: [B013, B171, B968, B969, B964, B2431]
+file: tasks/B971-summary-history.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"

@@ -1,0 +1,8 @@
+id: B942
+milestone: M5 api families
+title: Responses ws frame policy
+status: todo
+depends_on: [B071, B104, B171, B902, B904, B1087, B732, B925, B903, B163]
+file: tasks/B942-responses-ws-frame-policy.yaml
+covers:
+  - "litellm/responses/streaming_iterator.py"

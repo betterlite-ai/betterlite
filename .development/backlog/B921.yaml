@@ -1,0 +1,8 @@
+id: B921
+milestone: M5 api families
+title: Response chat dispatch
+status: todo
+depends_on: [B004, B005, B010, B011, B012, B918, B919, B920, B1078, B932, B2230, B2202, B2401]
+file: tasks/B921-response-chat-dispatch.yaml
+covers:
+  - "litellm/completion_extras/litellm_responses_transformation/handler.py"

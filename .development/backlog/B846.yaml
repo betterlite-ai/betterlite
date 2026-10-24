@@ -1,0 +1,9 @@
+id: B846
+milestone: M4 keys, spend and management
+title: Aggregate model group metadata
+status: todo
+depends_on: [B171, B174, B175, B301, B323, B367, B844, B845, B856, B2216]
+file: tasks/B846-model-group-info.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/types/router.py"

@@ -1,0 +1,9 @@
+id: B346
+milestone: M2 routing
+title: Priority queues and scheduled routing
+status: todo
+depends_on: [B016, B017, B360, B301, B361, B002]
+file: tasks/B346-request-scheduler.yaml
+covers:
+  - "litellm/scheduler.py"
+  - "litellm/types/scheduler.py"

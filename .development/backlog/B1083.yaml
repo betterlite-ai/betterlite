@@ -1,0 +1,9 @@
+id: B1083
+milestone: M5 api families
+title: Async speech invocation
+status: todo
+depends_on: [B1084, B174, B011, B2401]
+file: tasks/B1083-speech-call-plan.yaml
+covers:
+  - "litellm/llms/base_llm/text_to_speech/transformation.py"
+  - "litellm/main.py"

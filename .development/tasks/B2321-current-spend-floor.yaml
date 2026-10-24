@@ -1,0 +1,125 @@
+id: B2321
+title: Current-spend verification and authoritative floors
+description: >-
+  Move proxy_server.py SPEND_DB_FLOOR_CACHE_TTL_SECONDS and helpers L2771-L2912, L2939-L3042 into
+  betterlite-auth::current_spend, below the auth budget tasks that call them. Own get_current_spend,
+  _fail_closed_budget_enforcement, _raise_budget_unverifiable, _repair_stale_spend_counter,
+  _floor_spend_from_db, _authoritative_floor_spend, read_spend_counter_cache_value and
+  _read_spend_counter_estimate. Inject cache/repositories/settings; B2322 supplies authoritative reads.
+
+  Read a B2316 active batch first; any answer is returned unchanged. Otherwise Redis hit or clean
+  miss returns (float(value) or None,true), and a clean miss never checks local cache. Redis read or
+  float conversion error DEBUG-logs and falls back to local value with verified=false. Local conversion
+  errors propagate. A cache value wins; absent value invokes B2322 coalesced reseed, nonnull result is
+  verified=true; otherwise caller fallback is unverified. fallback_authoritative defaults false and
+  explicitly sets verified=true. max_budget and window descriptors default None.
+
+  Return immediately if max_budget=None or current>=max_budget, before strict verification. Otherwise
+  recheck a floor only when fallback>current, window_start exists, or general_settings.
+  fail_closed_budget_enforcement is exactly true (default absent/false). A nonnull floor marks verified;
+  only floor>current repairs and returns it. A missing floor with fallback>current returns fallback
+  immediately, even in strict mode. Otherwise unverified strict mode WARNs with the counter and raises
+  HTTP503 detail.error Budget enforcement unavailable: current spend could not be verified against
+  Redis or the database, and fail_closed_budget_enforcement is enabled, so the request was rejected
+  to avoid exceeding the configured budget. Retry shortly. Other paths return current. B757 maps
+  that auth error to503 auth_error with string None param; no retry or budget-exceeded substitution.
+
+  Floor cache is process-local spend_db_floor:<counter>, TTL exactly5 seconds; nonnull hits convert to
+  float. For spend:end_user: query B2322 end_user_from_db and return directly, without a window fallback.
+  Otherwise try primary from_db, then window_from_db only with nonnull type/ID/start. Missing DB floor
+  is never negatively cached. After the awaited read recheck the marker before writing, so a concurrent
+  committed reset marker overrides stale pre-reset spend. No singleflight is added to this floor cache.
+
+  Repair first reads local cache: raise it only if absent, less than DB spend or unparseable by type/value
+  conversion; never lower it. With Redis, forget the batch entry before atomic SET MAX. Redis repair
+  error DEBUG-logs with traceback and returns without undoing the local repair. Nonnull repair result
+  is recorded in B2316; absent result leaves the batch invalidated. Return the authoritative floor even
+  if Redis could not be repaired. No database write, reservation or spend decrement occurs here.
+
+  B002 loader tests strict_default_false, strict_true_consumer, false_and_absent_preserve_fallback and
+  invalid_bool_rejected consume the exact nested key and new config_yaml seed. B860 real Postgres tests
+  use POSTGRES_TEST_URL or testcontainers, including a reset racing a floor read. B001 HTTP cases on a
+  normal protected inference route exercise strict503 through production B732 service installation;
+  helper oracle calls only source read helpers with injected globals, never the route. Files stay
+  below 300 lines. The 157 nonblank non-comment lines excluding docstrings allow 210 production,
+  290 tests, 65 adapters, 60 config and 100 server wiring, 725 within 775. Cache decoders belong to
+  B733; no new byte boundary.
+scope:
+  paths:
+    - crates/betterlite-auth/src/current_spend.rs
+    - crates/betterlite-auth/src/current_spend/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-server/src/auth/current_spend.rs
+    - crates/betterlite-server/src/auth/current_spend/**
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - crates/betterlite-config/src/current_spend.rs
+    - crates/betterlite-config/src/current_spend/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/current-spend-*
+    - tools/oracle/src/helpers/current_spend.rs
+    - tools/oracle/helpers/current_spend.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/current-spend/**
+    - tools/oracle/cases/auth/current-spend/**
+    - tools/oracle/fuzz/corpus/helper_case/current-spend-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2771-L2912
+    why: Actual strict setting read, early returns,503 and ordered monotonic repair.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2939-L3042
+    why: Floor routing, reset race, batch/Redis precedence and fallback verification.
+dod:
+  - text: 'Named cases: batch_answer_wins, redis_clean_miss_never_local,
+      redis_parse_error_debug_local_unverified, local_parse_error_propagates,
+      reseed_zero_verified_or_fallback_unverified, explicit_authoritative_fallback,
+      no_ceiling_or_at_ceiling_returns_before_strict, floor_trigger_truth_table,
+      floor_lower_only_marks_verified, floor_higher_repairs_and_returns,
+      missing_floor_higher_fallback_bypasses_strict, strict_unverified_warning503_all_fields,
+      floor_key_ttl5_no_negative_cache, enduser_no_window_fallback,
+      primary_then_complete_window_descriptors, concurrent_reset_marker_wins,
+      local_repair_never_lowers, batch_forget_before_redis_setmax,
+      redis_repair_failure_keeps_local_and_returns_floor, nonnull_repair_records_batch,
+      production_service_and_http503.'
+    proof: [behavior-tests, oracle, helper-python]
+  - text: The strict setting and helper operation each have new production-decoder seeds.
+    proof: [config-tests, config-corpus, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Spend precedence, strict failure or repair ordering differs from the pin.
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server --no-tests=fail -E 'test(/current_spend::tests::/) - test(/replays_the_/)'
+    - id: config-tests
+      why: Strict budget verification is ignored or enabled by an invented default.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^current_spend::tests::/) - test(/replays_the_/)'
+    - id: config-corpus
+      why: No new strict-setting seed exists or loader replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/current-spend-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: helper-python
+      why: The independent source helper adapter is absent or invalid.
+      run: test -f tools/oracle/helpers/current_spend.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The helper variant has no new shared parser seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/current-spend-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/current-spend/cache-precedence-and-floor.yaml
+  - tools/oracle/cases/helpers/current-spend/strict-early-returns.yaml
+  - tools/oracle/cases/helpers/current-spend/reset-race-and-repair-effects.yaml
+  - tools/oracle/cases/auth/current-spend/strict-unverified503.yaml
+deviations: []
+out_of_scope:
+  - B124 retains other proxy_server.py functions, including reseed_spend_counter_from_db L2915-L2936.
+  - B2322 owns database reseeds; B2316 batch state; B126 SET MAX; B733 cache decoding.
+pitfalls:
+  - Strict mode still returns a higher caller fallback when no authoritative floor is available.
+  - A floor read racing a reset must recheck the marker before storing its old value.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

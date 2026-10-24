@@ -1,0 +1,82 @@
+id: B1531
+title: Price Fal images by deployment, resolution and returned dimensions
+description: >-
+  Implement api::fal::pricing for every function and constant in cost_calculator.py. Use B193's typed
+  catalog and B068's deployment_pricing/resolve_image_model_info; all monetary values are Decimal
+  from ingestion, never floating point. cost_calculator first rejects a non-ImageResponse, strips one
+  fal_ai/ prefix, then counts actual returned images. A deployment output_cost_per_image wins even
+  when zero; next use a resolution-specific catalog price; next price each image from quality/dimension
+  rows; only unresolved images fall back to flat/pixel pricing. An empty image response returns zero
+  before resolving fallback model information.
+
+  Quality is a string other than auto, otherwise high. Keyed rows match fal_ai/<quality>/<WxH>/<model>
+  exactly, with -x- separating positive integer dimensions. Prefer valid positive exact-integer
+  dimensions on each returned ImageObject, excluding bool, then requested image_size (named preset
+  or dimension map), then 1024x768. Select the price row by closest pixel area, breaking ties toward
+  smaller area and retaining catalog order for equal areas. image_size=None/auto uses 1024-x-768;
+  unknown size names do not become arbitrary parsed dimensions. Flat pixel pricing rounds upward
+  to units of 1,048,576 pixels before multiplying; missing valid returned dimensions uses flat price.
+
+  Resolution lookup accepts strings and integers but rejects booleans, then reads the exact
+  output_cost_per_image_<resolution> key without case normalization. fal_ai_passthrough_cost reads
+  the exact fal_ai/<model> entry, prefers resolution price to flat price and multiplies by positive
+  exact-integer num_images, defaulting to one; missing price returns None. Preserve source acceptance
+  of numeric zero and boolean catalog price values by normalizing the latter to Decimal zero/one at
+  the compatibility seam. Expose fal_ai_queue_base through B002's FAL_AI_QUEUE_API_BASE setting,
+  falling back to https://queue.fal.run for absent or empty values; fal_queue_settings loads both.
+
+  Add call.fal_pricing with deployment_zero_wins, resolution_case_sensitive, area_tie_smaller,
+  returned_dimensions_win, megapixel_round_up, empty_response_no_lookup and passthrough_count_types.
+  Python invokes the actual calculator with a temporary catalog; compare monetary numbers using the
+  oracle's decimal normalization. Test api::fal::pricing and the named config loader. This is parsed
+  catalog arithmetic, not a byte boundary. The 198 source lines support 240 implementation/config,
+  230 tests and 110 oracle/wiring lines within a 650-line budget.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/pricing.rs
+    - crates/betterlite-core/src/api/fal/pricing/**
+    - crates/betterlite-config/src/providers/fal.rs
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_pricing.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_pricing.py
+    - tools/oracle/cases/helpers/fal-pricing/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_pricing*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L13-L233
+    why: Price precedence, exact dimension checks, pixel rounding and queue-base setting.
+dod:
+  - text: Image cost follows deployment/resolution/keyed/fallback precedence and per-image dimensions without floating-point arithmetic.
+    proof: [fal-pricing-tests, oracle, fal-pricing-python]
+  - text: Passthrough pricing distinguishes unavailable price from zero and queue-base configuration preserves empty-value fallback.
+    proof: [fal-pricing-tests, oracle, fal-pricing-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fal-pricing-tests
+      why: Fal money calculations or queue setting behavior is not covered
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::fal::pricing::/) | test(fal_queue_settings)'
+    - id: fal-pricing-python
+      why: pricing precedence lacks an independent checked oracle
+      run: grep -qE '^[[:space:]]+fal_pricing:' tools/oracle/fuzz/corpus/helper_case/fal_pricing* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_pricing.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-pricing/deployment-zero-wins.yaml
+  - tools/oracle/cases/helpers/fal-pricing/resolution-case-sensitive.yaml
+  - tools/oracle/cases/helpers/fal-pricing/area-tie-smaller.yaml
+  - tools/oracle/cases/helpers/fal-pricing/returned-dimensions-win.yaml
+  - tools/oracle/cases/helpers/fal-pricing/megapixel-round-up.yaml
+  - tools/oracle/cases/helpers/fal-pricing/empty-response-no-lookup.yaml
+  - tools/oracle/cases/helpers/fal-pricing/passthrough-count-types.yaml
+deviations: []
+out_of_scope:
+  - B068 owns shared cost dispatch and deployment-pricing extraction; this task exposes Fal's calculators for that dispatch and B046.
+pitfalls:
+  - Pixel pricing uses binary megapixels of 1,048,576 pixels rather than one million.
+  - A keyed price tie is resolved by pixel area, not width or aspect ratio.
+  - passthrough num_images=true means one, while a true catalog price retains the source numeric value one.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

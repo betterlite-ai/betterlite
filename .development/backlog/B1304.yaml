@@ -1,0 +1,9 @@
+id: B1304
+milestone: M3 providers
+title: Vertex custom proxy paths and partner endpoints
+status: todo
+depends_on: [B009, B193, B171, B1305]
+file: tasks/B1304-vertex-custom-endpoints.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_llm_base.py"
+  - "litellm/llms/vertex_ai/common_utils.py"

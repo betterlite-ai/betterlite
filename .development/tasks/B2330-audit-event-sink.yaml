@@ -1,0 +1,158 @@
+id: B2330
+title: Shared audit policy, records and event sink
+description: >-
+  Split the audit collaborators required by B784 and key/user mutations below the B065 route
+  umbrella. Own every function in management_helpers/audit_logs.py L27-L245, its callback cache
+  and allow_litellm_changed_by_header constant, plus _types.py LitellmTableNames L236-L253 and
+  AUDIT_ACTIONS/LiteLLM_AuditLogs L3812-L3863. Implement audit_events in betterlite-server with
+  injected settings, callback registry, repository, clock and task supervisor; no source file
+  exceeds 300 lines. B065 retains audit HTTP endpoints, not these shared functions.
+
+  is_audit_logging_enabled uses its explicit non-null argument, otherwise litellm_settings.store_audit_logs
+  (default null), then LITELLM_STORE_AUDIT_LOGS, then the MIT default false. B002 resolves the
+  configured secret/environment value before this service; match get_secret_bool's existing boolean
+  or trimmed case-insensitive true/false conversion, with other strings yielding null. Do not add
+  an import-time integer parser or invalid-value warning. Cases audit_explicit_false_wins,
+  audit_setting_over_env, audit_env_bool_and_unknown and audit_default_disabled use the production
+  config loader and assert the consumed policy. The source premium fallback and persistence guard
+  are removed only as recorded below; configuration still controls whether events are emitted.
+
+  A nonempty litellm-changed-by overrides identity only when metadata or team_metadata has
+  allow_litellm_changed_by_header exactly boolean true. Otherwise choose caller.user_id or the
+  supplied proxy-admin name, possibly null. Cases audit_header_opt_in, audit_header_falsey,
+  audit_header_truthy_nonbool_denied and audit_identity_fallback exercise both metadata sources.
+
+  Audit records require id,updated_at,action,table_name,object_id; changed_by,changed_by_api_key,
+  before_value,updated_values default null. Coerce non-null changed_by to string. Allowed actions
+  are created,updated,deleted,blocked,unblocked,rotated,kill_switch_fired. Table literals are
+  LiteLLM_TeamTable, LiteLLM_UserTable, LiteLLM_VerificationToken, LiteLLM_ProxyModelTable,
+  LiteLLM_ManagedFileTable, LiteLLM_ToolTable, LiteLLM_CacheConfig, LiteLLM_ConfigOverrides,
+  LiteLLM_Config, LiteLLM_SSOConfig, LiteLLM_UISettings and LiteLLM_AgentsTable. The managed-file
+  enum value adds no enterprise managed-file implementation. Parse before/after JSON and run
+  B244 SensitiveDataMasker with the extra key pattern key, then serialize with default=str.
+  Cases audit_record_defaults_and_enums, audit_changed_by_cast, audit_json_masking and
+  audit_invalid_record reject malformed records before submission. This is redaction, not encryption.
+
+  Cache resolved named callbacks only when non-null. s3_v2 with non-null
+  litellm_settings.s3_audit_callback_params (default null, even {} selects override) constructs
+  B115's dedicated logger; other names call B188's registry factory with internal_usage_cache
+  and llm_router null. reset_audit_log_callback_cache clears this cache on caller-requested reload.
+  Cases audit_callback_cache_hit, audit_unresolved_not_cached, audit_s3_override_empty and
+  audit_cache_reset cover resolution. litellm_settings.audit_log_callbacks defaults []; B124
+  startup registration and its disabled-policy warning remain outside this task.
+
+  Build callback payloads with ISO updated_at or empty string, table enum value/string and empty
+  strings for falsey changed_by/changed_by_api_key; retain all other fields. Iterate configured
+  callbacks in order: accept logger instances, resolve strings, warn-and-skip unresolved names,
+  silently ignore other objects, and log-and-continue per-item dispatch exceptions. Schedule each
+  async_log_audit_log_event and attach a completion observer: cancellation is silent, task errors
+  are logged. Cases audit_payload_nulls, audit_callback_order, audit_unresolved_warning,
+  audit_invalid_callback_ignored, audit_dispatch_exception_continues and audit_task_cancel_or_fail
+  distinguish dispatch from asynchronous completion.
+
+  create_object_audit_log exits when disabled; otherwise generates UUID and aware UTC time,
+  resolves changed_by, copies caller.api_key and submits before/after values to the shared sink.
+  create_audit_log_for_update rechecks policy, serializes dict before/after values, dispatches
+  callbacks BEFORE testing database presence, logs and returns when DB is absent, then inserts
+  the non-null record fields through B726 AuditLogRepository. Insert failures log and return;
+  they never fail the caller's completed mutation. Cases audit_object_projection,
+  audit_disabled_no_effects, audit_callback_before_database, audit_no_database_logs and
+  audit_insert_failure_is_nonblocking cover ordering. Postgres row tests run through
+  POSTGRES_TEST_URL or testcontainers, failing on infrastructure errors and isolating schemas.
+
+  Pure projections and MIT-disabled orchestration use the B171 helper oracle with injected
+  collaborators; no adapter calls a FastAPI route. Native audit_enabled_without_license proves
+  the enabled sink against Postgres because pinned MIT returns before callbacks/insertion.
+  Audit JSON is an external stored-data boundary: decode_audit_record uses the B003 bounded JSON
+  decoder, and the audit_record fuzz target replays null, malformed, nested-secret and unknown-enum
+  inputs. Config tests load the three settings above through B002; no second YAML parser is added.
+
+  Sizing: audit_logs.py has 168 nonblank, noncomment lines excluding docstrings; records add about
+  60. Allow 230 production, 300 behavior/Postgres tests, 65 helper adapters, 65 config/fuzz and
+  40 wiring lines, 700 within 750. The unsplit B784 plus this concrete sink would exceed 800.
+scope:
+  paths:
+    - crates/betterlite-server/src/audit_events.rs
+    - crates/betterlite-server/src/audit_events/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/audit_record.rs
+    - crates/betterlite-server/fuzz/corpus/audit_record/**
+    - crates/betterlite-config/src/audit_events.rs
+    - crates/betterlite-config/src/audit_events/**
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/fuzz/corpus/config_yaml/audit-events-*
+    - tools/oracle/src/helpers/audit_events.rs
+    - tools/oracle/helpers/audit_events.py
+    - tools/oracle/src/helpers/management/keys.rs
+    - tools/oracle/helpers/management/keys.py
+    - tools/oracle/cases/helpers/audit-events/**
+    - tools/oracle/fuzz/corpus/helper_case/audit-events-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L23-L245
+    why: Own all audit policy, identity, callback and persistence helpers and their two constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3812-L3863
+    why: Own audit actions, record defaults, changed-by coercion and masked JSON validators.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L236-L253
+    why: Own audit table-name literals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L187
+    why: Boolean conversion contract for the B002-resolved audit setting; no dependency on management routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6518-L6547
+    why: Startup caller resets callback cache and warns for configured but disabled audit callbacks.
+dod:
+  - text: Every named policy, identity, callback, masking and sink case in the description passes.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: The production loader consumes all three audit settings and the env precedence cases.
+    proof: [config-tests]
+  - text: Enabled unlicensed audit insertion and its nonblocking failure effects use actual Postgres.
+    proof: [postgres-tests]
+  - text: Stored audit JSON decoding and helper-case seeds replay their bounded corpora.
+    proof: [parser-corpus, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: behavior-tests
+      why: Audit behavior is missing or differs from the named cases.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^audit_events::tests::/) - test(/replays_the_/)'
+    - id: config-tests
+      why: Settings are not loaded through the actual configuration pipeline.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^audit_events::tests::/) - test(/replays_the_/)'
+    - id: postgres-tests
+      why: License-free audit persistence and row/failure effects are unproved.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/audit_events::tests::audit_enabled_without_license$/)'
+    - id: parser-corpus
+      why: The audit_record fuzz target or production decoder replay is absent.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/audit_record.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_audit_record_corpus)'
+    - id: helper-python
+      why: The pinned helper adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/audit_events.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No audit helper seed exercises the existing bounded decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/audit-events-*')" && grep -rlq audit_events tools/oracle/fuzz/corpus/helper_case/audit-events-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/audit-events/policy-and-identity.yaml
+  - tools/oracle/cases/helpers/audit-events/masked-records-and-payloads.yaml
+  - tools/oracle/cases/helpers/audit-events/callback-resolution-and-failures.yaml
+  - tools/oracle/cases/helpers/audit-events/mit-disabled-sink.yaml
+deviations:
+  - what: Explicitly enabled audit logging dispatches callbacks and inserts rows without a license;
+      absent settings keep the MIT default disabled.
+    why: README removes paid-tier checks; audit_enabled_without_license proves this outside equality cases.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L207-L245
+out_of_scope:
+  - B065 owns audit HTTP endpoints and management_helpers/utils.py; all functions in audit_logs.py belong here.
+  - B244 owns SensitiveDataMasker, B188 the callback factory, B115 the S3 logger, B726 AuditLogRepository,
+    B2314 caller identity and B002 resolved config/secret inputs. No secret-manager transport is deferred into this sink.
+  - B124 owns remaining proxy/_types.py declarations except the existing B720/B721/B770/B2314 contracts;
+    this task only adds the audit records and table enum named above.
+pitfalls:
+  - A false explicit store_audit_logs setting must override a true environment value.
+  - Audit callbacks run before the missing-database check and can succeed when no row can be stored.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

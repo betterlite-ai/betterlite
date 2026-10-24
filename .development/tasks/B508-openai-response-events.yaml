@@ -297,8 +297,8 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/openai-response-events/responses-base-url.yaml
 deviations: []
 out_of_scope:
-- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
-  remain with their endpoint/SDK tasks.
+- B080 installs these replies and events in the OpenAI Responses create binding of its dispatcher. Endpoint
+  routes, persistence and SDK wrappers belong to the endpoint/SDK tasks.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
   a second outbound client in a provider crate.
 - 'Function ownership inventory litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models

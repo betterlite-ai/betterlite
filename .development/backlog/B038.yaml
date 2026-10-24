@@ -1,0 +1,10 @@
+id: B038
+milestone: M3 providers
+title: JSON-configured OpenAI-compatible providers, A to L
+status: todo
+depends_on: [B002, B004, B005, B006, B010, B011, B080, B081, B082, B085, B174, B186, B202, B203, B210, B211, B249, B500, B678, B1132, B1139, B2221, B2230, B2237, B2238, B1424, B1425, B1426, B1428, B1429, B1430, B1431, B1432, B1433, B1434, B1435, B1436, B1437, B1438, B1439, B1440]
+file: tasks/B038-compatible-providers-a-l.yaml
+covers:
+  - "litellm/llms/aiml/__init__.py"
+  - "litellm/llms/gdc/{__init__.py,chat/__init__.py}"
+  - "litellm/main.py"

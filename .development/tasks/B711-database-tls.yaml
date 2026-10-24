@@ -1,72 +1,75 @@
 id: B711
 title: Database TLS and external pooler configuration
 description: >-
-  Translate Prisma/libpq TLS settings into native SQLx/rustls Postgres options, with real local TLS fixture
-  tests. Accept LITELLM_PGBOUNCER_ENABLED=false by default; true caps the writer pool at LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS=20
-  instead of spawning a pooler. Reader and migration connections remain direct. Warn that LITELLM_PGBOUNCER_PORT,
-  LITELLM_PGBOUNCER_MAX_CLIENT_CONN and LITELLM_PGBOUNCER_BINARY have no native effect. Preserve explicit
-  certificate precedence and source require-versus-strict verification behavior.
+  Implement betterlite-db::database_tls as the native mapping from LiteLLM's Prisma/libpq URL dialects
+  to SQLx/rustls connection options. Own translate_libpq_ssl_params and extras/utils.py's
+  _strip_prisma_query_params/_libpq_tls_params, plus the existing native replacement of embedded
+  PgBouncer configuration. There is no native_pool_policy function in the pinned Python file:
+  pgbouncer.py L99-L119 contains settings/plan declarations, and the Rust writer-pool policy is the
+  explicit deviation below. Consume B710's resolved DATABASE_SSLMODE/DATABASE_SSLROOTCERT values and
+  B2307's URL decoder and query helpers; do not duplicate password or token assembly.
 
+  Preserve translate_libpq_ssl_params exactly as a pure compatibility projection. Parse query pairs
+  retaining blanks and duplicates. If there is no verify-ca/verify-full sslmode and no sslrootcert
+  key, return the original URL unchanged. Otherwise rewrite every verifying sslmode to require,
+  remove all sslrootcert pairs, add one sslcert per original sslrootcert only if no sslcert key was
+  already present, and append sslaccept=strict only if that key was absent. Blank explicit sslcert or
+  sslaccept still wins; do not strengthen an explicitly pinned accept_invalid_certs value. A root
+  parameter alone adds strict but does not add sslmode=require. The reference resolver receives the
+  path, parsed hostname or empty string, and parsed port or 5432; malformed ports remain errors.
 
-  Build the production database_tls module in betterlite-db; reuse the typed dependencies listed in the
-  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  The migration-side strip helper returns an unqueried URL unchanged. Otherwise it drops blank pairs
+  and keeps only sslmode, sslcert, sslkey, sslrootcert, sslpassword, application_name, connect_timeout,
+  client_encoding, options, service, gssencmode, krbsrvname and target_session_attrs. Extract the first
+  nonblank sslaccept separately. Prisma-only connection_limit, pool_timeout, socket_timeout,
+  max_idle_connection_lifetime, schema, pgbouncer and sslaccept itself do not reach libpq. Encode
+  spaces as %20, not '+', preserving retained duplicate order. Migration namespace selection happens
+  before stripping in B716, so losing the schema query here must not migrate the public schema instead.
 
+  _libpq_tls_params returns pairs unchanged when there is no sslcert or when sslkey is also present
+  (the libpq client-certificate form). Otherwise take the first sslmode and remove every sslcert and
+  sslmode pair. For sslaccept absent/accept_invalid_certs, or sslmode=disable, drop the Prisma CA and
+  reappend only the original first sslmode if present. Any other nonblank sslaccept means strict:
+  add each sslcert as sslrootcert only if no root key already exists, then append sslmode=verify-full,
+  even if the original mode was prefer. Existing sslrootcert values remain. Test this asymmetry rather
+  than treating Prisma sslcert as a libpq client certificate.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/db_url_settings.py:
-  translate_libpq_ssl_params (L221-L254; 33 source lines). litellm/proxy/db/pgbouncer.py: native_pool_policy
-  (L99-L119; 17 source lines). litellm-proxy-extras/litellm_proxy_extras/utils.py: ProxyExtrasDBManager._libpq_tls_params
-  (L733-L753; 21 source lines), ProxyExtrasDBManager._strip_prisma_query_params (L716-L730; 14 source
-  lines).
+  Native TLS must retain these effective verification choices: disable remains plaintext;
+  require without strict permits an unverified TLS connection; the translated strict verifying modes
+  check both certificate chain and hostname, including source verify-ca. Explicit certificate
+  precedence survives. Use native CA-bundle loading instead of the Prisma first-certificate probe
+  and temporary-file workaround, as recorded below. For a mode that verifies certificates,
+  unreadable/malformed roots and failed chain or
+  hostname checks must fail connection, never silently switch to an unverified TLS mode. Retain
+  caller-selected prefer behavior; do not invent a compulsory TLS mode when the source projection
+  did not set one. Certificate/client-identity parsing uses the TLS library, not a new PEM parser.
 
+  Load PgBouncer settings case-insensitively through B002: LITELLM_PGBOUNCER_ENABLED=false,
+  LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS=20 (integer >=1), LITELLM_PGBOUNCER_PORT=6432 (1..65535),
+  LITELLM_PGBOUNCER_MAX_CLIENT_CONN=1000 (integer >=1), LITELLM_PGBOUNCER_BINARY='pgbouncer'. Preserve
+  settings validation failures for invalid booleans, nonintegers and range errors rather than falling
+  back. Enabled caps the shared native writer pool at min(configured writer limit,max_db_connections);
+  disabled leaves it unchanged. Reader and migration sessions are unaffected. The ignored port,
+  client-count and binary settings produce one startup warning when explicitly supplied; no process,
+  loopback endpoint, userlist credential file or private random PgBouncer password is created. Keep
+  the original writer URL/credential and B854's native refresh. An operator-provided external pooler
+  URL still honors pgbouncer=true by disabling persistent prepared statements, independent of the
+  embedded-pooler toggle. Do not claim a cross-process or cross-pod limit from one SQLx pool.
 
-  DATABASE_SSLMODE=None and DATABASE_SSLROOTCERT=None; a root certificate alone selects verify-full. Prisma
-  sslcert is a CA certificate, unlike libpq sslcert (client certificate). Prisma require without sslaccept=strict
-  does not verify certificates; sslidentity client certificates are unsupported by the PgBouncer path.
-  LITELLM_PGBOUNCER_ENABLED=false and LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS=20 are accepted, with the ignored
-  _PORT=6432, _MAX_CLIENT_CONN=1000 and _BINARY=pgbouncer warning-only settings.
+  Pure helper oracle cases invoke the actual translate/strip/TLS projection functions; inject an
+  identity root resolver only to avoid the reference helper's preflight network/file work, and assert
+  its resolver arguments in the case. Native pool behavior and full-bundle loading are deviation
+  tests outside equality cases. B860 supplies a real locally controlled Postgres TLS endpoint through
+  POSTGRES_TEST_URL when set, otherwise testcontainers; accepted/rejected connections must use the
+  actual SQLx connector. A valid root chain, wrong hostname, unknown root, multiple-root bundle whose
+  first root is unrelated, unreadable root and plaintext-server cases are separate tests. Fixture
+  setup failure fails the tests, not an ignored result. Config tests load every named env setting and
+  consume its resolved value. Extend the existing config_yaml and HelperCase corpora only.
 
-
-  Add the database_tls operation under B856 Management::database. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a database-tls-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Write betterlite-config::database_tls::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 85 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  85 production, 157 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 387 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_litellm_pgbouncer_enabled_true_caps_only_the_native_writer_pool_at_lit.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
-
-
-  Real TLS connection tests use B860 with POSTGRES_TEST_URL when set and testcontainers otherwise, with
-  test-owned CA/server certificates. tests::tls_valid_chain establishes a verified SQLx connection using
-  the configured CA bundle; tls_hostname_mismatch and tls_unknown_root require connection rejection. Do
-  not substitute row/rollback tests for certificate verification. The fixture must fail when its selected
-  Postgres/TLS server is unavailable.
+  The compatibility implementation owns 33 translate lines, 14 strip lines and 21 reverse-TLS lines;
+  settings declarations add 11 nonblank lines. The removed probe/file path is not counted as native
+  implementation. Allow 210 TLS/options code, 300 real TLS and policy tests, 100 config/tests,
+  70 adapters and 35 wiring, 715 within 800. Split source by translation, options and pool policy.
 scope:
   paths:
     - crates/betterlite-db/src/database_tls.rs
@@ -75,9 +78,7 @@ scope:
     - crates/betterlite-db/Cargo.toml
     - Cargo.toml
     - deny.toml
-    - crates/betterlite-db/src/database_tls/fixtures/**
     - tools/oracle/src/helpers/database_tls.rs
-    - tools/oracle/src/helpers/database_tls/**
     - tools/oracle/helpers/database_tls.py
     - tools/oracle/Cargo.toml
     - tools/oracle/src/helpers/management/database.rs
@@ -93,344 +94,93 @@ scope:
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L139-L254
-    why: Pinned implementation and exact ownership boundary for database_tls.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L1-L743
-    why: Pinned implementation and exact ownership boundary for database_tls.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L221-L254
-    why: Own translate_libpq_ssl_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L99-L119
-    why: Own native_pool_policy; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L733-L753
-    why: Own ProxyExtrasDBManager._libpq_tls_params; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L716-L730
-    why: Own ProxyExtrasDBManager._strip_prisma_query_params; preserve caller-visible values and failure
-      ordering.
+    why: Exact projection and the Prisma-only CA probe/file path replaced by native bundle loading.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L81-L96
+    why: Complete libpq query allowlist.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L715-L753
+    why: Strip behavior and reverse Prisma CA/sslaccept conversion, including sslkey bypass.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L99-L110
+    why: Real PgBouncer env defaults, case policy and numeric bounds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L175-L280
+    why: Upstream pool/TLS config and loopback URL behavior being replaced, not a native Python policy helper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L686-L743
+    why: Embedded process lifecycle intentionally absent from the native gateway.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: tls_valid_chain, tls_hostname_mismatch,
-      tls_unknown_root, native_writer_pool_cap, pooler_options_warn, reader_migration_direct, explicit_cert_precedence.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: A real TLS connection accepts the configured CA chain and rejects a wrong hostname or unknown
-      root.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_litellm_pgbouncer_enabled_true_caps_only_the_native_writer_pool_at_lit.'
-    proof:
-      - behavior-tests
+  - text: 'Compatibility projections have named cases: untouched_tls_url, verify_modes_rewritten,
+      blank_pinned_tls_values, duplicate_root_pairs, root_without_mode, explicit_cert_precedence,
+      resolver_host_port_arguments, malformed_port_error, strip_exact_libpq_allowlist,
+      strip_blank_pairs_and_percent_spaces, sslkey_client_cert_bypass, absent_sslaccept_drops_ca,
+      accept_invalid_certs_drops_ca, disable_drops_prisma_ca, strict_forces_verify_full,
+      existing_root_wins, first_sslmode_and_sslaccept. Each case calls the actual MIT helper.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Real connector tests prove tls_valid_chain, tls_hostname_mismatch, tls_unknown_root,
+      tls_unreadable_root, tls_malformed_root, tls_verify_ca_checks_hostname,
+      tls_require_without_strict, tls_prefer_plaintext_fallback and native_full_ca_bundle_no_probe_file.'
+    proof: [behavior-tests, tls-tests]
+  - text: 'Loader tests prove pool_env_defaults, pool_enabled_boolean_values,
+      invalid_pool_settings_stop_loading, invalid_pool_ranges_stop_loading,
+      native_writer_pool_cap, native_disabled_pool_unchanged, native_ignored_options_warn_once,
+      native_reader_and_migration_uncapped and external_pooler_disables_prepared_statements.'
+    proof: [config-tests, config-corpus, behavior-tests]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::/)
-        - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/database_tls.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-tls-*")"
-        && grep -rlq "database_tls" tools/oracle/fuzz/corpus/helper_case/database-tls-* && cargo nextest
-        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: postgres-tests
-      why: The real TLS fixture accepts the wrong certificate/hostname or rejects the configured valid
-        chain.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_valid_chain$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_hostname_mismatch$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_unknown_root$/)'
+      why: TLS projection and native connection/pool behavior must pass beyond corpus replay.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::/) - test(/replays_the_/)'
+    - id: tls-tests
+      why: An actual SQLx connection must enforce root and hostname verification.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_valid_chain$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_hostname_mismatch$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_tls::tests::tls_unknown_root$/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_tls::tests::/)
-        - test(/replays_the_/)'
+      why: Invalid env settings must fail the real loader and valid ones must drive the native pool policy.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_tls::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: Projection adapters must import pinned code and pass strict checks.
+      run: test -f tools/oracle/helpers/database_tls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: New TLS projection operations must have accepted typed corpus inputs.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-tls-*")" && grep -rlq database_tls tools/oracle/fuzz/corpus/helper_case/database-tls-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-tls-*")"
-        && grep -rlq "DATABASE_SSLMODE" crates/betterlite-config/fuzz/corpus/config_yaml/database-tls-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      why: Pool settings must be present in new loader seeds, rather than silently ignored.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-tls-*")" && grep -rlq LITELLM_PGBOUNCER_ENABLED crates/betterlite-config/fuzz/corpus/config_yaml/database-tls-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/database-tls/explicit-cert-precedence.yaml
+  - tools/oracle/cases/helpers/database-tls/libpq-to-prisma.yaml
+  - tools/oracle/cases/helpers/database-tls/blank-and-duplicate-tls-params.yaml
+  - tools/oracle/cases/helpers/database-tls/prisma-to-libpq.yaml
+  - tools/oracle/cases/helpers/database-tls/client-cert-and-root-precedence.yaml
+  - tools/oracle/cases/helpers/database-tls/libpq-allowlist.yaml
 deviations:
-  - what: LITELLM_PGBOUNCER_ENABLED=true caps only the native writer pool at LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS
-      and warns for ignored process options.
-    why: Official charts require this setting; gateway code cannot spawn PgBouncer.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L17-L119
+  - what: LITELLM_PGBOUNCER_ENABLED=true caps the native writer pool and leaves the original endpoint in use;
+      explicit port, client-count and binary settings warn once and do not launch a process or create credential files.
+    why: Preserve the existing native-pool plan; the Rust gateway cannot spawn the embedded PgBouncer supervisor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/pgbouncer.py#L686-L743
+  - what: Native TLS loads every root in the configured CA bundle without a preliminary Postgres probe or
+      litellm-sslcert temporary file; certificate verification occurs on the real database connection.
+    why: The pin's reduction to one PEM root works around Prisma's certificate loader, which rustls does not need.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_url_settings.py#L154-L218
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B051 owns ProxyExtrasDBManager.setup_database
-    (L1285-L1315), ProxyExtrasDBManager.build_request_log_indexes (L1318-L1330), ProxyExtrasDBManager.run_migration_job
-    (L1333-L1342), ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B710 owns str_to_bool (L36-L39).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B716 owns _MigrateAttemptBudget.exhausted (L108-L109),
-    _MigrateAttemptBudget.attempt_number (L112-L113), _MigrateAttemptBudget.spend (L115-L116), _MigrateAttemptBudget.after_contention
-    (L118-L125), _migration_timestamp (L188-L195), _max_migration_timestamp (L198-L202), ProxyExtrasDBManager._get_migration_names
-    (L323-L327), ProxyExtrasDBManager._read_migration_ledger (L356-L376), ProxyExtrasDBManager._failed_migration_logs
-    (L379-L387), ProxyExtrasDBManager._failed_migration_recovered (L390-L396).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B717 owns ProxyExtrasDBManager._is_permission_error
-    (L409-L433), ProxyExtrasDBManager._setup_database_v2 (L951-L990), ProxyExtrasDBManager._run_database_v2
-    (L993-L1101), ProxyExtrasDBManager._v2_failed_migration_name (L1104-L1111), ProxyExtrasDBManager._v2_failed_migration_started_at
-    (L1114-L1116), ProxyExtrasDBManager._v2_roll_back_migration_best_effort (L1119-L1129), ProxyExtrasDBManager._budget_after_deploy_failure
-    (L1132-L1226), ProxyExtrasDBManager.apply_replica_identity_full_if_requested (L1252-L1282).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py: B857 owns ProxyExtrasDBManager.raise_if_lens_rename_pending
-    (L630-L657), ProxyExtrasDBManager.spend_logs_is_partitioned (L660-L702), ProxyExtrasDBManager._warn_if_db_ahead_of_head
-    (L756-L825), ProxyExtrasDBManager._invalid_litellm_indexes (L828-L832), ProxyExtrasDBManager._index_repair
-    (L835-L841), ProxyExtrasDBManager._repair_index (L844-L860), ProxyExtrasDBManager.repair_invalid_indexes
-    (L863-L926), ProxyExtrasDBManager._repair_under_migration_lock (L929-L948).'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._create_baseline_migration:
-    v1 only; native v2 recovery does not call it.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_env: Prisma filesystem/tool discovery
-    is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_get_prisma_command: Prisma filesystem/tool discovery
-    is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._get_prisma_dir: Prisma
-    filesystem/tool discovery is absent from the native runner.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_sql_comments: v1 only; native startup
-    always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::_without_spend_logs_pk_clauses: v1 only; native
-    startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::filter_partitioned_spend_logs_diff: v1 only;
-    native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration: v1
-    only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_specific_migration:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._roll_back_migration_best_effort:
-    no caller at the pin.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._is_idempotent_error: v1
-    only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._resolve_all_migrations:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migrations_applied:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._run_migrations: v1 only;
-    native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._mark_migration_applied:
-    no caller at the pin.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
-    v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
-    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
-  - 'litellm/proxy/db/db_url_settings.py: B710 owns idle_lifetime_params (L111-L119), add_missing_query_params
-    (L122-L136), reader_shareable_params (L257-L259), connection_params_from_url (L262-L266), token_refresh_params_from_url
-    (L269-L279), unsupported_db_scheme (L282-L298), unsupported_db_scheme_message (L301-L309), DatabaseURLSettings.from_env
-    (L360-L362), DatabaseURLSettings.tls_params (L375-L392), DatabaseURLSettings.build_writer_url (L394-L406),
-    DatabaseURLSettings._assemble_writer_url (L408-L449), DatabaseURLSettings.build_reader_url (L451-L461),
-    DatabaseURLSettings._assemble_reader_url (L463-L512), DatabaseURLSettings._password_url (L515-L538),
-    DatabaseURLSettings._raise_for_unsupported_scheme (L540-L558), DatabaseURLSettings.apply_writer_url_to_env
-    (L560-L578).'
-  - 'litellm/proxy/db/db_url_settings.py: B712 owns DatabaseURLSettings.token_auth (L364-L373), DatabaseURLSettings._assemble_writer_url.token_branch
-    (L410-L435), DatabaseURLSettings._assemble_reader_url.token_branch (L476-L500).'
-  - 'litellm/proxy/db/db_url_settings.py::_VerifiedChainSource.get_verified_chain: Prisma-only first-certificate
-    bundle workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_verified_chain_der: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_server_trust_anchor: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::pin_bundle_root: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_replace_file: Prisma-only first-certificate bundle workaround;
-    rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::DatabaseURLSettings.apply_to_env: native config returns resolved
-    values; B051 composes TLS/token/pool stages without mutating process environment.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerPlan.userlist: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_single_quoted: embedded PgBouncer process/config/token-userlist work
-    is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_userlist_quote: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_option_settings: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_connect_query: embedded PgBouncer process/config/token-userlist work
-    is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_server_tls_settings: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::plan_pgbouncer: embedded PgBouncer process/config/token-userlist work
-    is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::pooled_database_url: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_write_private: embedded PgBouncer process/config/token-userlist work
-    is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::write_pgbouncer_ini: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::write_userlist: embedded PgBouncer process/config/token-userlist work
-    is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::export_pooled_database_url: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::database_url_is_pooled: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenSource.mint: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenSource.expires_at: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_utcnow: embedded PgBouncer process/config/token-userlist work is
-    replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.__init__: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.refresh: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.start: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher._run: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher._refresh_and_report: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.stop: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_port_open: embedded PgBouncer process/config/token-userlist work
-    is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_unix_socket_open: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::unix_socket_path: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::pgbouncer_version: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_end: embedded PgBouncer process/config/token-userlist work is replaced
-    by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.__init__: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.pid: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._spawn: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._wait_ready: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.start: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._watch: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._supervise: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._restart_after_delay: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._retry_restart: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.reload: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.stop: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::install_pgbouncer_token: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_install_upstream_password: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_only_in_this_process: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::start_in_container_pgbouncer: embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/db_url_settings.py::_VerifiedChainSource.get_verified_chain (L149-L149): Prisma-only
-    first-certificate bundle workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_verified_chain_der (L152-L160): Prisma-only first-certificate
-    bundle workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_server_trust_anchor (L163-L174): Prisma-only first-certificate
-    bundle workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::pin_bundle_root (L177-L200): Prisma-only first-certificate bundle
-    workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/db_url_settings.py::_replace_file (L203-L218): Prisma-only first-certificate bundle
-    workaround; rustls loads the CA bundle directly.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerPlan.userlist (L122-L126): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_single_quoted (L134-L136): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_userlist_quote (L139-L140): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_option_settings (L143-L155): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_connect_query (L158-L172): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_server_tls_settings (L175-L187): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::plan_pgbouncer (L190-L280): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::pooled_database_url (L283-L296): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_write_private (L299-L303): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::write_pgbouncer_ini (L306-L324): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::write_userlist (L327-L333): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::export_pooled_database_url (L336-L338): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::database_url_is_pooled (L341-L342): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenSource.mint (L350-L352): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenSource.expires_at (L354-L355): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_utcnow (L358-L359): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.__init__ (L373-L391): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.refresh (L393-L411): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.start (L413-L420): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher._run (L422-L424): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher._refresh_and_report (L426-L441): embedded
-    PgBouncer process/config/token-userlist work is replaced by the architect-decided native writer-pool
-    cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerTokenRefresher.stop (L443-L446): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_port_open (L449-L454): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_unix_socket_open (L457-L464): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::unix_socket_path (L467-L468): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::pgbouncer_version (L471-L487): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_end (L490-L498): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.__init__ (L518-L533): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.pid (L536-L538): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._spawn (L540-L556): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._wait_ready (L558-L573): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.start (L575-L587): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._watch (L589-L592): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._supervise (L594-L604): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._restart_after_delay (L606-L619): embedded PgBouncer
-    process/config/token-userlist work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess._retry_restart (L621-L627): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.reload (L629-L632): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::PgBouncerProcess.stop (L634-L639): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::install_pgbouncer_token (L642-L646): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_install_upstream_password (L649-L672): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::_only_in_this_process (L675-L683): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - 'litellm/proxy/db/pgbouncer.py::start_in_container_pgbouncer (L686-L743): embedded PgBouncer process/config/token-userlist
-    work is replaced by the architect-decided native writer-pool cap.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B710 owns settings and password assembly, B712 token_auth and token URL branches, B2307 query/flag
+    helpers and URL byte decoding. B051 composes apply_to_env, with typed results instead of global writes.
+  - _VerifiedChainSource.get_verified_chain, _verified_chain_der, _server_trust_anchor, pin_bundle_root
+    and _replace_file are replaced by the recorded native bundle-loading deviation, not reimplemented.
+  - The embedded-pooler deviation replaces PgBouncerPlan.userlist, _single_quoted, _userlist_quote,
+    _option_settings, _connect_query, _server_tls_settings, plan_pgbouncer, pooled_database_url,
+    _write_private, write_pgbouncer_ini, write_userlist, export_pooled_database_url,
+    PgBouncerTokenSource.mint/expires_at, _utcnow,
+    PgBouncerTokenRefresher.__init__/refresh/start/_run/_refresh_and_report/stop,
+    _port_open, _unix_socket_open, unix_socket_path, pgbouncer_version, _end,
+    PgBouncerProcess.__init__/pid/_spawn/_wait_ready/start/_watch/_supervise/_restart_after_delay/
+    _retry_restart/reload/stop, install_pgbouncer_token, _install_upstream_password,
+    _only_in_this_process and start_in_container_pgbouncer. B854 owns native token refresh.
+  - B712 owns database_url_is_pooled as a retained compatibility predicate for the exact
+    LITELLM_PGBOUNCER_POOLED_DATABASE_URL=true marker; native pool setup does not create that marker.
+  - Extras utils.py ledger helpers and _prisma_schema_param belong to B716, v2 recovery and excluded
+    v1 fallback to B717, drift/index repair to B857 and startup entry points to B051; str_to_bool is B2307.
 pitfalls:
-  - Prisma sslcert names the root CA while libpq sslcert names a client certificate.
-  - Prisma require without sslaccept=strict does not imply certificate verification.
-  - sslidentity is rejected by the source pooler path, not interpreted as a CA file.
+  - A blank sslcert key suppresses sslrootcert conversion even though it cannot identify a useful certificate.
+  - sslkey changes the meaning of sslcert in the reverse translation and bypasses Prisma CA handling.
+  - Source verify-ca becomes strict hostname verification through the Prisma dialect.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

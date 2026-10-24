@@ -1,0 +1,8 @@
+id: B1615
+milestone: M4 keys, spend and management
+title: Dispatch OAuth callbacks and complete CLI sign-in
+status: todo
+depends_on: [B002, B003, B124, B137, B165, B760, B860, B1611, B1612, B1613, B1614, B1616, B1617, B1618, B1622, B1623, B1624, B1629, B1630]
+file: tasks/B1615-oauth-callback.yaml
+covers:
+  - "litellm/proxy/management_endpoints/ui_sso.py"

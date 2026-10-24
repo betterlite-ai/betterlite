@@ -1,0 +1,8 @@
+id: B1639
+milestone: M4 keys, spend and management
+title: Apply SCIM user patches and export the shared member-path parser
+status: todo
+depends_on: [B003, B052, B124, B171, B723, B734, B860, B1630, B1632, B1633, B1634, B1635, B1637, B1644]
+file: tasks/B1639-scim-user-patch.yaml
+covers:
+  - "litellm/proxy/management_endpoints/scim/scim_v2.py"

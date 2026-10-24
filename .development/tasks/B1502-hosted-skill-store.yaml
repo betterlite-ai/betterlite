@@ -1,0 +1,89 @@
+id: B1502
+title: Store hosted skills with owner checks after cache lookup
+description: >-
+  Build HostedSkillStore in betterlite-core/src/skills/store.rs from every callable in the referenced handler,
+  with B726's SkillsRepository, B858 skill rows, B1018 owner predicates, B732 principal and B2226 local cache.
+  Inject repository availability, UUIDs and clock. New identifiers start litellm_skill_; creation records source
+  custom and the primary owner scope in both created_by and updated_by, falling back to user_id only when
+  no primary scope exists. An identity-less caller fails before writing. Encode metadata with B192 and
+  preserve omitted versus present file fields through the existing row codec, including Base64 storage.
+  Listing defaults to limit 20/offset 0, orders created_at descending, and filters non-admin authenticated
+  callers by all their owner scopes; an empty scope set returns no rows without a query. Search listing
+  uses the same filter with limit 5000.
+
+  Cache rows and negative lookups by skill id, capacity 10000 and TTL 60 seconds. Authorize each read after
+  the cache lookup so a row cached by one tenant grants nothing to another. get/delete deliberately expose
+  the same ValueError for missing and unauthorized ids. Delete the row before installing the negative
+  sentinel; a failed delete must leave the previous cache state. fetch_skill_from_db returns None silently
+  for ValueError and warns then returns None for other failures. A missing DB client is a ValueError, not
+  an implicit in-memory store. Keep creation and cache mutation as separate effects, without transactions.
+
+  Add hosted_skill_store helper adapters with scripted repository/cache collaborators and ordered effects;
+  Python calls LiteLLMSkillsHandler directly, without invoking FastAPI. Use fixtures owner_stamp,
+  filtered_page, shared_cache_denial, negative_hit, delete_failure and hook_warning. Rust tests under
+  skills::store exercise those results plus a real Postgres insert/list/delete using the B860 fixture.
+  Decode stored fields only through B858, so no new parser or fuzz target is needed; the helper case
+  carries call.hosted_skill_store and contributes a shared-decoder seed. The handler and constants own
+  177 nonblank/non-comment source lines, allowing 215 service, 220 tests, 115 adapters and 65 wiring
+  lines inside a 625-line budget.
+scope:
+  paths:
+    - crates/betterlite-core/src/lib.rs
+    - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/store.rs
+    - crates/betterlite-core/src/skills/store/**
+    - crates/betterlite-core/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/hosted_skill_store.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/hosted_skill_store.py
+    - tools/oracle/cases/helpers/hosted-skill-store/**
+    - tools/oracle/fuzz/corpus/helper_case/hosted_skill_store*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L25-L214
+    why: Creation, owner-filtered reads, the negative sentinel and post-delete cache write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/constants.py#L9-L24
+    why: Hosted skill prefix and search candidate ceiling; execution constants are carried as typed constants for B095.
+dod:
+  - text: Owner scope and cache ordering match the independent pinned service on create, list, get and delete failures.
+    proof: [skill-store-tests, oracle, skill-store-python]
+  - text: Hosted skill rows persist with the pinned table fields and remain isolated by the production owner predicate.
+    proof: [skill-store-postgres]
+  - text: The helper can serialize its ordered DB/cache effects through the common case parser.
+    proof: [skill-store-seed]
+checks:
+  optional: []
+  commands:
+    - id: skill-store-tests
+      why: owner checks, negative caching or the hook fallback is absent
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::store::/)'
+    - id: skill-store-postgres
+      why: actual skill rows do not round-trip through the repository
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::store::.*postgres_owner_roundtrip/)'
+    - id: skill-store-python
+      why: the service adapter cannot invoke the pinned handler with strict types
+      run: test -f tools/oracle/helpers/hosted_skill_store.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/hosted_skill_store.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: skill-store-seed
+      why: the hosted skill effects variant has no parseable corpus example
+      run: grep -qE '^[[:space:]]+hosted_skill_store:' tools/oracle/fuzz/corpus/helper_case/hosted_skill_store* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/hosted-skill-store/owner-stamp.yaml
+  - tools/oracle/cases/helpers/hosted-skill-store/filtered-page.yaml
+  - tools/oracle/cases/helpers/hosted-skill-store/shared-cache-denial.yaml
+  - tools/oracle/cases/helpers/hosted-skill-store/negative-hit.yaml
+  - tools/oracle/cases/helpers/hosted-skill-store/delete-failure.yaml
+  - tools/oracle/cases/helpers/hosted-skill-store/hook-warning.yaml
+deviations: []
+out_of_scope:
+  - B1503 turns stored rows into Skill responses; B095 owns public skills endpoints and their authentication.
+  - B858 decodes persisted skill fields and B1018 supplies resource ownership, including legacy raw user ids.
+pitfalls:
+  - The negative sentinel must not be confused with a cache miss, or repeated missing ids hit Postgres every time.
+  - A cached skill still requires user_can_access_resource_owner on each call.
+  - fetch_skill_from_db suppresses ValueError without warning but logs other exceptions before returning None.
+review_level: security
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0

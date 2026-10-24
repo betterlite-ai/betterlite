@@ -1,0 +1,10 @@
+id: B082
+milestone: M5 api families
+title: Image routes
+status: todo
+depends_on: [B014, B004, B900, B1121, B999, B1087, B001, B1100, B1101, B1102, B1103, B218, B124, B756, B003, B1139, B856]
+file: tasks/B082-image-routes.yaml
+covers:
+  - "litellm/proxy/image_endpoints/endpoints.py"
+  - "litellm/images/__init__.py"
+  - "litellm/proxy/image_endpoints/__init__.py"

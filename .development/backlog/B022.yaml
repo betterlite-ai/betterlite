@@ -1,0 +1,9 @@
+id: B022
+milestone: M2 routing
+title: Per-worker admission and in-flight tracking
+status: todo
+depends_on: [B003, B005, B002, B300, B301]
+file: tasks/B022-admission-control.yaml
+covers:
+  - "litellm/proxy/route_priority.py"
+  - "litellm/proxy/middleware/{admission_control_middleware,in_flight_requests_middleware}.py"

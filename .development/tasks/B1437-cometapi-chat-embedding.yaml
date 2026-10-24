@@ -1,0 +1,113 @@
+id: B1437
+title: CometAPI chat streams and embeddings
+description: >-
+  Add cometapi_wire in betterlite-openai for CometAPIConfig, its chunk parser and
+  CometAPIEmbeddingConfig, plus cometapi_iterator in betterlite-provider to select
+  B010's existing BaseModelResponseIterator lifecycle. Chat parameter mapping and
+  cache-control removal delegate unchanged to B503/B668; the source's extra_body
+  construction branch is permanently empty. Request transformation instead pops
+  the caller's extra_body, runs the parent and overlays that map last. Preserve
+  failures for non-map values instead of normalizing them to empty.
+
+  Chat URL building substitutes https://api.cometapi.com/v1 only for None, strips
+  trailing slashes and accepts any base containing chat/completions anywhere. An
+  ending /v1 gains /chat/completions; the bare official host gains /v1/chat/completions.
+  Other bases gain /v1/chat/completions unless /v1 occurs anywhere after the first
+  // split, in which case append only /chat/completions. This can recognize /v10 or
+  a query occurrence as already versioned. Embeddings has a simpler rule: default
+  the base only for None, otherwise trim, then always append /embeddings.
+
+  Stream chunk parsing checks key presence for error before choices. Copy error.code
+  with missing-only default 400, use error.message with missing-only Unknown error,
+  and raise CometAPIException with Content-Type=application/json. For ordinary chunks,
+  visit all choices and copy delta.reasoning into delta.reasoning_content whenever
+  the former key is present, retaining reasoning too. Require choices, id, created
+  and model; carry optional usage and force object=chat.completion.chunk. KeyError
+  anywhere becomes CometAPIException 400 with the same content-type header; other
+  exceptions propagate. Reuse B010 line decoding, blank-line skipping, DONE handling
+  and close semantics above this parsed-record mapper; do not reuse the different
+  Databricks legacy iterator. get_error_class preserves supplied status and headers.
+
+  Embedding auth reads COMETAPI_KEY only when api_key is None. It never consults
+  COMETAPI_API_KEY, never rejects missing credentials, and yields Bearer None when
+  both are absent. Caller headers override Authorization, accept and Content-Type
+  defaults. Accept dimensions, encoding_format and user including null; options
+  overlay input/model in the request. decode_comet_embedding_reply consumes bounded
+  bytes and wraps JSON failure as CometAPIException using the original status/body/
+  headers. Copy model/data/object by nullable get, and set usage prompt_tokens and
+  total_tokens independently with missing-only zero defaults. Do not recalculate
+  totals, prefix model, encode embeddings again, or add a post_call hook.
+
+  Add cometapi_embedding_settings::only_primary_key_alias through the real loader,
+  covering missing, empty, explicit and alternative-alias-only values. Helper
+  cometapi_record calls option/request/URL, parsed chunk and embedding reply methods.
+  Tag fresh seeds with call.cometapi_record and require chat plus embedding cases.
+  Fuzz the embedding byte decoder; upstream streaming bytes remain B010's boundary.
+  The chat/embed/common files total 285 nonblank/noncomment lines, with four export
+  lines in embed/__init__.py. Plan 240 implementation, 200 tests, 130 adapters,
+  65 fuzz/replay and 65 settings/exports, capped at 750.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,cometapi_wire}.rs
+    - crates/betterlite-openai/src/cometapi_wire/**
+    - crates/betterlite-provider/src/{lib,cometapi_iterator}.rs
+    - crates/betterlite-provider/src/cometapi_iterator/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/comet_embedding_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/comet_embedding_reply/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,cometapi}.rs
+    - crates/betterlite-config/tests/cometapi_embedding_settings.rs
+    - tools/oracle/src/helpers/{mod,cometapi_record}.rs
+    - tools/oracle/helpers/{dispatch,cometapi_record}.py
+    - tools/oracle/cases/helpers/cometapi-record/**
+    - tools/oracle/fuzz/corpus/helper_case/cometapi_record*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/chat/transformation.py#L23-L195
+    why: Extra-body overlays, permissive version detection and reasoning delta projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/embed/transformation.py#L20-L151
+    why: Embedding-only credential fallback and independent nullable response fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cometapi/common_utils.py#L1-L5
+    why: CometAPIException inherits the common native error unchanged.
+dod:
+  - text: CometAPI chat requests and chunks retain endpoint substring checks, overlays and reasoning fields.
+    proof: [cometapi-tests, cometapi-python, oracle]
+  - text: Embedding credentials, request options and independent usage counters match CometAPI's adapter.
+    proof: [cometapi-tests, cometapi-settings, cometapi-python, oracle]
+  - text: New embedding byte inputs and both helper families run through production parsers.
+    proof: [cometapi-corpus, cometapi-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cometapi-tests
+      run: cargo nextest run --locked -p betterlite-openai -p betterlite-provider --no-tests=fail -E '(test(/^cometapi_wire::/) | test(/^cometapi_iterator::/)) - test(replays_comet_embedding_corpus)'
+      why: Tests must cover the selected base iterator as well as parsed CometAPI chunks.
+    - id: cometapi-settings
+      run: cargo nextest run --locked -p betterlite-config --test cometapi_embedding_settings --no-tests=fail -E 'test(only_primary_key_alias)'
+      why: The image adapter's alternative key alias must not leak into embedding auth.
+    - id: cometapi-python
+      run: test -f tools/oracle/helpers/cometapi_record.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Record the original chunk error class before the normal provider error classifier acts.
+    - id: cometapi-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/comet_embedding_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/comet_embedding_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_comet_embedding_corpus)'
+      why: Missing usage and wrong embedding field shapes need new response-byte seeds.
+    - id: cometapi-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/cometapi_record*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::cometapi_record::/)'
+      why: Assert the cometapi_record variant and nonzero chat/embedding fixture counts.
+oracle_cases:
+  - tools/oracle/cases/helpers/cometapi-record/version-substrings-and-extra-body.yaml
+  - tools/oracle/cases/helpers/cometapi-record/reasoning-copy-all-choices.yaml
+  - tools/oracle/cases/helpers/cometapi-record/stream-error-key-and-missing-fields.yaml
+  - tools/oracle/cases/helpers/cometapi-record/embedding-none-key-and-header-precedence.yaml
+  - tools/oracle/cases/helpers/cometapi-record/embedding-null-fields-and-independent-usage.yaml
+deviations: []
+out_of_scope:
+  - B1431 owns CometAPI image generation and pricing; B038 owns chat credential resolution and API-family dispatch.
+  - B010 owns BaseModelResponseIterator byte framing and lifecycle; CometAPI supplies only its parsed chunk projection.
+pitfalls:
+  - CometAPI's chat endpoint test accepts chat/completions inside a query as well as at the end of a path.
+  - A present null reasoning value overwrites an existing reasoning_content value in each streamed choice.
+  - Missing CometAPI embedding credentials produce Bearer None rather than an authentication setup error.
+budget: {max_changed_lines: 750, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,15 @@
+id: B025
+milestone: M3 providers
+title: Azure OpenAI
+status: todo
+depends_on: [B010, B531, B532, B533, B534, B540, B684, B2200, B695, B696, B198, B196, B249, B187, B129, B171, B2230]
+file: tasks/B025-azure-provider.yaml
+covers:
+  - "litellm/llms/azure/audio_transcription/__init__.py"
+  - "litellm/llms/azure/containers/__init__.py"
+  - "litellm/llms/azure/image_generation/dall_e_2_transformation.py"
+  - "litellm/llms/azure/image_generation/dall_e_3_transformation.py"
+  - "litellm/llms/azure/image_generation/gpt_transformation.py"
+  - "litellm/llms/azure/search/__init__.py"
+  - "litellm/llms/azure/text_to_speech/__init__.py"
+  - "litellm/main.py"

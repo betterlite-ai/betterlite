@@ -1,14 +1,20 @@
 id: B1223
 title: Experimental UI and CLI session token codec
 description: >-
-  Implement the UI/CLI session-token codec with maintained JWT/encryption libraries and injected time/master
-  signing secret. decode_session_token(&[u8]) decodes untrusted compact/blob token bytes, preserves CLI/session
-  expiry and key provenance and never treats a KeyHash as a bearer token. Live grant refresh stays in
-  B738.
+  Build session_token_codec in betterlite-auth around encrypted UserAPIKeyAuth JSON. Despite the Python
+  class name these session tokens are not JWTs. Both builders serialize with exclude_none=True and
+  encrypt_bearer_token prefixes the ciphertext with litellm_login_. Inject the UTC clock, random source
+  and secret; live grant refresh belongs to B738.
 
 
-  Inject SessionCipher::seal/open using SecretString inputs; B061 supplies encryption later through B056
-  registration. The codec cannot depend on B061 because B061 depends on B052 authentication.
+  Call B2303's shared bearer primitives, below authentication, callback configuration and stored credentials
+  in the call graph. _get_salt_key reads LITELLM_SALT_KEY, falling back to the master key only when absent, not when
+  empty. _derive_key hashes UTF-8 secret bytes with SHA-256; _seal_aes_gcm and _open_aes_gcm use AES-256-GCM,
+  a 12-byte nonce, the prefix as AAD, and nonce || ciphertext || 16-byte tag. encrypt_bearer_token emits
+  unpadded base64url after the prefix and raises ValueError when no string secret exists. Decryption
+  restores padding and strictly decodes; absent secret, wrong prefix, invalid base64, short ciphertext,
+  failed authentication or invalid UTF-8 return None. Use maintained cryptographic implementations.
+  B2303 also owns the separate stored-value format; session JSON remains owned here.
 
 
   Build the production session_token_codec module in betterlite-auth; reuse the typed dependencies listed
@@ -22,12 +28,24 @@ description: >-
   15 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.max_ui_session_budget=1.0;
-  CLI_JWT_EXPIRATION_HOURS=None; LITELLM_CLI_JWT_EXPIRATION_HOURS=None.
+  UI sessions expire in exactly ten minutes, independently of LITELLM_UI_SESSION_DURATION. Their token,
+  key_name and key_alias are ui-token, rpm_limit is 100, team_id is litellm-dashboard, models and user_id
+  come from the user, and max_budget comes from litellm_settings.max_ui_session_budget (default 1.0 USD,
+  nullable). Both builders explicitly set max_parallel_requests=None, which exclude_none serialization
+  omits from the encrypted JSON. Preserve UserAPIKeyAuth's remaining defaults. B2314 supplies payload
+  validation, credential hashing and marker stripping; B720 supplies the user row read by the factories.
+  A missing user_role raises the builder-specific error before encryption; an invalid role fails enum
+  conversion. Format expires to milliseconds followed by +00:00, truncating smaller fractions.
 
 
-  LITELLM_CLI_JWT_EXPIRATION_HOURS defaults to legacy CLI_JWT_EXPIRATION_HOURS if set, otherwise 24; preserve
-  the source parsing fallback. litellm_settings.max_ui_session_budget=1.0 USD.
+  CLI expiry uses the first nonempty CLI_JWT_EXPIRATION_HOURS, then LITELLM_CLI_JWT_EXPIRATION_HOURS, then
+  24, parsed by int() at import. Invalid selected text stops startup; zero and negative hours are accepted.
+  CLI token is cli-session- followed by token_urlsafe(16); key_name and key_alias are cli-session-<user_id>.
+  Prefer explicit team_id, otherwise the first user team. A set team clears models to [], otherwise keep
+  the user's models. Copy team_models (default []), team_model_aliases (default None), team_alias and
+  the supplied max_budget (default None), and set is_session_token=true. Decryption returning None stays
+  None; decrypted JSON or UserAPIKeyAuth validation failures raise a typed invalid-session error. The
+  Python error echoes both ciphertext and plaintext; betterlite's error omits both as recorded below.
 
 
   Add the session_token_codec operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -37,7 +55,8 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::session_token_codec::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::session_token_codec::tests::loads_settings, legacy_hours_win, empty_hours_fall_through,
+  invalid_hours_stop_startup, signed_hours_are_accepted, ui_budget_nullable and salt_before_master.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -45,7 +64,7 @@ description: >-
 
 
   This task owns the outside-byte boundary session_token_codec::decode_session_token(&[u8]) -> Result<TypedValue,DecodeError>
-  for untrusted UI/CLI compact token or encrypted blob bytes. Production calls this decoder before its
+  for untrusted prefixed AES-GCM token bytes and the decrypted JSON. Production calls this decoder before its
   typed policy functions; the cargo-fuzz target session_token_codec calls that same function. Seed valid,
   truncated, malformed, duplicate-field and limit-boundary inputs and add session_token_codec::tests::replays_the_session_token_codec_corpus.
   Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
@@ -59,13 +78,14 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 90 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  90 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 50 config lines, 419 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  Sizing: the three token methods own 90 source lines. B2303 owns the shared bearer primitives.
+  Allow 130 production, 230 behavior tests, 75 helper adapters, 30 wiring, 60 decoder/fuzz and
+  75 config lines, 600 changed lines within a 650-line gate.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Native-only deviation tests in this production module: session_input_limits and session_error_redaction.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 scope:
@@ -103,12 +123,26 @@ references:
     why: Own ExperimentalUIJWTToken.get_key_object_from_ui_hash_key; preserve caller-visible values and
       failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L463-L468
-    why: litellm_settings.max_ui_session_budget default and read site.
+    why: litellm_settings.max_ui_session_budget defaults to 1.0; the builder read is cited separately.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3638-L3652
+    why: UI builder reads max_ui_session_budget and explicitly clears max_parallel_requests before exclude_none serialization.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1750-L1755
-    why: LITELLM_CLI_JWT_EXPIRATION_HOURS default and read site.
+    why: Legacy expiry env name wins; int() has no exception handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L26-L34
+    why: B2303 supplies salt-over-master precedence to session builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L59-L89
+    why: B2303 owns the shared key derivation and AES primitives.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L104-L123
+    why: B2303 owns the bearer envelope and swallowed decrypt failures used by these session builders.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: cli_session_expiry,
-      ui_token_roundtrip, malformed_session_token.'
+  - text: 'Session payloads and encryption interoperate with the pin; named cases: ui_fixed_fields,
+      ui_budget_override, ui_ignores_session_duration, expiry_milliseconds, missing_ui_role,
+      missing_cli_role, invalid_role, cli_session_expiry, cli_first_team, cli_explicit_team,
+      cli_without_team, cli_team_grants, cli_alias_and_budget, null_fields_omitted,
+      both_sessions_clear_parallel_limit, ui_token_roundtrip,
+      bearer_prefix_aad, bearer_missing_secret, bearer_empty_secret, decrypt_wrong_prefix,
+      decrypt_bad_base64, decrypt_short_ciphertext, decrypt_wrong_key, decrypt_bad_utf8,
+      malformed_session_json and invalid_session_fields.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -127,7 +161,8 @@ dod:
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: 'session_input_limits checks byte/depth limits; session_error_redaction checks Debug, error and
+      tracing output contain neither ciphertext nor decrypted credentials.'
     proof:
       - behavior-tests
 checks:
@@ -167,15 +202,25 @@ oracle_cases:
   - tools/oracle/cases/helpers/session-token-codec/cli-session-expiry.yaml
   - tools/oracle/cases/helpers/session-token-codec/ui-token-roundtrip.yaml
   - tools/oracle/cases/helpers/session-token-codec/malformed-session-token.yaml
+  - tools/oracle/cases/helpers/session-token-codec/ui-fields-and-expiry.yaml
+  - tools/oracle/cases/helpers/session-token-codec/cli-team-selection.yaml
+  - tools/oracle/cases/helpers/session-token-codec/cli-grants-and-budget.yaml
+  - tools/oracle/cases/helpers/session-token-codec/role-validation.yaml
+  - tools/oracle/cases/helpers/session-token-codec/bearer-format-and-aad.yaml
+  - tools/oracle/cases/helpers/session-token-codec/bearer-decrypt-failures.yaml
+  - tools/oracle/cases/helpers/session-token-codec/invalid-decrypted-record.yaml
 deviations:
+  - what: Invalid decrypted session records raise an error without the bearer token or decrypted JSON.
+    why: The pin includes both in its message; secrets-stay-secret forbids leaking credentials through errors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3734-L3740
   - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
       smaller inherited limits.
     why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
       parser behavior.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L3622-L3652
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B2303 owns every function in encrypt_decrypt_utils.py, including key sourcing, bearer and stored-map
+    formats; session token parsing here composes that codec with UserAPIKeyAuth JSON validation.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -184,7 +229,7 @@ out_of_scope:
     delete_cache_team_object (L2988-L3023), _cache_key_object (L3026-L3044), _delete_cache_key_object
     (L3047-L3081), delete_cache_key_objects (L3084-L3119), _cache_access_object (L3319-L3331), _delete_cache_access_object
     (L3334-L3345), delete_cached_project_object (L6286-L6299).'
-  - 'litellm/proxy/auth/auth_checks.py: B735 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
+  - 'litellm/proxy/auth/auth_checks.py: B2315 owns _PrismaDictableRow.dict (L162-L162), _PrismaModelDumpRow.model_dump
     (L173-L173), _PrismaTeamRow.dict (L177-L177), _PrismaTeamRow.model_dump (L179-L179), _PrismaVectorStoreRow.dict
     (L183-L183), _PrismaVectorStoreRow.model_dump (L185-L185), _PrismaVectorStoreRow.__iter__ (L187-L187),
     _PrismaUserRow.organization_memberships (L194-L194), _PrismaUserRow.organization_memberships (L197-L197),
@@ -202,10 +247,10 @@ out_of_scope:
     _TeamMembershipModelScope.litellm_budget_table (L363-L363), _member_allowed_models (L366-L369), _RawCacheRead.async_get_cache
     (L373-L373), _raw_cache (L376-L377), _typed_request_body (L380-L381), _JsonLoadsObj.__call__ (L385-L385),
     _typed_json_loads (L388-L389), _membership_from_shared_load (L411-L412), _log_budget_lookup_failure
-    (L415-L435), get_object_permission (L3982-L4034).'
-  - 'litellm/proxy/auth/auth_checks.py: B736 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
-    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442),
-    _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
+    (L415-L435). B735 owns get_object_permission (L3982-L4034).'
+  - 'litellm/proxy/auth/auth_checks.py: B2318 owns _membership_from_cached_payload (L2328-L2336), _fetch_team_membership_from_db
+    (L2340-L2367), _load_team_membership_on_cache_miss (L2370-L2391), get_team_membership (L2394-L2442).
+    B736 owns _should_check_db (L2473-L2484), _update_last_db_access_time (L2487-L2488), _get_role_based_permissions
     (L2494-L2510), get_role_based_models (L2513-L2527), get_role_based_routes (L2530-L2542), _get_fuzzy_user_object
     (L2545-L2584), _backfill_null_user_email (L2587-L2612), get_user_object (L2616-L2760), _user_read_failure
     (L2763-L2768).'
@@ -289,9 +334,10 @@ out_of_scope:
   - 'litellm/proxy/auth/auth_checks.py::model_in_access_group: no production caller at the pinned commit;
     repository-wide identifier search finds only this definition.'
 pitfalls:
-  - decode_session_token(&[u8]) decodes untrusted compact/blob token bytes, preserves CLI/session expiry
-    and key provenance and never treats a KeyHash as a bearer token.
+  - The selected legacy expiry value can prevent startup even when LITELLM_CLI_JWT_EXPIRATION_HOURS is valid.
+  - Changing the litellm_login_ prefix changes AES-GCM AAD and invalidates authentication, not just parsing.
+  - Empty explicit team_id still clears models because the builder checks is not None, not truthiness.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

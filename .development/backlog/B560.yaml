@@ -1,0 +1,9 @@
+id: B560
+milestone: M3 providers
+title: Foundry agent thread and run execution
+status: todo
+depends_on: [B559, B173, B171, B561, B529, B2202]
+file: tasks/B560-foundry-agent-runs.yaml
+covers:
+  - "litellm/llms/azure_ai/agents/handler.py"
+  - "litellm/llms/azure_ai/agents/transformation.py"

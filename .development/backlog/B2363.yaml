@@ -1,0 +1,9 @@
+id: B2363
+milestone: M4 keys, spend and management
+title: Member removal identities and matching predicates
+status: todo
+depends_on: [B171, B720, B856, B859]
+file: tasks/B2363-member-removal-identity.yaml
+covers:
+  - "litellm/proxy/_types.py"
+  - "litellm/proxy/management_helpers/bulk_user_deletion.py"

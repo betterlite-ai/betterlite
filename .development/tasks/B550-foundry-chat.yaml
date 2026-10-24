@@ -40,7 +40,7 @@ description: >-
   existing options. Then pop max_retries, including any value from extra_body, and delegate B668 request transform.
   gpt5_capability_selection: Prefer azure_ai/<model> in litellm.model_cost when present, else B502 base lookup.
   Select GPT5 policy via its predicate or ordinary B668 superclass; remove tool_choice when B174 supports_tool_choice(azure_ai/<model>)
-  is false and stop when case-sensitive grok delegates to B036 XAI _supports_stop_reason and returns false. azure_openai_model_redirect:
+  is false and stop when case-sensitive grok delegates to B1403 XAI _supports_stop_reason and returns false. azure_openai_model_redirect:
   Provider-info helper resolves explicit base/key or AZURE_AI_API_BASE/AZURE_AI_API_KEY without global fallback.
   Never redirect when base is None or B549 Foundry model-inference host; otherwise remove only the first model prefix
   and test OpenAI chat/text/embedding catalog lists, setting provider azure on membership. azure_ai_response_model:
@@ -161,7 +161,7 @@ dod:
   - helper-python
 - text: 'gpt5_capability_selection: Prefer azure_ai/<model> in litellm.model_cost when present, else B502 base lookup.
     Select GPT5 policy via its predicate or ordinary B668 superclass; remove tool_choice when B174 supports_tool_choice(azure_ai/<model>)
-    is false and stop when case-sensitive grok delegates to B036 XAI _supports_stop_reason and returns false.'
+    is false and stop when case-sensitive grok delegates to B1403 XAI _supports_stop_reason and returns false.'
   proof:
   - case-gpt5-capability-selection
   - oracle
@@ -231,7 +231,7 @@ checks:
   - id: case-gpt5-capability-selection
     why: Prefer azure_ai/<model> in litellm.model_cost when present, else B502 base lookup. Select GPT5 policy via
       its predicate or ordinary B668 superclass; remove tool_choice when B174 supports_tool_choice(azure_ai/<model>)
-      is false and stop when case-sensitive grok delegates to B036 XAI _supports_stop_reason and returns false.
+      is false and stop when case-sensitive grok delegates to B1403 XAI _supports_stop_reason and returns false.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_gpt5_capability_selection$/)'
   - id: case-azure-openai-model-redirect
     why: Provider-info helper resolves explicit base/key or AZURE_AI_API_BASE/AZURE_AI_API_KEY without global fallback.

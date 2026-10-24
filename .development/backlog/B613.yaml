@@ -1,0 +1,13 @@
+id: B613
+milestone: M3 providers
+title: Bedrock classic model parameter maps
+status: todo
+depends_on: [B2205, B037, B2201, B2202, B682, B002, B171]
+file: tasks/B613-bedrock-legacy-models.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py"
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_cohere_transformation.py"
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_llama_transformation.py"
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_mistral_transformation.py"
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_titan_transformation.py"
+  - "litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py"

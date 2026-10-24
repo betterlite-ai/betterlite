@@ -1,0 +1,8 @@
+id: B212
+milestone: M1 openai data plane
+title: Parameter projections and service-tier helpers
+status: todo
+depends_on: [B174, B171]
+file: tasks/B212-parameter-projections.yaml
+covers:
+  - "litellm/litellm_core_utils/{model_param_helper,reasoning_effort_utils,service_tier_utils}.py"

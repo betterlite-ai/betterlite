@@ -1,0 +1,8 @@
+id: B551
+milestone: M3 providers
+title: Foundry bounded 422 request repair
+status: todo
+depends_on: [B550, B505, B010, B173, B171, B219, B198]
+file: tasks/B551-foundry-rejected-fields.yaml
+covers:
+  - "litellm/llms/azure_ai/chat/transformation.py"

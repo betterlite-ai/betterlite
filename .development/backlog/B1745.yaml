@@ -1,0 +1,9 @@
+id: B1745
+milestone: M4 keys, spend and management
+title: Commit entity balances in order and preserve roster removal races
+status: todo
+depends_on: [B126, B171, B198, B204, B700, B724, B733, B860, B1746]
+file: tasks/B1745-entity-spend-commit.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"
+  - "litellm/proxy/utils.py"

@@ -1,0 +1,8 @@
+id: B187
+milestone: M1 openai data plane
+title: Secret and internal-detail redaction
+status: todo
+depends_on: [B004, B171, B244, B243]
+file: tasks/B187-secret-redaction.yaml
+covers:
+  - "litellm/litellm_core_utils/secret_redaction.py"

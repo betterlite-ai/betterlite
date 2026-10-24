@@ -2,11 +2,30 @@ id: B873
 title: Native migration deploy and Prisma ledger writes
 description: >-
   Implement native MigrationDeploy applying MigrationCatalog files and recording exact SHA256 checksums
-  in _prisma_migrations. Hold session advisory lock 72707369 throughout the run; expose injected held-lock
-  connection input to the recovery coordinator. Preserve started_at, finished_at, rolled_back_at, logs
-  and applied_steps_count; restart skips completed entries and records incomplete failures. Execute the
-  concurrent health-check index file outside transactions. This is native SQL behavior proved against
-  Postgres, not a Python subprocess oracle.
+  in _prisma_migrations. migration_files enumerates only migrations/*/migration.sql beneath the supplied
+  directory, sorts paths lexically, and returns parent-directory names with lowercase SHA256 hex of
+  exact bytes. Empty catalogs return an empty tuple; IO errors propagate. No timestamp parser, SQL
+  normalization, line-ending conversion or recursive discovery belongs in this fingerprint.
+
+  The native deploy service replaces the Prisma engine invoked at utils.py:1059-1065; that engine's
+  implementation is not in this checkout. Use the ledger contract read by migration_recovery.py:34-79
+  and written at 138-151. Hold a session advisory lock with ID 72707369 on the deploy connection and
+  release it on all exits, including SQL failure and cancellation. B716's coordinator transaction lock
+  on the same ID must block deployment; B716's distinct llm_mig2 lock remains its own implementation.
+  B051 passes the migration catalog and resolved connection/deadline inputs; this lower layer must not
+  call B051 or B716. Preserve schema-qualified identifiers and parameterized ledger values through B700.
+
+  Read finished, unfinished and rolled-back rows before applying pending files in catalog order.
+  Skip finished migrations without rewriting their original ledger rows; an unresolved failed row
+  stops further deployment for B716 recovery. Insert a new UUID ledger row with name, checksum,
+  started_at, null finished_at/rolled_back_at/logs and applied_steps_count=0 before executing the SQL.
+  On success persist applied_steps_count=1 before finished_at. A failure leaves the row unfinished
+  with error logs and retains already committed earlier migrations; do not wrap the whole deployment
+  in one transaction. Respect explicit transaction statements in migration files. In particular execute
+  20260415120000_health_check_latest_per_model_index as its single CREATE INDEX CONCURRENTLY IF NOT
+  EXISTS statement outside a transaction, then complete its ledger entry. Do not split SQL on semicolons.
+  Tests compare durable intermediate states with the recovery predicates, including interruption after
+  the step count but before finished_at. B716 alone decides whether those rows can be recovered.
 
 
   Build the production migration_deploy module in betterlite-db; reuse the typed dependencies listed in
@@ -26,18 +45,9 @@ description: >-
   clean it on every exit.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: allow 300 native deploy/ledger/checksum/lock code, 220 real Postgres restart/failure tests and
-  80 command/catalog wiring lines, 600 changed lines estimated within a 700-line gate. This native replacement
+  Sizing: migration_files has five nonblank source lines; the native replacement also implements the
+  external engine contract, so allow 300 deploy/ledger/checksum/lock lines, 300 Postgres and catalog tests
+  and 80 wiring lines, 680 within a 700-line gate. This native replacement
   is larger than the pinned Prisma CLI call sites; SQL and generated production facts count, with only
   repository fixture/corpus/lock exclusions.
 scope:
@@ -51,10 +61,20 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L82-L86
     why: Own migration_files; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1059-L1085
+    why: Context only; B051 invokes deployment and handles recovery outcomes, formerly through Prisma.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py#L26-L79
+    why: Durable completion evidence consumed by B716, not additional ownership.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260415120000_health_check_latest_per_model_index/migration.sql#L1-L12
+    why: B706 supplies these bytes; this service chooses the required nontransactional execution mode.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: recorded_checksum, restart_skips_applied,
       prisma_lock_serializes_cutover, concurrent_index_outside_transaction, failed_ledger_unfinished,
-      postgres_pinned_rows, postgres_failure_effects.'
+      postgres_pinned_rows, postgres_failure_effects, catalog_lexical_order, catalog_one_directory_level,
+      catalog_empty, checksum_exact_bytes, catalog_io_error, rollback_rows_allow_new_attempt,
+      unfinished_row_stops_deploy, started_row_before_sql, step_before_finish,
+      explicit_transaction_failure, earlier_migrations_survive, lock_released_on_cancel,
+      coordinator_transaction_lock_conflict and custom_schema_quoted.'
     proof:
       - behavior-tests
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
@@ -74,15 +94,13 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm-proxy-extras/litellm_proxy_extras/migration_recovery.py: B716 owns MigrationProgress.confirms_completion
     (L26-L31), _migration_records (L34-L49), recover_completed_migration (L52-L79), baseline_current_schema
     (L89-L159), is_inert_migration (L167-L171), roll_back_failed_inert_migration (L174-L204).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Hold session advisory lock 72707369 throughout the run; expose injected held-lock connection input
-    to the recovery coordinator.
+  - A health index created inside BEGIN fails with SQLSTATE 25001 even though every preceding ledger write succeeds.
+  - Finishing the ledger before persisting applied_steps_count=1 destroys the evidence B716 uses after interruption.
 budget:
   max_changed_lines: 700
   max_new_expects: 0

@@ -1,0 +1,8 @@
+id: B1038
+milestone: M5 api families
+title: Batch provider cancel
+status: todo
+depends_on: [B010, B171, B1035, B1087, B517, B002]
+file: tasks/B1038-batch-provider-cancel.yaml
+covers:
+  - "litellm/batches/main.py"

@@ -1,9 +1,53 @@
 id: B849
 title: Search and page visible deployment information
 description: >-
-  Implement ModelInfoSearch over preauthorized deployment rows, with DB search read-through, typed date/sort/filter
-  fields and pagination. Preserve enriched B013 metadata and source handling of malformed sort timestamps
-  without accidentally including another team's BYOK deployment.
+  Build ModelInfoSearch for enrichment, bounded database search, sorting, filters and pagination.
+  Enrichment defaults debug=False/router=None. Literal debug=True adds str(async client or 'None'),
+  or 'llm_router_is_None' without a router, through B303 _get_client. Try B124 get_litellm_model_info,
+  then B2225 get_model_info(backend model), then last slash component with first component as provider;
+  the latter two catch every lookup exception silently and use {}. B124's first lookup uses base_model
+  when present or when the backend contains 'azure'. Fetch B845 discovered metadata and B157's
+  cost_map_omits_token_price, overlay B124 _pricing_override_stamps, then fill missing fields from
+  catalog overlaid by discovery. A null existing field is filled only when discovery supplies it.
+  Missing catalog token prices become null only on inserted price fields; explicit overrides survive.
+  Finish with B124 remove_sensitive_info_from_deployment(excluded_keys={'litellm_credential_name'}):
+  drop api_key, client_secret, vertex_credentials, vertex_ai_credentials, aws_access_key_id and
+  aws_secret_access_key, mask remaining sensitive params, preserve credential names and integer
+  default_api_key_tpm_limit/default_api_key_rpm_limit. Do not store or re-encrypt credentials here.
+
+  Search defaults caller=None, page=1, size=50, sort_by/model_name=None. Empty/whitespace search returns
+  the original list and count=None before any query. Otherwise lowercase and strip, acquire B1216's
+  BYOK team scope, and match router model_name OR team_public_model_name case-insensitively, dropping
+  foreign BYOK rows. Count configuration rows individually and truthy db_model/id rows by unique id.
+  If DB exists and search can occur in an exact model_name filter, query model_name with insensitive
+  contains or that exact name, excluding router DB ids. Count first, then fetch max(0,page*size minus
+  router count), or exactly the cap 500 for ANY truthy sort_by, including unsupported fields. A zero
+  take still counts but skips fetching. Filter foreign teams before B124 decrypt_model_list_from_db;
+  extend only nonempty decrypt results. Returned DB count is deliberately not team-scoped. Any fetch,
+  count or decrypt exception logs 'Error querying database models with search: %s' and returns only
+  router matches/count, discarding earlier decrypted rows. No DB/no possible exact-name match skips
+  the query. Router-side public-name matching does not add a DB JSON-path query.
+
+  Normalize datetime strings with fromisoformat compatibility, no whitespace stripping, replacing
+  uppercase Z with +00:00 only if the string ends in Z. Naive values assume UTC; aware values convert
+  to UTC. None, other types and caught ValueError/AttributeError yield None. decode_model_info_datetime
+  is the external string boundary; add a B770 fuzz target and seeds for Z, offsets, naive dates,
+  invalid dates, whitespace and Unicode, comparing accepted forms to the pinned helper.
+
+  Sort only model_name, created_at, updated_at, costs or status; other/absent fields return input.
+  sort_order defaults asc and only case-insensitive desc reverses. Names prefer truthy public names,
+  cast to strings, then lowercase; dates normalize as above. Invalid dates sort LAST in both directions
+  despite the source comment. Costs sum input/output, treating falsy as zero; zero totals also sort
+  last both ways, negative totals retain order. Use decimal values and an ordered sentinel, not binary
+  floating prices. status uses db_model default False. Sort is stable; any key/comparison exception
+  logs 'Error sorting models by %s: %s' and returns the original order.
+
+  Filters exclude every string backend prefix auto_router/ only for literal exclude_auto_routers=True.
+  A string access_group, even empty, requires exact membership in a list/tuple access_groups; malformed
+  metadata does not match. Literal wildcard_only=True requires '*' anywhere in str(model_name or '').
+  Pagination uses count=len when None, skip=(page-1)*size, ceiling count/size for positive count and
+  zero pages otherwise, and slices that page. Return data,total_count,current_page,total_pages,size;
+  preserve the debug pagination record with skip,take,count,pages,search. B850 validates positive inputs.
 
 
   Build the production model_info_search module in betterlite-server; reuse the typed dependencies listed
@@ -19,33 +63,27 @@ description: >-
   (L15010-L15020; 11 source lines), _paginate_models_response (L15023-L15065; 38 source lines).
 
 
-  Add the model_info_search operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a model-info-search-*
-  seed to B171 helper_case, which already owns this decoder.
+  Add model_info_search under B856 Management::models for pure enrichment/sort/filter/page functions,
+  using controlled catalog and discovery snapshots and the pinned Python helpers. Exercise async search
+  with Postgres via POSTGRES_TEST_URL or B860 testcontainers, failing on unavailable fixtures; assert
+  query predicates, count-before-fetch, cap, scope-before-decrypt and catch-and-drop behavior. B850
+  owns the booted HTTP cases. Add B171's bounded helper_case seed; do not call stateful routes in helpers.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  Query extraction remains with the HTTP layer; only the datetime string decoder adds a fuzz boundary.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 368 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  368 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 614 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The owned functions contain 280 nonblank noncomment lines excluding docstrings, plus the cap literal.
+  Allow 290 production, 300 tests, 110 adapters, 60 decoder/fuzz and 35 wiring lines, 795 within 800.
 scope:
   paths:
     - crates/betterlite-server/src/model_info_search.rs
     - crates/betterlite-server/src/model_info_search/**
     - crates/betterlite-server/src/lib.rs
     - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/model_info_datetime.rs
+    - crates/betterlite-server/fuzz/corpus/model_info_datetime/**
     - tools/oracle/src/helpers/model_info_search.rs
     - tools/oracle/src/helpers/model_info_search/**
     - tools/oracle/helpers/model_info_search.py
@@ -56,6 +94,10 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/model-info-search-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14664-L14668
+    why: Sorted database fetch cap is a literal 500, not a configurable page limit.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_endpoint_utils.py#L15-L48
+    why: B124 removes six credential fields then masks params with exact exclusions.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14540-L14610
     why: Own _enrich_model_info_with_litellm_data; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14671-L15065
@@ -77,6 +119,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15023-L15065
     why: Own _paginate_models_response; preserve caller-visible values and failure ordering.
 dod:
+  - text: count_before_fetch, unsorted_take_zero, sorted_cap_500, unknown_sort_still_capped, scope_before_decrypt, db_count_unscoped, decrypt_error_discards_batch and exact_name_skips_db prove the Postgres read contract.
+    proof: [behavior-tests]
+  - text: The production datetime decoder handles the named ISO forms and added fuzz corpus.
+    proof: [behavior-tests, datetime-corpus]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: search_db_readthrough,
       model_name_search, date_sort, invalid_date_fallback, access_group_filter, pagination_count, byok_scope_retained.'
     proof:
@@ -90,6 +136,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: datetime-corpus
+      why: Datetime parsing must use the production decoder and an added corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/model_info_datetime)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_model_info_datetime_corpus)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_info_search::tests::/)
@@ -105,13 +154,27 @@ checks:
         && grep -rlq "model_info_search" tools/oracle/fuzz/corpus/helper_case/model-info-search-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/model-info-search/search-db-readthrough.yaml
-  - tools/oracle/cases/helpers/model-info-search/model-name-search.yaml
   - tools/oracle/cases/helpers/model-info-search/date-sort.yaml
   - tools/oracle/cases/helpers/model-info-search/invalid-date-fallback.yaml
   - tools/oracle/cases/helpers/model-info-search/access-group-filter.yaml
   - tools/oracle/cases/helpers/model-info-search/pagination-count.yaml
-  - tools/oracle/cases/helpers/model-info-search/byok-scope-retained.yaml
+  - tools/oracle/cases/helpers/model-info-search/debug-client-values.yaml
+  - tools/oracle/cases/helpers/model-info-search/catalog-three-pass.yaml
+  - tools/oracle/cases/helpers/model-info-search/azure-base-model.yaml
+  - tools/oracle/cases/helpers/model-info-search/discovery-null-precedence.yaml
+  - tools/oracle/cases/helpers/model-info-search/pricing-stamps-unpriced.yaml
+  - tools/oracle/cases/helpers/model-info-search/credentials-redacted-name-retained.yaml
+  - tools/oracle/cases/helpers/model-info-search/rate-limits-not-masked.yaml
+  - tools/oracle/cases/helpers/model-info-search/datetime-z-offset-naive.yaml
+  - tools/oracle/cases/helpers/model-info-search/invalid-dates-last-both-orders.yaml
+  - tools/oracle/cases/helpers/model-info-search/zero-cost-last-negative-stable.yaml
+  - tools/oracle/cases/helpers/model-info-search/status-default-config-first.yaml
+  - tools/oracle/cases/helpers/model-info-search/public-name-sort.yaml
+  - tools/oracle/cases/helpers/model-info-search/unknown-sort-and-key-error.yaml
+  - tools/oracle/cases/helpers/model-info-search/auto-router-all-strategies.yaml
+  - tools/oracle/cases/helpers/model-info-search/empty-access-group-malformed-metadata.yaml
+  - tools/oracle/cases/helpers/model-info-search/wildcard-literal-filter.yaml
+  - tools/oracle/cases/helpers/model-info-search/page-empty-explicit-count.yaml
 deviations: []
 out_of_scope:
   - 'litellm/proxy/proxy_server.py: B124 owns showwarning (L195-L198), generate_feedback_box (L236-L260),
@@ -281,8 +344,6 @@ out_of_scope:
     (L20123-L20141), aggregate_mcp_route (L20148-L20164), toolset_mcp_route (L20173-L20214), _mcp_forward_as_path
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20312-L20379).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/proxy_server.py: B060 owns model_deprecations (L16290-L16317), _get_model_group_info
     (L16320-L16351), model_group_info (L16359-L16581).'
   - 'litellm/proxy/proxy_server.py: B848 owns _check_if_model_is_user_added (L14161-L14187), _check_if_model_is_team_model
@@ -469,8 +530,10 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
-  - Search read-through must preserve the preauthorized BYOK deployment scope.
+  - The raw DB count can exceed scoped rows; B850 later replaces it with the final materialized length.
+  - A nonempty unsupported sortBy still triggers the 500-row fetch cap before sorting is skipped.
+  - Sorting's comments claim missing values start descending results, but its sentinels put them last.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

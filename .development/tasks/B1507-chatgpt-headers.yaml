@@ -1,0 +1,91 @@
+id: B1507
+title: Construct ChatGPT subscription headers and session identity
+description: >-
+  Implement every function, error record and constant in chatgpt/common_utils.py under
+  betterlite-openai/src/chatgpt/headers.rs, with the default instructions in a separate text asset.
+  Headers include Authorization, content-type application/json, accept text/event-stream, originator
+  and user-agent, adding session_id and ChatGPT-Account-Id only for truthy inputs. Keep token strings
+  secret except at transport serialization. Originator defaults codex_cli_rs; CHATGPT_ORIGINATOR and
+  CHATGPT_USER_AGENT override it and the generated agent respectively. Replace characters outside ASCII
+  32..126 with underscores. Without a USER_AGENT override combine originator, the pinned compatibility
+  version 1.105.1, injected OS/release/architecture, terminal and trimmed CHATGPT_USER_AGENT_SUFFIX.
+  Preserve the source 0.0.0 version fallback for unavailable version metadata and DEFAULT_USER_AGENT
+  fallback codex_cli_rs/0.0.0 (Unknown 0; unknown) unknown. CHATGPT_DEFAULT_INSTRUCTIONS uses its truthy
+  value or the complete pinned default prompt; do not shorten the prompt.
+
+  Resolve environment in betterlite-config/src/providers/chatgpt/headers.rs. Terminal precedence is
+  TERM_PROGRAM plus TERM_PROGRAM_VERSION, WEZTERM_VERSION, any ITERM_SESSION_ID/ITERM_PROFILE/ITERM_PROFILE_NAME,
+  TERM_SESSION_ID, KITTY_WINDOW_ID or kitty in TERM, ALACRITTY_SOCKET or TERM=alacritty, KONSOLE_VERSION,
+  GNOME_TERMINAL_SCREEN, VTE_VERSION, WT_SESSION, TERM, then unknown. Presence of empty WezTerm/Konsole/VTE
+  version values still selects that terminal. Terminal sanitization permits Unicode alphanumerics and
+  -_./ before the final ASCII header pass. Defaults for these optional environment inputs are unset.
+
+  Session selection checks truthy litellm_session_id, session_id, metadata.session_id, litellm_trace_id,
+  litellm_call_id, then an injected UUID. Normalize None/dict/Python model snapshots; a failing model_dump
+  gives an empty record without falling through to dict(). Stringify non-string truthy session ids as
+  Python does. Header construction receives an already normalized typed session context, so no new byte
+  decoder is required. Register chatgpt_headers in both B171 dispatchers and add a call.chatgpt_headers
+  seed. Compare terminal_priority, empty_terminal_version, ascii_sanitization, session_precedence,
+  model_dump_failure and instruction_override. Config test chatgpt_header_env_loads exercises every
+  environment spelling above via the real loader. Counted source is 220 nonblank/non-comment lines;
+  estimate 235 implementation/data, 190 tests, 105 adapters and 140 config/wiring lines, capped at 700.
+scope:
+  paths:
+    - crates/betterlite-openai/src/lib.rs
+    - crates/betterlite-openai/src/chatgpt.rs
+    - crates/betterlite-openai/src/chatgpt/headers.rs
+    - crates/betterlite-openai/src/chatgpt/headers/**
+    - crates/betterlite-openai/src/chatgpt/default_instructions.txt
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/chatgpt.rs
+    - crates/betterlite-config/src/providers/chatgpt/headers.rs
+    - crates/betterlite-config/src/providers/chatgpt/headers/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_headers*
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/chatgpt_headers.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/chatgpt_headers.py
+    - tools/oracle/cases/helpers/chatgpt-headers/**
+    - tools/oracle/fuzz/corpus/helper_case/chatgpt_headers*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/common_utils.py#L14-L290
+    why: Subscription constants, full default prompt, header sanitizers and session precedence.
+dod:
+  - text: ChatGPT headers, terminal identity and session ids reproduce the pinned helper outputs without leaking tokens through diagnostics.
+    proof: [chatgpt-header-tests, oracle, chatgpt-header-python]
+  - text: All terminal and ChatGPT header environment settings resolve through configuration with their source defaults.
+    proof: [chatgpt-header-config, chatgpt-header-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: chatgpt-header-tests
+      why: a header, session fallback or secret-safe failure path is missing
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chatgpt::headers::/)'
+    - id: chatgpt-header-config
+      why: ambient terminal variables bypass the tested configuration boundary
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(chatgpt_header_env_loads)'
+    - id: chatgpt-header-python
+      why: the header helper adapter cannot be checked independently
+      run: test -f tools/oracle/helpers/chatgpt_headers.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/chatgpt_headers.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: chatgpt-header-seeds
+      why: header configuration and the helper operation lack fresh decoder inputs
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/chatgpt_headers*')" && grep -qE '^[[:space:]]+chatgpt_headers:' tools/oracle/fuzz/corpus/helper_case/chatgpt_headers* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/chatgpt-headers/terminal-priority.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/empty-terminal-version.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/ascii-sanitization.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/session-precedence.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/model-dump-failure.yaml
+  - tools/oracle/cases/helpers/chatgpt-headers/instruction-override.yaml
+deviations: []
+out_of_scope:
+  - The access token's acquisition and expiration checks are B1508/B1509; these functions only format a supplied credential.
+pitfalls:
+  - A model_dump exception returns an empty context even when the same object also exposes a working dict method.
+  - TERM_PROGRAM outranks every terminal-specific variable, including an explicitly present WEZTERM_VERSION.
+  - litellm_trace_id is a session fallback before litellm_call_id, so exchanging them changes conversation affinity.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

@@ -1,0 +1,10 @@
+id: B191
+milestone: M1 openai data plane
+title: Bounded callback worker and batch delivery
+status: todo
+depends_on: [B189, B256]
+file: tasks/B191-logging-worker.yaml
+covers:
+  - "litellm/litellm_core_utils/logging_worker.py"
+  - "litellm/integrations/*_mock_client.py"
+  - "litellm/integrations/{additional_logging_utils,mock_client_factory,test_httpx}.py"

@@ -1,0 +1,12 @@
+id: B670
+milestone: M3 providers
+title: OpenAI resource operation composition
+status: todo
+depends_on: [B516, B517, B518, B522, B523, B527, B171]
+file: tasks/B670-openai-resource-dispatch.yaml
+covers:
+  - "litellm/llms/openai/openai.py"
+  - "litellm/llms/openai/fine_tuning/handler.py"
+  - "litellm/llms/openai/containers/transformation.py"
+  - "litellm/llms/openai/evals/transformation.py"
+  - "litellm/llms/openai/vector_stores/transformation.py"

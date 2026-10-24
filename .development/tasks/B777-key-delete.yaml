@@ -1,9 +1,48 @@
 id: B777
 title: Delete keys and retain archived audit rows
 description: >-
-  Implement key delete and alias-delete services with ownership authorization, archive rows and post-commit
-  invalidation. Keep raw token/hash normalization at the boundary and preserve the source partial-deletion/foreign-key
-  behavior; JWT mappings cascade through the existing schema.
+  Implement POST /key/delete and its delete services in source order. B124 KeyRequest defaults keys
+  and key_aliases to null and rejects two falsey lists with 422; when both are supplied keys wins.
+  Echo the original requested keys or aliases in deleted_keys, including duplicates and missing
+  members of a partially matching request. The route's count assertion compares the request to its
+  own echo, not to the actual deletion count. An entirely missing set raises 404; a missing subset
+  does not. Normalize a non-string litellm-changed-by to null; the normal HTTP header is a string.
+  Cases delete_keys_precede_aliases, delete_empty_lists_422, delete_partial_missing_echo,
+  delete_duplicates_echo, delete_aliases_echo and delete_changed_by cover these distinctions.
+
+
+  B770 hashes only sk- prefixed input. Query all matching token rows, authorize all of them before
+  any write, then archive them. Proxy administrators and the exact internal-job api_key
+  litellm_internal_jobs may delete any key. A team key requires the team to exist even for its
+  owner; a team administrator or its non-null user_id owner is allowed. A personal key requires
+  the same non-null owner. Cases delete_proxy_admin, delete_internal_job, delete_team_admin,
+  delete_owner, delete_null_owner_denied, delete_missing_team_denied and delete_foreign_aborts_all
+  distinguish these paths. B737 loads teams without cache; B800 checks team membership.
+
+
+  Archive transformation samples one aware UTC deleted_at for the batch, copies deleted_by from
+  caller.user_id, deleted_by_api_key from caller.api_key, and litellm_changed_by from the header.
+  Rename a non-null org_id to organization_id. JSON encode non-null aliases, config, permissions,
+  metadata, model_spend, model_max_budget, budget_fallbacks and router_settings. Drop relations
+  litellm_budget_table, litellm_organization_table, object_permission, id and budget_limits.
+  Preserve record order; empty transformation/save does nothing. An explicitly supplied transaction
+  is used for create_many, otherwise use B770's archived-token repository adapter. Cases
+  archive_audit_identity, archive_json_columns, archive_relation_removal, archive_empty_no_clock
+  and archive_supplied_transaction cover every field and branch. Never recover plaintext secrets.
+
+
+  After archive insertion snapshot B738 JWT mapping cache keys before the schema's delete cascade.
+  Administrators call B124 delete_data once with all normalized requested tokens; other callers
+  gather deletions for authorized rows and report those row tokens. Preserve failed_tokens in
+  the service result, including missing requested tokens when the lengths differ; the HTTP result
+  still echoes its request. Broadcast JWT mapping evictions through B878, evict each normalized
+  token and hash_token(normalized_token) from the cache, then B819 syncs access-group membership
+  from previous groups to null. Schedule B784's deleted-key hook only after the service succeeds.
+  Cases delete_jwt_snapshot_before_cascade, delete_admin_and_owner_results,
+  delete_hash_and_double_hash_eviction and delete_access_groups_last pin the order. Postgres
+  cases archive_failure_keeps_live_keys, delete_failure_retains_archive,
+  mapping_eviction_failure_keeps_delete and group_sync_failure_keeps_delete prove there is no
+  enclosing transaction or rollback of preceding effects.
 
 
   Build the production key_delete module in betterlite-server; reuse the typed dependencies listed in
@@ -19,13 +58,14 @@ description: >-
   17 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /key/delete -> delete_key_fn. For each
-  route send a typed successful request, an invalid or missing target, and a caller lacking that route
-  permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Register POST /key/delete once and exercise it through B001 HttpCase. Its own except block
+  at L4172-L4175 calls B124 handle_exception_on_proxy: no database and ordinary failures become
+  500 internal_server_error; missing rows 404 and denied ownership 403 also use internal_server_error,
+  with openai_error_param and numeric status code. A null delete result raises a 500 ProxyException
+  with param keys and passes through unchanged. Messages identify the missing key set, denied
+  key or unavailable database; use betterlite wording under the README error-message decision.
+  Cases delete_no_database, delete_missing_all, delete_denied_error_shape and delete_null_result
+  assert status/type/param/code. The request decoder's 422 precedes this except block.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -53,8 +93,8 @@ description: >-
 
 
   Sizing: 345 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  345 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 564 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  345 production, 355 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 765 changed lines estimated within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -74,7 +114,7 @@ scope:
     - crates/betterlite-server/src/key_delete/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4071-L4175
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4069-L4175
     why: Own delete_key_fn; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4857-L5208
     why: Pinned implementation and exact ownership boundary for key_delete.
@@ -96,9 +136,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
     why: Management exception HTTP status and public error translation.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: delete_owned_key, team_delete_permission,
-      archive_fields, alias_delete, jwt_mapping_cascade, transaction_failure_no_cache_eviction, postgres_pinned_rows,
-      postgres_failure_effects.'
+  - text: Implement every named case in the description, including the four partial-write failures,
+      plus postgres_pinned_rows and postgres_failure_effects. Exercise route cases through HTTP and
+      archive transformations with injected repositories and clock.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -121,19 +161,23 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_delete::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/key_delete::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/key-delete/post--key-delete-success.yaml
-  - tools/oracle/cases/management/key-delete/post--key-delete-invalid-target.yaml
-  - tools/oracle/cases/management/key-delete/post--key-delete-unauthorized-caller.yaml
   - tools/oracle/cases/management/key-delete/delete-owned-key.yaml
   - tools/oracle/cases/management/key-delete/team-delete-permission.yaml
   - tools/oracle/cases/management/key-delete/archive-fields.yaml
   - tools/oracle/cases/management/key-delete/alias-delete.yaml
   - tools/oracle/cases/management/key-delete/jwt-mapping-cascade.yaml
-  - tools/oracle/cases/management/key-delete/transaction-failure-no-cache-eviction.yaml
-deviations: []
+  - tools/oracle/cases/management/key-delete/partial-missing-and-duplicate-echo.yaml
+  - tools/oracle/cases/management/key-delete/keys-precede-aliases.yaml
+  - tools/oracle/cases/management/key-delete/missing-and-denied-errors.yaml
+  - tools/oracle/cases/management/key-delete/archive-before-delete-failure.yaml
+deviations:
+  - what: Omit source diagnostics that dump token cache contents or deleted credential identifiers.
+    why: README secret handling; native delete_logs_redacted checks structured logs on failures.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4069-L4175
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B124 owns KeyRequest validation and delete_data; B720 owns archived row contracts; B726/B770
+    own repository adapters. B2314 owns SHA-256 token hashing. This task archives existing stored
+    representations and does not encrypt or decode credentials.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -229,8 +273,9 @@ out_of_scope:
     no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Archive rows retain the source columns before active-token deletion.
+  - The successful response is an echo, not proof that each requested identifier existed or was deleted.
+  - Cache cleanup hashes an already normalized token again; replacing it with raw-key eviction changes behavior.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

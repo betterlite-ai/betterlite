@@ -1,0 +1,8 @@
+id: B2223
+milestone: M3 providers
+title: Ollama runtime model metadata
+status: todo
+depends_on: [B193, B129, B500, B173, B187, B002, B171]
+file: tasks/B2223-ollama-model-metadata.yaml
+covers:
+  - "litellm/llms/ollama/common_utils.py"

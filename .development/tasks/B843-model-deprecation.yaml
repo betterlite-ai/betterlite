@@ -6,6 +6,44 @@ description: >-
   Slack mrkdwn payload formatting. B116 sends alerts; this task only produces typed facts and text.
 
 
+  Read deployments through B844 get_model_list and catalog entries through B013; inject both catalog
+  and UTC clock. Own _ResolvedDeprecation plus all response fields and constants in the covered types
+  file: DEFAULT_DEPRECATION_WARN_DAYS=30, DEFAULT_DEPRECATION_CHECK_INTERVAL_SECONDS=86400 and
+  DEPRECATION_IDLE_POLL_SECONDS=30. The latter two are exported for B116, not new environment settings.
+  ModelDeprecationInfo requires model_name/date/days/status and defaults litellm_model and
+  litellm_provider to None. Response buckets default empty; warn_within_days and checked_at are required.
+
+
+  Dates accept datetime (take its calendar date without timezone conversion), date, or a string
+  trimmed with Python strip semantics and parsed by date.fromisoformat. Match calendar dates, basic
+  YYYYMMDD and supported ISO week dates; reject date-time strings and invalid dates by returning None,
+  without a warning. Non-string scalar/container values also return None. A valid model_info override
+  wins and takes provider only from that model_info. Otherwise try catalog base_model, the full
+  litellm_params.model, then its suffix after the first slash. Ignore empty/non-string lookup keys,
+  non-mapping catalog entries and invalid dates; keep a non-string catalog provider as None. A malformed
+  model_info or litellm_params acts as an empty map. Missing/non-string/empty public model_name or no
+  resolvable date removes only that row from the report, never from the router.
+
+
+  Days below zero classify deprecated; zero through warn_within_days inclusive classify imminent;
+  later dates classify upcoming. The helper does not clamp a negative warning window. Deduplicate by
+  (public model_name,date), retaining the first deployment's provider/model for equal keys, then sort
+  each bucket by date, preserving model-name order for tied dates. Different dates for the same public
+  name remain distinct entries. Missing router or model list gives empty buckets. Always sample the UTC
+  clock for checked_at, even with an explicit today, and emit the debug count of deduplicated dated
+  models versus total deployments. Explicit today changes classification, not checked_at.
+
+
+  Alert formatting returns None when deprecated and imminent are empty, even if upcoming is populated.
+  Otherwise emit '*⚠️ Model Deprecation Warning*', the nonempty sections '\n*Already deprecated:*'
+  and '\n*Deprecating within <days> days:*', and the footer '\nPlan migrations to a supported model.
+  See https://docs.litellm.ai/docs/proxy/model_management for guidance.', joined with newlines.
+  Each entry is '• `<name>` (provider: <provider>, deprecates <ISO date>, <suffix>)', using unknown
+  for absent or empty provider and 'already deprecated <absolute days>d ago' or 'in <days>d'. Escape
+  ampersand first, then < and >, in both name and provider; do not add backtick/asterisk escaping the
+  source lacks. Formatter output is compared byte-for-byte, including blank lines and section order.
+
+
   Build the production model_deprecation module in betterlite-server; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
   adjacent tests.rs files.
@@ -27,30 +65,16 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  This task owns the outside-byte boundary model_deprecation::decode_deprecation_date(&[u8]) -> Result<TypedValue,DecodeError>
-  for catalog date strings. Production calls this decoder before its typed policy functions; the cargo-fuzz
-  target model_deprecation calls that same function. Seed valid, truncated, malformed, duplicate-field
-  and limit-boundary inputs and add model_deprecation::tests::replays_the_model_deprecation_corpus. Reuse
-  B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder
-  cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching
-  URLs. B770 owns crates/betterlite-server/fuzz; depend on it and register this decoder target without
-  recreating the workspace.
+  The string parser decode_deprecation_date(&str) returns Option<Date>, using a maintained date parser
+  with compatibility for the source's ISO formats. Catalog/config/helper bounds are enforced upstream;
+  there is no JSON depth or new one-megabyte policy in a date-string helper. Fuzz this actual parser
+  with arbitrary UTF-8 strings, invalid days, leap years, week dates, whitespace and truncation; replay
+  the committed corpus in replays_the_model_deprecation_corpus. B770 supplies the server fuzz workspace.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 163 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  163 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
-  and 0 config lines, 454 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  The helper module has 179 nonblank noncomment lines excluding docstrings, including imports/types;
+  its response file adds 42 such lines. Estimate 200 production, 255 tests, 80 adapters, 45 fuzz/replay
+  and 30 wiring lines, 610 within 650. No database or route work belongs in this part.
 scope:
   paths:
     - crates/betterlite-server/src/model_deprecation.rs
@@ -110,11 +134,11 @@ dod:
       - helper-python
       - helper-case-corpus
   - text: The production decode_deprecation_date decoder is used by the service and its fuzz target and
-      rejects malformed/oversize input without panic.
+      returns None for invalid date strings without panic or a fabricated error response.
     proof:
       - behavior-tests
       - parser-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+  - text: Type defaults, all three exported constants, explicit-today clock behavior and the debug count have named tests response_defaults, poll_constants, explicit_today_clock and debug_dedup_count.
     proof:
       - behavior-tests
 checks:
@@ -149,18 +173,34 @@ oracle_cases:
   - tools/oracle/cases/helpers/model-deprecation/upcoming-boundary.yaml
   - tools/oracle/cases/helpers/model-deprecation/deduplicated-model.yaml
   - tools/oracle/cases/helpers/model-deprecation/escaped-alert.yaml
-deviations:
-  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
-      smaller inherited limits.
-    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
-      parser behavior.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L32-L42
+  - tools/oracle/cases/helpers/model-deprecation/date-input-kinds.yaml
+  - tools/oracle/cases/helpers/model-deprecation/iso-basic-week-and-whitespace.yaml
+  - tools/oracle/cases/helpers/model-deprecation/datetime-keeps-local-date.yaml
+  - tools/oracle/cases/helpers/model-deprecation/nonmapping-metadata.yaml
+  - tools/oracle/cases/helpers/model-deprecation/base-model-before-raw.yaml
+  - tools/oracle/cases/helpers/model-deprecation/first-slash-fallback.yaml
+  - tools/oracle/cases/helpers/model-deprecation/invalid-override-falls-through.yaml
+  - tools/oracle/cases/helpers/model-deprecation/invalid-catalog-entry.yaml
+  - tools/oracle/cases/helpers/model-deprecation/provider-nonstrings.yaml
+  - tools/oracle/cases/helpers/model-deprecation/missing-public-name.yaml
+  - tools/oracle/cases/helpers/model-deprecation/today-imminent.yaml
+  - tools/oracle/cases/helpers/model-deprecation/negative-window.yaml
+  - tools/oracle/cases/helpers/model-deprecation/dedupe-first-metadata.yaml
+  - tools/oracle/cases/helpers/model-deprecation/same-name-two-dates.yaml
+  - tools/oracle/cases/helpers/model-deprecation/bucket-tie-order.yaml
+  - tools/oracle/cases/helpers/model-deprecation/no-router.yaml
+  - tools/oracle/cases/helpers/model-deprecation/explicit-today-clock.yaml
+  - tools/oracle/cases/helpers/model-deprecation/upcoming-no-alert.yaml
+  - tools/oracle/cases/helpers/model-deprecation/deprecated-only-alert.yaml
+  - tools/oracle/cases/helpers/model-deprecation/imminent-only-alert.yaml
+  - tools/oracle/cases/helpers/model-deprecation/unknown-provider-alert.yaml
+deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B116 owns Slack delivery, deduplication TTL and polling; the model-info route owner calls this collector.
 pitfalls:
-  - Invalid deprecation dates follow the source fallback and must not remove the deployment.
+  - Two deployments with the same public name and date report the first deployment's metadata, even if their providers differ.
+  - Supplying today does not freeze checked_at, which always comes from a fresh UTC clock sample.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

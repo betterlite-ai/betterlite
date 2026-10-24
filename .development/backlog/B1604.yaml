@@ -1,0 +1,8 @@
+id: B1604
+milestone: M4 keys, spend and management
+title: Scope stored and dynamic tag reports to their caller
+status: todo
+depends_on: [B003, B052, B074, B722, B726, B732, B860, B1603]
+file: tasks/B1604-tag-reads.yaml
+covers:
+  - "litellm/proxy/management_endpoints/tag_management_endpoints.py"

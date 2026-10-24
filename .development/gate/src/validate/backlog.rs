@@ -11,7 +11,7 @@ fn entry_problems(root: &Path, entry: &BacklogEntry, ids: &[&str]) -> Vec<String
     let mut problems: Vec<String> = task_id_problem(&entry.id).into_iter().collect();
     if entry.title.trim().is_empty() || entry.milestone.trim().is_empty() {
         problems.push(format!(
-            "backlog.yaml: {} needs a title and a milestone",
+            "backlog/{}.yaml needs a title and a milestone",
             entry.id
         ));
     }
@@ -64,7 +64,7 @@ fn unlisted_files(root: &Path, backlog: &Backlog) -> Result<Vec<String>, GateErr
                 .is_some_and(|extension| extension == "yaml")
         };
         if let Some(path) = file.filter(|path| is_yaml(path) && !listed.contains(path.as_str())) {
-            problems.push(format!(".development/{path} is not listed in backlog.yaml"));
+            problems.push(format!(".development/{path} has no backlog entry"));
         }
     }
     Ok(problems)
@@ -106,7 +106,7 @@ pub(crate) fn problems(root: &Path, backlog: &Backlog) -> Result<Vec<String>, Ga
         .collect();
     let mut problems: Vec<String> = duplicates(&ids)
         .into_iter()
-        .map(|id| format!("backlog.yaml lists {id} twice"))
+        .map(|id| format!("the backlog lists {id} twice"))
         .collect();
     problems.extend(
         backlog

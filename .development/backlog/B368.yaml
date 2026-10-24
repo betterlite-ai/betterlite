@@ -1,0 +1,8 @@
+id: B368
+milestone: M2 routing
+title: Transactional deployment catalog updates
+status: todo
+depends_on: [B008, B002, B010, B367, B301, B401]
+file: tasks/B368-catalog-updates.yaml
+covers:
+  - "litellm/router.py"

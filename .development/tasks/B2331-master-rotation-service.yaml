@@ -1,0 +1,127 @@
+id: B2331
+title: Ordered master-key re-encryption service
+description: >-
+  Extract _rotate_master_key (key_management_endpoints.py L5211-L5365) below both B785 and
+  B061's same-key algorithm migration. Move credential_endpoints/endpoints.py
+  CredentialHelperUtils.encrypt_credential_values L34-L47 and update_db_credential L285-L321
+  here as well, so this service never calls back into the migration route owner. B2332 supplies
+  MCP store rotation below B139; B137 supplies SSO assertion rotation. B785 retains HTTP routes.
+
+  current_master_key is unused: reads use the active configured salt through B124/B2303, and
+  writes use new_master_key. Do not validate the current-key argument or change active master/salt
+  settings here. Cases current_argument_unused and same_key_algorithm_migration prove that
+  distinction; B895 owns activation and master-key regeneration response behavior.
+
+  Read all model rows; any fetch exception is silently treated as no models. For a nonempty
+  result, B124 decrypt_model_list_from_db supplies deployments, B836 _add_model_to_db is called
+  sequentially with should_create_model_in_db=false and the new encryption key, and falsey
+  conversions are omitted. Then one transaction, timeout exactly two minutes, update_many's each
+  row by model_id with encrypted litellm_params JSON. Commit before B120 publish_config_change
+  using coordination_redis_cache and object_type litellm_proxymodeltable. Cases models_read_failure_skip,
+  models_falsey_conversion_omitted, models_transaction_timeout_and_order,
+  models_failure_rolls_back_only_models and model_publication_failure_stops_later_stores pin the effects.
+
+  Read config rows next; all read exceptions silently skip this stage. Last environment_variables
+  row wins. For truthy values B124 _decrypt_and_set_db_env_variables changes process environment
+  as it decrypts, then _encrypt_env_variables uses new_master_key; only a truthy encrypted result
+  is persisted back to that config row. B124 owns its warn-once forbidden MCP stdio flag and
+  per-variable decrypt/error handling; this service does not replace them with all-or-nothing
+  decryption. Cases config_read_failure_skip, config_last_environment_row,
+  config_empty_result_no_update and config_write_failure_keeps_models_and_environment prove ordering.
+
+  Attempt MCP server/OAuth-client credentials, MCP user credentials, MCP per-user environment
+  variables, then SSO identity assertions, in that order. Each whole-store exception logs its own
+  warning and continues to the next store. Server rotation receives touched_by=caller.user_id or
+  default_user_id. Cases rotation_store_order, rotation_each_store_warning and rotation_actor_fallback
+  assert every call and failure independently; each store's own partial writes remain visible.
+
+  Finally fetch credential rows; fetch exceptions silently skip. For each row decrypt through
+  B124 decrypt_credentials, merge an encrypted patch, wrap credential_values and credential_info
+  as database JSON when present, and update by ORIGINAL credential_name with updated_by equal
+  to caller.user_id (including null). Per-row failures log and continue, and final debug count is
+  the number fetched, not the successful writes. Cases credential_original_name_where,
+  credential_null_updated_by, credential_failure_continues and credential_count_includes_failures
+  compare ordered row writes. No transaction spans models, config, MCP/SSO and credentials.
+
+  encrypt_credential_values returns a new CredentialItem, encrypting EVERY value in
+  credential_values or {} through B2303 with the supplied new key; keep name and credential_info
+  or {} without mutating the plaintext input. update_db_credential starts from the existing
+  name/info/values, applies truthy encrypted name and values, and merges truthy encrypted info.
+  The unusual source condition tests whether existing credential_info contains the literal key
+  credential_info; absent that key it first replaces the old info with {}. Cases
+  credential_encrypt_all_fields, credential_input_unmodified, credential_falsey_patch_ignored
+  and credential_info_nested_key_condition preserve this behavior. Cipher formats and salt
+  precedence belong to B2303; do not write crypto or store plaintext on an encryption exception.
+
+  This undecorated service is exercised through B171 with an injected ProxyConfig collaborator,
+  publication sink and real encrypted Postgres fixtures; no adapter invokes B785's FastAPI
+  handlers. Pure credential transformations use the real B2303 codec and deterministic test
+  randomness. Native injected failure cases assert exact partial effects. Use POSTGRES_TEST_URL
+  else testcontainers, unique schemas, no skipped infrastructure failures. No new config key or
+  external-byte decoder is introduced. Keep all implementation modules under 300 lines.
+
+  Sizing: about 170 nonblank, noncomment logic/declaration lines excluding docstrings; allow
+  220 production, 310 behavior/Postgres tests, 65 pure-helper adapters and 55 wiring, 650 within
+  700. Combining the MCP primitives and HTTP wrappers would exceed 800.
+scope:
+  paths:
+    - crates/betterlite-server/src/master_rotation.rs
+    - crates/betterlite-server/src/master_rotation/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/master_rotation.rs
+    - tools/oracle/helpers/master_rotation.py
+    - tools/oracle/src/helpers/management/keys.rs
+    - tools/oracle/helpers/management/keys.py
+    - tools/oracle/cases/helpers/master-rotation/**
+    - tools/oracle/fuzz/corpus/helper_case/master-rotation-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5211-L5365
+    why: Own re-encryption orchestration and exact transaction/warning order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L34-L47
+    why: Own immutable encrypted credential projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L285-L321
+    why: Own update_db_credential below rotation and credential HTTP routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L583-L618
+    why: B061 calls this service in same-key mode between scans; it cannot be a service dependency.
+dod:
+  - text: Every named stage and credential transformation case above passes with exact ordering.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: Postgres tests prove model rollback and subsequent cross-store partial writes.
+    proof: [postgres-tests]
+  - text: Pure credential helper seeds replay the existing bounded helper decoder.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Ordered rotation behavior or credential merge cases are missing.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^master_rotation::tests::/) - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Durable partial effects have not been exercised against Postgres.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/master_rotation::tests::postgres_partial_effects$/)'
+    - id: helper-python
+      why: Credential transformation adapter is missing or incorrectly typed.
+      run: test -f tools/oracle/helpers/master_rotation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new pure credential transformation seed replays.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/master-rotation-*')" && grep -rlq master_rotation tools/oracle/fuzz/corpus/helper_case/master-rotation-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/master-rotation/credential-projection-and-merge.yaml
+  - tools/oracle/cases/helpers/master-rotation/ordered-store-migration.yaml
+  - tools/oracle/cases/helpers/master-rotation/partial-writes-and-warnings.yaml
+deviations: []
+out_of_scope:
+  - B785 owns migration HTTP wrappers; B061 owns scanning/walking and credential routes, except the
+    two credential helpers moved here. B895 owns master-key activation. B2332 owns MCP rotations.
+  - B124 owns ProxyConfig decrypt/encrypt methods, B836 model conversion, B120 configuration publication,
+    B137 SSO assertion rotation, B725 model rows, B730 credential/config rows, B770 table adapters,
+    B2303 crypto and B2305 stored MCP contracts. Remaining key endpoint functions keep B770-B898 owners.
+pitfalls:
+  - current_master_key is not used to decrypt; the active salt remains authoritative during migration.
+  - An error after model commit leaves those rows encrypted under the new key even if later stores fail.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

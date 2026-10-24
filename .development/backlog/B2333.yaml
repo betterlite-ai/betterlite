@@ -1,0 +1,8 @@
+id: B2333
+milestone: M4 keys, spend and management
+title: Expired UI session cleanup worker
+status: todo
+depends_on: [B002, B003, B070, B124, B171, B722, B732, B777, B784, B856, B860, B2314]
+file: tasks/B2333-expired-ui-session-cleanup.yaml
+covers:
+  - "litellm/proxy/common_utils/expired_ui_session_key_cleanup_manager.py"

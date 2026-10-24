@@ -1,0 +1,8 @@
+id: B659
+milestone: M3 providers
+title: Bedrock AgentCore MCP web search
+status: todo
+depends_on: [B595, B171, B002, B590, B682, B091, B129, B2212]
+file: tasks/B659-bedrock-services-search.yaml
+covers:
+  - "litellm/llms/bedrock/search/transformation.py"

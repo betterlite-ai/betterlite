@@ -1,141 +1,157 @@
 id: B718
 title: Partition-safe request log indexes
 description: >-
-  Implement RequestLogIndexes and replica identity updates on configured tables using parameterized pg_catalog
-  reads and safely quoted known identifiers. Preserve bounded locks, adoption of equivalent indexes, invalid
-  leaf repair, parent attachment and duplicate-index diagnostics; build concurrently where upstream requires
-  it. Bounded background work is owned by the server and a migration-job invocation waits for completion.
+  Implement betterlite-db::request_log_indexes for the two B2309 request-log index definitions and
+  the optional replica-identity statement. Own _connect, ensure_request_log_indexes,
+  _under_migration_lock, _with_bounded_lock, _ensure_index dispatch, _create_index_statement,
+  _adopt_equivalent_index, _report_second_copies, _build_leaf_index,
+  build_index_on_partitioned_table, _create_parent_index, _attach_child_index and
+  apply_replica_identity_full with its SQL. B2309 owns naming and catalog reads; B716 supplies
+  the migration coordinator and command-timeout accessor. No helper calls back into B051 or B717.
 
+  Connect with a 10-second connection timeout and autocommit, then SET statement_timeout=0.
+  Evaluate every listed index eagerly: a false first result still attempts the second, whereas a
+  database error stops the remaining work, warns 'Could not build the request-log indexes, leaving
+  them for the next index build: ...' and returns false. Any false result warns 'Some request-log
+  indexes are not in place yet, leaving them for the next index build'; otherwise log 'Request-log
+  indexes are all in place' and return true, including an empty list. Non-database exceptions and
+  cancellation propagate despite the reference docstring's 'Never raises'. Missing tables log
+  'Table ... does not exist yet, skipping index ...' and count as successful skips.
 
-  Build the production request_log_indexes module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Hold B716's session coordinator lock per DDL step, never over the whole tree or a sleep. A busy
+  coordinator logs 'Another process holds the migration lock, leaving the request-log indexes to
+  the next index build' and returns false immediately. Only parent creation/adoption and attachment
+  use the bounded wrapper: ten attempts, lock_timeout='200ms', retry only LockNotAvailable/55P03,
+  reset lock_timeout to zero in finally. Before retry attempt i=1..9 sleep
+  min(8,0.25*2**i)*uniform(0.5,1.0) seconds, so the first retry's base is 0.5 seconds. Sleep outside
+  the coordinator. A false step or busy coordinator is not retried. Log 'Waiting for open transactions
+  before ...' on each lock timeout; exhaustion warns 'Could not get the lock for ... without holding
+  writes back, leaving it for the next index build'. A reset error is a database failure too.
 
+  For a leaf, inspect the expected name before locking and again inside the lock. An index on a
+  different table relname warns 'Index ... already exists on ... rather than ..., leaving it alone'
+  and returns false. A valid expected index is accepted without checking its definition or table
+  namespace; retain B2309's narrow projection. Drop an invalid expected leaf index CONCURRENTLY,
+  then create it CONCURRENTLY IF NOT EXISTS. That branch does not adopt another valid equivalent.
+  Only when the expected name is absent, rename the first valid equivalent (valid first/name order)
+  instead of creating. Never adopt an invalid equivalent. Recheck existence and validity after CREATE.
+  A relation-name collision with a nonindex can make IF NOT EXISTS skip creation and return false.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py:
-  RequestLogIndex.columns (L38-L39; 2 source lines), RequestLogIndex.partition_index_name (L41-L50; 10
-  source lines), filter_request_log_index_diff (L125-L131; 7 source lines), _creates_one_of (L134-L136;
-  3 source lines), _without_comments (L139-L140; 2 source lines), _connect (L143-L146; 3 source lines),
-  ensure_request_log_indexes (L149-L173; 24 source lines), _under_migration_lock (L176-L183; 8 source
-  lines), _with_bounded_lock (L186-L209; 23 source lines), _ensure_index (L212-L222; 10 source lines),
-  _regclass_name (L225-L228; 3 source lines), _create_index_statement (L231-L234; 4 source lines), _index_state
-  (L237-L241; 4 source lines), _equivalent_indexes (L244-L261; 17 source lines), _adopt_equivalent_index
-  (L264-L287; 23 source lines), _report_second_copies (L290-L311; 21 source lines), _children_without_the_index
-  (L314-L325; 11 source lines), _build_leaf_index (L328-L372; 43 source lines), build_index_on_partitioned_table
-  (L375-L415; 40 source lines), _create_parent_index (L418-L433; 15 source lines), _attach_child_index
-  (L436-L463; 25 source lines). litellm-proxy-extras/litellm_proxy_extras/replica_identity.py: apply_replica_identity_full
-  (L49-L104; 53 source lines).
+  Leaf concurrent builds do not use the 200ms lock wrapper. After a successful locked leaf step,
+  sleep exactly two seconds for lock handover, even when the second catalog read found another
+  replica's completed index. Already-valid leaves skip that sleep. On success warn for every other
+  equivalent index, valid or invalid, with its safely quoted DROP INDEX CONCURRENTLY command;
+  never execute those suggestions. Log equivalent renaming, invalid-index dropping and concurrent
+  creation at info level. Preserve OIDs on adoption and preserve unexpected-name collisions untouched.
 
+  For partitioned tables default the optional table/name only on None, not empty strings. Refuse
+  wrong-relname collisions. If absent, bounded-lock adoption precedes CREATE INDEX IF NOT EXISTS
+  ON ONLY the parent. Reuse an existing invalid parent rather than dropping it. Traverse B2309's
+  immediate unattached children in order, recursively building partitioned children and concurrently
+  building leaves in each child's namespace; then bounded-lock ALTER INDEX parent ATTACH PARTITION
+  child and log 'Attached index ... on partition ... to ...'. Stop at the first false child, unlike
+  the outer eager index list. Require the final parent to exist and be valid. Parent duplicate warnings
+  suggest DROP INDEX without CONCURRENTLY. Quote every identifier separately and concatenate only
+  the compiled definition. Every successful statement remains committed after later failure; a rerun
+  resumes from the catalog. Background ownership/startup scheduling belongs to B051, job sequencing
+  to B717, so this service never spawns detached work.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  The replica-identity DO statement sets LOCAL lock_timeout='5s' and visits plain relations
+  (relkind='r', including leaf partitions) whose relreplident is not 'f', namespace belongs to
+  current_schemas(false), and name matches the case-sensitive escaped prefix LiteLLM_. Partitioned
+  parents, views, other prefixes and schemas are excluded. ALTER each to REPLICA IDENTITY FULL.
+  Each lock_not_available emits the server warning 'REPLICA IDENTITY FULL skipped for ...: table
+  busy, retrying next run' and continues; the helper still returns true when such tables were skipped.
+  Other SQL errors abort the whole DO, rolling back its earlier ALTERs, and return false with the
+  error explaining that logical replication may reject updates and advising table ownership or manual
+  ALTER. Log 'Applying REPLICA IDENTITY FULL to LiteLLM tables' before work and 'REPLICA IDENTITY FULL
+  applied to LiteLLM tables' only on success. B716's command timeout (default 60 seconds) bounds this
+  statement; expiry logs 'Timed out setting REPLICA IDENTITY FULL on LiteLLM tables' and returns false.
+  Connection/execution availability failures log the logical-replication warning and return false.
+  B717 owns reading LITELLM_SET_REPLICA_IDENTITY_FULL, default false, through B2307's extras boolean
+  parser; the helper does not read it again.
 
+  Test actual catalogs, independently held locks, invalid concurrent indexes, cross-schema recursive
+  partitions and surviving earlier DDL through B860: POSTGRES_TEST_URL when supplied, otherwise
+  testcontainers, with setup failure fatal. Use a controllable timer/random source for retry boundaries
+  and instrument statement/coordinator events without replacing the Postgres assertions. These are
+  effectful operations, not pure helper-oracle calls; no new byte decoder is introduced.
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 351 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  351 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 535 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  After moving about 115 catalog/naming lines to B2309 and excluding the v1 diff parser, about 335
+  nonblank noncomment lines remain, including SQL/docstrings. Budget 335 production, 380 behavior
+  and Postgres tests, and 35 wiring lines, 750 within 800. Split leaf, partition, locks and replica
+  identity into domain modules below 300 lines; production SQL counts toward the gate.
 scope:
   paths:
     - crates/betterlite-db/src/request_log_indexes.rs
     - crates/betterlite-db/src/request_log_indexes/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/request_log_indexes/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L1-L463
-    why: Pinned implementation and exact ownership boundary for request_log_indexes.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/replica_identity.py#L1-L104
-    why: Pinned implementation and exact ownership boundary for request_log_indexes.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L38-L39
-    why: Own RequestLogIndex.columns; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L41-L50
-    why: Own RequestLogIndex.partition_index_name; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L125-L131
-    why: Own filter_request_log_index_diff; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L134-L136
-    why: Own _creates_one_of; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L139-L140
-    why: Own _without_comments; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L143-L146
-    why: Own _connect; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L149-L173
-    why: Own ensure_request_log_indexes; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L176-L183
-    why: Own _under_migration_lock; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L186-L209
-    why: Own _with_bounded_lock; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L212-L222
-    why: Own _ensure_index; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L225-L228
-    why: Own _regclass_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L58-L64
+    why: Retry, lock-wait and handover constants used by the DDL paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L143-L222
+    why: Connection defaults, eager index evaluation, exception scope and lock retry/reset behavior.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L231-L234
-    why: Own _create_index_statement; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L237-L241
-    why: Own _index_state; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L244-L261
-    why: Own _equivalent_indexes; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L264-L287
-    why: Own _adopt_equivalent_index; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L290-L311
-    why: Own _report_second_copies; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L314-L325
-    why: Own _children_without_the_index; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L328-L372
-    why: Own _build_leaf_index; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L375-L415
-    why: Own build_index_on_partitioned_table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L418-L433
-    why: Own _create_parent_index; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L436-L463
-    why: Own _attach_child_index; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/replica_identity.py#L49-L104
-    why: Own apply_replica_identity_full; preserve caller-visible values and failure ordering.
+    why: Compiled definition appended to safely quoted DDL prefixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L264-L311
+    why: Valid equivalent adoption and warnings that leave all second copies in place.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L328-L463
+    why: Leaf repair, parent recursion, short-circuiting attachment and statement-level progress.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/replica_identity.py#L21-L104
+    why: Exact relation selection, lock-only exception handling and optional-step diagnostics.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: adopt_equivalent_index,
-      partition_leaf_concurrent_build, invalid_leaf_rebuild, parent_attach, lock_timeout, replica_identity_full_idempotent,
-      postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: 'Tests name connect_timeout_ten_autocommit, statement_timeout_disabled,
+      empty_index_list_succeeds, false_first_index_still_attempts_second,
+      database_error_stops_remaining_indexes, non_database_error_propagates,
+      missing_table_is_successful_skip, coordinator_busy_no_retry,
+      bounded_lock_ten_attempts_and_jitter, bounded_lock_reset_on_every_exit,
+      lock_reset_error_propagates, non_lock_database_error_not_retried,
+      false_step_not_retried and sleeps_release_coordinator.'
+    proof: [behavior-tests]
+  - text: 'Postgres cases name postgres_leaf_repair_and_adoption, valid_expected_definition_not_rechecked,
+      same_relname_other_namespace_accepted, wrong_table_collision_untouched,
+      invalid_leaf_drops_before_create_without_adoption, nonindex_name_collision,
+      stale_read_rechecked_under_lock, leaf_handover_only_after_locked_success,
+      duplicate_warnings_leave_all_copies, postgres_recursive_partition_attachment,
+      parent_optional_empty_names_not_defaulted, existing_invalid_parent_reused,
+      first_failed_child_stops_later_children, final_parent_validity_required,
+      postgres_partial_progress_survives_failure and interrupted_build_resumes.
+      Assert exact DDL ordering and log levels/messages as well as final catalog state.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Replica cases name replica_identity_selects_plain_visible_litellm_tables,
+      replica_identity_already_full_unchanged, postgres_replica_busy_table_warns_but_succeeds,
+      postgres_replica_nonlock_error_rolls_back, replica_deadline_returns_false,
+      replica_connection_failure_warns_and_returns_false and native_replica_execution_needs_no_prisma.
+      Prove begin/completion log ordering and absence of completion after errors.'
+    proof: [behavior-tests, postgres-tests]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^request_log_indexes::tests::/)
-        - test(/replays_the_/)'
+      why: Each retry, diagnostic and DDL branch needs its own assertion.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^request_log_indexes::tests::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_failure_effects$/)'
+      why: Recursive attachment, partial commits and replica-identity error handling require real locks and catalogs.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_recursive_partition_attachment$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_partial_progress_survives_failure$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_replica_busy_table_warns_but_succeeds$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_replica_nonlock_error_rolls_back$/)'
 oracle_cases: []
-deviations: []
+deviations:
+  - what: Replica identity executes the same DO statement through native Postgres, so operators need no Prisma binary or writable temporary directory; connection/SQL failures retain the optional-step false result and diagnostics.
+    why: The existing native migration decision removes subprocess and temporary-SQL-file failures. native_replica_execution_needs_no_prisma proves this environment difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/replica_identity.py#L67-L83
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B2309 owns RequestLogIndex, REQUEST_LOG_INDEXES, catalog SQL and row shapes, table-kind lookup,
+    _regclass_name, _index_state, _equivalent_indexes and _children_without_the_index.
+  - filter_request_log_index_diff, _creates_one_of and _without_comments are used only by the v1
+    migration path excluded by B717's native-v2 deviation; they are not new Rust SQL parsers.
+  - B051 starts and awaits server-owned background index work; B717 owns migration-job ordering
+    and the replica-identity setting read, and B716 owns coordinator locking and command timeout.
 pitfalls:
-  - Preserve bounded locks, adoption of equivalent indexes, invalid leaf repair, parent attachment and
-    duplicate-index diagnostics; build concurrently where upstream requires it.
+  - A false child short-circuits partition attachment, but a false top-level index does not skip the next definition.
+  - Invalid expected leaf indexes are rebuilt even when a differently named valid equivalent exists.
+  - Busy replica-identity tables produce warnings inside a successful DO, while other SQL errors roll back that entire DO.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

@@ -1,0 +1,9 @@
+id: B1378
+milestone: M3 providers
+title: Gemini Live setup options and modality defaults
+status: todo
+depends_on: [B1308, B1309, B1331, B193, B1004, B002, B171]
+file: tasks/B1378-gemini-live-setup.yaml
+covers:
+  - "litellm/llms/gemini/realtime/transformation.py"
+  - "litellm/types/llms/gemini.py"

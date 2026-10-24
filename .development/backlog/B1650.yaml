@@ -1,0 +1,8 @@
+id: B1650
+milestone: M4 keys, spend and management
+title: Persist cost discounts, margins and the unpriced-model switch
+status: todo
+depends_on: [B002, B003, B052, B124, B209, B754, B860, B1649]
+file: tasks/B1650-cost-settings-routes.yaml
+covers:
+  - "litellm/proxy/management_endpoints/cost_tracking_settings.py"

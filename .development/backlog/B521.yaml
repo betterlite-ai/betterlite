@@ -1,0 +1,8 @@
+id: B521
+milestone: M3 providers
+title: OpenAI thread runs and run streams
+status: todo
+depends_on: [B005, B173, B171, B519]
+file: tasks/B521-openai-thread-runs.yaml
+covers:
+  - "litellm/llms/openai/openai.py"

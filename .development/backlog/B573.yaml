@@ -1,0 +1,8 @@
+id: B573
+milestone: M3 providers
+title: Anthropic reversible tool-name mapping
+status: todo
+depends_on: [B171]
+file: tasks/B573-anthropic-tool-names.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"

@@ -1,63 +1,38 @@
 id: B799
 title: Local UI login form and credential hint
 description: >-
-  Render the retained MIT UI login form with escaped base/root paths and configured visibility. Preserve
-  PROXY_BASE_URL and SERVER_ROOT_PATH defaults empty, hide_default_credentials_hint=false and LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT=false;
-  UI_PASSWORD presence suppresses the default-credential hint. Rebrand product text only, serve assets
-  locally and route form submissions through PasswordLogin. Native-only deviation tests (not oracle equality
-  cases): escaped-form-values. Escape HTML text and quoted attributes in their own context. For JSON embedded
-  inside script, use a serializer plus escaping of <, >, &, U+2028 and U+2029 so </script> in a claim
-  cannot end the element; HTML entities are not a substitute for JSON escaping. Keep existing DOM textContent
-  assignment. Native renderer tests must include closing-script and quoted-attribute payloads.
+  Implement login_form in betterlite-server from build_ui_login_form (ui_login.py L14-L278) and
+  should_hide_default_credentials_hint (default_credentials_hint.py L5-L10). Retain the MIT form,
+  styling, inline SVG, required username/password fields, autocomplete=username/current-password,
+  Login submit button and show-password checkbox toggling the input type between password and text.
+  Rebrand visible LiteLLM product text to betterlite. The hint still explains admin, MASTER_KEY and
+  UI credential/SSO configuration, and keeps the documentation link. This is rendering, not credential
+  verification: B899 accepts POST /login and B788 authenticates it; neither is called by this helper.
 
+  At initialization, read PROXY_BASE_URL and SERVER_ROOT_PATH with empty-string defaults. The form
+  action concatenates base + nonempty root + /login literally; do not normalize double slashes.
+  The new-login link instead calls B124.get_custom_url("", "ui/login") once at initialization,
+  preserving its join_paths/root selection. show_deprecation_banner and the renderer argument
+  hide_default_credentials_hint both default false. The banner appears only for the first argument
+  and contains the new-login link. The helper hides the hint if LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT
+  (default "false") lowercases to exactly "true", OR general_settings.hide_default_credentials_hint
+  is the boolean True, OR UI_PASSWORD is nonempty. Empty UI_PASSWORD does not hide it; " TRUE " and
+  "1" in the environment are false, and a string "true" in general_settings is not boolean True.
+  A false explicit setting cannot override either true environment branch. Never render UI_PASSWORD.
 
-  Build the production login_form module in betterlite-server; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  Add typed config bindings with named loader tests below and seeds in B002's config_yaml corpus.
+  These string reads have no parse exception or invalid_value_fallback. No new byte decoder is added.
+  Register login_form under B856 Management::models; the Python adapter invokes only these pure
+  rendering/policy helpers, with isolated environment/module initialization for each case. Compare
+  the DOM form action, link, field attributes, hint/banner presence, password-toggle script and
+  retained style literals. Ignore only the explicitly rebranded text nodes, not the entire HTML.
+  Native tests prove context-correct quoted-attribute/text escaping of configured URLs; this form
+  has no interpolated JSON, JWT claims or textContent assignments to port. No HTTP route or auth
+  rejection belongs to this task.
 
-
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/html_forms/ui_login.py:
-  build_ui_login_form (L14-L278; 238 source lines). litellm/proxy/common_utils/html_forms/default_credentials_hint.py:
-  should_hide_default_credentials_hint (L5-L10; 6 source lines).
-
-
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.hide_default_credentials_hint=False;
-  UI_PASSWORD=None; LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT='false'; hide_default_credentials_hint=False.
-
-
-  Add the login_form operation under B856 Management::models. Python calls only the owned MIT helper with
-  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a login-form-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Write betterlite-config::login_form::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 244 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  244 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 534 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  Native-only deviation tests in this production module: native_retained_mit_login_jwt_template_branding_says_betterlite_and_interpola.
-  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
-  do not add these differing results to oracle equality cases.
+  The owned 244 nonblank, noncomment lines are mostly retained HTML/CSS. Budget 245 renderer/policy,
+  180 tests, 75 oracle adapters, 55 config and 35 wiring lines, 590 within 625. Keep domain Rust
+  modules below 300 lines and reuse the existing helper/config decoders and fuzz workspaces.
 scope:
   paths:
     - crates/betterlite-server/src/login_form.rs
@@ -80,87 +55,60 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/login-form-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L1-L278
-    why: Pinned implementation and exact ownership boundary for login_form.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/default_credentials_hint.py#L1-L10
-    why: Pinned implementation and exact ownership boundary for login_form.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L14-L278
-    why: Own build_ui_login_form; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L6-L278
+    why: Own initialization URL reads and the complete retained form renderer.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/default_credentials_hint.py#L5-L10
-    why: Own should_hide_default_credentials_hint; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/default_credentials_hint.py#L8-L10
-    why: general_settings.hide_default_credentials_hint default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/default_credentials_hint.py#L9-L10
-    why: UI_PASSWORD default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/default_credentials_hint.py#L7-L10
-    why: LITELLM_HIDE_DEFAULT_CREDENTIALS_HINT default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L1-L6
-    why: hide_default_credentials_hint default and read site.
+    why: Exact hint predicate, setting identity test and environment defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8287-L8347
+    why: B124 owns join_paths, get_custom_url and get_proxy_base_url used for the banner link.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: default_hint, configured_password_hides_hint,
-      explicit_hide_hint, root_path, login_submit.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_retained_mit_login_jwt_template_branding_says_betterlite_and_interpola.'
-    proof:
-      - behavior-tests
+  - text: 'Renderer tests default_form, banner_link, hidden_hint, form_fields, toggle_password and
+      retained_styles compare source markup contracts. Native tests rebranded_login and escaped_urls
+      prove the two declared differences without suppressing unrelated DOM comparisons.'
+    proof: [behavior-tests]
+  - text: 'Config loader tests empty_url_defaults, raw_url_concatenation, nonempty_password,
+      empty_password, env_true_casefold, env_whitespace_false, env_numeric_false,
+      literal_boolean_only and hide_sources_or exercise B002 and then the production helper.'
+    proof: [config-tests, config-corpus]
+  - text: The pure Python renderer and native operation agree on retained fields, hint decisions and URLs.
+    proof: [oracle, helper-python, helper-case-corpus]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^login_form::tests::/)
-        - test(/replays_the_/)'
-    - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/login_form.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
-    - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/login-form-*")"
-        && grep -rlq "login_form" tools/oracle/fuzz/corpus/helper_case/login-form-* && cargo nextest run
-        --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Renderer and deviation assertions must exist and pass.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^login_form::tests::/) - test(/replays_the_/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^login_form::tests::/)
-        - test(/replays_the_/)'
+      why: The named environment and general_settings bindings must reach the renderer.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^login_form::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The independent helper adapter must exist and pass strict checking.
+      run: test -f tools/oracle/helpers/login_form.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Require a newly added login_form operation seed before replaying the shared decoder corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/login-form-*")" && grep -rlq "login_form" tools/oracle/fuzz/corpus/helper_case/login-form-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/login-form-*")"
-        && grep -rlq "hide_default_credentials_hint" crates/betterlite-config/fuzz/corpus/config_yaml/login-form-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      why: A new general_settings hint seed and the production configuration decoder must pass.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/login-form-*")" && grep -rlq "hide_default_credentials_hint" crates/betterlite-config/fuzz/corpus/config_yaml/login-form-* && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/login-form/default-hint.yaml
-  - tools/oracle/cases/helpers/login-form/configured-password-hides-hint.yaml
-  - tools/oracle/cases/helpers/login-form/explicit-hide-hint.yaml
-  - tools/oracle/cases/helpers/login-form/root-path.yaml
-  - tools/oracle/cases/helpers/login-form/login-submit.yaml
+  - tools/oracle/cases/helpers/login-form/default-form.yaml
+  - tools/oracle/cases/helpers/login-form/banner-and-hint.yaml
+  - tools/oracle/cases/helpers/login-form/form-fields-toggle-styles.yaml
+  - tools/oracle/cases/helpers/login-form/url-concatenation.yaml
+  - tools/oracle/cases/helpers/login-form/password-empty-nonempty.yaml
+  - tools/oracle/cases/helpers/login-form/env-boolean-spelling.yaml
+  - tools/oracle/cases/helpers/login-form/setting-identity-and-or.yaml
 deviations:
-  - what: Retained MIT login/JWT template branding says betterlite, and interpolated identity/configuration
-      text uses context-specific HTML/attribute escaping and script-safe JSON serialization.
-    why: README Decisions retains and rebrands the MIT UI; unescaped caller text must not become executable
-      markup.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L1-L278
+  - what: Login product text says betterlite and configured URL attributes are HTML-escaped.
+    why: README retains and rebrands the MIT UI; a quote in configuration must not inject markup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/html_forms/ui_login.py#L14-L278
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B124 supplies get_custom_url and its root-path collaborators; B899 registers login handlers and
+    B788 owns password authentication. Neither covered form file has another function.
 pitfalls:
-  - UI_PASSWORD presence hides the default-credential hint independently of the explicit hide switch.
+  - The form action uses literal concatenation while the banner URL uses join_paths, so slash behavior differs.
+  - A present but empty UI_PASSWORD must still display the default-credential hint.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: security

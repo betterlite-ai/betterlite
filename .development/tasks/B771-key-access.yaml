@@ -2,8 +2,9 @@ id: B771
 title: Key ownership and delegated permission checks
 description: >-
   Implement KeyWriteAccess using authenticated caller and stored owner/team/org context. Keep personal/team/service-account
-  distinctions, allowed-routes preset transitions, permissions and budget delegation ceilings. No create/update/delete
-  handler may bypass this service or infer authority from fields in the submitted key request.
+  distinctions and generation permissions. B892 owns delegated budget/permission ceilings and route
+  presets; do not claim those checks here. The source does not universally call this service for
+  deletion, so route owners retain their own authorization sequence.
 
 
   Build the production key_access module in betterlite-server; reuse the typed dependencies listed in
@@ -26,12 +27,46 @@ description: >-
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.disable_custom_api_keys=False;
-  disable_custom_api_keys=False.
+  No separate top-level disable_custom_api_keys binding exists.
 
 
   litellm_settings.key_generation_settings=None; absent allowed_team_member_roles uses ["admin", "user"].
   general_settings.disable_custom_api_keys=false. Preserve the key-generation membership checks at key_management_endpoints.py:676-681
   and 737-743.
+
+  Call B120 coerce_bool, B800 _get_user_in_team/_get_caller_team_role and
+  TeamMemberPermissionChecks, B246 logging_metadata_config_error, B770 typed requests/table handles,
+  B724 TeamRepository and B2314 is_team_service_account. No B736/B737 lookup or B892 delegation
+  helper is called by these ranges. _is_team_key checks non-null, so even '' means team scope.
+
+  custom_key_absent bypasses the switch; custom_key_disabled warns then returns HTTP 403 with
+  detail.error explaining auto-generation, including for an empty custom key. custom_bool_coercion
+  preserves coerce_bool: None/bools unchanged, strings equal to 'true' ignoring case only, all
+  other values by truthiness; ' true ' and '1' are false. personal_key_owner passes admins and
+  absent user_id, otherwise asserts identity equality. common_owner_denial maps that assertion
+  to HTTP 403 string detail; common_unexpected_error maps any other exception there to 500.
+  caller_user_override uses user_id or data.user_id. The litellm-dashboard team condition does
+  not bypass the preceding user check and does not itself verify any membership.
+
+  assigned_user_before_admin checks assigned membership before the lower-level helper's admin
+  shortcut. caller_missing_member and assigned_missing_member are 400; team_role_disallowed is
+  400 when an explicit allowed_team_member_roles list excludes the caller. Team generation's
+  outer proxy-admin shortcut skips that whole sequence. default_team_roles accepts admin/user;
+  configured_team_roles_missing does not restore that default. team_endpoint_permission invokes
+  B800's endpoint grant, then required_fields_presence uses exclude_unset (explicit null counts),
+  then team_access_groups_opt_in enforces B800's separate assignment permission.
+  personal_access_groups_first performs that check before any personal role setting; personal_roles
+  permits all if settings or allowed_user_roles is absent, otherwise nonmembers receive 400.
+  service_account_cross_team is 403 before either generation branch. missing_team_settings is 400
+  even for admins when key_generation_settings is non-null; missing_team_admin_unconfigured
+  permits admins only when the whole setting is None. Other missing teams are 400.
+
+  service_team_required, service_db_required and service_team_unknown each return distinct 400
+  string details before any further generation work. object_permission_unset returns None or a
+  model dump containing only supplied fields. logging_metadata_rejected wraps B246's first
+  diagnostic in HTTP 400 detail.error; logging_metadata_valid returns normally. No database
+  writes occur in this task. Helpers preserve HTTPException status/detail without inventing
+  ProxyException type/param/code; B055/B775 own the route wrapping, tested in their HTTP tasks.
 
 
   Add the key_access operation under B856 Management::keys. Python calls only the owned MIT helper with
@@ -41,7 +76,7 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::key_access::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::key_access::tests::loads_settings, generation_defaults and custom_bool_coercion.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -59,12 +94,12 @@ description: >-
 
 
   Sizing: 275 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  275 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 565 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  275 production, 285 behavior tests, 65 helper adapters, 30 wiring and 50 config lines,
+  705 changed lines estimated within a 750-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
-  Native-only deviation tests in this production module: native_model_access_groups_never_return_the_premium_user_403_from_check_model.
+  Native-only deviation tests in this production module: model_access_group_without_license.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
 scope:
@@ -134,8 +169,10 @@ references:
     why: Own _check_model_access_group; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L498-L503
     why: general_settings.disable_custom_api_keys default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1-L6
-    why: disable_custom_api_keys default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/config_resolvers/settings_rules.py#L92-L97
+    why: The custom-key switch uses this coercion, including false for non-true strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L675-L703
+    why: Team generation setting fallback and permission/required-field/access-group ordering.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: model_access_group_without_license,
       personal_key_owner, team_member_permission, service_account_team_required, custom_key_disabled.'
@@ -152,9 +189,12 @@ dod:
     proof:
       - config-tests
       - config-corpus
-  - text: 'The recorded deviations are covered by native behavior tests: native_model_access_groups_never_return_the_premium_user_403_from_check_model.'
+  - text: model_access_group_without_license proves the premium-branch deviation; each other named
+      branch in the description has an independently named helper case, including the warning path.
     proof:
       - behavior-tests
+      - oracle
+      - helper-python
 checks:
   optional:
     - mutants
@@ -187,13 +227,20 @@ oracle_cases:
   - tools/oracle/cases/helpers/key-access/team-member-permission.yaml
   - tools/oracle/cases/helpers/key-access/service-account-team-required.yaml
   - tools/oracle/cases/helpers/key-access/custom-key-disabled.yaml
+  - tools/oracle/cases/helpers/key-access/custom-bool-coercion.yaml
+  - tools/oracle/cases/helpers/key-access/required-fields-presence.yaml
+  - tools/oracle/cases/helpers/key-access/team-role-ordering.yaml
+  - tools/oracle/cases/helpers/key-access/personal-access-groups-first.yaml
+  - tools/oracle/cases/helpers/key-access/missing-team-settings.yaml
+  - tools/oracle/cases/helpers/key-access/service-team-validation.yaml
+  - tools/oracle/cases/helpers/key-access/logging-metadata-rejected.yaml
+  - tools/oracle/cases/helpers/key-access/object-permission-unset.yaml
+  - tools/oracle/cases/helpers/key-access/common-owner-errors.yaml
 deviations:
   - what: Model access groups never return the premium-user 403 from _check_model_access_group.
     why: Architect no-paid-tier decision.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L4494-L4513
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -284,9 +331,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Keep personal/team/service-account distinctions, allowed-routes preset transitions, permissions and
-    budget delegation ceilings.
+  - required_params checks fields_set, so a supplied null satisfies presence even if generation later fills a default.
+  - The lower-level assigned-user check runs before its admin shortcut, while the outer team generation helper skips it for admins.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

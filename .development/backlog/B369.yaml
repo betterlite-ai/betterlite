@@ -1,0 +1,8 @@
+id: B369
+milestone: M2 routing
+title: Cooldown decision policy
+status: todo
+depends_on: [B011, B301, B002]
+file: tasks/B369-cooldown-decisions.yaml
+covers:
+  - "litellm/router_utils/cooldown_handlers.py"

@@ -1,0 +1,8 @@
+id: B909
+milestone: M5 api families
+title: Responses input messages
+status: todo
+depends_on: [B171, B1087, B004, B910, B911, B912, B907, B2411]
+file: tasks/B909-responses-input-messages.yaml
+covers:
+  - "litellm/responses/litellm_completion_transformation/transformation.py"

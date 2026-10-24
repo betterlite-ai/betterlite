@@ -1,0 +1,11 @@
+id: B113
+milestone: M7 observability
+title: Datadog and New Relic
+status: todo
+depends_on: [B012]
+file: null
+covers:
+  - "litellm/integrations/{datadog,newrelic}/**"
+  - "litellm/types/integrations/{datadog,datadog_cost_management,datadog_llm_obs,datadog_metrics,newrelic}.py"
+  - "litellm/proxy/dd_span_tagger.py"
+  - "litellm/litellm_core_utils/dd_tracing.py"

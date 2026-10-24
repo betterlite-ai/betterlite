@@ -1,0 +1,11 @@
+id: B119
+milestone: M7 observability
+title: Web search and code interpreter interception, agentic loops
+status: todo
+depends_on: [B080, B081, B2204, B568]
+file: null
+covers:
+  - "litellm/integrations/{websearch_interception,code_interpreter_interception}/**"
+  - "litellm/integrations/anthropic_cache_control_hook.py"
+  - "litellm/types/integrations/{websearch_interception,code_interpreter_interception,anthropic_cache_control_hook}.py"
+  - "litellm/litellm_core_utils/{chat_completion_agentic_loop,agentic_followup_kwargs,agentic_loop_settings}.py"

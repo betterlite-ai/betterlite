@@ -1,0 +1,103 @@
+id: B1438
+title: GDC project, location and request endpoint policy
+description: >-
+  Implement gdc_policy in betterlite-openai, exposing parsed endpoint and audience
+  preparation to B1439 without giving the lower wire crate a token executor. Own
+  get_supported_openai_params, _resolve_project, _resolve_location, _effective_project,
+  _validate_path_id, get_complete_url, _read_env_bool and transform_request. Include
+  supports_vertex_params=true so generic option filtering retains vertex inputs.
+  Add vertex_project and vertex_location ahead of B1425's supported option list.
+
+  Resolve project from litellm_params.vertex_project, litellm_params.vertex_ai_project,
+  litellm.vertex_project, optional_params.vertex_project, optional_params.vertex_ai_project;
+  location uses the analogous fields. Each step uses truthiness and starts absent.
+  A /v1/projects/([^/]+) match inside the supplied base overrides project lookup for
+  authentication, but URL construction accepts any base containing /v1/projects/
+  unchanged after trimming, even if no location was supplied. Otherwise require both
+  project and location. Match Python's ^[a-zA-Z0-9_-]+$ identifier behavior, including
+  its terminal-newline edge, and use B184 AuthenticationError 401 on invalid/missing
+  identifiers rather than URL-encoding them into a different valid identifier.
+
+  Base order is explicit, litellm.gdc_api_base, litellm.api_base, all absent by default.
+  Missing base is AuthenticationError 401. Prefix https:// unless the literal string
+  starts with http, remove trailing slashes, and append
+  /v1/projects/{project}/locations/{location}/chat/completions when it is not already
+  a project URL. Derive the GDCH audience from scheme://netloc of the original base
+  with the same prefix rule; the path, query and fragment never enter the audience.
+  Do not read GDC_API_BASE here; main dispatch in B038 resolves that env alias first.
+
+  Represent _read_env_bool as an explicit bool-or-original-string projection. A
+  non-None argument wins; trimmed case-insensitive false/0/no/off and true/1/yes/on
+  map to booleans, while any other string is returned exactly as supplied. Otherwise
+  read the requested setting, using SSL_VERIFY=true and GDC_TOKEN_CACHING=false as
+  defaults. A nonempty unrecognized caching string therefore enables caching by
+  truthiness; an unrecognized verification string is a local CA path. Add gdc_settings
+  loader tests for both env keys, request ssl_verify/gdc_token_caching, global base/
+  project/location fields and each vertex alias. Keep per-call values distinct from
+  litellm_settings so their precedence can be verified.
+
+  Request transformation removes one leading gdc/ from model, calls B1425's parent
+  transform, then deletes vertex_project, vertex_ai_project, vertex_location,
+  vertex_ai_location, ssl_verify and gdc_token_caching from the resulting body.
+  Helper gdc_request_policy exercises these pure methods with loaded settings and
+  reports URL, audience, option/body projection or stable authentication failure.
+  Its fresh call.gdc_request_policy seeds must include full-path bypass and invalid
+  identifier cases. No outside bytes are decoded here. These methods own 118
+  nonblank/noncomment source lines; allow 170 production, 200 tests, 110 adapters
+  and 85 settings/exports, maximum 600.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,gdc_policy}.rs
+    - crates/betterlite-openai/src/gdc_policy/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,gdc}.rs
+    - crates/betterlite-config/tests/gdc_settings.rs
+    - tools/oracle/src/helpers/{mod,gdc_request_policy}.rs
+    - tools/oracle/helpers/{dispatch,gdc_request_policy}.py
+    - tools/oracle/cases/helpers/gdc-request-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/gdc_request_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gdc/chat/transformation.py#L48-L162
+    why: Project/location precedence, prebuilt project URLs, plain identifiers and bool-or-path settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gdc/chat/transformation.py#L295-L328
+    why: Strip the GDC provider prefix and routing/auth parameters after compatible request preparation.
+dod:
+  - text: GDC endpoint and audience preparation retain precedence, full-path bypass and identifier failures.
+    proof: [gdc-policy-tests, gdc-settings, gdc-policy-python, oracle]
+  - text: Bool-or-path settings and request cleanup preserve original strings and remove only routing/auth fields.
+    proof: [gdc-policy-tests, gdc-settings, gdc-policy-python, oracle]
+  - text: New GDC request helper seeds exercise both bypass and failure through the exact operation tag.
+    proof: [gdc-policy-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gdc-policy-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^gdc_policy::/)'
+      why: Project extraction and ordinary endpoint construction deliberately have different validation gates.
+    - id: gdc-settings
+      run: cargo nextest run --locked -p betterlite-config --test gdc_settings --no-tests=fail
+      why: Global, call and optional parameter aliases must be loaded before testing their ordered selection.
+    - id: gdc-policy-python
+      run: test -f tools/oracle/helpers/gdc_request_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: This adapter may call only pure GDC methods and must not load or refresh Google credentials.
+    - id: gdc-policy-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gdc_request_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gdc_request_policy::/)'
+      why: Require parsed gdc_request_policy seeds for a full URL and a rejected plain identifier.
+oracle_cases:
+  - tools/oracle/cases/helpers/gdc-request-policy/project-location-precedence.yaml
+  - tools/oracle/cases/helpers/gdc-request-policy/full-project-url-bypass.yaml
+  - tools/oracle/cases/helpers/gdc-request-policy/identifier-slash-and-terminal-newline.yaml
+  - tools/oracle/cases/helpers/gdc-request-policy/audience-removes-path-and-query.yaml
+  - tools/oracle/cases/helpers/gdc-request-policy/bool-aliases-and-original-ca-path.yaml
+  - tools/oracle/cases/helpers/gdc-request-policy/prefix-and-routing-field-removal.yaml
+deviations: []
+out_of_scope:
+  - B1439 owns GDCGeminiConfig.__init__, _fetch_auth, _with_gdch_audience, _cached_fetch_token, _load_creds_from_key, validate_environment and the credential protocol declarations in this same file.
+  - B038 owns _complete_gdc and the outer GDC_API_KEY/GDC_API_BASE environment fallback.
+pitfalls:
+  - A base containing /v1/projects/ bypasses location requirements during URL construction but still supplies a project for auth validation.
+  - The unrecognized string FALSE-ish stays a nonempty string and enables token caching when used as that setting.
+  - GDC strips only one leading gdc/ from a model and removes auth fields after the parent request transform.
+budget: {max_changed_lines: 600, max_new_expects: 0}
+review_level: security

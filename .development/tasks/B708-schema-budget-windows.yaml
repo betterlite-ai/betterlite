@@ -1,48 +1,91 @@
 id: B708
 title: Postgres migrations for budget windows
 description: >-
-  Preserve this exact ordered cohort of pinned migration.sql files as production SQL under crates/betterlite-db/migrations
-  with original directory names and content checksums. Add the cohort to MigrationCatalog without rewriting
-  earlier checksums or collapsing historical migrations. Verify execution against an empty schema for
-  the baseline or the immediately preceding historical checkpoint for later cohorts; compare pg_catalog
-  facts against an independently applied copy of upstream SQL. Preserve data through every ALTER and compare
-  pg_catalog against a separately applied copy of the pinned SQL. This task owns data plus focused migration
-  regression cases, not the recovery algorithm.
+  Preserve the 37 scoped migrations following B707, from add_shadow_eval through password-reset
+  columns, as exact SQL and ordered catalog data. schema_budget_windows tests verify historical
+  backfills, partial indexes and defaults through real Postgres. B873 owns deploying these files and
+  maintaining their ledger; B718 builds the request-log indexes whose migration files now say SELECT 1.
+  Do not turn those two no-op files into CREATE INDEX statements or duplicate B718's background work.
+
+  ShadowEvalJob initially requires id/api_key_id/router_name/judge_model, DOUBLE PRECISION
+  shadow_percentage, INTEGER max_turns, created_at now and ends_at without default; created_by/stopped_at
+  are nullable. ShadowEvalAttempt requires id/job_id/request_id/outcome, judge_cost=0 and created_at now,
+  with nullable tier/real_model/shadow_model/confidence/error. Index job key/created_at and attempt job_id.
+  The first partial unique index permits one job per key where stopped_at IS NULL; an expired but
+  unstopped job still conflicts. Direction adds nullable baseline_model and required direction='forward',
+  replacing uniqueness with (key,direction) under the same predicate. Multi-key support adds nullable
+  group_id, fills only NULL group_id from id, then sets NOT NULL and adds its index. Preserve that write
+  order and existing non-null groups.
+
+  stopped_by is added nullable, then updated to the literal unknown only when stopped_at is not NULL
+  and ends_at > (NOW() AT TIME ZONE 'utc'). Do not tag unstopped, expired or exactly-at-now rows. Job
+  max_budget is nullable; attempts gain shadow_cost=0, nullable real_cost, real_classifier_cost/
+  shadow_classifier_cost=0 and real_cache_hit=false. ShadowEvalFunnel has job_id primary key and INTEGER
+  not_sampled/unjudgeable/shed/withheld default 0, without an invented job foreign key. Typed-target
+  migration renames api_key_id to target_id, adds target_type='key', replaces the partial unique index
+  with (target_type,target_id,direction) and replaces the key lookup index with (target_type,target_id).
+  Its rename guard is unqualified. Later required router_names/models TEXT arrays default []; attempt
+  router_name stays nullable. Required numerical job fields have no range CHECK or inferred defaults.
+
+  ProxyWorkerHeartbeat requires worker_id/hostname and started_at/last_heartbeat_at timestamp defaults
+  now. DailyGuardrailUsageUnits has composite (guardrail_id,date,team_id,api_key,usage_unit), BIGINT
+  units=0, created_at now/required updated_at and date index; later cost is nullable DOUBLE PRECISION
+  and untracked_units required BIGINT 0. SpendLogs gains required created_at/updated_at default now
+  and nullable litellm_call_id. DailyUser/Organization/EndUser/Agent/Team/TagSpend each gain required
+  gateway_injected_caching_savings_spend DOUBLE PRECISION 0, then total_response_time_ms/timed_requests
+  BIGINT 0. Existing counters/spend remain unchanged.
+
+  ModelAccessGroupBudgetTable has access_group_name primary key, spend=0, nullable budget_id/actors,
+  timestamp defaults now and budget DELETE SET NULL/UPDATE CASCADE. ManagedObject.org_id is nullable
+  TEXT without attribution backfill. MCP per_server_oauth_discovery is required false.
+  ObjectPermission.skills and Agent.access_group_ids are nullable TEXT arrays default []. Budget,
+  live/deleted teams and live/deleted keys gain nullable BIGINT tpd_limit without defaults. Budget
+  temp_budget_increase DOUBLE PRECISION and temp_budget_expiry TIMESTAMP(3) are nullable. Live/deleted
+  keys get total_spend=0 without copying their current spend. PolicyAttachment.priority is nullable
+  INTEGER; later is_default is required false. User.password_reset_required and last_breach_check_at
+  are nullable, with no false/now default. ManagedFileContent has required TEXT id/BYTEA content and
+  created_at default now; its data type is not base64 TEXT and SQL adds no storage hook.
+
+  AutoRouterSession gains classifier_cost DOUBLE PRECISION 0, classifier_cost_recorded_turns INTEGER 0,
+  baseline_models JSONB {}, savings_estimated_turns INTEGER 0, savings_estimated_actual_spend/
+  savings_estimated_saved_spend DOUBLE PRECISION 0 and savings_estimated_baseline_models JSONB {}.
+  AutoRouterUserSession uses primary key (user_id,api_key,session_id,router_name) and requires router_type,
+  first_turn_at/last_turn_at/last_model without defaults. models/tier_turns/baseline_models/
+  savings_estimated_baseline_models are JSONB {}; turns/unordered_turns/covered_turns/cache_hits/
+  same_model_turns/same_model_hits/first_visit_turns/first_visit_hits/return_turns/return_hits/
+  return_expired_misses/return_within_ttl_misses/ttl_5m_turns/ttl_1h_turns/savings_estimated_turns/
+  classifier_cost_recorded_turns are INTEGER 0; total_tokens BIGINT 0; spend/saved_spend/classifier_cost/
+  savings_estimated_actual_spend/savings_estimated_saved_spend DOUBLE PRECISION 0. Index last_turn_at
+  and (user_id,last_turn_at), without merging user rollups into the existing key rollup table.
+
+  DailyGlobalSpend requires id/date, nullable model/model_group/provider/tool/endpoint, required
+  created_at now and updated_at without default. BIGINT prompt_tokens/completion_tokens/cache_read_input_tokens/
+  cache_creation_input_tokens/compression_saved_tokens/api_requests/successful_requests/failed_requests/
+  total_response_time_ms/timed_requests and DOUBLE PRECISION compression_savings_spend/
+  prompt_caching_savings_spend/gateway_injected_caching_savings_spend/autorouter_savings_spend/spend
+  all default 0. Add date lookup and unique (date,model,model_group,custom_llm_provider,
+  mcp_namespaced_tool_name,endpoint), retaining distinct-null semantics and no api_key column.
+
+  JWT issuer scoping first drops old claim indexes, adds required jwt_issuer TEXT default '', then
+  creates lookup (issuer,claim_name,claim_value,is_active) and uniqueness (issuer,claim_name,claim_value).
+  The non-null empty-string backfill makes unscoped duplicates collide; differing issuers may reuse
+  a claim pair. Do not replace '' with NULL or include is_active in the unique key.
+
+  AutoRouterBaselineComparison has scope TEXT primary key, required api_key/session_id/router_name/
+  initial_equivalent, BIGINT revision/published_revision=0, nullable history/attempted_at, retired=false
+  and updated_at now. Index the session tuple, updated_at and the partial dirty key
+  (attempted_at,updated_at,scope) WHERE NOT retired AND revision <> published_revision. Observation
+  has request_id primary key, required scope/DOUBLE PRECISION started_at/BIGINT revision/TEXT data,
+  nullable publication, conflicted=false, and (scope,started_at,request_id)/(scope,revision,started_at)
+  indexes. No foreign key is added between these tables.
 
 
-  This cohort supplies immutable SQL data and a catalog registration only; it does not create a SchemaBaseline
-  service. Verify each migration.sql byte checksum against the pinned file, then execute this cohort on
-  the prior checkpoint and compare catalog facts and preserved rows. B716 owns deploy ledger checksums
-  and restart-skips-applied tests, so this data task never depends on the deploy runner.
-
-
-  Build the production schema_budget_windows module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 350 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  350 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 525 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Exercise the upstream and candidate SQL in independent B860 databases using POSTGRES_TEST_URL,
+  testcontainers only if absent, and B700 sessions. Fix database transaction time for boundary backfill
+  tests; compare every column, exact partial-index predicate and intermediate uniqueness outcome.
+  Setup failures fail tests and cleanup runs on every exit. The cohort contains 276 nonblank,
+  noncomment SQL lines but 413 physical production lines; allow 335 tests and 30 registration lines,
+  778 within 800. Static SQL adds no parser, environment setting or HTTP adapter.
 scope:
   paths:
     - crates/betterlite-db/src/schema_budget_windows.rs
@@ -164,13 +207,32 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20260921000000_add_password_reset_columns/migration.sql#L1-L3
     why: Pinned implementation and exact ownership boundary for schema_budget_windows.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: pinned_sql_checksums,
-      cohort_catalog_facts, cohort_preserves_rows, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: pinned_sql_checksums checks all 37 immutable files/full identities; postgres_catalog verifies every column/default, index predicate and foreign key against independent pinned application.
+    proof: [behavior-tests, postgres-tests]
+  - text: 'postgres_shadow_history covers required_job_inputs_no_range_checks,
+      attempt_judge_cost_zero_and_nullable_details, one_unstopped_job_including_expired,
+      direction_forward_allows_other_direction, group_id_null_fill_before_not_null,
+      existing_group_id_preserved, stopped_future_only_unknown_backfill,
+      stopped_equal_now_or_expired_unchanged, budget_and_comparison_cost_defaults,
+      funnel_four_zero_counters, target_type_key_and_renamed_id,
+      partial_uniqueness_per_target_type_and_direction and router_names_models_empty_attempt_router_null.'
+    proof: [postgres-tests]
+  - text: 'postgres_budget_and_usage covers heartbeat_timestamp_defaults,
+      guardrail_units_zero_cost_null_untracked_zero, spend_log_timestamp_backfill,
+      request_index_migrations_are_noops, six_gateway_savings_and_timing_defaults,
+      access_group_budget_set_null, managed_org_no_backfill, mcp_discovery_false,
+      skill_agent_empty_arrays, five_nullable_tpd_limits, temporary_budget_fields_null,
+      key_total_spend_zero_not_current_spend, policy_priority_null_default_flag_false,
+      password_reset_and_breach_time_null and managed_content_required_bytea.'
+    proof: [postgres-tests]
+  - text: 'postgres_autorouter_and_global covers session_classifier_and_baseline_defaults,
+      savings_estimate_coverage_defaults, user_session_all_counter_json_and_spend_defaults,
+      user_session_key_and_two_indexes, global_ten_bigint_five_spend_defaults,
+      global_unique_tuple_null_semantics, issuer_empty_backfill_and_null_rejection,
+      issuer_distinct_claim_pairs_inactive_still_unique, baseline_required_initial_equivalence,
+      baseline_zero_revisions_false_retired, dirty_index_excludes_retired_and_published,
+      observation_text_data_false_conflict_and_order_indexes.'
+    proof: [postgres-tests]
 checks:
   optional: []
   commands:
@@ -179,20 +241,19 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_budget_windows::tests::/)
         - test(/replays_the_/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_budget_windows::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/schema_budget_windows::tests::postgres_failure_effects$/)'
+      why: Backfills, partial-index membership, issuer scoping or required defaults differ from pinned SQL.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^schema_budget_windows::tests::postgres_/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B707 supplies the prior checkpoint, B709 the final cohort and B701 the final schema contract, including SQL-only partial indexes.
+  - B718 builds api_key/startTime and litellm_call_id request-log indexes; these two migration files are SELECT 1 only.
+  - B873 owns ordered deployment/ledger behavior. B087 owns managed-file/batch activation; content storage DDL changes no hook behavior.
 pitfalls:
-  - The migration directory name is part of the Prisma ledger identity and cannot be renamed.
-  - A checksum test compares SQL bytes with the pinned source, not with a checksum generated from the
-    candidate itself.
+  - Shadow jobs with past ends_at still occupy the partial unique index until stopped_at is set.
+  - jwt_issuer must be non-null with default '' to keep unscoped claim pairs unique.
+  - The two request-log index migrations are intentional no-ops despite their names.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

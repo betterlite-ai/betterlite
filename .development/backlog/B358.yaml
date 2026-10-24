@@ -1,0 +1,9 @@
+id: B358
+milestone: M2 routing
+title: Offline learned tier prediction
+status: todo
+depends_on: [B328, B388, B301, B361, B002]
+file: tasks/B358-tier-artifact-predictor.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/tier_predictor.py"
+  - "litellm/router_strategy/complexity_router/artifacts/**"

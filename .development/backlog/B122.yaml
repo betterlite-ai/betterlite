@@ -1,0 +1,8 @@
+id: B122
+milestone: M8 platform
+title: Request middleware, root path, size limits and security headers
+status: todo
+depends_on: [B003]
+file: null
+covers:
+  - "litellm/proxy/middleware/{gzip_middleware,per_request_root_path_middleware,request_size_limit_middleware,security_headers_middleware}.py"

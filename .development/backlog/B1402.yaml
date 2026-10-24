@@ -1,0 +1,9 @@
+id: B1402
+milestone: M3 providers
+title: xAI credential selection, usage reconciliation and reported charges
+status: todo
+depends_on: [B002, B004, B173, B193, B204, B171]
+file: tasks/B1402-xai-identity-usage.yaml
+covers:
+  - "litellm/llms/xai/{common_utils,cost_calculator}.py"
+  - "litellm/llms/xai/chat/transformation.py"

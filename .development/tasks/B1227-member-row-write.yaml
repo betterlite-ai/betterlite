@@ -1,10 +1,40 @@
 id: B1227
 title: Shared user and membership row writes
 description: >-
-  Implement add_new_member and native typed user/membership row operations using the caller-owned writer
-  transaction when supplied. Preserve email lookup, upsert-on-conflict semantics, append-team-if-absent
-  and existing-user defaults. B862 provides shared/default member budget selection; do not check out another
-  pool connection while the caller holds the roster lock.
+  Implement add_new_member and its user, budget and membership table accessors with the caller's transaction
+  when provided; otherwise use B723/B724/B725 repositories. _find_users_by_email uses an exact email predicate
+  on that transaction, or B124 get_data(table_name=user, query_type=find_all), normalizing None to an empty
+  sequence. _create_user_row uses jsonify_object plus _upsert_user_row in a transaction, or B124 insert_data
+  without one. Upsert by user_id with create defaults and update={user_id}; the nonempty update must compile
+  to PostgreSQL ON CONFLICT, preserving all other existing fields under concurrent provisioning.
+
+
+  get_new_internal_user_defaults uses default_internal_user_params or {}. models uses its truthy value or
+  []; max_budget and budget_duration use their global defaults only when the corresponding dict key is
+  absent, not when null. A truthy supplied email wins over the configured user_email. Always use the supplied
+  user_id and literal internal_user role, ignoring configured user_id/user_role; remove only None values,
+  retaining zero and empty arrays. The global max_internal_user_budget/internal_user_budget_duration defaults
+  are None. This helper does not calculate a user budget reset timestamp or enroll configured default teams.
+
+
+  A non-null member.user_id wins over email, including an empty ID: derive defaults without forwarding the
+  member email, upsert with teams=[team_id], then append only where user_id matches and NOT teams has team_id.
+  Return the row captured before that append, so an existing user's returned teams may lag the database.
+  Email-only enrollment generates a UUID for potential creation before exact lookup. Zero matching rows
+  inserts with teams=[team_id]; one row appends and returns the earlier snapshot; multiple rows raise
+  HTTPException 400 with detail.error Multiple users with this email found in db. Please use 'user_id' instead.
+  There is no case-folding or email uniqueness guarantee. Concurrent email creation can yield distinct users.
+
+
+  After user provisioning call B862 _resolve_member_budget_id with auth/admin name, explicit budget including
+  zero, allowed_models including [], duration, team default and the same transaction. Do so even if no user
+  row was returned or no identity was supplied. For a returned user ID, upsert membership on user_id_team_id,
+  create a budget_id link only if resolution is non-null, update={} and include litellm_budget_table. Existing
+  memberships retain their budget link; a newly resolved budget can therefore be unused. Convert both returned
+  rows through B720's user model and B859's membership model and return the pair. A missing returned user raises Exception Unable to update
+  user table with membership information! after budget resolution. Preserve operation order and propagate
+  repository/model failures. Without a caller transaction, earlier user/append/budget writes survive a later
+  failure; with one, all operations use that connection and caller rollback. Never invent an inner transaction.
 
 
   Build the production member_row_write module in betterlite-server; reuse the typed dependencies listed
@@ -34,11 +64,9 @@ description: >-
   litellm_settings.max_internal_user_budget=None; litellm_settings.internal_user_budget_duration=None.
 
 
-  Add the member_row_write operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a member-row-write-*
-  seed to B171 helper_case, which already owns this decoder.
+  Put only get_new_internal_user_defaults under B856 Management::teams with B171 helper_case seeds.
+  Database operations require native PostgreSQL tests with the real repositories and B862 budget selection;
+  a recorded table fake cannot establish concurrency, row snapshots or rollback behavior.
 
 
   Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
@@ -49,11 +77,11 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::member_row_write::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B002 loader tests defaults_absent, per_user_key_overrides_global, explicit_null_suppresses_global,
+  falsey_models_and_email, zero_budget_preserved and identity_role_not_overridden must feed the production
+  defaults function. Type errors in the resulting B720 user row propagate rather than warn-and-fallback. Seed
+  config_yaml with these three nested litellm_settings keys and normal os.environ/ resolution; there is no
+  dedicated environment variable for this helper.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -67,8 +95,8 @@ description: >-
 
 
   Sizing: 161 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  161 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 457 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  161 production, 280 behavior/Postgres tests, 45 pure-helper adapters, 30 wiring, 0 decoder/fuzz
+  and 55 config lines, 571 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -80,8 +108,8 @@ scope:
     - tools/oracle/src/helpers/member_row_write/**
     - tools/oracle/helpers/member_row_write.py
     - tools/oracle/Cargo.toml
-    - tools/oracle/src/helpers/management/models.rs
-    - tools/oracle/helpers/management/models.py
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
     - tools/oracle/cases/helpers/member-row-write/**
     - tools/oracle/fuzz/corpus/helper_case/member-row-write-*
     - crates/betterlite-server/src/member_row_write/fixtures/**
@@ -136,14 +164,18 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L108-L109
     why: Own MemberWriteTx.litellm_teammembership; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L457-L462
-    why: litellm_settings.default_internal_user_params default and read site.
+    why: None default; the actual per-user dictionary read is utils.py L162-L170.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L462-L467
-    why: litellm_settings.max_internal_user_budget default and read site.
+    why: None global budget default; utils.py L166 reads it only as the missing-key default.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L466-L471
-    why: litellm_settings.internal_user_budget_duration default and read site.
+    why: None duration default; utils.py L167 distinguishes a missing field from an explicit null.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: existing_user_kept,
-      new_user_defaults, same_transaction, email_membership, append_team_once, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'Cover defaults_missing_null_and_zero, supplied_email_truthiness, fixed_internal_user_role,
+      id_precedes_email, user_defaults_not_overwritten, concurrent_id_upsert, concurrent_same_and_different_team_append,
+      returned_user_is_preappend_snapshot, email_none_zero_one_many_rows, email_case_sensitive,
+      transaction_create_jsonifies, budget_resolution_receives_all_fields, membership_without_budget,
+      existing_membership_keeps_budget, missing_user_still_resolves_budget, same_transaction_single_connection,
+      postgres_pinned_rows and postgres_failure_effects (user, append, budget, membership and row-decoding failures).'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -192,15 +224,12 @@ checks:
         && grep -rlq "default_internal_user_params" crates/betterlite-config/fuzz/corpus/config_yaml/member-row-write-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/member-row-write/existing-user-kept.yaml
   - tools/oracle/cases/helpers/member-row-write/new-user-defaults.yaml
-  - tools/oracle/cases/helpers/member-row-write/same-transaction.yaml
-  - tools/oracle/cases/helpers/member-row-write/email-membership.yaml
-  - tools/oracle/cases/helpers/member-row-write/append-team-once.yaml
+  - tools/oracle/cases/helpers/member-row-write/absent-null-and-zero-defaults.yaml
+  - tools/oracle/cases/helpers/member-row-write/email-and-fixed-role.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B124 owns nontransactional get_data/insert_data and jsonify_object; B862 owns member budget selection.
   - 'litellm/proxy/management_helpers/utils.py: B862 owns handle_budget_for_entity (L180-L264), _clone_team_default_budget_for_member
     (L283-L333), _resolve_member_budget_id (L336-L390).'
   - 'litellm/proxy/management_helpers/utils.py: B865 owns _delete_user_id_from_cache (L503-L514), _delete_api_key_from_cache
@@ -213,8 +242,10 @@ out_of_scope:
     implement the injected alert and OTel transports.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve email lookup, upsert-on-conflict semantics, append-team-if-absent and existing-user defaults.
+  - An empty upsert update can become a racy SELECT then INSERT; retain the user_id assignment.
+  - The membership update is empty, so resolving a fresh budget does not replace an existing membership's budget_id.
+  - A returned existing user is the snapshot from before teams is appended.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

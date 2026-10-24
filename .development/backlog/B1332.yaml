@@ -1,0 +1,9 @@
+id: B1332
+milestone: M3 providers
+title: Vertex partner rawPredict token counting
+status: todo
+depends_on: [B1301, B1303, B1305, B173, B002, B171]
+file: tasks/B1332-vertex-partner-count.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py"
+  - "litellm/llms/vertex_ai/vertex_ai_partner_models/main.py"

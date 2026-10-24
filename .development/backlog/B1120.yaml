@@ -1,0 +1,9 @@
+id: B1120
+milestone: M5 API families
+title: Image edit parameters and MIME
+status: todo
+depends_on: [B175, B258, B171, B1087, B002]
+file: tasks/B1120-image-input-options.yaml
+covers:
+  - "litellm/images/utils.py"
+  - "litellm/types/images/main.py"

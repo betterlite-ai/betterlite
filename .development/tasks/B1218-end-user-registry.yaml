@@ -1,9 +1,29 @@
 id: B1218
 title: Bounded restricted end-user registry cache
 description: >-
-  Implement the bounded restricted-end-user registry and cache sentinels with source overflow fallback
-  to per-ID lookup. Preserve negative cache results separately from absence and restriction state, and
-  retain warning-only fallback rather than allowing every user on overflow.
+  Cache the restricted end-user IDs, preserving three states: uncached, a usable set (including empty),
+  and unusable None. The restriction predicate ORs blocked=true with non-null budget_id,
+  allowed_model_region, default_model and object_permission_id. Empty strings still satisfy non-null.
+  Query B726 EndUserRepository with take=5001 (fixed END_USER_RESTRICTED_REGISTRY_MAX_SIZE=5000).
+  B2315 provides typed table/cache access, and B733 provides the key end_user_restricted_registry, overflow sentinel and
+  management-object TTL. Own the worker-wide end-user load lock and the shared bounded-registry logic;
+  tag/model-group callers pass their own locks, keys and fetchers.
+
+  Cache reads recognize __end_user_restricted_registry_overflow__ as None, list/tuple as a frozenset of
+  string elements, and anything else as uncached. Keep duplicates collapsed and [] a successful answer.
+  Fetch failure warns that per-ID lookups will run and caches the sentinel for exactly 30 seconds
+  (REGISTRY_ERROR_NEGATIVE_CACHE_TTL). More than 5000 fetched IDs caches the sentinel at B733's management
+  TTL without an overflow warning; equality fits. Successful IDs are cached as a tuple at the same TTL.
+  Cache-write failure warns Failed to cache registry and preserves the computed result; cache-read
+  failures propagate. Under the load lock, recheck the cache only if the caller observed it locked before
+  waiting. A waiting caller seeing no cached result performs its own load, including after a failed write.
+
+  _end_user_is_known_unrestricted skips the optimization when litellm_settings.max_end_user_budget_id
+  is not None (default None), key_end_user_budget_id is not None (default None),
+  litellm_settings.validate_end_user_id_in_db is true (default False), or token_end_user_max_budget is
+  not None, including zero. Otherwise return true only for an ID absent from a usable registry. Neither
+  overflow nor database failure proves unrestricted access. Preserve this dependency-free decision for
+  B739/B880 callers; real registry reads use POSTGRES_TEST_URL or testcontainers, not fake SQL assertions.
 
 
   Build the production end_user_registry module in betterlite-auth; reuse the typed dependencies listed
@@ -23,14 +43,12 @@ description: >-
   litellm_settings.max_end_user_budget_id=None.
 
 
-  Add the end_user_registry operation under B856 Management::auth. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a end-user-registry-*
-  seed to B171 helper_case, which already owns this decoder.
+  Compare only _column_is_set and _restricted_end_user_where through B856 Management::auth and B171
+  helper_case. Registry cache I/O, lock contention, budget guards and fallback decisions belong to native
+  integration tests; use the production cache and database implementations rather than an oracle table fake.
 
 
-  Write betterlite-config::end_user_registry::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::end_user_registry::tests::default_optimization_enabled, validation_disables_skip and default_budget_disables_skip.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
@@ -48,8 +66,8 @@ description: >-
 
 
   Sizing: 146 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  146 production, 136 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 427 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  146 production, 240 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 531 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -90,12 +108,21 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1842-L1872
     why: Own _end_user_is_known_unrestricted; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L476-L481
-    why: litellm_settings.validate_end_user_id_in_db default and read site.
+    why: Default false; the owned early-return read is auth_checks.py L1860-L1865.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L470-L475
-    why: litellm_settings.max_end_user_budget_id default and read site.
+    why: Default None; the actual budget-presence check is auth_checks.py L1860-L1865.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1941-L1944
+    why: Fixed 5000-ID bound and 30-second error negative cache.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: unrestricted_registry_hit,
-      registry_overflow_fallback.'
+  - text: >-
+      Cases each_restricted_column_nonnull, blocked_true_only, cache_tuple_and_redis_list,
+      nonstring_entries_dropped, empty_registry_usable, sentinel_unusable, malformed_cache_miss,
+      unrestricted_registry_hit, exact_capacity_fits, registry_overflow_fallback,
+      database_error_warns_thirty_seconds, cache_write_warning_preserves_result,
+      cache_read_error_propagates, singleflight_waiter_rechecks, failed_cache_write_waiter_reloads,
+      max_budget_id_disables, empty_budget_id_disables, key_budget_disables, validation_disables,
+      token_zero_budget_disables, registry_key_literal and restricted_id_requires_lookup cover states,
+      TTLs and bypass guards.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -137,12 +164,10 @@ checks:
         && grep -rlq "validate_end_user_id_in_db" crates/betterlite-config/fuzz/corpus/config_yaml/end-user-registry-*
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/end-user-registry/unrestricted-registry-hit.yaml
-  - tools/oracle/cases/helpers/end-user-registry/registry-overflow-fallback.yaml
+  - tools/oracle/cases/helpers/end-user-registry/restricted-column-predicate.yaml
+  - tools/oracle/cases/helpers/end-user-registry/nonnull-versus-truthy-columns.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -256,9 +281,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve negative cache results separately from absence and restriction state, and retain warning-only
-    fallback rather than allowing every user on overflow..
+  - An unusable registry means perform per-ID lookup; conflating it with an empty set bypasses every end-user restriction.
+  - The overflow path is silent and uses the normal management TTL; only a failed fetch uses the 30-second warning path.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 550
   max_new_expects: 0
 review_level: security

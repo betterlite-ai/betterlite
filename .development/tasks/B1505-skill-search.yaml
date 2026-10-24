@@ -1,0 +1,75 @@
+id: B1505
+title: Rank only the caller's accessible hosted skills
+description: >-
+  Implement skills::search in betterlite-core for the complete skill_search.py module. SkillSearchIndex
+  wraps B124's SemanticTextIndex, bounded by B1502's 5000-candidate constant, and maps its scores onto
+  the original skill rows with stable descending ordering. Construct embedding text by joining truthy
+  title, description and instructions with newlines, then taking 4000 Unicode characters. The result
+  projection carries skill_id, display_title, description and score; reuse the existing exact numeric
+  representation rather than introducing floats. Default top-k metadata is 5 and the public maximum is
+  100, but this helper applies the caller's slice directly rather than adding route validation.
+
+  Return distinct NotConfigured outcomes for no embedding_model and no router, checking the model first;
+  otherwise use B124's router_embedder so rate-limit, budget and guardrail hooks see the caller identity.
+  search_hosted_skills rejects every provider except litellm_proxy before loading rows, then asks B1502
+  for all accessible candidates and invokes search_skills. Preserve EmbeddingFailed as a result variant,
+  not an empty successful list. Cache sharing lives in the injected index; queries must still be embedded
+  on repeated calls while unchanged document text can reuse the per-model cache.
+
+  Add the hosted_skill_search helper with Python invoking skill_search_text, skill_search_result and
+  the actual search functions against deterministic embeddings and a scripted store. Cases title_cutoff,
+  stable_ties, model_before_router, failed_embeddings, reject_remote_registry and tenant_candidates assert
+  both output and collaborator calls. Write skills::search tests including repeat_query and model_change
+  to verify cache delegation. Add a shared case seed tagged call.hosted_skill_search; all inputs here
+  are parsed records and no decoder is added. Counted source is 126 nonblank/non-comment lines; plan
+  145 service, 150 tests, 100 adapters and 45 wiring lines with a 450-line limit.
+scope:
+  paths:
+    - crates/betterlite-core/src/skills.rs
+    - crates/betterlite-core/src/skills/search.rs
+    - crates/betterlite-core/src/skills/search/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/hosted_skill_search.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/hosted_skill_search.py
+    - tools/oracle/cases/helpers/hosted-skill-search/**
+    - tools/oracle/fuzz/corpus/helper_case/hosted_skill_search*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L26-L161
+    why: Ranking text, outcome variants, provider gate and authorized candidate lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L73-L119
+    why: B124's router_embedder boundary retains caller spend and pre-call policy.
+dod:
+  - text: Hosted search ranks bounded text stably and reports unavailable or failed embedding dependencies distinctly.
+    proof: [skill-ranking, oracle, skill-search-bridge]
+  - text: Unauthorized skills never reach the embedder and cached vectors remain separated by model.
+    proof: [skill-ranking, oracle, skill-search-bridge]
+checks:
+  optional: []
+  commands:
+    - id: skill-ranking
+      why: candidate selection, ordering or index reuse is untested or incorrect
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::search::/)'
+    - id: skill-search-bridge
+      why: search parity lacks an executable Python adapter or helper variant seed
+      run: grep -qE '^[[:space:]]+hosted_skill_search:' tools/oracle/fuzz/corpus/helper_case/hosted_skill_search* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/hosted_skill_search.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/hosted-skill-search/title-cutoff.yaml
+  - tools/oracle/cases/helpers/hosted-skill-search/stable-ties.yaml
+  - tools/oracle/cases/helpers/hosted-skill-search/model-before-router.yaml
+  - tools/oracle/cases/helpers/hosted-skill-search/failed-embeddings.yaml
+  - tools/oracle/cases/helpers/hosted-skill-search/reject-remote-registry.yaml
+  - tools/oracle/cases/helpers/hosted-skill-search/tenant-candidates.yaml
+deviations: []
+out_of_scope:
+  - B124 owns semantic_text_index.py, including cosine_similarity, SemanticTextIndex and router_embedder; this task delegates to that index.
+  - B994/B995 own the existing skills HTTP handlers and configuration loading for litellm_settings.skill_search_embedding_model; the search service receives its optional value, default None, as an argument.
+pitfalls:
+  - Provider None is unsupported here; it is not an alias for the hosted registry.
+  - A query ranks all accessible candidates up to 5000 rather than the first default page of 20.
+  - Equal scores retain repository order because the source sort is stable.
+review_level: security
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

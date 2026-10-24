@@ -1,83 +1,88 @@
 id: B723
-title: User and organization repositories
+title: User lookups, SCIM placeholders and organization/project readers
 description: >-
-  Implement UserRepository, OrganizationRepository and ProjectRepository against exact LiteLLM tables.
-  Keep case-insensitive email lookup/backfill, shadow placeholder resolution, ordered team membership
-  and spend writes. count_billable_users remains a reporting query but imposes no paid-tier cap. Use bound
-  array parameters and DB constraints, not in-memory uniqueness assumptions.
+  Implement the live user_repository paths over B700 repository operations, B714 db/writer_db
+  routing and B720/B721 rows. Own UserRepository.__init__, table, model_class, _to_model,
+  find_by_id, find_by_emails, find_shadowing_placeholders, count_billable_users and
+  backfill_null_user_email, with its JSON field set, placeholder SQL and row adapter. Own
+  OrganizationRepository table/model_class/find_by_id and its database protocols, and
+  ProjectRepository table/model_class/find_by_id. Raw table access remains available to the
+  management owners; unused convenience methods below are not production CRUD policy.
 
+  UserRepository use_writer defaults false, choosing client.db.litellm_usertable; true chooses
+  writer_db. Organization and project readers always take the supplied client.db and exact tables
+  litellm_organizationtable/litellm_projecttable, so a caller can supply B714's pinned handle.
+  find_by_id defaults the identifying field to user_id, organization_id or project_id respectively;
+  delegate query/result/error semantics to B700, including None when no row is returned. Do not
+  attach a public 404/authentication error or extra related-row query at this layer.
 
-  Build the production user_repository module in betterlite-db; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  User _to_model returns None for None. Otherwise B700 record_to_dict supplies fields; independently
+  JSON-decode strings only for metadata, model_spend and model_max_budget into a fresh mapping,
+  then validate B720 UserTable. Invalid JSON propagates, not {} or a warning. Decoded null is valid
+  for all three fields; decoded arrays/scalars fail their dict types. Already decoded values pass
+  through unchanged, and fields such as teams/models/organization_memberships are not string-decoded.
+  A second embedded JSON string is not recursively parsed. B720 normalizes user spend/models/teams
+  nulls and excludes password from dumps; this repository never hashes or encrypts a password.
+  Organization/project use B700's ordinary conversion and have no equivalent JSON-string prepass.
 
+  find_by_emails first takes an exact, case-sensitive set of input strings, sorts it lexically, then
+  issues sequential case-insensitive membership queries in 5000-value slices. Do not lowercase
+  before deduplicating, trim addresses, treat '%'/'_' as patterns or add a per-query limit/order.
+  Implement each page with bound values and database case folding under the existing collation.
+  Empty input returns an empty sequence without even accessing the client. Concatenate page results
+  in page order without deduplicating output: differently cased spellings separated across page
+  boundaries can return the same user twice. Within a page row order remains unspecified. A later
+  query/decode failure aborts the whole result, with no partial return. B700's single-array deviation
+  for generic find_many_in does not change this separate method's pagination/snapshot behavior.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/user_repository.py:
-  UserRepository.__init__ (L43-L45; 3 source lines), UserRepository.table (L48-L50; 3 source lines), UserRepository.model_class
-  (L53-L54; 2 source lines), UserRepository._to_model (L56-L66; 10 source lines), UserRepository.find_by_id
-  (L68-L69; 2 source lines), UserRepository.find_by_email (L71-L74; 4 source lines), UserRepository.find_by_emails
-  (L76-L99; 22 source lines), UserRepository.find_by_sso_id (L101-L103; 3 source lines), UserRepository.find_by_organization_id
-  (L105-L107; 3 source lines), UserRepository.find_by_team_id (L109-L111; 3 source lines), UserRepository.find_shadowing_placeholders
-  (L113-L116; 4 source lines), UserRepository.count_billable_users (L118-L130; 11 source lines), UserRepository.create_user
-  (L132-L193; 61 source lines), UserRepository.update_user (L195-L256; 61 source lines), UserRepository.backfill_null_user_email
-  (L258-L267; 9 source lines), UserRepository.delete_user (L269-L271; 3 source lines), UserRepository.update_spend
-  (L273-L275; 3 source lines), UserRepository.add_to_team (L277-L282; 5 source lines), UserRepository.remove_from_team
-  (L284-L296; 11 source lines). litellm/repositories/organization_repository.py: _OrganizationDb.litellm_organizationtable
-  (L20-L20; 1 source lines), _PrismaClientView.db (L27-L27; 1 source lines), OrganizationRepository.table
-  (L34-L36; 3 source lines), OrganizationRepository.model_class (L39-L40; 2 source lines), OrganizationRepository.find_by_id
-  (L42-L45; 4 source lines), OrganizationRepository.find_by_alias (L47-L50; 4 source lines), OrganizationRepository.create_organization
-  (L52-L78; 26 source lines), OrganizationRepository.update_organization (L80-L103; 23 source lines),
-  OrganizationRepository.delete_organization (L105-L107; 3 source lines), OrganizationRepository.update_spend
-  (L109-L111; 3 source lines). litellm/repositories/project_repository.py: ProjectRepository.table (L20-L21;
-  2 source lines), ProjectRepository.model_class (L24-L25; 2 source lines), ProjectRepository.find_by_id
-  (L27-L28; 2 source lines), ProjectRepository.find_by_alias (L30-L33; 4 source lines), ProjectRepository.find_by_team_id
-  (L35-L37; 3 source lines), ProjectRepository.create_project (L39-L79; 40 source lines), ProjectRepository.update_project
-  (L81-L119; 38 source lines), ProjectRepository.delete_project (L121-L123; 3 source lines), ProjectRepository.update_spend
-  (L125-L127; 3 source lines).
+  find_shadowing_placeholders executes the compiled SQL on its explicit transaction argument,
+  ignoring the repository's ordinary read handle. Select candidate p with sso_user_id IS NULL and
+  no VerificationToken whose user_id matches p.user_id; even an expired or blocked key disqualifies
+  p. Join a different user r when r.sso_user_id exactly equals p.user_id OR LOWER(r.user_email)
+  equals LOWER(p.user_id). The email match does not use p.user_email. Empty sso_user_id is not NULL.
+  One matching r contributes once even if both OR predicates match; multiple resolved users are
+  array_agg ordered by r.user_id, and placeholder rows order by p.user_id. Preserve p.teams as
+  team_ids with its stored order/duplicates, grouped with p.user_id. B720 SCIMPlaceholder validates
+  every returned row; SQL NULL teams fails its tuple field instead of being silently repaired. A
+  malformed result rejects the whole operation. This query does not merge/delete any user or team.
 
+  count_billable_users makes two separate reads: total users, then metadata path ['scim_active']
+  equal to JSON boolean false. Return max(0,total-deactivated). Missing metadata/path, SQL or JSON
+  null, true, the string 'false', zero and a JSON-string-encoded metadata object still count. Do
+  not collapse the two queries into a snapshot count: concurrent changes may make the second
+  larger than the first, which is why the source clamps to zero. It remains a reporting operation;
+  there is no premium_user branch or license-limit enforcement in these owned functions.
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  backfill_null_user_email executes one conditional UPDATE for user_id AND user_email IS NULL,
+  setting the supplied email verbatim and returning the affected row count. No row or an already
+  non-NULL value, including '', returns zero. Two competing backfills leave the first winner's
+  value and the loser returns zero. Do not first SELECT then overwrite or normalize the supplied
+  email. No new transaction or audit write is added. Database and row-conversion errors propagate;
+  there are no owned warn-and-drop paths, environment reads or configuration settings.
 
+  B860 Postgres cases run through POSTGRES_TEST_URL or testcontainers, failing if setup fails.
+  Verify the case/page boundaries, SQL join predicates and conditional-update race with actual
+  rows and independent connections. Instrument the two billable-count reads to insert a concurrent
+  change between them. Only pure UserRepository._to_model is an oracle helper in B856's database
+  namespace, invoked on a repository with no client; effectful methods are not mocked Python helper
+  cases. Add B171 envelope seeds. decode_user_record handles the three external JSON-string fields;
+  register a user_record target in B2307's fuzz workspace with 1048576-byte/depth-64 bounds on each
+  new decode. Replay malformed/truncated JSON, nullable fields, duplicate keys and limit boundaries.
 
-  Add the user_repository operation under B856 Management::database. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a user-repository-*
-  seed to B171 helper_case, which already owns this decoder.
-
-
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 390 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  390 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 639 changed lines estimated within a 650-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Caller pruning leaves about 105 nonblank noncomment lines including the placeholder SQL and
+  structural declarations. Budget 155 native query/projection code, 320 behavior/Postgres tests,
+  60 oracle adapters, 45 fuzz and 30 wiring, 610 within 700. Keep projection, email lookup,
+  placeholders and reporting in separate modules below 300 lines.
 scope:
   paths:
     - crates/betterlite-db/src/user_repository.rs
     - crates/betterlite-db/src/user_repository/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/user_repository/fixtures/**
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/user_record.rs
+    - crates/betterlite-db/fuzz/corpus/user_record/**
     - tools/oracle/src/helpers/user_repository.rs
-    - tools/oracle/src/helpers/user_repository/**
     - tools/oracle/helpers/user_repository.py
     - tools/oracle/Cargo.toml
     - tools/oracle/src/helpers/management/database.rs
@@ -86,139 +91,79 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/user-repository-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L1-L296
-    why: Pinned implementation and exact ownership boundary for user_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L1-L111
-    why: Pinned implementation and exact ownership boundary for user_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L1-L127
-    why: Pinned implementation and exact ownership boundary for user_repository.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L43-L45
-    why: Own UserRepository.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L48-L50
-    why: Own UserRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L53-L54
-    why: Own UserRepository.model_class; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L56-L66
-    why: Own UserRepository._to_model; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L68-L69
-    why: Own UserRepository.find_by_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L71-L74
-    why: Own UserRepository.find_by_email; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L21-L69
+    why: JSON field set, exact placeholder SQL, writer selection and user-id default.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L76-L99
-    why: Own UserRepository.find_by_emails; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L101-L103
-    why: Own UserRepository.find_by_sso_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L105-L107
-    why: Own UserRepository.find_by_organization_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L109-L111
-    why: Own UserRepository.find_by_team_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L113-L116
-    why: Own UserRepository.find_shadowing_placeholders; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L118-L130
-    why: Own UserRepository.count_billable_users; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L132-L193
-    why: Own UserRepository.create_user; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L195-L256
-    why: Own UserRepository.update_user; preserve caller-visible values and failure ordering.
+    why: Exact-string deduplication, sorted 5000-item sequential pages and no output deduplication.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L113-L130
+    why: Explicit transaction query and the two-read billable count with a zero floor.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L258-L267
-    why: Own UserRepository.backfill_null_user_email; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L269-L271
-    why: Own UserRepository.delete_user; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L273-L275
-    why: Own UserRepository.update_spend; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L277-L282
-    why: Own UserRepository.add_to_team; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L284-L296
-    why: Own UserRepository.remove_from_team; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L20-L20
-    why: Own _OrganizationDb.litellm_organizationtable; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L27-L27
-    why: Own _PrismaClientView.db; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L34-L36
-    why: Own OrganizationRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L39-L40
-    why: Own OrganizationRepository.model_class; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L42-L45
-    why: Own OrganizationRepository.find_by_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L47-L50
-    why: Own OrganizationRepository.find_by_alias; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L52-L78
-    why: Own OrganizationRepository.create_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L80-L103
-    why: Own OrganizationRepository.update_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L105-L107
-    why: Own OrganizationRepository.delete_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L109-L111
-    why: Own OrganizationRepository.update_spend; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L20-L21
-    why: Own ProjectRepository.table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L24-L25
-    why: Own ProjectRepository.model_class; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L27-L28
-    why: Own ProjectRepository.find_by_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L30-L33
-    why: Own ProjectRepository.find_by_alias; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L35-L37
-    why: Own ProjectRepository.find_by_team_id; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L39-L79
-    why: Own ProjectRepository.create_project; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L81-L119
-    why: Own ProjectRepository.update_project; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L121-L123
-    why: Own ProjectRepository.delete_project; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L125-L127
-    why: Own ProjectRepository.update_spend; preserve caller-visible values and failure ordering.
+    why: Null-only conditional email update and raw affected-row count.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/organization_repository.py#L16-L45
+    why: Organization table protocol and default organization_id lookup, with no custom row decoder.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/project_repository.py#L16-L28
+    why: Project table/model selection and default project_id lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/chunked_in.py#L19-L22
+    why: The 5000-item constant used by the distinct case-insensitive email lookup.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: email_case_insensitive,
-      email_backfill_null_only, shadow_placeholder, org_project_create, membership_add_remove, spend_write,
-      postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
+  - text: 'Pure oracle cases name absent_user_record, three_user_json_columns,
+      nullable_json_text_and_invalid_scalar_shapes, malformed_user_json_propagates,
+      unlisted_user_fields_not_decoded, no_recursive_string_decode,
+      original_record_unchanged and decoded_user_retains_password_exclusion.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Lookup tests name user_writer_selection_and_default_ids, organization_project_default_ids,
+      missing_rows_and_errors_preserved, email_empty_skips_missing_client,
+      postgres_email_matching_literal_case_insensitive, email_exact_set_then_sort,
+      email_five_thousand_page_boundary, email_page_order_and_duplicate_output,
+      email_later_page_error_no_partial_result, postgres_shadow_placeholder_predicates,
+      placeholder_or_match_not_duplicated, placeholder_order_and_team_order,
+      placeholder_uses_explicit_transaction and placeholder_null_teams_validation_failure.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Write/reporting tests name postgres_email_backfill_race,
+      existing_empty_or_different_email_unchanged, backfill_missing_row_zero,
+      backfill_supplied_email_verbatim, postgres_billable_json_boolean_only,
+      billable_two_reads_and_concurrent_zero_floor and count_error_propagates.
+      native_user_record_field_limits proves the recorded decoder caps; corpus replay calls
+      decode_user_record rather than a stand-alone test parser.'
+    proof: [behavior-tests, postgres-tests, parser-corpus]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^user_repository::tests::/)
-        - test(/replays_the_/)'
+      why: Email pagination, row projection and count sequencing require independent assertions.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^user_repository::tests::/) - test(replays_the_user_record_corpus)'
     - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/user_repository.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
+      why: Only the real pure user-row conversion is callable by this helper adapter.
+      run: test -f tools/oracle/helpers/user_repository.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/user-repository-*")"
-        && grep -rlq "user_repository" tools/oracle/fuzz/corpus/helper_case/user-repository-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: A newly added user_repository operation must replay through the existing helper envelope.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/user-repository-*")" && grep -rlq user_repository tools/oracle/fuzz/corpus/helper_case/user-repository-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/user_repository::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/user_repository::tests::postgres_failure_effects$/)'
+      why: Real joins, case matching, update races and JSON predicates must determine results.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/user_repository::tests::postgres_email_matching_literal_case_insensitive$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/user_repository::tests::postgres_shadow_placeholder_predicates$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/user_repository::tests::postgres_email_backfill_race$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/user_repository::tests::postgres_billable_json_boolean_only$/)'
+    - id: parser-corpus
+      why: Stored user JSON fields must use the same bounded decoder in production and fuzz replay.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/user_record.rs && grep -q user_record crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/user_record)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_user_record_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/user-repository/email-case-insensitive.yaml
-  - tools/oracle/cases/helpers/user-repository/email-backfill-null-only.yaml
-  - tools/oracle/cases/helpers/user-repository/shadow-placeholder.yaml
-  - tools/oracle/cases/helpers/user-repository/org-project-create.yaml
-  - tools/oracle/cases/helpers/user-repository/membership-add-remove.yaml
-  - tools/oracle/cases/helpers/user-repository/spend-write.yaml
-deviations: []
+  - tools/oracle/cases/helpers/user-repository/three-json-columns.yaml
+  - tools/oracle/cases/helpers/user-repository/null-invalid-and-unlisted-fields.yaml
+deviations:
+  - what: Stored user JSON-string fields above 1048576 bytes or depth 64 produce a typed decode-limit error.
+    why: Bound the new field decoder without dropping corrupt data; native_user_record_field_limits covers both boundaries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_repository.py#L56-L66
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - UserRepository.find_by_email, find_by_sso_id, find_by_organization_id, find_by_team_id,
+    create_user, update_user, delete_user, update_spend, add_to_team and remove_from_team have no
+    live caller at the pin. Actual membership/password/spend writes remain with their route/job owners.
+  - OrganizationRepository.find_by_alias, create_organization, update_organization,
+    delete_organization and update_spend have no caller at the pin.
+  - ProjectRepository.find_by_alias, find_by_team_id, create_project, update_project,
+    delete_project and update_spend have no caller at the pin.
 pitfalls:
-  - Email backfill applies only to a NULL stored email, not to an existing different email.
+  - Case-sensitive input deduplication can return one user twice when differently cased emails fall in different pages.
+  - A placeholder with any key is excluded even when that key is expired or blocked.
+  - Billable-user counting uses two reads, so concurrent changes can exercise the explicit zero floor.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

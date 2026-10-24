@@ -1,0 +1,8 @@
+id: B693
+milestone: M3 providers
+title: Bedrock embedding HTTP and result projection
+status: todo
+depends_on: [B590, B594, B595, B627, B628, B629, B173, B129, B171, B682]
+file: tasks/B693-bedrock-embedding-io.yaml
+covers:
+  - "litellm/llms/bedrock/embed/embedding.py"

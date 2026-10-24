@@ -1,0 +1,11 @@
+id: B1600
+milestone: M4 keys, spend and management
+title: Read and write LiteLLM encrypted secrets
+status: todo
+depends_on: [B002, B171, B244, B700]
+file: tasks/B1600-stored-cipher.yaml
+covers:
+  - "litellm/proxy/common_utils/encrypt_decrypt_utils.py"
+  - "litellm/litellm_core_utils/app_crypto.py"
+  - "litellm/proxy/common_utils/callback_utils.py"
+  - "litellm/proxy/spend_tracking/spend_tracking_utils.py"

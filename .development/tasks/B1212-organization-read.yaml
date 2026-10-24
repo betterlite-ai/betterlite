@@ -5,6 +5,23 @@ description: >-
   projection. Preserve the deprecated POST alias and its body versus GET query contract; these are read
   handlers, not organization membership mutations.
 
+  All three check DB first and raise HTTPException 500 detail.error=No db connected; list's subsequent
+  400 no-DB branch is unreachable. List defaults org_id/org_alias to None, ignores empty strings, uses
+  exact organization_id and insensitive contains for alias. B2314 user_api_key_has_admin_view lets admin/view roles see all matches;
+  other callers first query B723 organization memberships by user_id. No memberships or an explicitly
+  requested foreign org returns [], not 403/404. Otherwise intersect filters with membership IDs.
+  Include litellm_budget_table, members and teams in list rows.
+
+  GET requires organization_id and calls B826 _verify_org_access before lookup, allowing admin/view
+  or that organization's org_admin (403 string detail otherwise). Include budget, members.user, teams
+  and object_permission; a missing row after authorization is 404 detail.error=Organization not found.
+  Convert to LiteLLM_OrganizationTableWithMembers. POST decodes OrganizationRequest.organizations;
+  [] is 400 detail.error requesting IDs, then authorize EVERY ID before one find_many using in.
+  Its response is a list with budget only; absent rows are omitted and duplicate IDs do not duplicate
+  rows. Do not make POST a loop over GET. Neither local handler catches these exceptions or writes;
+  HTTPException remains FastAPI detail with no error type/param/code. Missing required query/body
+  fields use the shared 422 validation response. B826 supplies typed table access and request models.
+
 
   Build the production organization_read module in betterlite-server; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
@@ -18,12 +35,10 @@ description: >-
 
   Register these actual HTTP routes and aliases exactly once: GET /organization/list -> list_organization;
   GET /organization/info -> info_organization; POST /organization/info -> deprecated_info_organization.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Compare B001 HTTP responses including the different relation sets, status, content-type and detail
+  shapes. B860 seeds real organizations and memberships using POSTGRES_TEST_URL or testcontainers.
+  List filtering has no route-local unauthorized error: reserve denial cases for GET/POST info and
+  test missing bearer at B052's boundary. No management wrapper, changed-by header or cookie is involved.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -43,8 +58,8 @@ description: >-
 
 
   Sizing: 137 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  137 production, 136 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 338 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  137 production, 220 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 422 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -63,16 +78,22 @@ scope:
     - tools/oracle/cases/management/organization-read/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1088-L1185
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1082-L1185
     why: Own list_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1194-L1232
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1188-L1232
     why: Own info_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1240-L1271
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L1235-L1271
     why: Own deprecated_info_organization; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L265-L306
+    why: B826's organization-access check called before info reads.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_list_scoped, org_info_get_post.'
+  - text: >-
+      Cases no_database_500_all_routes, list_admin_viewer, list_exact_id_and_alias_contains,
+      list_empty_filters, list_member_scope, list_foreign_org_empty, list_no_membership_empty,
+      get_org_admin_allowed, get_regular_member_403, get_missing_org_404, get_relations,
+      post_empty_ids_400, post_checks_all_ids_before_query, post_budget_only,
+      post_omits_unknown_and_deduplicates, missing_query_422 and missing_bearer
+      prove each route's own contract against the HTTP oracle.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -88,21 +109,15 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^organization_read::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/organization-read/get--organization-list-success.yaml
-  - tools/oracle/cases/management/organization-read/get--organization-list-invalid-target.yaml
-  - tools/oracle/cases/management/organization-read/get--organization-list-unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-read/get--organization-info-success.yaml
-  - tools/oracle/cases/management/organization-read/get--organization-info-invalid-target.yaml
-  - tools/oracle/cases/management/organization-read/get--organization-info-unauthorized-caller.yaml
-  - tools/oracle/cases/management/organization-read/post--organization-info-success.yaml
-  - tools/oracle/cases/management/organization-read/post--organization-info-invalid-target.yaml
-  - tools/oracle/cases/management/organization-read/post--organization-info-unauthorized-caller.yaml
+  - tools/oracle/cases/management/organization-read/no-database.yaml
+  - tools/oracle/cases/management/organization-read/list-filters-and-empty-scope.yaml
+  - tools/oracle/cases/management/organization-read/info-permissions-and-missing.yaml
+  - tools/oracle/cases/management/organization-read/post-empty-and-mixed-ids.yaml
+  - tools/oracle/cases/management/organization-read/request-validation-and-auth.yaml
   - tools/oracle/cases/management/organization-read/org-list-scoped.yaml
   - tools/oracle/cases/management/organization-read/org-info-get-post.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/organization_endpoints.py: B058 owns get_organization_daily_activity
     (L565-L613), resolve_organization_daily_activity_scope (L621-L663).'
   - 'litellm/proxy/management_endpoints/organization_endpoints.py: B826 owns _enterprise_license_required
@@ -130,9 +145,9 @@ out_of_scope:
     (L1580-L1621), add_member_to_organization (L1624-L1706).'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve the deprecated POST alias and its body versus GET query contract; these are read handlers,
-    not organization membership mutations..
+  - A regular organization member may see it in list but still receives 403 from info, which requires org_admin.
+  - POST includes only budget relations and omits missing organizations; synthesizing GET responses changes its wire shape.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 450
   max_new_expects: 0
 review_level: security

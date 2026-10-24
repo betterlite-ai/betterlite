@@ -1,0 +1,8 @@
+id: B167
+milestone: M12 python
+title: Python types under litellm.types
+status: todo
+depends_on: [B157]
+file: null
+covers:
+  - "litellm/types/**"

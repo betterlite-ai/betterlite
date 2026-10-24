@@ -1,0 +1,9 @@
+id: B325
+milestone: M2 routing
+title: Prompt cache prefix affinity
+status: todo
+depends_on: [B016, B010, B013, B360, B301, B002]
+file: tasks/B325-prompt-affinity.yaml
+covers:
+  - "litellm/router_utils/prompt_caching_cache.py"
+  - "litellm/router_utils/pre_call_checks/prompt_caching_deployment_check.py"

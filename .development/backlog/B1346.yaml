@@ -1,0 +1,8 @@
+id: B1346
+milestone: M3 providers
+title: Vertex Imagen generation requests and prediction images
+status: todo
+depends_on: [B1345, B1301, B1302, B1305, B1306, B997, B171]
+file: tasks/B1346-vertex-imagen-generation.yaml
+covers:
+  - "litellm/llms/vertex_ai/image_generation/vertex_imagen_transformation.py"

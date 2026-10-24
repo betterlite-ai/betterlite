@@ -1,0 +1,13 @@
+id: B150
+milestone: M10 admin ui
+title: Admin UI pages for settings, SSO, caching, logging, alerting, budgets, tags, pass-through and theme working against betterlite
+status: todo
+depends_on: [B144, B066]
+file: null
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{caching,logging-and-alerts,ui-theme,tag-management,budgets}/**"
+  - "ui/litellm-dashboard/src/components/{Settings,alerting,email_events,tag_management,PassThroughSettings}/**"
+  - "ui/litellm-dashboard/src/components/{SCIM,SSOModals,settings,email_settings,MSTeamsSettings,logging_settings_view,callback_info_helpers,add_pass_through,pass_through_info,query_param_input,UIAccessControlForm,TeamSSOSettings}.*"
+  - "ui/litellm-dashboard/src/components/{SCIM,SSOModals,settings,email_settings,logging_settings_view,query_param_input,TeamSSOSettings}.test.*"
+  - "ui/litellm-dashboard/src/components/{add_pass_through,pass_through_info,UIAccessControlForm}.integration.test.*"
+  - "ui/litellm-dashboard/src/components/UIAccessControlForm.unit.test.*"

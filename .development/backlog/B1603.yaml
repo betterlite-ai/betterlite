@@ -1,0 +1,9 @@
+id: B1603
+milestone: M4 keys, spend and management
+title: Create, update and delete budgeted tags
+status: todo
+depends_on: [B003, B052, B725, B726, B732, B734, B844, B860, B862]
+file: tasks/B1603-tag-writes.yaml
+covers:
+  - "litellm/proxy/management_endpoints/tag_management_endpoints.py"
+  - "litellm/types/tag_management.py"

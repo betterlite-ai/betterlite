@@ -1,0 +1,8 @@
+id: B1503
+milestone: M3 providers
+title: Project hosted skill operations into the public Skill records
+status: todo
+depends_on: [B1502, B247, B171, B858]
+file: tasks/B1503-hosted-skill-operations.yaml
+covers:
+  - "litellm/llms/litellm_proxy/skills/transformation.py"

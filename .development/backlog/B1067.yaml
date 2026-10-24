@@ -1,0 +1,8 @@
+id: B1067
+milestone: M5 api families
+title: Vector search routes
+status: todo
+depends_on: [B004, B1062, B1064, B1100, B732, B1060, B003, B726, B1131]
+file: tasks/B1067-vector-search-routes.yaml
+covers:
+  - "litellm/proxy/vector_store_endpoints/endpoints.py"

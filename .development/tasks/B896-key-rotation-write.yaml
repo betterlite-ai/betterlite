@@ -1,10 +1,48 @@
 id: B896
 title: Apply key regeneration writes and grace records
 description: >-
-  Apply an already-authorized regeneration plan with generated key bytes, deprecated overlap row, access-group
-  hash swap and source cache/event ordering. Preserve LITELLM_KEY_ROTATION_GRACE_PERIOD absence behavior
-  and source transaction boundaries. The HTTP handler and scheduler invoke the same write operation after
-  their distinct authorization contexts are resolved.
+  Rotate an authorized key with the source's nontransactional ordering. First B892 rejects ownership
+  rebinding; then a changed nonnull organization_id requires B772 membership unless proxy admin.
+  For a body, enforce B745 output-token estimates and batch limits against stored dict metadata,
+  then B1219 end-user budget reassignment using B894's requested-id sentinel and B739's stored id.
+  Only then obtain a new secret. get_new_token checks B771's custom-key policy before validating
+  a supplied new_key: require sk- prefix and length >= MINIMUM_CUSTOM_KEY_LENGTH (16 by default),
+  both failures HTTP 400 detail.error with the source requirement. Missing new_key uses sk- plus
+  token_urlsafe(LENGTH_OF_LITELLM_GENERATED_KEY), default 16 random bytes. Hash unconditionally
+  through B2362 and always abbreviate with B881; DISABLE_KEY_NAME is not consulted on rotation.
+
+  With a body, adapt to an update request and run B1224's legacy update hook if nonnull, enforce
+  B772 upperbounds with fill_defaults False, prepare fields through B894 and validate key_alias
+  only when its prepared value differs from the existing alias. The unified custom policy runs
+  even without a body, with operation regenerate and an empty RegenerateKeyRequest default.
+  Only after it succeeds persist object permissions via B894/B816; merge returned fields into
+  token hash/key_name and serialize through B2362. A secret may already have been generated before
+  these policy failures. Callback metadata passes through B894's B2304 transform, including its
+  ciphertext preservation and original-value-on-encryption-failure behavior.
+
+  Snapshot B738 JWT mapping cache keys BEFORE changing the token; then B777 archives the old row,
+  then attempt deprecated overlap, then update the verification token by old hash with B770's
+  settings stamp. The FK cascade updates mapping rows but does not invalidate their old cache.
+  These are separate writes, not one transaction. In particular this path never calls B894's
+  soft-budget transaction; preserve the actual prepared-field/database outcome rather than fixing
+  rotation by adding that transaction. A None update result becomes an empty dict then fails
+  extracting token; preserve this failure and earlier writes.
+
+  Build response data with raw new key and token_id taken from the returned token. Invalidate
+  old/new object-permission ids, then delete old key cache using hash_if_needed(key) when either
+  supplied key or old hash is truthy, then B878 evicts/broadcasts the snapshotted mapping keys.
+  Only AFTER credential invalidation call B819's access-group hash swap. A group-sync failure
+  therefore leaves the key rotated and old cache evicted. Validate GenerateKeyResponse and queue
+  B784's rotated event last with data/old row/response/caller/changed-by. No general catch rolls
+  back or suppresses these failures. Use supervised event delivery; caller B895 owns HTTP mapping.
+
+  Deprecated overlap chooses a truthy request grace_period, otherwise
+  LITELLM_KEY_ROTATION_GRACE_PERIOD, default empty. Empty means immediate revoke. B199 duration
+  ValueError warns with the invalid format and skips the row; other parse errors propagate.
+  Zero/negative duration also skips without warning. Positive duration uses UTC now plus seconds,
+  upserts by old hash and sets active_token_id/new hash and revoke_at on both create and update.
+  Any upsert exception warns and returns, allowing rotation to continue without overlap; success
+  debug-logs retention. This helper does not later expire/delete the deprecated key.
 
 
   Build the production key_rotation_write module in betterlite-server; reuse the typed dependencies listed
@@ -21,41 +59,27 @@ description: >-
   LENGTH_OF_LITELLM_GENERATED_KEY=16; LITELLM_KEY_ROTATION_GRACE_PERIOD=''.
 
 
-  Add the key_rotation_write operation under B856 Management::keys. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-rotation-write-*
-  seed to B171 helper_case, which already owns this decoder.
+  The key_rotation_write helper operation compares get_new_token with deterministic randomness and
+  an injected custom-key-policy result. Native Postgres cases execute the write service and inspect
+  archive/deprecated/current rows and ordered invalidations; never use a helper adapter to invoke
+  regenerate_key_fn. Add the shared helper seed only for token generation/validation.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  postgres_pinned_rows observes old/new token rows and deprecated-token grace state. Inject each failure
+  in postgres_failure_effects and assert the exact surviving archive, permission and key rows. Both use
+  betterlite-postgres-fixture with POSTGRES_TEST_URL or testcontainers; no in-memory substitute can prove
+  the deliberately separate commits.
 
 
-  Write betterlite-config::key_rotation_write::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests key_rotation_write::tests::key_length_defaults_and_overrides,
+  invalid_integer_length_stops_startup and grace_request_env_precedence use B002's real loader.
+  Both lengths are import-time int() reads; malformed values stop startup. Grace is a string and
+  an invalid duration warns/skips during rotation instead. Reuse B881/B893's typed length settings.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 218 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  218 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 511 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  Sizing: 218 source lines before docstring exclusion; allow 250 production, 340 ordered-effects/
+  Postgres tests, 45 token adapters, 30 wiring and 40 config tests, 705 within 800.
+  Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -93,10 +117,19 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5487-L5492
     why: LITELLM_KEY_ROTATION_GRACE_PERIOD default and read site.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: regenerate_new_secret,
-      old_key_grace_window, grace_expired, rotation_rollback, postgres_pinned_rows, postgres_failure_effects.'
+  - text: 'Cases ownership_org_estimate_batch_budget_guard_order, custom_policy_before_prefix_length,
+      new_key_prefix_and_length_boundaries, generated_secret_length, rotation_always_sets_key_name,
+      random_before_update_policy, upperbounds_do_not_fill_defaults, alias_only_when_changed,
+      unified_policy_without_body, permissions_after_policy, jwt_mapping_snapshot_before_write,
+      archive_grace_key_write_order, grace_request_env_empty_zero_negative,
+      grace_invalid_warns, grace_write_failure_warns_continues, grace_repeated_upsert,
+      key_update_none_failure, soft_budget_does_not_gain_a_transaction,
+      permission_key_mapping_cache_order, group_sync_after_credential_invalidation,
+      response_then_event, event_carries_changed_by, postgres_pinned_rows and postgres_failure_effects
+      cover every failure boundary without asserting a whole-operation rollback.'
     proof:
       - behavior-tests
+      - postgres-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -144,13 +177,13 @@ checks:
         && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/key-rotation-write/regenerate-new-secret.yaml
-  - tools/oracle/cases/helpers/key-rotation-write/old-key-grace-window.yaml
-  - tools/oracle/cases/helpers/key-rotation-write/grace-expired.yaml
-  - tools/oracle/cases/helpers/key-rotation-write/rotation-rollback.yaml
+  - tools/oracle/cases/helpers/key-rotation-write/custom-key-policy-and-format.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B895 owns route authorization and paid-gate removal; these ranges contain no premium branch.
+    B779 later expires deprecated rows and updates scheduler rotation counters. B2362 owns hashes/
+    JSON conversion; B894 owns metadata encryption and B784 event dispatch. B738 and the later
+    deprecated-key lookup owner decide old-key authentication during the grace window.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -246,8 +279,9 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve LITELLM_KEY_ROTATION_GRACE_PERIOD absence behavior and source transaction boundaries.
+  - An empty request grace_period falls back to the environment; it cannot force immediate revoke.
+  - Archive and overlap rows can survive a failed main-token write, while failed overlap creation is swallowed.
 budget:
-  max_changed_lines: 525
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

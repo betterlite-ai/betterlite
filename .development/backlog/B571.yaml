@@ -1,0 +1,8 @@
+id: B571
+milestone: M3 providers
+title: Anthropic history cleanup and cache portability
+status: todo
+depends_on: [B220, B180, B171]
+file: tasks/B571-anthropic-message-replay.yaml
+covers:
+  - "litellm/llms/anthropic/common_utils.py"

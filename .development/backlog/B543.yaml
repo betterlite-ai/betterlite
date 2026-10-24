@@ -1,0 +1,9 @@
+id: B543
+milestone: M3 providers
+title: Azure assistants threads and runs
+status: todo
+depends_on: [B531, B519, B520, B521, B173, B171, B686, B687]
+file: tasks/B543-azure-assistants.yaml
+covers:
+  - "litellm/llms/azure/assistants.py"
+  - "litellm/llms/azure/azure.py"

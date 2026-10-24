@@ -1,0 +1,8 @@
+id: B1727
+milestone: M4 keys, spend and management
+title: Preserve legacy global report grouping and filter precedence
+status: todo
+depends_on: [B003, B052, B204, B724, B726, B732, B860, B1644, B1715, B1726]
+file: tasks/B1727-global-spend-report.yaml
+covers:
+  - "litellm/proxy/spend_tracking/{spend_management_endpoints,spend_tracking_utils}.py"

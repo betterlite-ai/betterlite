@@ -1,0 +1,9 @@
+id: B2413
+milestone: M5 API families
+title: Responses stream primitives and duration settings
+status: todo
+depends_on: [B004, B010, B184, B185, B186, B012, B198, B206, B247, B1114, B1138, B1087, B002, B171]
+file: tasks/B2413-responses-stream-primitives.yaml
+covers:
+  - "litellm/responses/streaming_iterator.py"
+  - "litellm/constants.py"

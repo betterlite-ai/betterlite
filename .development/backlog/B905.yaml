@@ -1,0 +1,8 @@
+id: B905
+milestone: M5 api families
+title: Responses parameters
+status: todo
+depends_on: [B171, B175, B206, B213, B903, B002, B668, B1114, B1138, B2202, B137]
+file: tasks/B905-responses-parameters.yaml
+covers:
+  - "litellm/responses/utils.py"

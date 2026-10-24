@@ -1,0 +1,8 @@
+id: B1230
+milestone: M4 keys, spend and management
+title: Remove unbacked team model aliases
+status: todo
+depends_on: [B368, B724, B725, B732, B734, B801, B841, B856]
+file: tasks/B1230-team-model-cleanup.yaml
+covers:
+  - "litellm/proxy/management_endpoints/model_management_endpoints.py"

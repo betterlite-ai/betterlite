@@ -1,0 +1,11 @@
+id: B1717
+milestone: M4 keys, spend and management
+title: Record response cost and its diagnostic without breaking completion
+status: todo
+depends_on: [B031, B068, B171, B188, B204, B247, B253, B625, B1664, B1682, B1683]
+file: tasks/B1717-cost-recording.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+  - "litellm/litellm_core_utils/{core_helpers,get_litellm_params}.py"
+  - "litellm/types/utils.py"
+  - "litellm/utils.py"

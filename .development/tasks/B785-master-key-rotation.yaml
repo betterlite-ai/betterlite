@@ -1,10 +1,40 @@
 id: B785
 title: Master key and encrypted credential rotation routes
 description: >-
-  Implement master-key rotation and /credentials/migrate-encryption/check and migrate endpoints using
-  CiphertextMigration and B061 StoredCipher implementation. Preserve administrator-only access, dry-run
-  counts, current/previous-key validation and environment/config update behavior through typed injected
-  settings storage. Never log or echo old/new plaintext keys.
+  Implement POST /credentials/migrate-encryption and GET /credentials/migrate-encryption/check.
+  Split the concrete master rotation service into B2331 and its MCP primitives into B2332 so the
+  HTTP task does not create a reverse dependency on B139 or B061's same-key migration caller.
+  B895 owns the actual /key/regenerate master-key branch; do not register it here or invent an
+  old/new-key request body. _rotate_master_key's current_master_key argument is unused in source.
+
+  Both routes first require user_role exactly proxy_admin; viewer, team/org admin and ordinary
+  user receive HTTPException 403 with detail.error set to CommonProxyErrors.not_allowed_access.
+  Only then check DB presence, raising HTTPException 500 detail.error for database-not-connected.
+  There is no local except block or management decorator: HTTP errors retain detail envelopes
+  with no type/param/code. Unexpected errors use B124's outer 500 error message/type envelope
+  (no param/code), including RuntimeError from an unavailable migration algorithm or salt.
+  Cases migration_admin_only, migration_denial_before_database, migration_no_database,
+  migration_algorithm_gate_error and migration_missing_salt_error compare those distinctions;
+  use README-permitted betterlite error wording without embedding credential values.
+
+  POST dry_run is a query boolean default false, not a body field. Delegate prisma, caller and
+  that flag to B061 migrate_encryption, then return status='success', dry_run and report.as_dict().
+  The source service requires general_settings.encryption_algorithm case-insensitively equal
+  to aes-256-gcm (no trim), even for dry_run. GET calls B061 check_encryption without a caller
+  or dry_run argument and returns status='success',report only; it does not require the AES
+  migration gate. Cases migration_dry_run_default_false, migration_query_bool_422,
+  migration_body_flag_ignored, migration_dry_run_gate_required and check_legacy_algorithm_allowed
+  prove these route contracts. Settings parsing, salt precedence and migration walkers remain B061/B2303.
+
+  Reports contain residual_legacy,total_undecryptable and locations keyed by source location name;
+  every location has scanned,migrated,already_v2,plaintext,undecryptable,legacy, including zeros.
+  Preserve unchanged B061 report counters and do not claim success means every ciphertext migrated:
+  unreadable values can remain with a successful report. Cases report_zero_fields,
+  report_undecryptable_success, check_omits_dry_run and migration_repeat_residual_counts cover it.
+  A POST dry-run and every GET perform no writes; a real POST can partially migrate stores and
+  returns counts from the service's bracketing scans. Cases dry_run_rows_unchanged,
+  check_rows_unchanged and migration_partial_effects inspect Postgres state. No route reads
+  litellm-changed-by, writes audit rows or directly changes runtime master-key configuration.
 
 
   Build the production master_key_rotation module in betterlite-server; reuse the typed dependencies listed
@@ -13,19 +43,13 @@ description: >-
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/key_management_endpoints.py:
-  _rotate_master_key (L5211-L5365; 135 source lines), _require_proxy_admin (L5368-L5375; 7 source lines),
+  _require_proxy_admin (L5368-L5375; 7 source lines),
   migrate_encryption_endpoint (L5383-L5415; 30 source lines), check_encryption_endpoint (L5423-L5445;
   21 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: POST /credentials/migrate-encryption ->
-  migrate_encryption_endpoint; GET /credentials/migrate-encryption/check -> check_encryption_endpoint.
-  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Exercise both exact paths through B001 against booted proxies with separate encrypted fixtures.
+  The migration and scanner services are dependencies, not reimplemented in route adapters.
 
 
   B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
@@ -52,9 +76,9 @@ description: >-
   prove those differences in Rust tests, outside the equality corpus.
 
 
-  Sizing: 193 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  193 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 412 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
+  Sizing: 58 nonblank, noncomment pinned source lines including docstrings before translation; allow
+  80 production, 250 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 395 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -74,21 +98,21 @@ scope:
     - crates/betterlite-server/src/master_key_rotation/fixtures/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5211-L5445
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5368-L5445
     why: Pinned implementation and exact ownership boundary for master_key_rotation.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5211-L5365
-    why: Own _rotate_master_key; preserve caller-visible values and failure ordering.
+    why: B2331 owns _rotate_master_key; it is shared with B061 migration and B895 regeneration.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5368-L5375
     why: Own _require_proxy_admin; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5383-L5415
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5378-L5415
     why: Own migrate_encryption_endpoint; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5423-L5445
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5418-L5445
     why: Own check_encryption_endpoint; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/credential_migration.py#L621-L690
+    why: B061 owns migration/check delegation and dry-run differences.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: master_admin_only, dry_count,
-      wrong_old_key, reencrypt_atomic, current_key_check, migration_failure, postgres_pinned_rows, postgres_failure_effects.'
+  - text: Every named route/report case above passes, plus postgres_pinned_rows and
+      postgres_failure_effects; no test assumes cross-store atomicity or validates an unused old key.
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -111,22 +135,18 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/master_key_rotation::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/master_key_rotation::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/management/master-key-rotation/post--credentials-migrate-encryption-success.yaml
-  - tools/oracle/cases/management/master-key-rotation/post--credentials-migrate-encryption-invalid-target.yaml
-  - tools/oracle/cases/management/master-key-rotation/post--credentials-migrate-encryption-unauthorized-caller.yaml
-  - tools/oracle/cases/management/master-key-rotation/get--credentials-migrate-encryption-check-success.yaml
-  - tools/oracle/cases/management/master-key-rotation/get--credentials-migrate-encryption-check-invalid-target.yaml
-  - tools/oracle/cases/management/master-key-rotation/get--credentials-migrate-encryption-check-unauthorized-caller.yaml
+  - tools/oracle/cases/management/master-key-rotation/query-defaults-and-error-envelopes.yaml
+  - tools/oracle/cases/management/master-key-rotation/dry-run-gate-versus-check.yaml
+  - tools/oracle/cases/management/master-key-rotation/undecryptable-success-report.yaml
   - tools/oracle/cases/management/master-key-rotation/master-admin-only.yaml
   - tools/oracle/cases/management/master-key-rotation/dry-count.yaml
-  - tools/oracle/cases/management/master-key-rotation/wrong-old-key.yaml
-  - tools/oracle/cases/management/master-key-rotation/reencrypt-atomic.yaml
-  - tools/oracle/cases/management/master-key-rotation/current-key-check.yaml
+  - tools/oracle/cases/management/master-key-rotation/partial-migration-effects.yaml
   - tools/oracle/cases/management/master-key-rotation/migration-failure.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B061 owns migration/check scanning and reporting; B2303 owns ciphertext codecs, algorithm and
+    salt settings. B2331 owns master re-encryption and credential projection; B2332 owns MCP
+    rotation primitives. No migration service calls a FastAPI wrapper from this task.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
     generate_service_account_key_fn (L2159-L2322).'
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B770 owns _UserRowLike.user_id (L182-L182),
@@ -221,8 +241,8 @@ out_of_scope:
     caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Encryption dry-run counts must never mutate current or previous master-key ciphertext.
+  - The check endpoint can scan legacy encryption while POST dry_run still requires aes-256-gcm.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 400
   max_new_expects: 0
 review_level: security

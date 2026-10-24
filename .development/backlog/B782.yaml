@@ -1,0 +1,8 @@
+id: B782
+milestone: M4 keys, spend and management
+title: Paginated key lists and aliases
+status: todo
+depends_on: [B001, B003, B052, B124, B732, B781, B860, B865, B897]
+file: tasks/B782-key-list.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"

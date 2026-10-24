@@ -1,26 +1,68 @@
 id: B869
 title: JWT configuration defaults and dependent field validation
 description: >-
-  Define typed litellm_jwtauth settings for every field in LiteLLM_JWTAuth and its issuer/routing-override
-  records. Preserve defaults, deprecated jwt_client_id_field alias precedence, paired role-field validation,
-  object-id/role-map dependency and scope-mapping validation. Represent custom_validate as an unresolved
-  configured callable reference; fail startup until B054 registers B165 callable support. Do not import
-  Python or perform JWKS/network requests in the config loader.
+  Implement general_settings.litellm_jwtauth construction and its pure accessors in
+  betterlite-config::jwt_settings. Preserve every field below, including nullable values versus empty
+  strings/lists and route-group names as strings. No dedicated environment variable is read here.
+  At startup proxy_server L10363-L10378 resolves top-level os.environ/ values with get_secret before
+  construction; B002 provides that configuration boundary. An absent settings object constructs all
+  defaults. This stage does not contact an issuer, verify a JWT, or enforce the routing rules itself.
 
+  Constructor order matters. Pop the non-field config_file_path context first. Pop jwt_client_id_field,
+  copying its value to virtual_key_claim_field only if the new key is ABSENT; an explicitly null or empty
+  new field wins. Compute unknown keys from the annotated fields. If custom_validate is nonnull,
+  resolve it and validate its Literal[True] return annotation BEFORE rejecting unknown keys or checking
+  dependent fields. Define an injected ValidatorLoader contract carrying module reference and optional
+  config-file context; B165/B054 install the real loader above this task. An unregistered loader with
+  configured custom_validate is a startup error, never a silently ignored validator. Preserve local
+  import failures and the remote-loading config-file gate from get_instance_fn; annotation bool,
+  unannotated, Literal[False] and unions fail with TypeError "Custom validator must be annotated to
+  return Literal[True], got {return_type}". Do not invoke the validator while loading settings.
 
-  Config fuzzing uses the existing config_yaml target, which calls the production config loader; do not
-  create a second fuzz crate.
+  Then unknown keys raise ValueError "Invalid arguments provided: {invalid}. Allowed arguments are:
+  {allowed}." Allowed names follow annotation order; unknown-key set ordering is not stable, so compare
+  names as a set only within that message fragment. Either user_roles_jwt_field or user_allowed_roles
+  without the other raises "user_allowed_roles must be provided if user_roles_jwt_field is set." These
+  are None checks: '' and [] count as supplied. A nonnull object_id_jwt_field with null/absent
+  role_mappings raises "if object_id_jwt_field is set, role_mappings must also be set. Needed to infer
+  if the caller is a user or team." An empty role_mappings list satisfies this check; role_mappings
+  without object_id is accepted. Nonnull scope_mappings with a falsey ORIGINAL enforce_scope_based_access
+  raises "scope_mappings must be set if enforce_scope_based_access is true." Despite that text, true
+  enforcement without mappings is accepted, [] with enforcement false is rejected, and a truthy
+  string 'false' passes the precheck before Pydantic converts it to false. Base validation runs last.
+  fallback_to_db_teams=True with user_id_upsert=False is accepted here despite the field description;
+  team-claim runtime policy belongs to B891. There is no warning-and-fallback for invalid field types.
 
+  RoleMapping requires role:string and internal_role from B736 RBAC_ROLES (proxy_admin, team,
+  internal_user), ignoring extra fields like BaseModel. JWTLiteLLMRoleMap requires jwt_role:string and
+  any B2314 LitellmUserRoles value, also ignoring extras. ScopeMapping adds required scope:string to
+  B736 OIDCPermissions (models/routes default None) and forbids extras. JWTRoutingOverride requires iss
+  as string or list of strings; client_id/scope/aud use the same union plus null, and path is only
+  'oauth2', default 'oauth2'. Empty selectors are accepted here, extra fields are rejected, and no
+  wildcard matching is done during construction. UnregisteredJWTClientBehavior accepts exactly
+  fallback_team_mapping, reject and auto_register; their runtime effects belong to B767/B877.
 
-  Build the production jwt_settings module in betterlite-config; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  JWTIssuerConfig requires issuer:string, forbids extras and accepts audience as string/list/null.
+  Its after-validator first rejects audience=None with disable_audience_validation=false using
+  "JWT issuer {issuer} must configure audience or set disable_audience_validation=True". Then any
+  nonnull audience with that flag true raises "JWT issuer {issuer} cannot set audience and
+  disable_audience_validation=True together". Empty string and [] are NONNULL audiences and pass
+  with the flag false. No URL validation, issuer uniqueness check or positivity bound is added.
+  public_key_stale_ttl alone has ge=0 and defaults to the literal 3600 at L5328; zero is accepted,
+  negatives rejected. Other float TTLs accept negative and zero values in this source model.
+
+  get_issuer_config returns None for null issuer/issuers and otherwise the FIRST exact string match;
+  no normalization or wildcard matching. is_virtual_key_mapping_configured tests nonnull global or
+  any issuer field, so '' is configured. get_virtual_key_claim_field and
+  get_unregistered_jwt_client_behavior prefer a matched issuer's nonnull override, else the global
+  value; null and unknown issuer fall back globally. Preserve issuer-list order and duplicate entries.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/_types.py:
-  LiteLLM_JWTAuth (L5331-L5576; 212 source lines), JWTLiteLLMRoleMap (L5198-L5200; 3 source lines), JWTRoutingOverride
-  (L5211-L5232; 18 source lines), UnregisteredJWTClientBehavior (L5235-L5251; 15 source lines), JWTIssuerConfig
-  (L5254-L5325; 68 source lines).
+  LiteLLM_JWTAuth (L5331-L5576; 189 code lines), RoleMapping (L5193-L5195; 3),
+  JWTLiteLLMRoleMap (L5198-L5200; 3), ScopeMapping (L5203-L5208; 5), JWTRoutingOverride
+  (L5211-L5232; 9), UnregisteredJWTClientBehavior (L5235-L5251; 4), JWTIssuerConfig
+  (L5254-L5325; 60) and DEFAULT_JWKS_STALE_TTL (L5328; 1).
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.admin_jwt_scope='litellm_proxy_admin';
@@ -32,7 +74,7 @@ description: >-
   litellm_jwtauth.user_id_jwt_field=None; litellm_jwtauth.user_email_jwt_field=None; litellm_jwtauth.user_allowed_email_domain=None;
   litellm_jwtauth.user_roles_jwt_field=None; litellm_jwtauth.user_allowed_roles=None; litellm_jwtauth.user_id_upsert=False;
   litellm_jwtauth.end_user_id_jwt_field=None; litellm_jwtauth.agent_id_jwt_field=None; litellm_jwtauth.mcp_client_id_jwt_field=None;
-  litellm_jwtauth.public_key_ttl=600; litellm_jwtauth.public_key_stale_ttl=DEFAULT_JWKS_STALE_TTL; litellm_jwtauth.public_allowed_routes=['public_routes'];
+  litellm_jwtauth.public_key_ttl=600; litellm_jwtauth.public_key_stale_ttl=3600; litellm_jwtauth.public_allowed_routes=['public_routes'];
   litellm_jwtauth.enforce_rbac=False; litellm_jwtauth.roles_jwt_field=None; litellm_jwtauth.role_mappings=None;
   litellm_jwtauth.object_id_jwt_field=None; litellm_jwtauth.scope_mappings=None; litellm_jwtauth.enforce_scope_based_access=False;
   litellm_jwtauth.enforce_team_based_model_access=False; litellm_jwtauth.custom_validate=None; litellm_jwtauth.jwt_litellm_role_map=None;
@@ -48,34 +90,19 @@ description: >-
   JWTIssuerConfig.end_user_id_jwt_field=None; JWTIssuerConfig.virtual_key_claim_field=None; JWTIssuerConfig.unregistered_jwt_client_behavior=None.
 
 
-  Add the jwt_settings operation under B856 Management::jwt. Python calls only the owned MIT helper with
-  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a jwt-settings-*
-  seed to B171 helper_case, which already owns this decoder.
+  Add the pure jwt_settings operation under B856 Management::jwt to construct actual MIT models and
+  invoke their accessors. Compare model dumps, exception category, field locations and exact constraint
+  text; do not pretend configuration failures have HTTP status/type/param/code. Custom loader execution
+  belongs to native ordered-port tests and B054's integration, not a helper that imports arbitrary modules.
+  All fields get named field_<field> rstest rows for omitted/default, null, explicit accepted and invalid
+  values. Nested records get the same treatment, plus extra-forbidden versus extra-ignored cases.
+  loads_all_jwt_fields and env_top_level_resolution call the real B002 loader with the general_settings
+  nesting. aliases_presence_precedence and constructor_validation_order exercise the production path;
+  invalid_types_reject replaces the fictitious invalid-value fallback. Replay added jwt-settings seeds
+  through existing config_yaml and helper_case decoders. No additional parser or database is needed.
 
-
-  Write betterlite-config::jwt_settings::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 316 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  316 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 609 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  There are 274 nonblank noncomment source lines excluding docstrings. Allow 280 records/validators,
+  330 focused tests, 90 adapters and 50 loader/dispatch/corpus wiring lines, 750 within 800.
 scope:
   paths:
     - crates/betterlite-config/src/jwt_settings.rs
@@ -94,6 +121,16 @@ scope:
     - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-settings-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5193-L5208
+    why: Own the two small dependent mapping records, with different extra-field rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5328-L5328
+    why: Stale JWKS TTL is the literal 3600, not an environment read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10355-L10385
+    why: Startup reads general_settings.litellm_jwtauth, resolves top-level environment references and supplies config-file context.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L9-L66
+    why: The injected callable loader preserves configuration-path context and import errors; B165 owns loading.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L200-L212
+    why: Required Literal[True] return annotation is part of the loader contract.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5576
     why: Own LiteLLM_JWTAuth; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5198-L5200
@@ -229,10 +266,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5306-L5311
     why: JWTIssuerConfig.unregistered_jwt_client_behavior default and read site.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: defaults, legacy_alias,
-      paired_role_fields, scope_mappings, fallback_requires_user_upsert, unknown_key.'
-    proof:
-      - behavior-tests
+  - text: Named field rows cover every declared default/type, nested record, enum literal and extra-field policy; pure model/accessor cases match the MIT model.
+    proof: [behavior-tests, oracle, helper-python]
+  - text: constructor_validation_order, aliases_presence_precedence, custom_loader_receives_context, custom_loader_failure_precedes_unknown_key and custom_annotation_must_be_literal_true prove construction ordering and failure propagation.
+    proof: [behavior-tests, config-tests]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -276,20 +313,38 @@ oracle_cases:
   - tools/oracle/cases/helpers/jwt-settings/legacy-alias.yaml
   - tools/oracle/cases/helpers/jwt-settings/paired-role-fields.yaml
   - tools/oracle/cases/helpers/jwt-settings/scope-mappings.yaml
-  - tools/oracle/cases/helpers/jwt-settings/fallback-requires-user-upsert.yaml
+  - tools/oracle/cases/helpers/jwt-settings/fallback-without-user-upsert-accepted.yaml
   - tools/oracle/cases/helpers/jwt-settings/unknown-key.yaml
+  - tools/oracle/cases/helpers/jwt-settings/all-fields-explicit.yaml
+  - tools/oracle/cases/helpers/jwt-settings/null-and-empty-fields.yaml
+  - tools/oracle/cases/helpers/jwt-settings/new-alias-null-wins.yaml
+  - tools/oracle/cases/helpers/jwt-settings/role-pair-empty-accepted.yaml
+  - tools/oracle/cases/helpers/jwt-settings/object-id-needs-nonnull-role-mappings.yaml
+  - tools/oracle/cases/helpers/jwt-settings/enforcement-without-mappings-accepted.yaml
+  - tools/oracle/cases/helpers/jwt-settings/scope-mapping-empty-rejected-with-false.yaml
+  - tools/oracle/cases/helpers/jwt-settings/scope-precheck-before-bool-coercion.yaml
+  - tools/oracle/cases/helpers/jwt-settings/routing-override-required-issuer-and-oauth2-only.yaml
+  - tools/oracle/cases/helpers/jwt-settings/issuer-missing-audience-error.yaml
+  - tools/oracle/cases/helpers/jwt-settings/issuer-audience-and-disabled-error.yaml
+  - tools/oracle/cases/helpers/jwt-settings/issuer-empty-audience-accepted.yaml
+  - tools/oracle/cases/helpers/jwt-settings/nested-extra-field-rules.yaml
+  - tools/oracle/cases/helpers/jwt-settings/stale-ttl-bound-other-ttls-unbounded.yaml
+  - tools/oracle/cases/helpers/jwt-settings/issuer-first-exact-match.yaml
+  - tools/oracle/cases/helpers/jwt-settings/mapping-empty-string-is-configured.yaml
+  - tools/oracle/cases/helpers/jwt-settings/issuer-null-overrides-fall-back.yaml
+  - tools/oracle/cases/helpers/jwt-settings/all-unregistered-client-policies.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B165 owns get_instance_fn and validate_custom_validate_return_type in proxy/types_utils/utils.py; B054 installs that implementation of this task's ValidatorLoader and runs custom validation during auth.
+  - B736 owns OIDCPermissions and RBAC_ROLES; B2314 owns LitellmUserRoles. JWT claim verification, discovery and routing execution stay with B876/B877/B891.
   - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
     (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
   - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
     GenerateKeyResponse (L1399-L1438), UpdateKeyRequest (L1441-L1484).'
   - 'litellm/proxy/_types.py: B866 owns LiteLLMRoutes.openai_routes (L339-L490), LiteLLMRoutes.anthropic_routes
     (L551-L561), LiteLLMRoutes.llm_api_routes (L648-L659).'
-  - 'litellm/proxy/_types.py: B867 owns LiteLLMRoutes.mcp_management_routes (L583-L587), LiteLLMRoutes.agent_management_routes
-    (L606-L612), LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
+  - 'litellm/proxy/_types.py: B867 owns KeyManagementRoutes (L287-L325),
+    LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
     (L694-L719), LiteLLMRoutes.team_service_account_key_routes (L721-L724), LiteLLMRoutes.management_routes
     (L726-L782), LiteLLMRoutes.spend_tracking_routes (L784-L805), LiteLLMRoutes.global_spend_tracking_routes
     (L807-L821), LiteLLMRoutes.internal_user_routes (L885-L913), LiteLLMRoutes.internal_user_view_only_routes
@@ -297,8 +352,9 @@ out_of_scope:
     (L1050-L1126), LiteLLMRoutes.org_admin_allowed_routes (L1129-L1129).'
   - 'litellm/proxy/_types.py: B868 owns LiteLLMRoutes.openai_route_names (L329-L338), LiteLLMRoutes.mapped_pass_through_routes
     (L492-L521), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527), LiteLLMRoutes.litellm_native_routes
-    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_routes (L591-L591),
-    LiteLLMRoutes.agent_inference_routes (L594-L601), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
+    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_management_routes
+    (L583-L587), LiteLLMRoutes.mcp_routes (L591-L591), LiteLLMRoutes.agent_inference_routes (L594-L601),
+    LiteLLMRoutes.agent_management_routes (L606-L612), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
     (L618-L636), LiteLLMRoutes.apply_guardrail_routes (L638-L640), LiteLLMRoutes.model_info_routes (L642-L646),
     LiteLLMRoutes.info_routes (L660-L685), LiteLLMRoutes.public_routes (L823-L844), LiteLLMRoutes.ui_routes
     (L849-L871), LiteLLMRoutes.compliance_check_routes (L875-L878), LiteLLMRoutes.self_managed_routes
@@ -335,9 +391,10 @@ out_of_scope:
     (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
     (L5766-L5772).'
 pitfalls:
-  - Preserve defaults, deprecated jwt_client_id_field alias precedence, paired role-field validation,
-    object-id/role-map dependency and scope-mapping validation.
+  - The scope_mappings error text describes the reverse implication from the condition that raises it.
+  - A null virtual_key_claim_field still defeats the deprecated jwt_client_id_field alias.
+  - Requiring a nonempty audience would reject issuer configurations the source accepts with '' or [].
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

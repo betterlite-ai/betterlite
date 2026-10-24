@@ -1,0 +1,9 @@
+id: B2239
+milestone: M3 providers
+title: Injected verbose logging hooks
+status: todo
+depends_on: [B187, B002, B171]
+file: tasks/B2239-verbose-hooks.yaml
+covers:
+  - "litellm/main.py"
+  - "litellm/utils.py"

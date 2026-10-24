@@ -1,0 +1,10 @@
+id: B115
+milestone: M7 observability
+title: Storage, queue and SIEM loggers
+status: todo
+depends_on: [B012, B2208]
+file: null
+covers:
+  - "litellm/integrations/{s3,s3_v2,dynamodb,sqs}.py"
+  - "litellm/integrations/{gcs_bucket,gcs_pubsub,azure_storage,clickhouse,azure_sentinel,zerobus}/**"
+  - "litellm/types/integrations/{s3_v2,gcs_bucket,azure_sentinel,zerobus}.py"

@@ -1,0 +1,9 @@
+id: B014
+milestone: M1 openai data plane
+title: Call dispatch across providers and call types, shared settings and helpers
+status: todo
+depends_on: [B010, B011, B198, B200, B201, B006, B206, B207]
+file: tasks/B014-call-dispatch.yaml
+covers:
+  - "litellm/{__init__,main,utils}.py"
+  - "litellm/types/{utils,completion,adapter}.py"

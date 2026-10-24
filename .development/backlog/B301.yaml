@@ -1,0 +1,7 @@
+id: B301
+milestone: M2 routing
+title: Component probes for deterministic routing oracle cases
+status: todo
+depends_on: [B001, B008, B003, B392]
+file: tasks/B301-routing-component-oracle.yaml
+covers: []

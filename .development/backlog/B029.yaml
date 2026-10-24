@@ -1,0 +1,8 @@
+id: B029
+milestone: M3 providers
+title: Bedrock embeddings, images, rerank, token counting and transcription
+status: todo
+depends_on: [B678, B679, B631, B632, B639, B641, B642, B171]
+file: tasks/B029-bedrock-other-other-endpoints.yaml
+covers:
+  - "litellm/llms/bedrock/image_edit/__init__.py"

@@ -1,0 +1,8 @@
+id: B2453
+milestone: M5 API families
+title: Native transcription HTTP and subtitle replies
+status: todo
+depends_on: [B1122, B173, B2402, B206, B1002, B012, B2401]
+file: tasks/B2453-transcription-http.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

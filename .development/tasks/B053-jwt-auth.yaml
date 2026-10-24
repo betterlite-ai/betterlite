@@ -193,10 +193,11 @@ deviations:
     why: README Decisions specifies no paid tier and no user/team cap.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2391-L2971
 out_of_scope:
+  - B2314 owns JWTHandler.is_jwt below the JWT backend and resolved-key constructor.
   - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
     production fallback.
   - 'litellm/proxy/auth/handle_jwt.py: B760 owns JWTHandler.__init__ (L251-L258), JWTHandler.bind_agent_lookup
-    (L260-L261), JWTHandler.update_environment (L263-L273), JWTHandler.is_jwt (L276-L280), JWTHandler.get_unverified_claims
+    (L260-L261), JWTHandler.update_environment (L263-L273), JWTHandler.get_unverified_claims
     (L283-L302), JWTHandler._is_trusted_issuer_normalized_token (L376-L383), JWTHandler._has_trusted_issuer_normalized_claim
     (L385-L386), JWTHandler.get_team_ids_from_jwt (L388-L409), JWTHandler.get_all_jwt_team_ids (L411-L448),
     JWTHandler.get_end_user_id (L450-L466), JWTHandler.is_required_team_id (L468-L476), JWTHandler.is_enforced_email_domain

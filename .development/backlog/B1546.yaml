@@ -1,0 +1,8 @@
+id: B1546
+milestone: M3 providers
+title: Decode and resample supplied audio for Riva PCM streaming
+status: todo
+depends_on: [B1545, B165, B171]
+file: tasks/B1546-riva-audio-decoding.yaml
+covers:
+  - "litellm/llms/nvidia_riva/audio_transcription/audio_utils.py"

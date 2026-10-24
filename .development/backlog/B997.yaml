@@ -1,0 +1,12 @@
+id: B997
+milestone: M5 api families
+title: Image contracts
+status: todo
+depends_on: [B010, B171, B2202]
+file: tasks/B997-image-contracts.yaml
+covers:
+  - "litellm/llms/base_llm/image_generation/transformation.py"
+  - "litellm/llms/base_llm/image_edit/transformation.py"
+  - "litellm/llms/base_llm/image_variations/transformation.py"
+  - "litellm/types/images/main.py"
+  - "litellm/images/utils.py"

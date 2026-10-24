@@ -1,0 +1,8 @@
+id: B661
+milestone: M3 providers
+title: Bedrock realtime session configuration
+status: todo
+depends_on: [B1004, B171, B682]
+file: tasks/B661-bedrock-services-realtime-session.yaml
+covers:
+  - "litellm/llms/bedrock/realtime/transformation.py"

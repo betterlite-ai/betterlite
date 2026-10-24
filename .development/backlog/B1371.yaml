@@ -1,0 +1,9 @@
+id: B1371
+milestone: M3 providers
+title: Vertex batch job records, GCS model paths and row accounting
+status: todo
+depends_on: [B1306, B1319, B1322, B1326, B517, B171]
+file: tasks/B1371-vertex-batch-records.yaml
+covers:
+  - "litellm/llms/vertex_ai/batches/transformation.py"
+  - "litellm/types/llms/vertex_ai.py"

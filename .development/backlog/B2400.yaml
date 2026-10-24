@@ -1,0 +1,9 @@
+id: B2400
+milestone: M5 api families
+title: Shared endpoint provider hints and exception handling
+status: todo
+depends_on: [B003, B1100, B872, B121, B171, B844, B072]
+file: tasks/B2400-proxy-endpoint-support.yaml
+covers:
+  - "litellm/proxy/utils.py"
+  - "litellm/proxy/common_utils/openai_endpoint_utils.py"

@@ -1,0 +1,10 @@
+id: B991
+milestone: M5 api families
+title: Claude plugin access
+status: todo
+depends_on: [B171, B1087, B726, B858, B732, B855, B756, B1018, B1140, B003, B1139, B856]
+file: tasks/B991-claude-plugin-access.yaml
+covers:
+  - "litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py"
+  - "litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py"
+  - "litellm/types/proxy/claude_code_endpoints.py"

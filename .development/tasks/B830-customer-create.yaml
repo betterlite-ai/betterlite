@@ -1,75 +1,76 @@
 id: B830
 title: Customer creation and block state
 description: >-
-  Implement typed customer/end_user aliases for create, block and unblock, shared response fields and
-  linked default budgets/object permissions. Preserve source user-ID and budget validation and invalidate
-  only affected end-user cache keys.
+  Implement customer_create in betterlite-server. Register POST /customer/new and /end_user/new,
+  /customer/block and /end_user/block, /customer/unblock and /end_user/unblock exactly once; the
+  end_user aliases are hidden from the schema. Own customer_endpoints.py _typed_table L98-L102,
+  cache helpers L108-L124, response conversion L127-L134, block L137-L190, unblock L193-L249,
+  new_budget_request L252-L275, permission-update helper L278-L305 and new L308-L492, plus all four
+  response classes in types/proxy/management_endpoints/customer_endpoints.py. Use B052 auth, B732
+  principals, B124 request contracts, B720 row models, B2310 budget rows, B725 budgets,
+  B726 EndUserRepository, B733 cache-key builders,
+  B734 evict_and_broadcast, B816 permission helpers, B861 duration validation, B199 duration_in_seconds,
+  B844 get_model_names and B124 handle_exception_on_proxy. Do not call the /budget/new handler:
+  customer budget creation has different validation and time semantics.
 
+  Block upserts each requested id in order with blocked=true for create and update, collects returned
+  rows, then evicts end_user_id:<id> for every input id and end_user_restricted_registry. Empty input
+  still invalidates the registry; duplicates remain in the response. Return blocked_users. A missing
+  DB first raises "Postgres DB Not connected"; the route catches every exception, logs an error and
+  returns HTTPException 500 detail.error=str(e), including cache failures after committed upserts.
+  Neither route has a local role guard beyond B052. Unblock always takes ImportError without the
+  enterprise folder: 400 detail.error combines "Blocked user check was never set. This call has no
+  effect." and the missing-enterprise-Docker diagnostic. It does not modify the database or cache.
+  litellm.blocked_user_list and callbacks are read only after that unavailable import, so no setting
+  support or successful unblock is built here.
 
-  Build the production customer_create module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  NewCustomerRequest requires user_id, defaults blocked=false and alias/spend/allowed_model_region/
+  default_model/object_permission/budget_id to None, and inherits nullable BudgetNewRequest fields.
+  Its shared validator rejects max_budget plus budget_id together (422 schema error), but other
+  budget fields plus budget_id are accepted. Require a database before the try block: 500 detail.error
+  with the CommonProxyErrors database diagnostic. A supplied default_model requires a router and
+  an exact get_model_names member, otherwise 422 with "No models configured on proxy" or the
+  "Default Model not on proxy" diagnostic, mapped inside the try to internal_server_error.
 
+  new_budget_request copies every non-null BudgetNewRequest field except budget_id; zero and empty
+  model maps count as supplied. Return None only when none remain. Validate budget_duration, then
+  compute missing budget_reset_at as naive UTC now plus duration_in_seconds; this is not a standardized
+  calendar reset. If present, create the budget first with created_by/updated_by equal to caller
+  user_id or "default_user_id". Budget create failure is wrapped as HTTPException 422. Otherwise
+  link supplied budget_id without prechecking it. The route does not apply /budget/new's negative,
+  non-finite or per-model caps validation; use the shared request decoder's actual accepted values.
+  A supplied non-max budget field takes precedence over an existing budget_id by creating a new row.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/customer_endpoints.py:
-  _typed_table (L98-L98; 1 source lines), _typed_table (L100-L100; 1 source lines), _typed_table (L101-L102;
-  2 source lines), _evict_end_user_cache_keys (L108-L119; 11 source lines), _end_user_cache_keys (L122-L124;
-  3 source lines), _to_customer_response (L127-L134; 7 source lines), block_user (L149-L190; 37 source
-  lines), unblock_user (L205-L249; 41 source lines), new_budget_request (L252-L275; 21 source lines),
-  _handle_customer_object_permission_update (L278-L305; 26 source lines), new_end_user (L320-L492; 144
-  source lines).
+  Copy non-null non-budget customer fields, then call B816 _set_object_permission before inserting
+  the customer. If object_permission remains afterwards, warn and remove it before the insert.
+  Include litellm_budget_table and object_permission on the resulting row, evict both customer and
+  registry cache keys after insert, then convert to CustomerResponse. No transaction rolls back the
+  budget or permission if insertion/eviction fails. A failure containing the exact source substring
+  "Unique constraint failed on the fields: (`user_id`)" becomes 400 bad_request param user_id;
+  other exceptions pass to B124 handle_exception_on_proxy (HTTP status retained, otherwise 500;
+  type internal_server_error, param from openai_error_param). Record code and param as serialized,
+  and ignore only diagnostic text in HTTP comparisons.
 
+  CustomerResponse retains B720's end-user fields and nested object permissions, but narrows reverse
+  permission relations; its budget is LiteLLM_BudgetTableFull, preserving budget_reset_at and created_at
+  while dropping budget audit actor fields. BlockUsersResponse has blocked_users rows;
+  UnblockUsersResponse has blocked_users strings; DeleteCustomersResponse has deleted_customers:int
+  and message:str. _handle_customer_object_permission_update, used by B831, acts only when the
+  object_permission key is present, passes the existing id or None to B816, and sets the outgoing id
+  only for a non-null result. It never synthesizes a clear when B816 returns None.
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Use B860 Postgres fixtures via POSTGRES_TEST_URL, falling back to testcontainers; provision failures
+  fail tests. postgres_customer_rows covers defaults, supplied/existing/generated budgets, actor
+  fallback, ordered duplicate blocks, empty blocks and response filtering. postgres_customer_failures
+  injects a second block failure, customer insert failure, budget create failure and cache failure to
+  assert prior writes remain. Native permission_residue_warns tests the warning/removal branch with
+  an injected permission helper. permission_result_none tests the shared update helper's no-write
+  branch. HTTP cases exercise the booted MIT server, including both hidden aliases and real B052
+  permission denials; do not call these handlers from a Python helper adapter.
 
-
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.blocked_user_list=None.
-
-
-  Register these actual HTTP routes and aliases exactly once: POST /end_user/block -> block_user; POST
-  /customer/block -> block_user; POST /end_user/unblock -> unblock_user; POST /customer/unblock -> unblock_user;
-  POST /end_user/new -> new_end_user; POST /customer/new -> new_end_user. For each route send a typed
-  successful request, an invalid or missing target, and a caller lacking that route permission through
-  B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes instead
-  prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
-  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
-  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
-  error mapping; keep source partial writes visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::customer_create::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 294 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  294 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 563 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
-
-
-  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
-  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
-  decorator unless its owned source function has one.
+  The owned customer ranges contain 228 nonblank noncomment lines excluding docstrings, including
+  route decorators and post-import unblock code; response classes add nine declarations. Allow 250
+  production, 325 tests and 75 wiring lines, 650 within 650. Request decoding remains with B124.
 scope:
   paths:
     - crates/betterlite-server/src/customer_create.rs
@@ -80,121 +81,72 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/customer-create/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/customer_create.rs
-    - crates/betterlite-config/src/customer_create/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/customer-create-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L98-L492
-    why: Pinned implementation and exact ownership boundary for customer_create.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L98-L305
+    why: Own shared helpers and block/unblock, including the unconditional MIT import failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L308-L492
+    why: Own creation with source write order, residual-permission warning and duplicate-id exception.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/customer_endpoints.py#L1-L28
-    why: Pinned implementation and exact ownership boundary for customer_create.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1249-L1250
-    why: BlockUsers request/response fields and defaults.
+    why: Own the customer, block, unblock and deletion response contracts.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2093-L2115
-    why: NewCustomerRequest request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L98-L98
-    why: Own _typed_table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L100-L100
-    why: Own _typed_table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L101-L102
-    why: Own _typed_table; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L108-L119
-    why: Own _evict_end_user_cache_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L122-L124
-    why: Own _end_user_cache_keys; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L127-L134
-    why: Own _to_customer_response; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L149-L190
-    why: Own block_user; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L205-L249
-    why: Own unblock_user; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L252-L275
-    why: Own new_budget_request; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L278-L305
-    why: Own _handle_customer_object_permission_update; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L320-L492
-    why: Own new_end_user; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L369-L374
-    why: litellm_settings.blocked_user_list default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+    why: B732 request defaults and max_budget/budget_id exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8242
+    why: Creation delegates most errors to this mapper; block and unblock do not.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: customer_end_user_aliases,
-      create_with_budget, create_with_permissions, block_customer, unblock_customer, duplicate_id, cache_eviction,
-      non_admin_route_policy_denied.'
-    proof:
-      - behavior-tests
-  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
-      against the real MIT server.
-    proof:
-      - oracle
-      - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: Customer creation and block/unblock aliases match all named HTTP cases and return the pinned response fields.
+    proof: [oracle, behavior-tests]
+  - text: postgres_customer_rows and postgres_customer_failures verify ordered writes, cache invalidation and surviving rows.
+    proof: [postgres-tests]
+  - text: permission_residue_warns and permission_result_none test helper outcomes that require collaborator fault injection.
+    proof: [behavior-tests]
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_create::tests::/)
-        - test(/replays_the_/)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^customer_create::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/customer-create-*")"
-        && grep -rlq "blocked_user_list" crates/betterlite-config/fuzz/corpus/config_yaml/customer-create-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+      why: Require customer-specific tests beyond fixture replay.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_create::tests::/) - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Check customer and budget state after success and failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_create::tests::postgres_customer_rows$/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^customer_create::tests::postgres_customer_failures$/)'
 oracle_cases:
-  - tools/oracle/cases/management/customer-create/post--end-user-block-success.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-block-invalid-target.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-block-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-block-success.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-block-invalid-target.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-block-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-unblock-success.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-unblock-invalid-target.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-unblock-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-unblock-success.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-unblock-invalid-target.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-unblock-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-new-success.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-new-invalid-target.yaml
-  - tools/oracle/cases/management/customer-create/post--end-user-new-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-new-success.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-new-invalid-target.yaml
-  - tools/oracle/cases/management/customer-create/post--customer-new-unauthorized-caller.yaml
-  - tools/oracle/cases/management/customer-create/customer-end-user-aliases.yaml
-  - tools/oracle/cases/management/customer-create/create-with-budget.yaml
-  - tools/oracle/cases/management/customer-create/create-with-permissions.yaml
-  - tools/oracle/cases/management/customer-create/block-customer.yaml
-  - tools/oracle/cases/management/customer-create/unblock-customer.yaml
-  - tools/oracle/cases/management/customer-create/duplicate-id.yaml
-  - tools/oracle/cases/management/customer-create/cache-eviction.yaml
-  - tools/oracle/cases/management/customer-create/non-admin-route-policy-denied.yaml
+  - tools/oracle/cases/management/customer-create/new-defaults.yaml
+  - tools/oracle/cases/management/customer-create/end-user-new-alias.yaml
+  - tools/oracle/cases/management/customer-create/new-full-response.yaml
+  - tools/oracle/cases/management/customer-create/new-budget-zero.yaml
+  - tools/oracle/cases/management/customer-create/new-budget-reset-offset.yaml
+  - tools/oracle/cases/management/customer-create/new-explicit-reset.yaml
+  - tools/oracle/cases/management/customer-create/new-invalid-duration.yaml
+  - tools/oracle/cases/management/customer-create/new-negative-budget.yaml
+  - tools/oracle/cases/management/customer-create/new-empty-model-budget.yaml
+  - tools/oracle/cases/management/customer-create/new-existing-budget.yaml
+  - tools/oracle/cases/management/customer-create/new-soft-budget-overrides-id.yaml
+  - tools/oracle/cases/management/customer-create/new-max-and-id-422.yaml
+  - tools/oracle/cases/management/customer-create/new-object-permission.yaml
+  - tools/oracle/cases/management/customer-create/new-duplicate-keeps-budget.yaml
+  - tools/oracle/cases/management/customer-create/new-unknown-budget.yaml
+  - tools/oracle/cases/management/customer-create/new-no-router.yaml
+  - tools/oracle/cases/management/customer-create/new-unknown-model.yaml
+  - tools/oracle/cases/management/customer-create/new-no-db-detail.yaml
+  - tools/oracle/cases/management/customer-create/block-existing-and-new.yaml
+  - tools/oracle/cases/management/customer-create/end-user-block-alias.yaml
+  - tools/oracle/cases/management/customer-create/block-empty.yaml
+  - tools/oracle/cases/management/customer-create/block-duplicates.yaml
+  - tools/oracle/cases/management/customer-create/block-no-db.yaml
+  - tools/oracle/cases/management/customer-create/unblock-no-enterprise.yaml
+  - tools/oracle/cases/management/customer-create/end-user-unblock-no-enterprise.yaml
+  - tools/oracle/cases/management/customer-create/non-admin-route-policy.yaml
+  - tools/oracle/cases/management/customer-create/missing-bearer.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B059 owns resolve_customer_daily_activity_scope
-    (L500-L512), customer_daily_activity_is_admin (L515-L519), end_user_info (L534-L577), list_end_user
-    (L849-L891), get_customer_daily_activity (L906-L958).'
-  - 'litellm/proxy/management_endpoints/customer_endpoints.py: B831 owns update_end_user (L592-L756),
-    delete_end_user (L771-L834).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B059 owns resolve_customer_daily_activity_scope L500-L512, customer_daily_activity_is_admin L515-L519, end_user_info L521-L577, list_end_user L837-L891 and get_customer_daily_activity L894-L958 in customer_endpoints.py.
+  - B831 owns update_end_user L580-L756 and delete_end_user L759-L834 in customer_endpoints.py.
+  - unblock_user L231-L249 requires the unavailable enterprise hook; its blocked_user_list mutation and callback checks are unreachable without it and are not built.
 pitfalls:
-  - Non-admin route policy runs before end-user create/block mutations.
+  - Block writes persistent rows, but MIT unblock fails before looking at those rows.
+  - A new budget can remain orphaned after the customer user_id uniqueness check fails.
+  - A duration-only customer budget overrides a supplied budget_id even though max_budget plus budget_id is rejected by the request model.
 budget:
-  max_changed_lines: 575
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

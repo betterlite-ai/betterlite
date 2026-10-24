@@ -1,0 +1,9 @@
+id: B730
+milestone: M4 keys, spend and management
+title: Compare-and-swap migration of stored master-key ciphertexts
+status: todo
+depends_on: [B002, B171, B700, B714, B856, B860, B2303]
+file: tasks/B730-database-reencryption.yaml
+covers:
+  - "litellm/proxy/db/master_key_migration.py"
+  - "litellm/proxy/auth/master_key_boot_check.py"

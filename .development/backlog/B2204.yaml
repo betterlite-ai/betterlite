@@ -1,0 +1,9 @@
+id: B2204
+milestone: M3 providers
+title: Shared request record filtering and cache attribution
+status: todo
+depends_on: [B002, B171]
+file: tasks/B2204-request-records.yaml
+covers:
+  - "litellm/litellm_core_utils/core_helpers.py"
+  - "litellm/integrations/anthropic_cache_control_hook.py"

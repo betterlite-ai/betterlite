@@ -1,0 +1,8 @@
+id: B2454
+milestone: M5 API families
+title: Rerank HTTP execution
+status: todo
+depends_on: [B1013, B173, B2402, B012, B2401]
+file: tasks/B2454-rerank-http.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

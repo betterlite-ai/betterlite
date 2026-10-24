@@ -1,0 +1,115 @@
+id: B2324
+title: Resource and provider path hints below authentication
+description: >-
+  Extract the small decoders called by B746 into betterlite-auth::resource_hints. Own
+  videos/utils.py _add_base64_padding L28-L35, decode_video_id_with_provider L59-L115 and
+  decode_character_id_with_provider L136-L192, including their result types and prefix constants;
+  Azure azure_router_model_in_endpoint L79-L83; NVIDIA is_nvidia_nim_deployment,
+  nvidia_nim_model_groups, nvidia_nim_model_group_in_path and nvidia_nim_router_model_in_endpoint
+  L28-L62; and Bedrock action constants L871-L879, is_bedrock_count_tokens_endpoint L885-L886 and
+  _extract_model_from_bedrock_endpoint L889-L966. These are pure hints, never permission grants,
+  downloads or resource creation. B746 calls these directly instead of B041/B548/B093/B102.
+
+  Azure splits on '/', requires at least two parts, then returns the first exact catalog match;
+  it neither drops empty segments nor performs case folding. NVIDIA deployment classification is
+  custom_llm_provider == nvidia_nim OR model starts nvidia_nim/. Subtract every group also served by
+  another provider. Strip only a leading /nvidia_nim/ case-insensitively, drop empty segments, and
+  test longest-to-shortest joined prefixes against the exclusive groups. Empty/absent catalog gives None.
+
+  Bedrock count detection is the case-sensitive substring count_tokens OR count-tokens anywhere.
+  Actions are invoke, invoke-with-response-stream, converse, converse-stream, count_tokens,
+  count-tokens. application-inference-profile anywhere returns split parts[1:3] joined, even with
+  odd placement. Otherwise find the first exact model segment and first action segment. With no
+  model marker, an action index greater than one permits nonempty parts[1:action]; otherwise raise
+  ValueError with the source 'model keyword not found' message and endpoint. With a model marker,
+  an action later than model+1 returns the intervening parts including empty segments; otherwise
+  return all nonempty suffix parts. Empty suffix raises the source 'No model ID found' ValueError.
+  Non-ValueError failures become 'Model missing from endpoint' ValueError; existing ValueErrors
+  retain their exact source message. B746 catches ValueError and keeps the previous model.
+
+  The video and character decoders return provider/model None and the unchanged ID for empty or
+  missing case-sensitive video_/character_ prefix. Remove every occurrence of that prefix, add
+  '=' padding to a multiple of four, decode permissive standard base64 then UTF-8. Missing ';'
+  or fewer than three parts keeps the original fields. Three or more parts take only the first
+  three, removing every occurrence of litellm:custom_llm_provider:, model_id:, and video_id: or
+  character_id:, without validating labels. Empty extracted strings remain empty. Decode errors
+  log DEBUG once and return the unchanged ID. No setting, database write or secret encryption occurs.
+
+  Production decode_resource_hint(kind, &[u8]) bounds encoded input at 65536 bytes and decoded input
+  at 49152 bytes; exceeding either returns the same no-hint result with DEBUG, a recorded native
+  deviation. Use it from production and resource_hint fuzzing. Compare the actual MIT helper calls
+  with Rust through B856 Management::auth resource_hints; B171 supplies the shared helper decoder.
+  Cases compare result fields, exception class/message and debug occurrence. Keep files under 300
+  lines. The 187 nonblank non-comment source lines excluding docstrings include result constructors; allocate 210 Rust,
+  260 tests, 90 adapters, 70 fuzz and 45 wiring, 675 within a 750-line budget.
+scope:
+  paths:
+    - crates/betterlite-auth/src/resource_hints.rs
+    - crates/betterlite-auth/src/resource_hints/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/resource_hint.rs
+    - crates/betterlite-auth/fuzz/corpus/resource_hint/**
+    - tools/oracle/src/helpers/resource_hints.rs
+    - tools/oracle/helpers/resource_hints.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/resource-hints/**
+    - tools/oracle/fuzz/corpus/helper_case/resource-hints-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L15-L192
+    why: Prefixes, permissive decoders and unchanged-ID fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/passthrough/transformation.py#L79-L83
+    why: First catalog segment, not longest Azure name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/passthrough/transformation.py#L28-L62
+    why: Exclusive groups and longest NIM prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L871-L966
+    why: Bedrock path extraction and exact exception messages.
+dod:
+  - text: 'Named cases azure_first_exact_segment, azure_requires_separator, nim_provider_or_model_prefix,
+      nim_mixed_group_excluded, nim_longest_prefix_and_empty_segments, nim_casefold_prefix_only,
+      bedrock_count_substrings, bedrock_each_action, profile_fixed_slice, first_model_and_action,
+      bedrock_no_marker_fallback, bedrock_empty_suffix_errors and bedrock_keeps_value_error match MIT.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Named cases video_character_empty_and_native_id, prefix_removed_everywhere,
+      missing_padding_permissive_base64, invalid_base64_and_utf8_debug_fallback,
+      missing_semicolon_and_short_parts, first_three_parts_and_global_label_replace,
+      empty_fields_preserved and native_resource_hint_limits cover both decoders.'
+    proof: [behavior-tests, helper-python, oracle, parser-corpus, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The lower-level hint functions or fallback semantics are absent.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resource_hints::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The actual MIT helper adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/resource_hints.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: parser-corpus
+      why: The production ID decoder lacks a new fuzz corpus.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/resource_hint.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/resource_hint)" && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_resource_hint_corpus)'
+    - id: helper-case-corpus
+      why: The shared helper decoder has no newly added operation seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/resource-hints-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/resource-hints/provider-paths.yaml
+  - tools/oracle/cases/helpers/resource-hints/bedrock-errors.yaml
+  - tools/oracle/cases/helpers/resource-hints/video-character-ids.yaml
+deviations:
+  - what: Encoded resource IDs above 65536 bytes or decoded payloads above 49152 bytes yield no model hint with DEBUG.
+    why: Bound external decoding; native_resource_hint_limits proves the unchanged-ID fallback without allocation growth.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L59-L115
+out_of_scope:
+  - B093 retains video/character encoders, original-ID convenience readers and video routes; this task supplies their decoding primitive.
+  - B041 retains NIM transport/version/credential helpers and config methods; B548 retains all other Azure passthrough functions.
+  - B102 retains all other llm_passthrough_endpoints.py functions and streaming-action dispatch.
+  - B746 resolves router IDs and combines hints; B1016/B1019 decode other managed IDs. Managed files/batches remain disabled without the enterprise hook pending Max's decision.
+pitfalls:
+  - The application-inference-profile branch uses fixed slice positions rather than searching for the profile segment.
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0
+review_level: security

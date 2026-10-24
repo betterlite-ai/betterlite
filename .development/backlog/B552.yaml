@@ -1,0 +1,9 @@
+id: B552
+milestone: M3 providers
+title: Foundry text and image embeddings
+status: todo
+depends_on: [B549, B006, B173, B183, B171, B004, B668]
+file: tasks/B552-foundry-embeddings.yaml
+covers:
+  - "litellm/llms/azure_ai/embed/handler.py"
+  - "litellm/llms/azure_ai/embed/cohere_transformation.py"

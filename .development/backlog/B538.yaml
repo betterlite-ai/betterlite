@@ -1,0 +1,8 @@
+id: B538
+milestone: M3 providers
+title: Azure native SSML synthesis
+status: todo
+depends_on: [B531, B173, B171]
+file: tasks/B538-azure-native-speech.yaml
+covers:
+  - "litellm/llms/azure/text_to_speech/transformation.py"

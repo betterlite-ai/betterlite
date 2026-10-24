@@ -1,0 +1,9 @@
+id: B1356
+milestone: M3 providers
+title: Chirp session constraints, transcript deltas and billed turns
+status: todo
+depends_on: [B1123, B1001, B1004, B193, B171]
+file: tasks/B1356-chirp-session-events.yaml
+covers:
+  - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"
+  - "litellm/types/llms/vertex_ai_speech_to_text.py"

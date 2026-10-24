@@ -1,0 +1,11 @@
+id: B054
+milestone: M4 keys, spend and management
+title: Python custom authentication and validation integration
+status: todo
+depends_on: [B001, B002, B003, B052, B165, B171, B732, B739, B750, B753, B755, B757, B856, B860, B869, B879, B881, B889]
+file: tasks/B054-custom-auth.yaml
+covers:
+  - "litellm/proxy/custom_auth_auto.py"
+  - "litellm/proxy/custom_validate.py"
+  - "litellm/proxy/auth/auth_utils.py"
+  - "litellm/proxy/auth/user_api_key_auth.py"

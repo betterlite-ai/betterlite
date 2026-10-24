@@ -1,0 +1,11 @@
+id: B063
+milestone: M4 keys, spend and management
+title: Assemble OAuth, CLI and SAML login services
+status: todo
+depends_on: [B002, B003, B052, B165, B1608, B1613, B1614, B1615, B1625, B1626, B1627, B1628, B1630, B1631, B1646]
+file: tasks/B063-sso-services.yaml
+covers:
+  - "litellm/proxy/management_endpoints/ui_sso.py"
+  - "litellm/proxy/custom_sso.py"
+  - "litellm/proxy/custom_hooks/**"
+  - "litellm/integrations/custom_sso_handler.py"

@@ -1,0 +1,12 @@
+id: B1715
+milestone: M4 keys, spend and management
+title: Project trusted spend identities and deployment provenance
+status: todo
+depends_on: [B002, B129, B171, B174, B188, B209, B247, B844, B1710, B1713, B1714]
+file: tasks/B1715-spend-attribution.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_tracking_utils.py"
+  - "litellm/proxy/_types.py"
+  - "litellm/proxy/utils.py"
+  - "litellm/litellm_core_utils/litellm_logging.py"
+  - "litellm/llms/litellm_proxy/chat/transformation.py"

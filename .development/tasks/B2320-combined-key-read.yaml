@@ -1,0 +1,120 @@
+id: B2320
+title: Combined key reads and deprecated-token grace lookup
+description: >-
+  Build betterlite-db::combined_key_read below B738, replacing its reverse dependency on B124.
+  Own utils.py on_backoff L4174-L4176, deprecated-cache constants L4196-L4197,
+  _lookup_deprecated_key L4201-L4247, _query_first_with_cached_plan_fallback L4792-L4852,
+  only get_data's combined_view branch L5122-L5244 with its common decorators/error boundary
+  L4854-L4861/L5245-L5266, and _hash_token_if_needed L7188-L7197. Other get_data branches stay B124.
+  Use B714 routed/writer handles, B715 metrics, B2323 reconnect, B722 key storage, B721 joined rows
+  and B2314 hash/result types. No key creation, mutation or encryption is performed.
+
+  Accept a typed optional token and default find_unique/check_deprecated=true/use_writer=false.
+  Hash strings beginning sk- exactly once; leave other strings unchanged. Missing token raises
+  HTTP400 detail.error='No token passed in. Token=None'; a non-unique query yields None. Parameterize
+  the lookup by token; do not interpolate it. Read v.* and left join team, membership on BOTH team_id
+  and user_id, membership budget, team's model aliases, key budget, project, organization by the
+  KEY organization_id and its budget. Team org_id comes separately from the team row. Preserve absent
+  relations and all selected aliases: team spend/max/soft/model_max/tpm/rpm/tpd/models/metadata/blocked/
+  alias/members_with_roles/object_permission_id; project_alias; team_member spend/tpm/rpm;
+  team_model_aliases; litellm_budget_table max/tpm/rpm/tpd/model_max/soft; organization metadata/alias/
+  max/tpm/rpm. Do not silently inherit a team's organization budget into an unrelated key organization.
+
+  A writer read uses the raw writer and bypasses cached-plan repair. A routed read snapshots the actual
+  read handle/generation before its first query. Only an error containing the case-sensitive substring
+  cached plan must not change result type logs WARNING and invokes reconnect with reason
+  postgres_cached_plan_error, force_recreate=true and that observation. Retry identical SQL and
+  arguments once even when reconnect returns false; reconnect exceptions propagate. Other errors
+  immediately propagate. B715 metrics wrap each get_data invocation; its outer exponential backoff
+  catches ordinary exceptions, maximum three attempts/ten seconds, full jitter and attempt-number
+  diagnostic 'Backing off... this was attempt #<tries>'. The enclosing B738 deadline can cancel sooner.
+
+  On a missing row with check_deprecated true, query deprecated tokens for exact hash and revoke_at>UTC
+  now, using the same writer/routed choice. The process-local positive cache holds at most 1000 entries
+  and expires after 60 seconds or revoke_at, whichever comes first; equality is expired. Writer reads
+  bypass cache reads but still populate a positive result. Expired cache entries are removed. Missing
+  or falsey active_token_id is never cached. Query/cache conversion failures DEBUG and return None.
+  A truthy active hash recurses with check_deprecated=false and the same writer choice: one grace hop,
+  never a chain. Return the already-typed recursive result directly, logging DEBUG only if found.
+
+  For an ordinary found row normalize team_models None to [] and team_blocked None to false. From
+  team_members_with_roles choose the LAST member with nonnull user_id matching key.user_id; email-only
+  rows do not match. Construct B2314 VerificationTokenView with last_refreshed_at=current epoch seconds,
+  and convert a datetime expires to isoformat; missing row stays None. Typed validation errors propagate.
+  On each failed get_data attempt, emit diagnostics, schedule the B012 failure hook with original
+  exception, elapsed duration and call_type=get_data, then rethrow the original. Scheduling precedes
+  backoff. The source embeds raw args/hash in diagnostics; native logs redact token/hash while retaining
+  error classification and ordering. Do not make a failed query look like an unknown key.
+
+  Use real Postgres joins through POSTGRES_TEST_URL, with testcontainers fallback. B856
+  Management::database combined_key_read invokes the source method with isolated DB/clock/reconnect
+  collaborators and the production Rust repository; compare rows, SQL target, retries and ordered
+  diagnostics/hooks. Add B171 seeds. Source has 201 nonblank non-comment lines including SQL and
+  declarations after docstrings; allow 220 production, 320 tests, 90 adapters and 60 wiring, 690
+  within 775. Files stay under 300 lines. No new external byte decoder or config setting is introduced.
+scope:
+  paths:
+    - crates/betterlite-db/src/combined_key_read.rs
+    - crates/betterlite-db/src/combined_key_read/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - tools/oracle/src/helpers/combined_key_read.rs
+    - tools/oracle/helpers/combined_key_read.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/combined-key-read/**
+    - tools/oracle/fuzz/corpus/helper_case/combined-key-read-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4174-L4247
+    why: Retry diagnostic and bounded positive deprecated-key cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4792-L4885
+    why: Identical-query recovery, retry decorators and read defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5122-L5266
+    why: Full join projection, one-hop grace handling and failure-hook order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7188-L7197
+    why: Only sk- values are hashed here.
+dod:
+  - text: 'Cases token_hash_once_and_missing400, non_unique_returns_none, every_join_alias_and_null,
+      membership_requires_both_ids, key_org_differs_from_team_org, writer_bypasses_plan_repair,
+      reader_generation_before_query, plan_error_exact_substring, same_sql_retry_after_false,
+      reconnect_throw_and_second_query_error, ordinary_error_no_plan_retry,
+      outer_three_attempts_ten_seconds_and_cancel, metrics_and_failure_hook_before_backoff,
+      deprecated_ttl60_revoke_equality_and_capacity1000, writer_bypasses_but_populates_grace_cache,
+      negative_grace_not_cached, grace_error_debug_drop, grace_one_hop_typed_return,
+      last_matching_member_not_email, normalized_team_fields_and_expiry,
+      native_database_diagnostics_hide_token_and_hash cover all read branches.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: The new combined-key helper seed replays through the shared decoder.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: A join, grace limit or retry/error-order contract is absent.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^combined_key_read::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The real MIT combined-view adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/combined_key_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No new combined-key operation seed exists.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/combined-key-read-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/combined-key-read/joins-and-null-relations.yaml
+  - tools/oracle/cases/helpers/combined-key-read/writer-and-cached-plan.yaml
+  - tools/oracle/cases/helpers/combined-key-read/deprecated-grace.yaml
+  - tools/oracle/cases/helpers/combined-key-read/failure-order.yaml
+deviations:
+  - what: Database failure diagnostics omit raw tokens and token hashes from arguments and traceback context.
+    why: Prevent stored credential identifiers leaking; native_database_diagnostics_hide_token_and_hash checks both diagnostics and callback payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5245-L5266
+out_of_scope:
+  - B124 owns all remaining utils.py functions/get_data branches, except reconnect policy moved to B2323 and this entry's explicit ranges.
+  - B738 owns request auth caching, permissions and transport retry; B2314 owns the verification record and hash format.
+pitfalls:
+  - Returning the recursive typed grace result through dictionary normalization crashes a valid deprecated key.
+budget:
+  max_changed_lines: 775
+  max_new_expects: 0
+review_level: security

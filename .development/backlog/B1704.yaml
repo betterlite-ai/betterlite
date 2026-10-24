@@ -1,0 +1,8 @@
+id: B1704
+milestone: M4 keys, spend and management
+title: Resolve spend-log visibility before reading hot or cold payloads
+status: todo
+depends_on: [B003, B171, B724, B726, B732, B736, B800, B860]
+file: tasks/B1704-spend-log-visibility.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_management_endpoints.py"

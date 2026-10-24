@@ -1,0 +1,8 @@
+id: B2489
+milestone: M5 API families
+title: Assistant router dispatch, settings and JSON boundary
+status: todo
+depends_on: [B002, B1055, B1130, B1056, B1057, B2488, B2487, B1087, B2401]
+file: tasks/B2489-assistant-dispatch-boundary.yaml
+covers:
+  - "litellm/router.py"

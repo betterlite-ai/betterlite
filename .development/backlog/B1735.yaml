@@ -1,0 +1,8 @@
+id: B1735
+milestone: M4 keys, spend and management
+title: Seed window balances once and read authoritative entity spend
+status: todo
+depends_on: [B171, B198, B199, B204, B700, B710, B715, B722, B723, B724, B726, B860, B1734]
+file: tasks/B1735-window-spend-store.yaml
+covers:
+  - "litellm/proxy/db/{budget_window_spend_writer,spend_counter_reseed}.py"

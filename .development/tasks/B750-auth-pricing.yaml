@@ -1,10 +1,43 @@
 id: B750
 title: Priced and zero-cost model admission
 description: >-
-  Implement PricingAdmission over B013 catalog metadata and explicit deployment pricing. Distinguish missing
-  pricing from explicitly free metrics and PTU flat cost, with typed warning/denial results and cache
-  invalidation on catalog generation changes. Cover project blocking, required end-user and client metadata-tag
-  checks as small typed policy functions. Do not calculate or write request cost here.
+  Determine free versus unpriced models using B013's raw cost map and B302's catalog. None model/router
+  is not free; an empty model list with a router is free. All model candidates must pass. Only use a
+  dict _zero_cost_cache on this router instance; cached False exits, True skips lookup. Missing group,
+  None input/output prices, positive prices, absent explicit raw price keys or PTU pricing each logs
+  DEBUG and caches False. Explicit means either token-price key exists in model_cost[model_info.id],
+  even if its raw value is None; resolved prices must still be nonnull. PTU means both ptu_count and
+  cost_per_ptu_per_hour are nonnull, even zero. Resolve aliases through the same catalog in both
+  checks. Successful free checks log and cache True; exceptions log and return False without caching.
+  Preserve >0 rather than !=0 comparisons, including negative/nonfinite edge inputs, with typed
+  numeric classifications and Decimal for finite money. Explicit-cost/PTU/success logs strip CR/LF
+  from model names. B302 invalidates the per-router cache on add/remove/upsert, including price changes.
+
+  Unpriced detection returns False for a falsey model/router or unknown group. Any litellm_params
+  key containing cost_per or equal to tiered_pricing declares a price even at zero/null. Otherwise
+  resolved model info counts nonnull tiered_pricing or a positive numeric non-bool cost_per value,
+  including one-level nested dict values; strings and deeper nesting do not count. A group with
+  neither that nor explicit raw token pricing is unpriced. Keep model order and duplicates; the
+  diagnostic distinguishes singular/plural and names block_requests_for_models_without_pricing and
+  input_cost_per_token/output_cost_per_token. B754 owns that switch and rejection, not this detector.
+
+  Project checks skip missing project, reject blocked is True with an ordinary Exception, apply B886
+  model grants for truthy model/nonempty project.models with B747 key aliases, then B752 hard before
+  soft budget unless skipped. Earlier failures stop subsequent checks. enforce_user_param=false
+  requires user presence only for POST LLM routes excluding B868 MCP routes; null/empty user counts
+  as present. Missing user raises an ordinary auth exception. reject_clientside_metadata_tags=false
+  rejects an LLM request with dict metadata containing tags, including null/empty tags, using
+  400 bad_request_error, param metadata.tags, code 400. litellm_metadata is not inspected here.
+  B757 maps ordinary project/user errors to 401 auth_error, param string None.
+
+  litellm_settings.max_budget defaults 0. Enforce only positive finite values with known global spend,
+  enabled budget checks and an LLM route other than /models or /v1/models. Strictly greater spend
+  raises BudgetExceededError entity_type=proxy; equality passes. B757 owns its default 422 envelope.
+  Own L888-L909 route constants: discovery /v1/models, /models, /model/info, /v1/model/info,
+  /v2/model/info, /model_group/info, /utils/model_info; side effects /health, /health/services,
+  /health/test_connection, /auto_router/test_routing. Other non-LLM routes skip budgets. The combined
+  request predicate short-circuits on that route result, then applies zero-cost, which can still
+  exempt a side-effect route. These functions neither calculate cost nor write spend.
 
 
   Build the production auth_pricing module in betterlite-auth; reuse the typed dependencies listed in
@@ -24,13 +57,12 @@ description: >-
   (L912-L915; 4 source lines), request_skips_budget_checks (L918-L919; 2 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  Preserve the source's finite/nonfinite pricing predicates at the typed numeric boundary; do not
+  round an unknown or nonfinite price into a zero-cost exemption.
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.enforce_user_param=False;
-  general_settings.reject_clientside_metadata_tags=False; litellm_settings.max_budget=0.0; enforce_user_param=False;
-  reject_clientside_metadata_tags=False.
+  general_settings.reject_clientside_metadata_tags=False; litellm_settings.max_budget=0.0.
 
 
   Add the auth_pricing operation under B856 Management::auth. Python calls only the owned MIT helper with
@@ -40,40 +72,27 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Request-level checks run on POST /v1/chat/completions with the actual configured catalog and
+  general settings. Assert the user-param, client-tag and global-budget envelopes separately;
+  zero-cost classification alone is a helper result, not a fabricated successful HTTP response.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Project cases use B860 on POSTGRES_TEST_URL or testcontainers, separating missing project,
+  blocked project and explicit model grants from pricing-map fixtures.
 
 
-  Write betterlite-config::auth_pricing::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  Config tests pricing_policy_defaults, enforce_user_loaded, reject_tags_loaded and proxy_budget_loaded
+  invoke B002 with these exact nested keys and then production admission. There is no duplicate root
+  key, dedicated env binding or generic invalid-value fallback. Retain nonfinite numeric classifications
+  where the source branches on them; finite money is Decimal.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
+  B002 decodes pricing/settings records and B1100 decodes requests; these predicates do not add
+  another JSON parser or contact a pricing URL.
 
 
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 266 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  266 production, 151 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 597 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  Sizing: 266 function lines plus 11 route literals; allow 260 production, 310 tests, 85 adapters,
+  65 wiring and 65 config, 785 within 800. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -155,16 +174,29 @@ references:
     why: general_settings.reject_clientside_metadata_tags default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L408-L413
     why: litellm_settings.max_budget default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1-L6
-    why: reject_clientside_metadata_tags default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: explicit_zero_cost,
-      missing_price_denial, ptu_not_free, mixed_model_list, discovery_skips_budget, health_side_effect_budget,
-      required_user.'
+  - text: 'Zero-cost cases: no_model_or_router_false, empty_list_free, cache_true_false,
+      nondict_cache_ignored, missing_group_debug_false, undefined_price_false,
+      positive_price_false, explicit_raw_key_required, aliases_same_deployments,
+      null_raw_key_still_explicit, ptu_zero_values_not_free, negative_nonfinite_price_edges,
+      all_models_required, exception_not_cached, safe_name_diagnostics and refresh_clears_cache.'
     proof:
       - behavior-tests
+  - text: 'Pricing cases: override_key_declares_price, null_tiered_override_declares,
+      resolved_tiered_nonnull_priced, nested_positive_metric, bool_string_not_price,
+      deep_nested_not_price, unknown_group_not_unpriced, duplicates_order_kept and singular_plural_message.
+      Project/request cases: blocked_project_first, grant_before_budgets, hard_before_soft,
+      skip_keeps_model_check, post_user_presence, null_user_present, mcp_user_exempt,
+      tags_presence_rejected, non_llm_tags_ignored and litellm_metadata_unchecked.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Budget cases: zero_negative_budget_disabled, nonfinite_budget_no_rejection,
+      missing_spend_skips, equal_budget_allowed, proxy_budget_error_fields,
+      models_aliases_exempt, each_discovery_route, each_side_effect_route,
+      other_non_llm_skips and free_side_effect_exemption. HTTP cases pin ordinary auth
+      401, metadata.tags 400 and budget_exceeded 422 envelopes.'
+    proof: [behavior-tests, stage-wiring-tests, oracle]
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
       seed replays.
     proof:
@@ -192,7 +224,7 @@ checks:
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_pricing::tests::/)
+      run: cargo nextest run --locked -p betterlite-auth -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(/^(auth::)?auth_pricing::tests::/)
         - test(/replays_the_/)'
     - id: helper-python
       why: The referenced helper adapter is missing or strict Python checking fails.
@@ -225,6 +257,9 @@ oracle_cases:
   - tools/oracle/cases/helpers/auth-pricing/discovery-skips-budget.yaml
   - tools/oracle/cases/helpers/auth-pricing/health-side-effect-budget.yaml
   - tools/oracle/cases/helpers/auth-pricing/required-user.yaml
+  - tools/oracle/cases/helpers/auth-pricing/pricing-metric-presence.yaml
+  - tools/oracle/cases/helpers/auth-pricing/zero-cost-cache-effects.yaml
+  - tools/oracle/cases/helpers/auth-pricing/project-policy-order.yaml
   - tools/oracle/cases/auth/auth-pricing/explicit-zero-cost.yaml
   - tools/oracle/cases/auth/auth-pricing/missing-price-denial.yaml
   - tools/oracle/cases/auth/auth-pricing/ptu-not-free.yaml
@@ -232,10 +267,9 @@ oracle_cases:
   - tools/oracle/cases/auth/auth-pricing/discovery-skips-budget.yaml
   - tools/oracle/cases/auth/auth-pricing/health-side-effect-budget.yaml
   - tools/oracle/cases/auth/auth-pricing/required-user.yaml
+  - tools/oracle/cases/auth/auth-pricing/tags-and-global-budget.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -346,8 +380,9 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - An explicitly priced zero-cost model is not the same as missing pricing.
+  - PTU zero token prices are not free when both PTU fields exist, even with zero values.
+  - The side-effect route set blocks the route-only exemption, but the later zero-cost exemption can still apply.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

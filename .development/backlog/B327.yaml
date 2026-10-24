@@ -1,0 +1,9 @@
+id: B327
+milestone: M2 routing
+title: Embedding-based auto routing
+status: todo
+depends_on: [B014, B012, B006, B301, B361, B002]
+file: tasks/B327-semantic-router.yaml
+covers:
+  - "litellm/router_strategy/auto_router/**"
+  - "docker/install_auto_router.sh"

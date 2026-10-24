@@ -1,0 +1,8 @@
+id: B1718
+milestone: M4 keys, spend and management
+title: Share authoritative counter reads within one spend phase
+status: todo
+depends_on: [B126, B171, B204, B732, B733, B1690]
+file: tasks/B1718-spend-counter-batch.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_counter_batch.py"

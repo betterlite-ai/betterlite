@@ -20,9 +20,9 @@ description: >-
   should_update_prisma_schema (L1012-L1036; 20 source lines). litellm-proxy-extras/litellm_proxy_extras/utils.py:
   ProxyExtrasDBManager.setup_database (L1285-L1315; 28 source lines), ProxyExtrasDBManager.build_request_log_indexes
   (L1318-L1330; 13 source lines), ProxyExtrasDBManager.run_migration_job (L1333-L1342; 10 source lines),
-  ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352; 8 source lines). litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py:
-  _timeout_from_env (L81-L100; 20 source lines), prisma_command_timeout (L103-L107; 5 source lines), migration_lock_timeout
-  (L110-L111; 2 source lines), prisma_migrate_deploy_timeout (L121-L127; 7 source lines). Pinned settings
+  ProxyExtrasDBManager.start_request_log_index_build (L1345-L1352; 8 source lines).
+  B716 supplies _timeout_from_env, prisma_command_timeout, migration_lock_timeout and
+  prisma_migrate_deploy_timeout, below both startup and migration recovery. Pinned settings
   read by this component (resolve once in betterlite-config, pass typed values): DISABLE_SCHEMA_UPDATE='false';
   DATABASE_URL=None; DIRECT_URL=None; USE_V2_MIGRATION_RESOLVER='true'; USE_PRISMA_DB_PUSH=None.
 
@@ -155,13 +155,13 @@ references:
     why: Own ProxyExtrasDBManager.start_request_log_index_build; preserve caller-visible values and failure
       ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L81-L100
-    why: Own _timeout_from_env; preserve caller-visible values and failure ordering.
+    why: Consume B716's shared timeout parsing and warning fallback without an upward startup dependency.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L103-L107
-    why: Own prisma_command_timeout; preserve caller-visible values and failure ordering.
+    why: Consume B716's command-timeout accessor without an upward dependency from migration recovery.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L110-L111
-    why: Own migration_lock_timeout; preserve caller-visible values and failure ordering.
+    why: B716 owns the lock timeout read used by coordination before startup completes.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L121-L127
-    why: Own prisma_migrate_deploy_timeout; preserve caller-visible values and failure ordering.
+    why: Consume B716's deploy-timeout accessor and its absent-only precedence.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/migrations/run.py#L37-L69
     why: Own main; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prisma_migration.py#L23-L36
@@ -331,8 +331,8 @@ out_of_scope:
     no caller at the pin.'
   - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._filter_migration_job_owned_drift:
     v1 only; native startup always uses the v2 resolver.'
-  - 'litellm-proxy-extras/litellm_proxy_extras/utils.py::ProxyExtrasDBManager._prisma_schema_param: Prisma
-    CLI --schema filename plumbing; native MigrationCatalog is compiled.'
+  - B716 owns utils.py::_prisma_schema_param (L705-L713), which reads DATABASE_URL's schema query for
+    build_request_log_indexes; it is not a Prisma CLI filename argument.
   - 'litellm/proxy/db/prisma_client.py: B713 owns _PrismaEngine.process (L48-L48), _PrismaEngine.query
     (L50-L50), _PrismaEngine.start_transaction (L52-L52), _PrismaEngine.commit_transaction (L54-L54),
     _PrismaEngine.rollback_transaction (L56-L56), _PrismaClient._engine (L63-L63), _PrismaDrainTracker.__init__

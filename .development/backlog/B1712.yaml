@@ -1,0 +1,10 @@
+id: B1712
+milestone: M4 keys, spend and management
+title: Compare captured spend with OpenAI billing and coordinate alerts
+status: todo
+depends_on: [B002, B129, B171, B173, B198, B204, B726, B860, B1690]
+file: tasks/B1712-spend-capture-rate.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_capture_rate.py"
+  - "litellm/types/proxy/spend_capture_rate.py"
+  - "litellm/llms/openai/organization_costs.py"

@@ -1,0 +1,8 @@
+id: B804
+milestone: M4 keys, spend and management
+title: Create teams with members and budgets
+status: todo
+depends_on: [B001, B002, B003, B052, B065, B124, B724, B725, B732, B745, B800, B801, B802, B803, B807, B816, B818, B819, B860, B861, B865, B879, B1204, B2301, B2304, B2317]
+file: tasks/B804-team-create.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"

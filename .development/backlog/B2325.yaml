@@ -1,0 +1,10 @@
+id: B2325
+milestone: M4 keys, spend and management
+title: Budget throttling, window starts and carried snapshots
+status: todo
+depends_on: [B002, B171, B199, B732, B856, B2313]
+file: tasks/B2325-budget-admission-primitives.yaml
+covers:
+  - "litellm/proxy/auth/budget_throttle.py"
+  - "litellm/proxy/spend_tracking/budget_reservation.py"
+  - "litellm/proxy/spend_tracking/carried_budget_state.py"

@@ -1,0 +1,8 @@
+id: B2200
+milestone: M3 providers
+title: Azure URL and credential input policy
+status: todo
+depends_on: [B529, B668, B129, B002, B171]
+file: tasks/B2200-azure-url-policy.yaml
+covers:
+  - "litellm/llms/azure/common_utils.py"

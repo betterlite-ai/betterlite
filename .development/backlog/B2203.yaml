@@ -1,0 +1,9 @@
+id: B2203
+milestone: M3 providers
+title: Bedrock model normalization and region catalog
+status: todo
+depends_on: [B193, B171, B198]
+file: tasks/B2203-bedrock-model.yaml
+covers:
+  - "litellm/llms/bedrock/common_utils.py"
+  - "litellm/passthrough/utils.py"

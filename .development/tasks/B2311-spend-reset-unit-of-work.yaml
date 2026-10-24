@@ -1,0 +1,123 @@
+id: B2311
+title: Queued spend resets and budget-cascade transactions
+description: >-
+  Implement betterlite-db::spend_reset_unit_of_work from repositories/unit_of_work.py. Own
+  _spend_reset_data, KeySpendResetWrites, UserSpendResetWrites, TeamSpendResetWrites,
+  LinkedSpendResetWrites, BudgetWindowWrites, SpendResetUnitOfWork, BudgetCascadeUnitOfWork
+  and both context-manager equivalents. These are typed queued database operations over B700's
+  sessions, not the reset scheduler or its budget-selection/cache policy. B726 re-exports this
+  lower-level service; the service never calls its higher-level reset-job consumers.
+
+  _spend_reset_data always produces only spend={decrement: supplied_amount} and
+  budget_reset_at=supplied_timestamp, including explicit None. It does not replace spend with zero,
+  omit a null reset time, clamp a negative amount or touch total_spend/metadata/model fields. Queue
+  key resets by token, user resets by user_id and team resets by team_id, each using the corresponding
+  narrow single-row UPDATE. Zero decrement still writes the requested reset time; negative decrement
+  increases spend. Preserve money as checked Decimal with unchanged Postgres numeric column types.
+
+  LinkedSpendResetWrites.queue_spend_zero uses UPDATE MANY with the supplied typed predicate and
+  data spend=0. queue_spend_decrement uses UPDATE MANY with spend=spend-amount, never a prior
+  SELECT followed by a stale assignment. Keep the caller's full filter, including budget_id/null and
+  spend ranges; this layer neither adds nor removes a condition. New spend committed before the
+  decrement executes survives subtraction. Missing matches are a zero-row success. Spend predicates
+  are evaluated by Postgres when each queued statement executes, in queue order.
+
+  BudgetWindowWrites.queue_window_advance uses UPDATE MANY by budget_id and changes only
+  budget_reset_at. A budget removed before commit is a zero-row no-op, not a P2025-style missing-row
+  error that aborts its dependents' reset. In contrast, the key/user/team reset operations are single
+  row updates: a missing target follows B700's not-found failure and aborts the batch.
+
+  spend_reset_unit_of_work calls its supplied new_batch factory once and binds keys/users/teams to
+  litellm_verificationtoken/litellm_usertable/litellm_teamtable. budget_cascade_unit_of_work binds
+  team_memberships to litellm_teammembership, keys to litellm_verificationtoken, organizations to
+  litellm_organizationtable, tags to litellm_tagtable, model_access_groups to
+  litellm_modelaccessgroupbudgettable, projects to litellm_projecttable, endusers to
+  litellm_endusertable and budgets to litellm_budgettable. Keep each table distinct. Expose typed
+  table-specific filters, not a dynamic caller-supplied table name or SQL string.
+
+  Queue writes in caller order without sending them to Postgres while the body is still running.
+  On a clean body exit commit exactly once, including an empty batch; all queued operations execute
+  on one connection in one transaction and become visible together. A body error/cancellation skips
+  commit and writes nothing. A statement error or definitively rejected commit rolls back the batch
+  and propagates; cancellation/drop releases an uncommitted transaction. A lost COMMIT acknowledgement
+  has an unknown outcome: propagate it without claiming rollback or automatically replaying decrements.
+  Do not add retries, nested independent
+  transactions, warnings or cache updates here. Different units of work remain separate commits.
+
+  B860 fixtures use POSTGRES_TEST_URL or testcontainers with fatal setup failures. Use actual rows
+  for all eleven bindings across the two units of work, seed nonzero total_spend and unrelated JSON,
+  and inspect them after commit/rollback. Pause before commit and let another connection add spend
+  to prove atomic decrement keeps that addition. Delete a budget before commit to prove its window
+  update does not fail; delete a single-row reset target to prove the whole batch rolls back. Inject
+  failures at body, middle SQL statement and commit separately. Only pure _spend_reset_data enters
+  B856's helper oracle through a spend_reset_data operation and B171 seeds; no helper adapter calls
+  an effectful context manager. Typed queue inputs add no outside-byte parser or task-specific fuzzing.
+
+  The file has 97 nonblank noncomment lines after excluding explanatory module text, including
+  dataclasses and operation bindings. Allow 125 native queue/commit code, 235 tests, 45 pure helper
+  adapters and 25 wiring, 430 within 500. Separate queue definitions, commit handling and tests so
+  each Rust source file remains below 300 lines.
+scope:
+  paths:
+    - crates/betterlite-db/src/spend_reset_unit_of_work.rs
+    - crates/betterlite-db/src/spend_reset_unit_of_work/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - tools/oracle/src/helpers/spend_reset_data.rs
+    - tools/oracle/helpers/spend_reset_data.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/spend-reset-data/**
+    - tools/oracle/fuzz/corpus/helper_case/spend-reset-data-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L27-L88
+    why: Narrow update shapes, decrement rather than assignment, and update_many for a disappearing budget.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L91-L143
+    why: Exact table bindings, single batch creation and commit only after a clean body exit.
+dod:
+  - text: 'Pure cases name spend_reset_only_two_fields, null_reset_time_is_explicit,
+      zero_decrement_retains_window_write and negative_decrement_not_clamped. The adapter calls
+      _spend_reset_data directly and compares the typed operation shape, not a simulated database.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Postgres cases name postgres_all_unit_of_work_table_bindings,
+      queued_body_sends_no_sql, clean_exit_commits_once, empty_batch_commits_once,
+      body_error_and_cancel_discard_queue, postgres_middle_statement_rolls_back_all,
+      rejected_commit_propagates_and_releases_connection, commit_ack_loss_has_no_retry,
+      postgres_decrement_keeps_concurrent_spend,
+      linked_filters_preserved_in_queue_order, unmatched_linked_update_succeeds,
+      deleted_budget_window_update_is_noop, missing_single_reset_aborts_batch,
+      total_spend_and_unrelated_columns_untouched and separate_units_commit_independently.'
+    proof: [behavior-tests, postgres-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Queueing, predicate order and commit/abandon behavior must each have an assertion.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^spend_reset_unit_of_work::tests::/)'
+    - id: postgres-tests
+      why: Atomic rollback and preservation of concurrently added spend require independent Postgres sessions.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/spend_reset_unit_of_work::tests::postgres_all_unit_of_work_table_bindings$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/spend_reset_unit_of_work::tests::postgres_middle_statement_rolls_back_all$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/spend_reset_unit_of_work::tests::postgres_decrement_keeps_concurrent_spend$/)'
+    - id: helper-python
+      why: The reset-data adapter must call the source helper and pass strict Python checks.
+      run: test -f tools/oracle/helpers/spend_reset_data.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Require the new spend_reset_data operation in the existing HelperCase corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/spend-reset-data-*")" && grep -rlq spend_reset_data tools/oracle/fuzz/corpus/helper_case/spend-reset-data-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/spend-reset-data/narrow-reset-fields.yaml
+  - tools/oracle/cases/helpers/spend-reset-data/null-zero-and-negative.yaml
+deviations: []
+out_of_scope:
+  - B726 owns the other repository adapters and re-exports these unit-of-work types.
+  - B071 owns reset-job eligibility, decrements/caps, retry policy and cache invalidation in
+    reset_budget_job.py; this service only executes the typed writes its caller queued.
+pitfalls:
+  - budget_reset_at=None clears the field; it is not an omitted update.
+  - A deleted budget is tolerated by update_many, but a missing single-row reset target aborts the batch.
+  - Decrement must happen at execution time so spend committed since the caller's read survives.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,11 @@
+id: B720
+milestone: M4 keys, spend and management
+title: Verification-token, user and end-user row contracts
+status: todo
+depends_on: [B171, B700, B856, B860, B2307, B2310]
+file: tasks/B720-identity-rows.yaml
+covers:
+  - "litellm/models/budget.py"
+  - "litellm/models/end_user.py"
+  - "litellm/models/user.py"
+  - "litellm/models/verification_token.py"

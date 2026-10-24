@@ -1,0 +1,8 @@
+id: B974
+milestone: M5 api families
+title: Messages chat call
+status: todo
+depends_on: [B014, B171, B958, B967, B973, B962, B2433, B2401]
+file: tasks/B974-messages-chat-call.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/adapters/handler.py"

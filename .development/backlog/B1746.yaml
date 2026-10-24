@@ -1,0 +1,9 @@
+id: B1746
+milestone: M4 keys, spend and management
+title: Commit daily chunks and advance independent auto-router histories
+status: todo
+depends_on: [B171, B198, B204, B700, B715, B860, B1697, B1708, B1735, B1749]
+file: tasks/B1746-daily-commit-state.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"
+  - "litellm/proxy/db/autorouter_session_rollup.py"

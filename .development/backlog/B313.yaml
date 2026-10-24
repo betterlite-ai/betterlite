@@ -1,0 +1,8 @@
+id: B313
+milestone: M2 routing
+title: Fallback provider and capability generalization rules
+status: todo
+depends_on: [B010, B013, B301, B361, B002, B2229]
+file: tasks/B313-model-generalizations.yaml
+covers:
+  - "litellm/litellm_core_utils/fallback_generalizations.py"

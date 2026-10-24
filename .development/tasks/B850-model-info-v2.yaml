@@ -1,9 +1,34 @@
 id: B850
 title: Model info v2 route
 description: >-
-  Expose /v2/model/info with ModelInfoScope and ModelInfoSearch, preserving query defaults, filter and
-  paginated response shape. Use ModelVisibility only after auth scope and retain configured versus DB-backed
-  deployment identity.
+  Register GET /v2/model/info with B052 authentication. Defaults are model/search/modelId/teamId/
+  sortBy/access_group=None, user_models_only/include_team_models/debug/exclude_auto_routers/
+  wildcard_only=False, page=1, size=50 and sortOrder='asc'. page and size must be at least 1 (HTTP
+  validation 422); there is no maximum size. With no router or an empty router.model_list, return
+  data=[],total_count=0,current_page=page,total_pages=0,size=size before checking DB or filters.
+  Otherwise no DB raises HTTP 500 detail.error CommonProxyErrors.db_not_connected_error; load B124
+  proxy_config.get_config before processing. This route has no local except block and never calls
+  handle_exception_on_proxy. Preserve HTTP detail errors, propagated collaborator errors and auth's
+  separate error envelope; do not synthesize auth_error or invalid-target responses.
+
+  A non-null modelId, including '', uses B1216 _find_model_by_id and bypasses the model-name branch;
+  unknown ids produce an empty list, not 404. Otherwise deepcopy router rows, append user_model when
+  non-null, optionally match model against internal OR public names with B851's predicate, then B849
+  search. Apply user_models_only through B848's creator/team policy, include_team_models through its
+  direct/team-grant policy, then B849 enrichment/redaction to every row. Neither B842 discoverability
+  nor health filtering nor listing callbacks is called here. Keep that difference from v1 explicit.
+
+  A nonblank teamId is stripped and passed to B1216: only admin-view or live team membership is
+  authorized, otherwise HTTP 403 detail.error "Not authorized to view this team's models"; a missing
+  team for an admin produces an empty list. It filters exact team access, not the viewer's global
+  direct access. Recompute count after that filter and after modelId filtering. When sortBy is truthy,
+  invalid nonempty sortOrder yields HTTP 400 detail "Invalid sortOrder: {value}. Must be 'asc' or
+  'desc'"; empty sortOrder uses asc, case is ignored, unknown sortBy is accepted as a no-op. With no
+  sortBy even an invalid sortOrder is ignored. Use B849 sorting before B141 append_agents_to_model_info.
+  Agents are therefore appended after name/search/team filters and sorting; B141's append failure
+  logs debug and leaves existing rows. Apply B849 auto-router/access-group/wildcard filters to the
+  combined rows, overwrite count with the final materialized length (not search's DB count), translate
+  team public names with B851, then B849 paginates. Sorting does not interleave appended agents.
 
 
   Build the production model_info_v2 module in betterlite-server; reuse the typed dependencies listed
@@ -15,35 +40,20 @@ description: >-
   model_info_v2 (L15300-L15529; 187 source lines).
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /v2/model/info -> model_info_v2. For
-  each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
+  Use B001 HTTP cases against booted proxies, comparing application/json bodies and exact detail versus
+  auth-error shapes, including absent type/param/code on detail errors. There are no cookies, redirects,
+  changed-by headers or writes here. Native call-order tests inject config/enrichment failures and
+  assert later helpers were not called. B860 fixtures use POSTGRES_TEST_URL, else testcontainers;
+  unavailable Postgres fails. Preserve deployment credentials only in fixtures, never response snapshots.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+  Use B860's independent proxy databases with a global deployment, team-only deployment and agent,
+  so HTTP cases expose filter/append ordering. Select POSTGRES_TEST_URL when configured and
+  testcontainers otherwise; a bad configured URL is a failure, not a fallback trigger.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 187 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  187 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 400 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The handler has 144 nonblank noncomment lines excluding its docstring. Budget 180 production,
+  330 integration tests and 65 route wiring lines, 575 within 650; B849 owns the string decoder.
 scope:
   paths:
     - crates/betterlite-server/src/model_info_v2.rs
@@ -56,11 +66,13 @@ scope:
     - tools/oracle/cases/management/model-info-v2/**
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15300-L15529
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15295-L15529
     why: Own model_info_v2; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/model_list_helpers.py#L50-L102
+    why: B141 appends accessible agents after deployment sorting and logs/drops append failures.
 dod:
+  - text: config_failure_stops_pipeline, enrichment_failure_stops_pipeline and agent_append_failure_preserves_rows prove ordered collaborators without inventing a route error mapper.
+    proof: [behavior-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: v2_info_page, v2_info_model_id,
       v2_team_scope, v2_filter_sort, v2_unauthorized, v2_secrets_redacted.'
     proof:
@@ -78,9 +90,22 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_info_v2::tests::/)
         - test(/replays_the_/)'
 oracle_cases:
-  - tools/oracle/cases/management/model-info-v2/get--v2-model-info-success.yaml
-  - tools/oracle/cases/management/model-info-v2/get--v2-model-info-invalid-target.yaml
-  - tools/oracle/cases/management/model-info-v2/get--v2-model-info-unauthorized-caller.yaml
+  - tools/oracle/cases/management/model-info-v2/query-defaults.yaml
+  - tools/oracle/cases/management/model-info-v2/empty-router-before-db-and-filters.yaml
+  - tools/oracle/cases/management/model-info-v2/nonempty-router-no-db-500.yaml
+  - tools/oracle/cases/management/model-info-v2/page-size-validation-422.yaml
+  - tools/oracle/cases/management/model-info-v2/missing-id-empty-200.yaml
+  - tools/oracle/cases/management/model-info-v2/model-id-bypasses-name-filter.yaml
+  - tools/oracle/cases/management/model-info-v2/public-name-and-user-model.yaml
+  - tools/oracle/cases/management/model-info-v2/creator-filter-before-team-filter.yaml
+  - tools/oracle/cases/management/model-info-v2/search-byok-scope-decrypt.yaml
+  - tools/oracle/cases/management/model-info-v2/search-db-error-router-only.yaml
+  - tools/oracle/cases/management/model-info-v2/team-id-trim-missing-denied.yaml
+  - tools/oracle/cases/management/model-info-v2/sort-order-validation-conditional.yaml
+  - tools/oracle/cases/management/model-info-v2/agents-appended-after-search-sort.yaml
+  - tools/oracle/cases/management/model-info-v2/final-filters-apply-to-agents.yaml
+  - tools/oracle/cases/management/model-info-v2/final-count-materialized-not-db-count.yaml
+  - tools/oracle/cases/management/model-info-v2/no-v1-health-discovery-callback-filter.yaml
   - tools/oracle/cases/management/model-info-v2/v2-info-page.yaml
   - tools/oracle/cases/management/model-info-v2/v2-info-model-id.yaml
   - tools/oracle/cases/management/model-info-v2/v2-team-scope.yaml
@@ -256,8 +281,6 @@ out_of_scope:
     (L20123-L20141), aggregate_mcp_route (L20148-L20164), toolset_mcp_route (L20173-L20214), _mcp_forward_as_path
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20312-L20379).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/proxy_server.py: B060 owns model_deprecations (L16290-L16317), _get_model_group_info
     (L16320-L16351), model_group_info (L16359-L16581).'
   - 'litellm/proxy/proxy_server.py: B848 owns _check_if_model_is_user_added (L14161-L14187), _check_if_model_is_team_model
@@ -447,8 +470,10 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
-  - V2 pagination operates on authorized deployments rather than leaking total hidden deployment counts.
+  - Empty-router success happens before the database requirement and sortOrder validation.
+  - Agent rows bypass search and team filters but pass the final access_group and wildcard filters.
+  - A search count from Postgres is overwritten with the fetched row count before pagination.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

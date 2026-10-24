@@ -1,0 +1,101 @@
+id: B1422
+title: Jina mixed-media embeddings and Infinity embedding replies
+description: >-
+  Implement jina_embedding and infinity_embedding in betterlite-openai, including their
+  common error classes. Jina exposes only dimensions, unchanged, and has no constructor
+  defaults. Resolve base explicit/JINA_AI_API_BASE/https://api.jina.ai/v1 and key
+  explicit/JINA_AI_API_KEY/JINA_API_KEY/JINA_AI_TOKEN using truthy precedence. Its complete
+  URL always appends /embeddings to a truthy base, even an already complete endpoint.
+  Native Jina header defaults are Content-Type JSON plus Bearer for a truthy resolved key;
+  caller headers win. Tests in embedding_host_settings load every listed environment key.
+
+  Jina wraps a scalar input into a list. If any item passes B183's strict data-URI
+  predicate, convert every string to image with the base64 part or text with its original
+  value, skipping nonstrings; otherwise keep the entire input list, including nonstrings.
+  Set input after the model/options merge so optional input cannot replace it. Decode
+  replies with B006's EmbeddingResponse boundary and call post_call before constructing
+  the response model. The source accidentally passes Python's builtin input function
+  to the hook; preserve that argument's kind as a typed BuiltinInput diagnostic marker
+  and compare the Python fixture's identity test, rather than substituting request text.
+  Invalid JSON raises its original decoding error rather than JinaAIError. The Jina
+  get_error_class wrapper discards headers.
+
+  Infinity rejects only a None base, trims trailing slashes and appends /embeddings
+  unless already present; an empty base therefore yields /embeddings. A None key reads
+  INFINITY_API_KEY, with no litellm.infinity_key fallback in this embedding method.
+  Even an absent result becomes Bearer None; caller headers override Authorization,
+  accept and Content-Type. Forward encoding_format/modality and rename dimensions to
+  output_dimension. Request options overlay input/model. decode_infinity_embedding
+  preserves nullable response model/data/object, uses usage.prompt_tokens and total_tokens
+  independently with zero defaults, and wraps JSON failure with upstream status. The
+  Infinity error's synthetic POST URL is https://github.com/michaelfeil/infinity and its
+  get_error_class preserves supplied headers.
+
+  Helper embedding_host_plan compares both configs and the Jina hook projection.
+  Add exact-tag HelperCase seed assertions, Infinity byte fuzzing and native mixed-input
+  tests. The four executable source files total 278 nonblank/noncomment lines, plus a
+  four-line Infinity handler docstring. Allow 265 production, 220 tests, 140 adapters
+  and 125 configuration/fuzz/export lines within 800.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,error,jina_embedding,infinity_embedding}.rs
+    - crates/betterlite-openai/src/{jina_embedding,infinity_embedding}/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/infinity_embedding.rs
+    - crates/betterlite-openai/fuzz/corpus/infinity_embedding/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,embedding_hosts}.rs
+    - crates/betterlite-config/tests/embedding_host_settings.rs
+    - tools/oracle/src/helpers/{mod,embedding_host_plan}.rs
+    - tools/oracle/helpers/{dispatch,embedding_host_plan}.py
+    - tools/oracle/cases/helpers/embedding-host-plan/**
+    - tools/oracle/fuzz/corpus/helper_case/embedding_host_plan*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/embedding/transformation.py#L26-L166
+    why: Any-image conversion, unconditional URL suffix and builtin-input logging argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/infinity/embedding/transformation.py#L16-L135
+    why: Required base, optional key and independent usage counters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/infinity/common_utils.py#L1-L18
+    why: Synthetic request/response and retained error headers.
+dod:
+  - text: Jina converts mixed media only after any valid data URI and preserves its native response-hook argument kind.
+    proof: [embedding-host-tests, embedding-host-python, oracle]
+  - text: Infinity embedding URL, key fallback and response usage remain distinct from Jina's behavior.
+    proof: [embedding-host-tests, embedding-host-settings, embedding-host-python, oracle]
+  - text: Infinity's external-byte decoder and the combined helper variant have new corpus coverage.
+    proof: [infinity-embedding-corpus, embedding-host-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: embedding-host-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E '(test(/^jina_embedding::/) | test(/^infinity_embedding::/)) - test(replays_the_infinity_embedding_corpus)'
+      why: Mixed input filtering and the two providers' URL/header differences need named native cases.
+    - id: embedding-host-settings
+      run: cargo nextest run --locked -p betterlite-config --test embedding_host_settings --no-tests=fail
+      why: Jina's alternate keys and Infinity's single embedding key must load through the actual configuration parser.
+    - id: embedding-host-python
+      run: test -f tools/oracle/helpers/embedding_host_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Hook identity and input filtering must be measured from the pinned methods.
+    - id: infinity-embedding-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/infinity_embedding.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/infinity_embedding)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_infinity_embedding_corpus)'
+      why: Missing usage members and malformed Infinity JSON enter the new decoder under limits.
+    - id: embedding-host-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/embedding_host_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::embedding_host_plan::/)'
+      why: New seeds must select call.embedding_host_plan and include at least one row.
+oracle_cases:
+  - tools/oracle/cases/helpers/embedding-host-plan/jina-mixed-images-and-nonstrings.yaml
+  - tools/oracle/cases/helpers/embedding-host-plan/jina-input-overlay-and-hook.yaml
+  - tools/oracle/cases/helpers/embedding-host-plan/endpoint-suffix-differences.yaml
+  - tools/oracle/cases/helpers/embedding-host-plan/aliases-and-header-precedence.yaml
+  - tools/oracle/cases/helpers/embedding-host-plan/infinity-usage-and-error-headers.yaml
+deviations: []
+out_of_scope:
+  - B1423 owns both providers' rerank methods; the Infinity embedding handler file contains documentation only and no callable.
+  - B183 supplies base64 detection and B006 supplies the standard Jina embedding response decoder; neither is copied into this task.
+pitfalls:
+  - Jina drops a nonstring input only when another item has triggered image-mode conversion.
+  - Infinity embedding usage can have prompt_tokens different from total_tokens without reconciliation.
+  - Jina's optional input field loses to the normalized input assigned afterward.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

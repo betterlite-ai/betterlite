@@ -1,0 +1,8 @@
+id: B1077
+milestone: M5 api families
+title: Vector retrieval context
+status: todo
+depends_on: [B011, B012, B104, B1063, B1064, B1131, B2483, B2401]
+file: tasks/B1077-vector-retrieval-context.yaml
+covers:
+  - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"

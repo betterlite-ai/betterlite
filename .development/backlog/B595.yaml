@@ -1,0 +1,9 @@
+id: B595
+milestone: M3 providers
+title: Bedrock SigV4 and bearer request signing
+status: todo
+depends_on: [B594, B591, B171, B590]
+file: tasks/B595-bedrock-signing.yaml
+covers:
+  - "litellm/llms/bedrock/base_aws_llm.py"
+  - "litellm/llms/bedrock/common_utils.py"

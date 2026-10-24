@@ -1,0 +1,10 @@
+id: B1025
+milestone: M5 api families
+title: File storage contracts
+status: todo
+depends_on: [B171, B908, B726]
+file: tasks/B1025-file-storage-contracts.yaml
+covers:
+  - "litellm/llms/base_llm/files/storage_backend.py"
+  - "litellm/llms/base_llm/files/litellm_db_storage_backend.py"
+  - "litellm/llms/base_llm/files/batch_records.py"

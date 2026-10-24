@@ -1,0 +1,11 @@
+id: B627
+milestone: M3 providers
+title: Bedrock Titan and Cohere embeddings
+status: todo
+depends_on: [B006, B183, B037, B002, B171]
+file: tasks/B627-bedrock-other-titan-embeddings.yaml
+covers:
+  - "litellm/llms/bedrock/embed/amazon_titan_g1_transformation.py"
+  - "litellm/llms/bedrock/embed/amazon_titan_v2_transformation.py"
+  - "litellm/llms/bedrock/embed/amazon_titan_multimodal_transformation.py"
+  - "litellm/llms/bedrock/embed/cohere_transformation.py"

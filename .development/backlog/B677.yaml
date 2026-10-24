@@ -1,0 +1,9 @@
+id: B677
+milestone: M3 providers
+title: Azure default and deployment credential chains
+status: todo
+depends_on: [B673, B674, B675, B676, B530, B171, B002, B187]
+file: tasks/B677-azure-default-chain.yaml
+covers:
+  - "litellm/llms/azure/common_utils.py"
+  - "litellm/secret_managers/get_azure_ad_token_provider.py"

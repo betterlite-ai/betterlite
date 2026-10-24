@@ -1,0 +1,8 @@
+id: B1126
+milestone: M5 API families
+title: Realtime client secrets and transcription sessions
+status: todo
+depends_on: [B001, B003, B014, B061, B124, B756, B856, B886, B1004, B1010, B1012, B1100, B1103, B1139]
+file: tasks/B1126-realtime-secret-routes.yaml
+covers:
+  - "litellm/proxy/realtime_endpoints/endpoints.py"

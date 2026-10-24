@@ -5,6 +5,31 @@ description: >-
   database existence without widening key/team scope. Preserve user_header_mappings precedence and validate_end_user_id_in_db=false
   default. Accept parsed request fields; HTTP request decoding remains the request envelope owner.
 
+  Extraction checks case-insensitive x-litellm-customer-id before x-litellm-end-user-id, then configured
+  CUSTOMER-role mappings in list order, then deprecated general_settings.user_header_name only if no
+  usable mapping names exist. Mappings accept a dict or list, skip non-dicts/missing role/missing header,
+  compare the role case-insensitively and lowercase the header name. A mapping whose header is absent
+  still suppresses the deprecated header fallback. Deprecated names must be nonblank strings but retain
+  their original whitespace for matching. Next try body.user, litellm_metadata.user, metadata.user_id
+  and safety_identifier in that order. Metadata may be a dictionary or JSON string decoded by B192;
+  malformed JSON and nonobjects act as empty objects. The JSON decoder and its fuzz target stay B192's.
+
+  ID coercion drops None, booleans and structured objects; numbers become their Python-compatible text,
+  strings are trimmed and blank becomes None. With validate_end_user_id_in_db enabled, strings starting
+  with { or [ are dropped only when B192 parsing actually yields an object/array; malformed strings and
+  other JSON scalars survive. Disabled validation preserves JSON-encoded identifiers. No ID means None.
+  Validation disabled or no DB returns the supplied ID unchanged. With a DB use the raw-cache key
+  end_user_validation:<id>, treating exactly "valid" and "invalid" as hits. A positive hit preserves
+  the ID. A negative hit preserves it only when max_end_user_budget_id is truthy or the key's
+  end_user_budget_id is not None (including empty string); otherwise return None, never an auth error.
+
+  On a cache miss, call B739 get_end_user_object first, then B736 get_user_object with user_id_upsert=false,
+  check_db_only=false and user_email=id only when it contains @. Either non-null row validates the ID.
+  Each lookup failure, including a budget failure, debug-logs and falls through to the next lookup;
+  two failures become invalid. Cache "valid" for 300 seconds or "invalid" for 60 before returning.
+  B2315 owns the raw-cache view. Cache read/write errors propagate, and no database row is created by
+  this resolver itself. Compare storage through POSTGRES_TEST_URL, using testcontainers only when absent.
+
 
   Build the production end_user_identity module in betterlite-auth; reuse the typed dependencies listed
   in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
@@ -19,7 +44,8 @@ description: >-
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.validate_end_user_id_in_db=False;
-  litellm_settings.max_end_user_budget_id=None; general_settings.user_header_mappings=None; user_header_mappings=None.
+  litellm_settings.max_end_user_budget_id=None; general_settings.user_header_mappings=None;
+  general_settings.user_header_name=None. The 300/60-second validation TTLs are constants, not settings.
 
 
   Add the end_user_identity operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -29,40 +55,22 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
-  with an invalid model after auth, or the named management route). Install this production stage through
-  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
-  and the complete error type/param/code. A successful auth branch must reach the downstream route response
-  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
-  before choosing fixtures.
+  Exercise registry misses and caller-visible validation through real inference requests. End-user rows
+  live in B860 Postgres fixtures (POSTGRES_TEST_URL when available, otherwise testcontainers); use fixed
+  cache clocks to prove the separate valid and invalid TTLs without timing-dependent sleeps.
 
 
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::end_user_identity::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Write betterlite-config::end_user_identity::tests::validation_default_off, budget_id_none_and_empty,
+  mapping_dict_and_list, deprecated_header_loads and malformed_mapping_entries_skipped.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
   Sizing: 208 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  208 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 527 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  220 production, 260 behavior/Postgres tests, 75 adapters, 65 wiring and 60 config lines,
+  680 within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -116,13 +124,22 @@ references:
     why: litellm_settings.max_end_user_budget_id default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1614-L1619
     why: general_settings.user_header_mappings default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L1-L6
-    why: user_header_mappings default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1614-L1638
+    why: Mapping versus deprecated-header precedence and the actual settings reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1585-L1588
+    why: The ordered two standard customer-ID header literals.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: numeric_user_id, unknown_enforced_user,
-      header_precedence.'
+      header_precedence, standard_header_order_casefold, customer_mapping_order,
+      malformed_mapping_skipped, absent_mapped_header_blocks_legacy, legacy_whitespace_name,
+      body_metadata_safety_precedence, metadata_json_object_only, id_trim_blank_bool_structure,
+      json_identifier_opt_in, malformed_json_identifier_kept, validation_off_no_db_passthrough,
+      positive_cache_300, negative_cache_60, unknown_cache_value_miss,
+      key_empty_budget_preserves_id, global_empty_budget_does_not,
+      end_user_before_user, email_only_with_at, no_user_upsert,
+      lookup_errors_debug_then_negative, cache_failures_propagate and unknown_id_dropped_not_denied.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -181,13 +198,15 @@ oracle_cases:
   - tools/oracle/cases/helpers/end-user-identity/numeric-user-id.yaml
   - tools/oracle/cases/helpers/end-user-identity/unknown-enforced-user.yaml
   - tools/oracle/cases/helpers/end-user-identity/header-precedence.yaml
+  - tools/oracle/cases/helpers/end-user-identity/coercion-and-json-identifiers.yaml
+  - tools/oracle/cases/helpers/end-user-identity/header-and-metadata-order.yaml
+  - tools/oracle/cases/helpers/end-user-identity/validation-cache-budget-matrix.yaml
+  - tools/oracle/cases/helpers/end-user-identity/lookup-failure-order.yaml
   - tools/oracle/cases/auth/end-user-identity/numeric-user-id.yaml
   - tools/oracle/cases/auth/end-user-identity/unknown-enforced-user.yaml
   - tools/oracle/cases/auth/end-user-identity/header-precedence.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/auth/auth_checks.py: B732 owns effective_user_role (L1298-L1302), _get_user_role (L1305-L1310),
     _is_user_proxy_admin (L1340-L1347).'
   - 'litellm/proxy/auth/auth_checks.py: B733 owns _copy_user_api_key_auth_for_cache (L3970-L3978).'
@@ -303,8 +322,8 @@ out_of_scope:
     repository-wide identifier search finds only this definition.'
   - 'litellm/proxy/auth/auth_utils.py: B054 owns custom_auth_common_checks_warning (L1361-L1375), warn_once_if_custom_auth_skips_common_checks
     (L1381-L1397), log_once_if_budget_reservation_disabled (L1400-L1415).'
-  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665), get_request_route
-    (L668-L703), get_request_route_template (L706-L722), normalize_request_route (L726-L837).'
+  - 'litellm/proxy/auth/auth_utils.py: B741 owns route_in_additonal_public_routes (L621-L665),
+    get_request_route_template (L706-L722), normalize_request_route (L726-L837); B882 owns get_request_route (L668-L703).'
   - 'litellm/proxy/auth/auth_utils.py: B744 owns is_invalid_virtual_key_error (L41-L58), mark_invalid_virtual_key_error
     (L61-L75), _get_request_ip_address (L78-L87), _check_valid_ip (L90-L108), pre_db_read_auth_checks
     (L562-L618), check_if_request_size_is_safe (L840-L898), check_response_size_is_safe (L901-L939), bytes_to_mb
@@ -350,8 +369,9 @@ out_of_scope:
     commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve user_header_mappings precedence and validate_end_user_id_in_db=false default.
+  - A cached invalid ID can become usable immediately when a default budget is attached; the cache stores existence, not the final decision.
+  - The resolver swallows even BudgetExceededError from its existence probe; downstream end-user budget admission is a separate caller responsibility.
 budget:
-  max_changed_lines: 550
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

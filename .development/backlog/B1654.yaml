@@ -1,0 +1,10 @@
+id: B1654
+milestone: M4 keys, spend and management
+title: Evaluate the compliance API's guardrail evidence checks
+status: todo
+depends_on: [B003, B052, B865]
+file: tasks/B1654-compliance-checks.yaml
+covers:
+  - "litellm/proxy/compliance_checks.py"
+  - "litellm/proxy/management_endpoints/compliance_endpoints.py"
+  - "litellm/types/proxy/compliance_endpoints.py"

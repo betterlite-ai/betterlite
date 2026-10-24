@@ -1,0 +1,9 @@
+id: B252
+milestone: M1 openai data plane
+title: Bounded stream logging and served text
+status: todo
+depends_on: [B188, B005, B006, B2227]
+file: tasks/B252-logging-streams.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+  - "litellm/litellm_core_utils/streaming_handler.py"

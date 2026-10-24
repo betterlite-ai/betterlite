@@ -1,0 +1,8 @@
+id: B2332
+milestone: M4 keys, spend and management
+title: MCP stored-secret rotation primitives
+status: todo
+depends_on: [B003, B171, B714, B726, B856, B860, B2303, B2305]
+file: tasks/B2332-mcp-credential-rotation.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/db.py"

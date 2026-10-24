@@ -1,0 +1,9 @@
+id: B563
+milestone: M3 providers
+title: Foundry Anthropic chat transport
+status: todo
+depends_on: [B577, B580, B582, B173, B171, B584, B570, B689, B567, B2200, B568, B249, B2201]
+file: tasks/B563-foundry-anthropic.yaml
+covers:
+  - "litellm/llms/azure_ai/anthropic/handler.py"
+  - "litellm/llms/azure_ai/anthropic/transformation.py"

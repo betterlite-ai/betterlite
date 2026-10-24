@@ -1,0 +1,8 @@
+id: B1730
+milestone: M4 keys, spend and management
+title: Preserve legacy log exports and enrich UI rows by session and key
+status: todo
+depends_on: [B003, B204, B726, B732, B860, B1704, B1715, B1728, B1729]
+file: tasks/B1730-spend-log-results.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_management_endpoints.py"

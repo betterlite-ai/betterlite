@@ -1,0 +1,9 @@
+id: B759
+milestone: M4 keys, spend and management
+title: Expand authorized model lists and fallbacks
+status: todo
+depends_on: [B001, B003, B171, B302, B309, B725, B732, B856, B860, B2328]
+file: tasks/B759-auth-model-lists.yaml
+covers:
+  - "litellm/proxy/auth/model_checks.py"
+  - "litellm/litellm_core_utils/credential_accessor.py"

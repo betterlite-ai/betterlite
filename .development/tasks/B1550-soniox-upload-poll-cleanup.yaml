@@ -1,0 +1,82 @@
+id: B1550
+title: Upload Soniox audio and poll and clean remote jobs
+description: >-
+  Implement api::soniox::remote for the paired sync/async upload, poll and cleanup methods in
+  handler.py. Accept B1549's prepared options, decoder and error mapper, B173 transport and an
+  injected sleeper. B1001 supplies filename/content/MIME. A truthy filename override replaces the
+  processed filename. Upload POST /v1/files carries exactly Authorization from the authenticated
+  headers and one multipart file; let the client build Content-Type. Require the returned id after
+  the source HTTP error check. Every remote call forwards the supplied per-request timeout.
+
+  Poll GET /v1/transcriptions/{id} up to max_attempts. Exact lowercase completed returns metadata;
+  error raises SonioxException 500 using error_message, error_type or unknown error and poll response
+  headers. Every other status, including missing or uppercase COMPLETED, sleeps the selected interval.
+  Sleep after the last unsuccessful poll too, then raise 504 with empty headers and the source
+  attempts/interval message. HTTP failures propagate immediately without internal retries. Keep the
+  source's literal identifier interpolation into these fixed-base paths; do not introduce a different
+  encoding policy in this adapter.
+
+  Cleanup does nothing for an empty selection. Otherwise delete a truthy transcription id first
+  when transcription is selected, then a truthy uploaded-file id when file is selected, regardless
+  of list order. Ignore transport exceptions and returned error statuses independently, so one
+  failed delete cannot suppress the other or replace the original result. The caller supplies only
+  IDs uploaded by this invocation for file cleanup. Both modes share the same state decisions and
+  differ only in client/sleep awaits.
+
+  Register call.soniox_remote with upload_header_subset, filename_override, lowercase_status,
+  last_attempt_sleep, terminal_error_detail, immediate_http_failure and cleanup_order_failures.
+  Script the actual source HTTP helpers and compare their ordered method/URL/header/body/sleep
+  effects. Test that cleanup sends the request-local credential and never a neighboring deployment's
+  key. B1549 owns JSON parsing, so this task adds no fuzz target. The helper pairs contain 190
+  nonblank/non-comment source lines; budget 180 implementation, 230 tests and 120 oracle lines,
+  maximum 600 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/soniox.rs
+    - crates/betterlite-core/src/api/soniox/remote.rs
+    - crates/betterlite-core/src/api/soniox/remote/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/soniox_remote.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/soniox_remote.py
+    - tools/oracle/cases/helpers/soniox-remote/**
+    - tools/oracle/fuzz/corpus/helper_case/soniox_remote*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L482-L588
+    why: Synchronous upload, terminal polling decisions and ordered best-effort deletes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L716-L816
+    why: Equivalent async request and sleep behavior.
+dod:
+  - text: Soniox upload and polling preserve multipart authentication, exact status matching and the final unsuccessful wait.
+    proof: [soniox-remote-tests, oracle, soniox-remote-python]
+  - text: Cleanup attempts both selected resources in source order without masking either success or the original failure.
+    proof: [soniox-remote-tests, oracle, soniox-remote-python]
+checks:
+  optional: []
+  commands:
+    - id: soniox-remote-tests
+      why: upload, polling or best-effort cleanup effects have no behavior tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::soniox::remote::/)'
+    - id: soniox-remote-python
+      why: Soniox HTTP helper traces lack a source-backed adapter
+      run: grep -qE '^[[:space:]]+soniox_remote:' tools/oracle/fuzz/corpus/helper_case/soniox_remote* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/soniox_remote.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/soniox-remote/upload-header-subset.yaml
+  - tools/oracle/cases/helpers/soniox-remote/filename-override.yaml
+  - tools/oracle/cases/helpers/soniox-remote/lowercase-status.yaml
+  - tools/oracle/cases/helpers/soniox-remote/last-attempt-sleep.yaml
+  - tools/oracle/cases/helpers/soniox-remote/terminal-error-detail.yaml
+  - tools/oracle/cases/helpers/soniox-remote/immediate-http-failure.yaml
+  - tools/oracle/cases/helpers/soniox-remote/cleanup-order-failures.yaml
+deviations: []
+out_of_scope:
+  - Record definitions and preparation/logging/error helpers at 61-102 and 173-357 are B1549; B1551 owns pipeline bodies at 358-481 and 589-715; B047 owns public audio_transcriptions at 111-172.
+pitfalls:
+  - Cleanup never inspects DELETE response status, so a returned 500 is ignored just like a successful response.
+  - max_attempts=1 with an unfinished job still performs one sleep before returning 504.
+  - The allowed 6000 attempts and 60-second interval can exceed the misleading fifty-minute source comment.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

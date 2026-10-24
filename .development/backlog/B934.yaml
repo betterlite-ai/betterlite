@@ -1,0 +1,8 @@
+id: B934
+milestone: M5 api families
+title: Responses compact call
+status: todo
+depends_on: [B010, B185, B186, B904, B931, B905, B198, B247, B157, B174, B206, B500, B2418, B2401]
+file: tasks/B934-responses-compact-call.yaml
+covers:
+  - "litellm/responses/main.py"

@@ -1,0 +1,8 @@
+id: B567
+milestone: M3 providers
+title: Anthropic settings and OAuth credential projection
+status: todo
+depends_on: [B002, B173, B171, B129, B2202]
+file: tasks/B567-anthropic-credentials.yaml
+covers:
+  - "litellm/llms/anthropic/common_utils.py"

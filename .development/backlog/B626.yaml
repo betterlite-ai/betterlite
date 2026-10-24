@@ -1,0 +1,8 @@
+id: B626
+milestone: M3 providers
+title: Bedrock Mantle standalone Responses
+status: todo
+depends_on: [B2207, B2202, B590, B506, B507, B907, B682, B598, B171]
+file: tasks/B626-bedrock-mantle-responses.yaml
+covers:
+  - "litellm/llms/bedrock_mantle/responses/transformation.py"

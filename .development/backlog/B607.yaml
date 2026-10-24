@@ -1,0 +1,8 @@
+id: B607
+milestone: M3 providers
+title: Bedrock Converse response conversion
+status: todo
+depends_on: [B605, B606, B596, B682, B190, B206, B198, B171, B249]
+file: tasks/B607-bedrock-converse-response.yaml
+covers:
+  - "litellm/llms/bedrock/chat/converse_transformation.py"

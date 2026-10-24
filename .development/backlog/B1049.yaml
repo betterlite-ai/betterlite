@@ -1,0 +1,8 @@
+id: B1049
+milestone: M5 api families
+title: Executed batch runner
+status: todo
+depends_on: [B002, B014, B171, B1027, B1041, B1048, B1087, B726, B858, B1106]
+file: tasks/B1049-executed-batch-runner.yaml
+covers:
+  - "litellm/proxy/batches_endpoints/litellm_executed_batches.py"

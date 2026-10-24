@@ -1,0 +1,8 @@
+id: B550
+milestone: M3 providers
+title: Foundry chat request and response mapping
+status: todo
+depends_on: [B549, B502, B503, B504, B193, B218, B171, B2200, B668, B174, B219, B1403, B129, B2221]
+file: tasks/B550-foundry-chat.yaml
+covers:
+  - "litellm/llms/azure_ai/chat/transformation.py"

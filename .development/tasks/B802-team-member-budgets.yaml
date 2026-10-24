@@ -1,14 +1,53 @@
 id: B802
 title: Default team member budgets and bulk budget updates
 description: >-
-  Implement TeamMemberBudgets with create/upsert/clear/backfill and bulk patches in locked roster transactions.
-  Keep system-managed metadata removal, shared default budget ownership and inherited versus explicit
-  member caps. Use BudgetRepository and Decimal fields; audit rows never mutate shared budgets accidentally.
+  Implement TeamMemberBudgets with distinct team-default and bulk-member write paths. Strip only
+  team_member_budget_id from caller metadata dictionaries; non-dicts are untouched. should_create_budget
+  returns true if ANY of budget/rpm/tpm/duration is nonnull, including zero or empty duration. Generated
+  IDs are team-<alias with spaces replaced by hyphens>-budget-<uuid hex>, or team-budget-<uuid hex>
+  when alias is None (an empty alias still takes the first branch). Create through B829.new_budget,
+  then put its returned ID in metadata and remove the four team_member_* input fields. Omitted
+  member duration inherits the team's truthy duration; explicit null means no reset, and a nonnull
+  member duration overrides either. Preserve the other metadata fields.
 
+  Upsert first normalizes a null existing metadata map to {}. Any string team_member_budget_id,
+  including empty, selects B829.update_budget; a missing/non-string ID selects create. For updates,
+  pass each field when nonnull OR explicitly present, retaining null clears. Explicit null duration
+  also clears budget_reset_at. Log the successful update, then merge the returned budget ID into
+  updated metadata and strip input-only fields. clear_team_member_budget_fields updates only a
+  string existing ID, clearing just the named fields; no default ID means no write. It strips the
+  four inputs regardless. These helpers call real budget-route services, whose errors/effects belong
+  to B829; they do not wrap the team's eventual write in a new transaction.
 
-  Build the production team_member_budgets module in betterlite-server; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Backfill skips an empty roster. Read all team memberships once; create missing nonnull member IDs
+  from either Member or raw dict with skip_duplicates=true, then update EVERY existing null budget_id
+  in that team, including memberships absent from the supplied roster. Existing nonnull IDs remain
+  unchanged even when they point at an older default. Log creation and healing counts separately with
+  CR/LF-sanitized team/budget IDs via B801. A failure healing nulls leaves the earlier inserts in place.
+
+  Bulk updates read TeamRepository through B714.WriterPinnedClient BEFORE the 60-second transaction;
+  no advisory/roster lock is acquired. Missing team and forbidden caller use B1202's ManagementProblem
+  team-not-found 404 and forbidden 403, respectively. B800 allows proxy/team/org admins. Resolve an
+  explicit user_id against the roster first; otherwise match email exactly and take the first ID.
+  Reject later repeated request identities (B1202) and later identities resolving to the same user.
+  If nothing applies, return original-order failures with Duplicate member in request or User not
+  found in team and do not transact, invalidate or audit.
+
+  In the transaction, read selected memberships including budgets, detect shared budget IDs across
+  ALL teams, then apply patches in request order via B862.member_budget_patch/_upsert_budget_and_membership.
+  That dependency clones shared/default rows; do not mutate them here. Reread written memberships
+  and the string-valued default budget ID before commit. After commit, invalidate member spend state
+  via B734 for sorted user IDs, then await B065.create_object_audit_log (TEAM_TABLE_NAME, updated,
+  supplied changed-by header). Cache/audit failure cannot roll back the budget writes. Audit JSON
+  nests team_member_budgets, sorts by user_id, drops null fields, preserves allowed_models order and
+  includes user_id/budget_id/max_budget/tpm_limit/rpm_limit/budget_duration/budget_reset_at/allowed_models.
+  Missing expanded budget records still retain the membership's nonnull budget_id in audits.
+
+  Return one result per original input. Failed entries echo requested ID/email with success=false.
+  Successful entries use resolved ID and requested email; return own budget ID/rates/duration/models.
+  max_budget inherits only when own max_budget is None and team default is strictly positive, with
+  source team_default; otherwise a nonnull own amount (including zero) has source member, else None.
+  Inheritance of max_budget does not replace the other per-member limit fields.
 
 
   Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
@@ -24,39 +63,18 @@ description: >-
   source lines), bulk_update_team_member_budgets (L168-L258; 84 source lines).
 
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
+  The team_member_budgets helper operation under B856 Management::teams compares only the pure strip,
+  presence, roster, result and audit projections. Exercise create/upsert/clear/backfill and bulk
+  transactions in native Postgres tests, because B829's handlers read proxy globals. Later management
+  routes own their HTTP cases; no handler is invoked through this pure oracle adapter.
 
 
-  Add the team_member_budgets operation under B856 Management::teams. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a team-member-budgets-* seed to B171 helper_case, which already owns this decoder.
+  Run member-budget row and transaction-failure cases on B860 schemas from POSTGRES_TEST_URL;
+  testcontainers supplies Postgres only if that variable is absent. Unavailable databases fail the tests.
 
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 371 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  371 production, 157 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 623 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing: 371 nonblank, noncomment function lines include extensive docstrings; budget 335 production,
+  350 tests, 75 pure adapters and 30 wiring lines, 790 within an 800-line gate.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_budgets.rs
@@ -122,7 +140,15 @@ references:
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: default_budget_create,
       member_override, clear_member_cap, backfill_roster, shared_budget_preserved, bulk_invalid_member,
-      rollback, postgres_pinned_rows, postgres_failure_effects.'
+      rollback, postgres_pinned_rows, postgres_failure_effects, strip_only_server_key,
+      zero_limit_present, alias_budget_id, empty_alias_budget_id, member_duration_inheritance,
+      explicit_null_duration, explicit_limit_null, bad_default_id_creates, empty_id_updates,
+      clear_without_default, input_fields_removed, empty_roster_no_read, backfill_raw_member,
+      duplicate_insert_skipped, heal_nonroster_nulls, old_default_preserved, sanitized_backfill_log,
+      writer_roster_before_tx, team_missing_problem, scope_forbidden_problem, id_before_email,
+      duplicate_resolved_user, all_invalid_no_effects, cross_team_shared_budget, sorted_evictions,
+      audit_after_eviction, audit_null_projection, result_order, positive_default_inheritance,
+      zero_member_cap and inheritance_keeps_rates.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -156,17 +182,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_budgets::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/team_member_budgets::tests::postgres_failure_effects$/)'
 oracle_cases:
-  - tools/oracle/cases/helpers/team-member-budgets/default-budget-create.yaml
-  - tools/oracle/cases/helpers/team-member-budgets/member-override.yaml
-  - tools/oracle/cases/helpers/team-member-budgets/clear-member-cap.yaml
-  - tools/oracle/cases/helpers/team-member-budgets/backfill-roster.yaml
-  - tools/oracle/cases/helpers/team-member-budgets/shared-budget-preserved.yaml
-  - tools/oracle/cases/helpers/team-member-budgets/bulk-invalid-member.yaml
-  - tools/oracle/cases/helpers/team-member-budgets/rollback.yaml
+  - tools/oracle/cases/helpers/team-member-budgets/server-metadata-and-presence.yaml
+  - tools/oracle/cases/helpers/team-member-budgets/roster-identity.yaml
+  - tools/oracle/cases/helpers/team-member-budgets/result-inheritance.yaml
+  - tools/oracle/cases/helpers/team-member-budgets/result-errors.yaml
+  - tools/oracle/cases/helpers/team-member-budgets/audit-order-nulls.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
   - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
     (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
     (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
@@ -246,8 +268,9 @@ out_of_scope:
     at the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - A member override clones a shared default budget instead of mutating every member limit.
+  - Backfill heals null budgets for the whole team and never migrates nonnull references to an old default.
+  - The bulk service's docstring overstates its transaction scope; the writer roster lookup occurs before it.
 budget:
-  max_changed_lines: 625
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

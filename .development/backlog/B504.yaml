@@ -1,0 +1,8 @@
+id: B504
+milestone: M3 providers
+title: OpenAI response choices and stream normalization
+status: todo
+depends_on: [B004, B005, B171, B500, B668, B510, B173, B216, B206, B129, B2214, B249, B220]
+file: tasks/B504-openai-chat-choices.yaml
+covers:
+  - "litellm/llms/openai/chat/gpt_transformation.py"

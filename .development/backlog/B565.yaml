@@ -1,0 +1,10 @@
+id: B565
+milestone: M3 providers
+title: Foundry Anthropic token counting
+status: todo
+depends_on: [B549, B585, B2200, B173, B567, B171]
+file: tasks/B565-foundry-anthropic-count.yaml
+covers:
+  - "litellm/llms/azure_ai/anthropic/count_tokens/handler.py"
+  - "litellm/llms/azure_ai/anthropic/count_tokens/token_counter.py"
+  - "litellm/llms/azure_ai/anthropic/count_tokens/transformation.py"

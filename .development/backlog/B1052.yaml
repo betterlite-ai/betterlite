@@ -1,0 +1,9 @@
+id: B1052
+milestone: M5 api families
+title: Fine tuning create
+status: todo
+depends_on: [B010, B012, B518, B542, B1384, B2487, B2401]
+file: tasks/B1052-fine-tuning-create.yaml
+covers:
+  - "litellm/fine_tuning/main.py"
+  - "litellm/types/fine_tuning.py"

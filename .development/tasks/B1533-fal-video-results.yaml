@@ -1,0 +1,89 @@
+id: B1533
+title: Retrieve Fal video job failures and completed binary content
+description: >-
+  Implement api::fal::video_results for transformation.py's error-text helpers, _result_request,
+  _status_video_object, client construction, status response/fetch methods, content response methods
+  and reachable unsupported request operations. B1532 supplies the typed reply decoder, URL/id helpers
+  and FalAIVideoError; B173 supplies injected sync/async clients. For detail arrays, collect mapping
+  entries whose msg is a string, prefix nonempty string loc or dot-joined string loc members, and join
+  messages with semicolon-space. String detail takes precedence over error, even when empty. Failed
+  HTTP result responses fall back to body text or fal.ai returned HTTP <status> when structured error
+  text is unavailable.
+
+  A COMPLETED status triggers a result probe at the original request URL with only its trailing
+  /status removed. Reuse original request headers except host/content-length/transfer-encoding;
+  ignore a response-supplied result URL. Transport errors, 429 and 5xx probes do not turn completion
+  into failure; other unsuccessful probes provide a terminal error. Map IN_QUEUE/IN_PROGRESS/COMPLETED
+  to queued/in_progress/completed, unknown states to queued. A truthy selected result/status error
+  forces failed with code fal_error. result_error takes precedence when non-null, including empty
+  string. Recover missing request_id from the request URL, wrap provider/model with B672 and set
+  status-response created_at=0. Sync and async retrieval share this decision logic.
+
+  Content retrieval first treats any unsuccessful result HTTP status as FalAIVideoError with original
+  status, headers and response context. Require a nonempty string video.url, including structured
+  detail in the missing-URL ValueError. Download that provider-produced artifact URL with a fresh
+  client and no inherited authorization headers, raise for its unsuccessful HTTP status and return
+  bounded bytes unchanged. B1087 controls response size and cancellation releases the response body.
+  This is provider output retrieval, not downloading a URL supplied in a request. Remix/list/delete/
+  character-create/character-get/edit/extension request methods report their exact NotImplementedError
+  messages without I/O; do not add provider functionality absent from the pin.
+
+  Register call.fal_video_results with completed_terminal_error, transient_probe_keeps_completed,
+  detail_locations, recovered_request_identity, artifact_without_credentials, missing_video_url and
+  unsupported_request. Adapters call source methods against scripted HTTP clients and compare effect
+  order. Tests live under api::fal::video_results and use B1532's decoder without another parser.
+  The owned ranges contain 320 nonblank/non-comment lines before excluding 43 unreachable response
+  stub lines; plan 250 production, 240 tests and 130 adapters/wiring, maximum 700.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/fal.rs
+    - crates/betterlite-core/src/api/fal/video_results.rs
+    - crates/betterlite-core/src/api/fal/video_results/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/fal_video_results.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/fal_video_results.py
+    - tools/oracle/cases/helpers/fal-video-results/**
+    - tools/oracle/fuzz/corpus/helper_case/fal_video_results*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L176-L287
+    why: Error extraction, trusted probe URL derivation and status object identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L452-L522
+    why: Sync/async result probes and ignored transient failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/videos/transformation.py#L549-L725
+    why: Artifact download and unsupported operation entry points.
+dod:
+  - text: Completed-job probing distinguishes terminal provider errors from transient failures while preserving status identity and error text.
+    proof: [video-result-tests, oracle, video-result-python]
+  - text: Artifact downloads omit queue credentials and unsupported requests fail without transport effects.
+    proof: [video-result-tests, oracle, video-result-python]
+checks:
+  optional: []
+  commands:
+    - id: video-result-tests
+      why: Fal retrieval state, credential handling or unsupported-operation behavior is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fal::video_results::/)'
+    - id: video-result-python
+      why: status and content effect traces cannot be compared to the pinned provider
+      run: grep -qE '^[[:space:]]+fal_video_results:' tools/oracle/fuzz/corpus/helper_case/fal_video_results* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/fal_video_results.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/fal-video-results/completed-terminal-error.yaml
+  - tools/oracle/cases/helpers/fal-video-results/transient-probe-keeps-completed.yaml
+  - tools/oracle/cases/helpers/fal-video-results/detail-locations.yaml
+  - tools/oracle/cases/helpers/fal-video-results/recovered-request-identity.yaml
+  - tools/oracle/cases/helpers/fal-video-results/artifact-without-credentials.yaml
+  - tools/oracle/cases/helpers/fal-video-results/missing-video-url.yaml
+  - tools/oracle/cases/helpers/fal-video-results/unsupported-request.yaml
+deviations: []
+out_of_scope:
+  - B1532 owns the profile and record helpers at 36-173/228-230, create/parameter methods at 289-450, ID/content request methods at 525-546 and error construction at 727-733.
+  - transform_video_remix_response, transform_video_list_response, transform_video_delete_response, transform_video_create_character_response, transform_video_get_character_response, transform_video_edit_response and transform_video_extension_response have no caller at the pin after their request methods unconditionally raise; omit those response stubs and their cases.
+pitfalls:
+  - A completed status with a result probe returning 500 stays completed unless the status body itself contains an error.
+  - The result probe strips transport headers but retains the original authorization header.
+  - Content download uses video.url without forwarding the result probe's credentials.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

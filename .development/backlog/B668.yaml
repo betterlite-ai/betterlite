@@ -1,0 +1,15 @@
+id: B668
+milestone: M3 providers
+title: OpenAI base chat parameter policy
+status: todo
+depends_on: [B171, B2202, B2214]
+file: tasks/B668-openai-base-config.yaml
+covers:
+  - "litellm/llms/openai/openai.py"
+  - "litellm/llms/openai/chat/gpt_transformation.py"
+  - "litellm/llms/openai/common_utils.py"
+  - "litellm/llms/openai/chat/gpt_5_transformation.py"
+  - "litellm/llms/openai/chat/o_series_transformation.py"
+  - "litellm/llms/openai/chat/gpt_audio_transformation.py"
+  - "litellm/utils.py"
+  - "litellm/llms/azure/chat/gpt_5_transformation.py"

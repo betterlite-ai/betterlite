@@ -1,0 +1,8 @@
+id: B763
+milestone: M4 keys, spend and management
+title: JWT role, scope and administrator permissions
+status: todo
+depends_on: [B001, B002, B003, B171, B732, B736, B742, B747, B757, B856, B860, B869, B890]
+file: tasks/B763-jwt-permissions.yaml
+covers:
+  - "litellm/proxy/auth/handle_jwt.py"

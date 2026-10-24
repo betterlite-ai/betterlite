@@ -1,0 +1,145 @@
+id: B2310
+title: Shared budget, object-permission and organization-membership rows
+description: >-
+  Place budget, object-permission and organization-membership models in betterlite-db::budget_permission_rows
+  below both B720 identity rows and B721 resource rows. Own LiteLLM_BudgetTable,
+  LiteLLM_BudgetTableFull, active_temp_budget_increase, effective_max_budget,
+  LiteLLM_ObjectPermissionTable, LiteLLM_OrganizationMembershipTable and populate_user_email.
+  Membership embeds the budget but keeps its user payload generic; it must not depend on B720's user
+  model. Organization rows in B721 can then embed B720 users without a cycle. Use native typed
+  records with the pinned default extra-field-ignore behavior; no general Pydantic compatibility layer.
+
+  The writable BudgetTable has twelve fields, all optional and default None: budget_id, soft_budget,
+  max_budget, max_parallel_requests, tpm_limit, rpm_limit, tpd_limit, model_max_budget,
+  budget_duration, allowed_models, temp_budget_increase and temp_budget_expiry. allowed_models is
+  a string list; None and [] remain distinct here and no wildcard expansion occurs. Full adds
+  budget_reset_at default None and required created_at. Keep the writable field allowlist separate:
+  server-managed reset/creation timestamps supplied to BudgetTable are ignored, not accepted writes.
+  No model-level check rejects negative amounts or a negative temporary increase; endpoint validators
+  own their stricter checks. Missing either temporary amount or expiry yields zero. Interpret a naive
+  expiry as UTC, retain an aware expiry's instant, and consider expiry <= injected aware now inactive.
+  A future expiry returns the stored increase, including zero or a negative value. effective_max_budget
+  returns None whenever max_budget is None; otherwise add the active increase without clamping.
+
+  ObjectPermission requires object_permission_id. Nullable string lists mcp_servers,
+  mcp_access_groups, vector_stores, agents, agent_access_groups, models, blocked_tools and
+  search_tools default to fresh []; mcp_toolsets and skills default None. mcp_tool_permissions
+  defaults None and, when present, maps tool/server names to string lists. mcp_tool_search_enabled
+  is a nullable boolean default None. Explicit null stays null for each nullable list, rather than
+  becoming the empty default. This type stores permissions; it does not grant routes or fetch tools.
+
+  OrganizationMembership requires user_id, organization_id, created_at and updated_at. user_role,
+  budget_id, user, litellm_budget_table and user_email default None; spend defaults 0.0 and explicit
+  null is invalid. The embedded budget uses this task's writable BudgetTable. After validation,
+  populate user_email only if its initial value is None and user is non-None: for a dict use
+  user.get('user_email'), otherwise getattr(user,'user_email',None). An explicit empty email stays
+  empty; a missing nested email yields None. Do not validate the assigned nested value again: the
+  Python after-validator can project a non-string nested value even though direct user_email input
+  must be a string. Keep a named projection value for that output and test it against the real model.
+  Preserve the original user payload; this class does not coerce it into a full user row.
+
+  Neither budget nor permission nor membership validators decode JSON strings in dict/list fields.
+  Reject those field shapes through the normal typed validation path. Keep fresh mutable defaults,
+  explicit zero/false, timestamp instants and unknown-field omission. Monetary scalars use checked
+  rust_decimal::Decimal conversion at the boundary under the repository rule, with unchanged
+  Postgres DOUBLE PRECISION columns. Nonfinite or out-of-range amounts produce a typed decode
+  failure; do not silently clamp or map them to an unlimited budget. This deliberate numeric-domain
+  difference needs a native test separate from the pinned finite-value oracle cases.
+
+  Add pure budget_permission_rows operations through B856's database namespace: construct and
+  dump each real pinned model, and call the two budget methods with explicit now. Include an
+  attribute-backed user fixture for the membership validator without copying its algorithm. Use
+  B171 HelperCase seeds and B860 Postgres fixtures via POSTGRES_TEST_URL or testcontainers for
+  SQL NULL/default differences and checked monetary roundtrips. No repository write operation is
+  introduced, so there is no invented partial-write failure test.
+
+  decode_budget_permission_rows reads externally stored JSON bytes and dispatches to these typed
+  rows. Register its fuzz target in B2307's existing database fuzz workspace; cap a previously
+  unbounded input at 1048576 bytes and JSON depth 64 before materialization. Corpus cases include
+  exact/over limits, truncated UTF-8/JSON, duplicate fields, invalid nested field shapes and all
+  three row kinds; no input causes I/O. After excluding the unused TeamMember subclass, about
+  98 nonblank noncomment source lines remain. Allow 150 native code, 240 tests, 65 oracle adapters,
+  45 fuzz/decoder and 30 wiring, 530 within 600; keep each source module below 300 lines.
+scope:
+  paths:
+    - crates/betterlite-db/src/budget_permission_rows.rs
+    - crates/betterlite-db/src/budget_permission_rows/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/budget_permission_rows.rs
+    - crates/betterlite-db/fuzz/corpus/budget_permission_rows/**
+    - tools/oracle/src/helpers/budget_permission_rows.rs
+    - tools/oracle/helpers/budget_permission_rows.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/budget-permission-rows/**
+    - tools/oracle/fuzz/corpus/helper_case/budget-permission-rows-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L16-L59
+    why: Writable field set, server-managed full fields and exact expiry/addition semantics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/object_permission.py#L11-L26
+    why: Required permission id and distinct empty/null defaults for every permission field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/organization_membership.py#L17-L40
+    why: Membership fields and after-validation email projection without revalidation.
+dod:
+  - text: 'Pure oracle cases name budget_all_twelve_defaults, full_requires_created_at,
+      writable_budget_ignores_server_fields, temporary_missing_amount_or_expiry,
+      temporary_before_at_after_expiry, naive_expiry_is_utc, offset_expiry_same_instant,
+      temporary_negative_not_clamped, unlimited_budget_ignores_increase,
+      permission_all_defaults_and_required_id, permission_explicit_nulls_and_fresh_lists,
+      membership_required_fields_and_defaults, membership_explicit_email_wins,
+      membership_empty_email_wins, membership_dict_and_attribute_email,
+      membership_missing_email_none, membership_nested_nonstring_email_not_revalidated,
+      membership_spend_null_invalid, strings_are_not_decoded_as_containers and unknown_fields_ignored.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Postgres cases postgres_budget_decimal_roundtrip and postgres_permission_null_vs_empty
+      check the existing schema without adding encryption or changing column types. Native tests
+      monetary_nonfinite_and_overflow_rejected and native_budget_rows_byte_and_depth_limits
+      prove the two explicit decoder deviations, while replays_the_budget_permission_rows_corpus
+      calls the same decoder used by production.'
+    proof: [behavior-tests, postgres-tests, parser-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Typed defaults, membership projection and budget expiry boundaries must fail independently.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^budget_permission_rows::tests::/) - test(replays_the_budget_permission_rows_corpus)'
+    - id: helper-python
+      why: Oracle adapters must call the pinned models and methods without reproducing their logic.
+      run: test -f tools/oracle/helpers/budget_permission_rows.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The shared HelperCase decoder must accept the newly added row operation.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/budget-permission-rows-*")" && grep -rlq budget_permission_rows tools/oracle/fuzz/corpus/helper_case/budget-permission-rows-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Decimal conversion and nullable permission arrays must survive a real Postgres read/write.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/budget_permission_rows::tests::postgres_budget_decimal_roundtrip$/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/budget_permission_rows::tests::postgres_permission_null_vs_empty$/)'
+    - id: parser-corpus
+      why: New hostile stored-row seeds must replay the production decoder.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/budget_permission_rows.rs && grep -q budget_permission_rows crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/budget_permission_rows)" && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_budget_permission_rows_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/budget-permission-rows/budget-defaults-and-fields.yaml
+  - tools/oracle/cases/helpers/budget-permission-rows/temporary-budget-boundaries.yaml
+  - tools/oracle/cases/helpers/budget-permission-rows/permission-null-and-empty.yaml
+  - tools/oracle/cases/helpers/budget-permission-rows/membership-email.yaml
+deviations:
+  - what: Stored budget/permission/membership JSON beyond 1048576 bytes or depth 64 fails with a typed decode-limit error.
+    why: Bound the new external-byte decoder; native_budget_rows_byte_and_depth_limits exercises both boundaries.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L16-L59
+  - what: Nonfinite or Decimal-out-of-range budget/spend values fail decoding instead of remaining Python floats.
+    why: The money-is-decimal rule requires checked conversion; monetary_nonfinite_and_overflow_rejected prevents silent clamping or unlimited-budget fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/budget.py#L24-L52
+out_of_scope:
+  - LiteLLM_TeamMemberTable has no caller at the pin beyond import/re-export; do not implement an unused duplicate of the real team-membership row.
+  - B720 owns user, end-user and verification-token rows; B721 owns organization, project, model,
+    config, credential and access-group rows. None is needed to decode this task's generic membership user payload.
+pitfalls:
+  - An expired temporary increase is zero at equality, but a future negative increase reduces the effective maximum.
+  - Membership email assignment occurs after validation and can preserve a nested non-string value.
+  - Permission null lists are different from their omitted-field empty-list defaults.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

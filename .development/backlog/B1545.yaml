@@ -1,0 +1,8 @@
+id: B1545
+milestone: M3 providers
+title: Shape Riva recognition options, final transcripts and gRPC failures
+status: todo
+depends_on: [B1122, B171]
+file: tasks/B1545-riva-transcription-records.yaml
+covers:
+  - "litellm/llms/nvidia_riva/{common_utils.py,audio_transcription/transformation.py}"

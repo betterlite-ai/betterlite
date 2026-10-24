@@ -1,0 +1,8 @@
+id: B154
+milestone: M11 distribution
+title: Terraform deployment modules for AWS and GCP
+status: todo
+depends_on: [B151]
+file: null
+covers:
+  - "terraform/litellm/**"

@@ -1,0 +1,8 @@
+id: B360
+milestone: M2 routing
+title: Typed local and Redis routing state
+status: todo
+depends_on: [B390, B393, B002, B301]
+file: tasks/B360-routing-state-store.yaml
+covers:
+  - "litellm/caching/redis_cache.py"

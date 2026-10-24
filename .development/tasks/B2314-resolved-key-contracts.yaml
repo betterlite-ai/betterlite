@@ -1,0 +1,205 @@
+id: B2314
+title: Resolved key fields, role values and credential provenance
+description: >-
+  Implement betterlite-auth::resolved_key and user_roles below principal resolution and request
+  caches. Own LiteLLM_VerificationTokenView and UserAPIKeyAuth from proxy/_types.py L3283-L3564,
+  LitellmUserRoles L153-L233 except the unused values method, hash_token L278-L284, and the
+  three-segment JWT classifier moved from JWTHandler.is_jwt L275-L280. Reuse B720's verification
+  token fields, B859's Member, B2310's object permissions and B2313's carried policy records.
+  B732 wraps this completed key in a Principal; B124 must not remain the owner of these lower
+  constructors. Do not introduce database/cache reads, authentication or JWT verification here.
+
+  LitellmUserRoles has proxy_admin, proxy_admin_viewer, org_admin, internal_user,
+  internal_user_viewer, team and customer, in that order. String conversion emits the value.
+  is_internal_user_role is true only for the two internal_user variants. description returns,
+  respectively, "admin over litellm proxy, has all permissions", "view all keys, view all spend",
+  empty string for org_admin, "view/create/delete their own keys, view their own spend",
+  "view their own keys, view their own spend", "team scope used for JWT auth" and "customer".
+  ui_label returns "Admin (All Permissions)", "Admin (View Only)", empty string for org_admin,
+  "Internal User (Create/Delete/View)", "Internal User (View Only)", "Team" and "Customer".
+  These UI/wire labels are compatibility data, not newly branded diagnostic messages.
+
+  VerificationTokenView extends all B720 key fields. New nullable fields default None:
+  team_spend/team_alias/team_tpm_limit/team_rpm_limit/team_tpd_limit/team_max_budget/
+  team_soft_budget/team_model_max_budget/soft_budget/team_model_aliases/team_member/team_metadata/
+  team_object_permission_id/team_member_spend/team_member_tpm_limit/team_member_rpm_limit,
+  end_user_id/end_user_tpm_limit/end_user_rpm_limit/end_user_tpd_limit/end_user_max_budget/
+  end_user_model_max_budget, organization_alias/organization_max_budget/organization_tpm_limit/
+  organization_rpm_limit/organization_metadata, project_alias/project_metadata and last_refreshed_at.
+  team_models defaults to a fresh list and remains a generic list; team_blocked defaults false.
+  Preserve null versus empty dictionaries/lists and negative spend/limits. Do not invent JSON-string
+  decoding for any view field; callers that load stored JSON own that decoding.
+
+  Before base validation, inspect the original supplied entries in order. For each nonnull
+  litellm_budget_table_* value, derive the target name by removing ALL occurrences of that prefix.
+  Apply it only when the current target is None/absent, or when the target is model_max_budget
+  and its current value is an empty dict. Explicit zero/false/empty string and nonempty dicts win;
+  a JSON string "{}" is not an empty dict. Keep the original flattened entry for normal extra-field
+  handling. Convert an original integer end_user_id, including bool, to Python's string form.
+  A value newly inserted by the budget loop is not revisited as another original entry. Finally,
+  nonnull organization_id is popped and overwrites org_id even when org_id was explicitly supplied;
+  empty organization_id is nonnull and therefore wins. Then validate inherited/view fields.
+
+  UserAPIKeyAuth adds nullable defaults api_key, user_role, allowed_model_region (eu/us only),
+  parent_otel_span, rpm_limit_per_model, tpm_limit_per_model, user_tpm_limit, user_rpm_limit,
+  user_email, user_spend, user_max_budget, user_model_max_budget, request_route, user,
+  created_by_user, end_user_object_permission, team_object_permission and jwt_claims.
+  user_model_max_budget is an open value mapping: malformed individual budget entries do not
+  invalidate auth until the later budget checker selects one. Per-model rpm/tpm maps require
+  integer values. user/created_by_user are explicit expanded-object passthrough fields. The
+  parent_otel_span has the runtime type Any: JSON-compatible values survive serialization, while
+  injected trace handles require the caller to clear them before JSON encoding. Unknown auth extras
+  are ignored. is_session_token defaults false and IS serialized.
+
+  Server fields default false and are excluded from serialization:
+  mcp_admitted_user_subject, requires_fresh_policy, mcp_explicit_grants_only,
+  authenticated_by_custom_auth and via_virtual_key. Excluded nullable fields default None:
+  mcp_source_team_rpm_limits, mcp_session_resource_server_id, mcp_toolset_id, invoked_agent_id,
+  invoked_agent_policy, agent_invocation_cost, billing_agent_policy, managed_agent_policy,
+  managed_agent_context, agent_caller, budget_reservation, team_budget_snapshot,
+  user_budget_snapshot, org_budget_snapshot, matched_model_access_groups and budget_throttle_pct.
+  _managed_delegation_verified is private, defaults false, and never enters validation/serialization.
+  Native provenance types expose server-only assignment through trusted constructors, preserving
+  B2313's policy types and avoiding raw untyped policy holders.
+
+  check_api_key returns existing non-dict model instances unchanged. For a supplied dict it first
+  removes exactly these fifteen fields: mcp_admitted_user_subject, requires_fresh_policy,
+  mcp_explicit_grants_only, mcp_source_team_rpm_limits, mcp_session_resource_server_id,
+  mcp_toolset_id, via_virtual_key, authenticated_by_custom_auth, agent_caller,
+  managed_agent_context, managed_agent_policy, invoked_agent_id, invoked_agent_policy,
+  agent_invocation_cost and billing_agent_policy. They cannot be forged by construction or
+  model_validate; post-construction server assignments survive. Do not extend this list to
+  budget_reservation, the three budget snapshots, matched_model_access_groups or budget_throttle_pct:
+  those excluded fields are still accepted/validated on input in the source. Preserve the source
+  distinction between serialization exclusion and input stripping. No caller-controlled flag may
+  be promoted to the native trusted provenance type through a generic deserializer.
+
+  If api_key is not None, compute the safe form and overwrite token even if a conflicting token
+  was supplied; when api_key is a string, overwrite api_key with the same safe form. None leaves
+  token untouched; empty string overwrites it with empty. Nonstrings do not get stringified into
+  a credential: source operations fail before normal field validation. Safe hashing strips exactly
+  one initial seven-character "bearer " prefix case-insensitively, without trimming other whitespace.
+  A remaining case-sensitive sk- prefix hashes the entire UTF-8 value with SHA-256, lowercase hex.
+  Otherwise a value with exactly three dot-separated segments becomes hashed-jwt- plus that hash;
+  empty segments count, so ".." is classified as JWT-shaped. No base64/signature/claims check occurs.
+  Other strings, including already hashed identifiers, pass through. sk- classification wins over
+  JWT shape. None is false for the standalone JWT classifier. This is credential provenance and
+  display hashing, not proof that a credential authenticated.
+
+  The health-check factory sets api_key/team_id/key_alias/team_alias to
+  litellm-internal-health-check, retaining all other defaults including role=None. The internal-jobs
+  factory sets api_key/key_alias=litellm_internal_jobs, team_id/team_alias/user_id=system and
+  user_role=proxy_admin. Both pass through the same constructor and do not mark via_virtual_key.
+  The CLI factory has no caller at the pin and is not built. is_team_service_account is true only
+  when user_id is None, team_id is not None, metadata is truthy and service_account_id is not None;
+  empty team_id and false/empty service_account_id values still satisfy their nonnull tests.
+  user_api_key_has_admin_view accepts proxy_admin and proxy_admin_viewer only, unlike write-admin
+  checks elsewhere. Do not infer admin access from the normalized Role enum in B732.
+
+  Reuse Decimal for money and checked nonfloat representations for last_refreshed_at,
+  agent_invocation_cost and budget_throttle_pct. Negative values remain valid; nonfinite/out-of-range
+  values fail the documented native numeric boundary. The resolved_key helper operation invokes
+  the actual source models, factories, properties and hash/classifier functions. Fixtures use
+  synthetic credentials and compare hashed/serialized results without exposing real secrets.
+  B733/B1223/custom-auth owners decode bytes before model construction; these typed validators add
+  no second JSON parser or fuzz target. Named field cases cover every inherited extension/default,
+  including all exclusions and the exact stripped-field list.
+
+  The selected _types.py ranges contain 233 nonblank noncomment lines excluding docstrings;
+  omit the two-line unused values body and unused CLI factory, and add the six-line JWT classifier.
+  Allow 250 native records/normalization, 355 tests, 95 adapters and 40 wiring, 740 within 800.
+  Separate role values, key/view contracts and credential normalization into source files below 300 lines.
+scope:
+  paths:
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
+    - crates/betterlite-auth/src/resolved_key.rs
+    - crates/betterlite-auth/src/resolved_key/**
+    - crates/betterlite-auth/src/user_roles.rs
+    - crates/betterlite-auth/src/user_roles/**
+    - tools/oracle/src/helpers/resolved_key.rs
+    - tools/oracle/helpers/resolved_key.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/resolved-key/**
+    - tools/oracle/fuzz/corpus/helper_case/resolved-key-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L153-L233
+    why: Seven legacy role values and exact labels/properties; values has no caller.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L278-L284
+    why: Shared UTF-8 SHA-256 token hash moves below auth and management callers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3283-L3443
+    why: All key-view/auth fields, flattened-budget precedence, private markers and exclusions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3445-L3564
+    why: Exact provenance stripping, safe hashing, live factories and service-account/admin-view predicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L275-L280
+    why: Move the three-segment classifier below both the auth model and JWT backend.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1693-L1695
+    why: Exact health and job principal literals; no environment setting is read.
+dod:
+  - text: 'Role cases name each_legacy_role_value, each_role_description_and_ui_label,
+      org_admin_labels_empty and only_internal_roles_match. Field cases name
+      view_field_<field> and auth_field_<field> for every listed extension, with omission/null/default,
+      allowed_region_eu_us_only, per_model_limits_integer_values,
+      malformed_unselected_user_budget_entry_retained and generic_team_models_preserved.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Normalization cases name flattened_budget_null_and_empty_dict_fill,
+      flattened_budget_zero_false_empty_string_win, budget_prefix_removed_everywhere,
+      budget_added_values_not_revisited, integer_and_bool_end_user_id,
+      organization_id_overrides_org_id, organization_null_does_not_override,
+      each_untrusted_marker_stripped, server_markers_survive_trusted_assignment,
+      excluded_but_not_stripped_fields_accepted, every_server_field_excluded,
+      private_delegation_flag_not_serialized, existing_model_instance_retained,
+      api_key_overwrites_token, api_key_none_preserves_token, empty_api_key_overwrites_token,
+      nonstring_api_key_not_stringified, bearer_prefix_casefold_once_without_trim,
+      sk_prefix_case_sensitive, sk_prefix_before_jwt_shape, jwt_empty_segments_count,
+      jwt_none_false, sha256_utf8_lowercase_hex, already_hashed_identifier_unchanged and
+      serialized_span_json_value_preserved, serialized_span_requires_caller_cleanup and
+      unknown_auth_extras_ignored.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Factory/predicate cases name health_principal_all_fields, jobs_principal_all_fields,
+      factories_not_virtual_key_provenance, service_account_none_vs_empty_fields,
+      service_account_false_value_is_present, admin_view_admin_and_viewer_only and
+      session_marker_serialized.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Native cases name resolved_key_negative_numbers_kept,
+      resolved_key_nonfinite_or_range_error and resolved_key_debug_redacts_credentials.'
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Key normalization/provenance and role labels must both have contract tests.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^resolved_key::/)' && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^user_roles::/)'
+    - id: helper-python
+      why: Construct the pinned models instead of duplicating validators in expected-result code.
+      run: test -f tools/oracle/helpers/resolved_key.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Require newly added resolved-key model seeds before replaying the shared envelope parser.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/resolved-key-*")" && grep -rlq resolved_key tools/oracle/fuzz/corpus/helper_case/resolved-key-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/resolved-key/roles-and-labels.yaml
+  - tools/oracle/cases/helpers/resolved-key/view-field-defaults.yaml
+  - tools/oracle/cases/helpers/resolved-key/flattened-budget-precedence.yaml
+  - tools/oracle/cases/helpers/resolved-key/auth-fields-and-provenance.yaml
+  - tools/oracle/cases/helpers/resolved-key/hash-and-jwt-shape.yaml
+  - tools/oracle/cases/helpers/resolved-key/service-principals-and-role-predicates.yaml
+deviations:
+  - what: Resolved-key monetary and other numeric fields reject nonfinite/out-of-range values instead of retaining Python floats.
+    why: Native checked numeric representations cannot preserve NaN/infinity; ordinary defaults, nulls and negative values remain compatible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3283-L3443
+out_of_scope:
+  - LitellmUserRoles.values and UserAPIKeyAuth.get_litellm_cli_user_api_key_auth have no caller at the pin and are not implemented.
+  - B732 owns Principal, normalized Role/TeamRole and effective-user-role policy; B733 owns cache serialization/copying.
+  - B760 owns the rest of handle_jwt.py L251-L302 and its claim-extraction helpers; JWTHandler.is_jwt alone moves here.
+  - B124 retains unrelated proxy/_types.py declarations/functions; B720 owns the inherited verification-token model and B2313 owns carried policy records.
+pitfalls:
+  - Only sk- and three-segment values are hashed after one Bearer prefix; hashing every identifier changes stored-token lookups.
+  - Excluding a field from serialization does not mean the source strips it from constructor input.
+  - organization_id overwrites org_id in the view constructor, unlike repository fallback projection when org_id is already present.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

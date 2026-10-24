@@ -1,0 +1,8 @@
+id: B1509
+milestone: M3 providers
+title: Refresh ChatGPT credentials and coordinate device authorization
+status: todo
+depends_on: [B1507, B1508, B173, B171, B187]
+file: tasks/B1509-chatgpt-device-login.yaml
+covers:
+  - "litellm/llms/chatgpt/authenticator.py"

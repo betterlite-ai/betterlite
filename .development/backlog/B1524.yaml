@@ -1,0 +1,8 @@
+id: B1524
+milestone: M3 providers
+title: Prepare Topaz enhancement uploads and encode binary image replies
+status: todo
+depends_on: [B002, B997, B1000, B1087, B171]
+file: tasks/B1524-topaz-variations.yaml
+covers:
+  - "litellm/llms/topaz/**"

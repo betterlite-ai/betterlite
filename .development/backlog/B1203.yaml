@@ -1,0 +1,9 @@
+id: B1203
+milestone: M4 keys, spend and management
+title: Organization-scoped UI user search
+status: todo
+depends_on: [B001, B003, B052, B066, B723, B732, B736, B737, B790, B800, B856, B860, B1217, B2314]
+file: tasks/B1203-user-search-scope.yaml
+covers:
+  - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+  - "litellm/proxy/_types.py"

@@ -1,0 +1,8 @@
+id: B629
+milestone: M3 providers
+title: Bedrock TwelveLabs Marengo 2.7 embeddings
+status: todo
+depends_on: [B006, B183, B171, B630, B2201, B176]
+file: tasks/B629-bedrock-other-marengo-embeddings.yaml
+covers:
+  - "litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py"

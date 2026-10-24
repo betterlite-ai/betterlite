@@ -1,0 +1,9 @@
+id: B931
+milestone: M5 api families
+title: Responses provider selection
+status: todo
+depends_on: [B010, B184, B185, B186, B171, B174, B234, B905, B1114, B506, B507, B508, B509, B117, B157, B129, B002]
+file: tasks/B931-responses-provider-selection.yaml
+covers:
+  - "litellm/responses/main.py"
+  - "litellm/llms/openai_like/responses/transformation.py"

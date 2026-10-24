@@ -1,28 +1,51 @@
 id: B860
 title: Postgres-backed HTTP oracle cases
 description: >-
-  Extend B001 HttpCase process setup with isolated Postgres schemas and typed fixture rows for keys, users,
-  teams, memberships, budgets and JWT mappings. Start the real LiteLLM proxy without litellm-enterprise
-  and the actual betterlite binary against separate equivalent databases; configure general_settings.database_url
-  and disable_prisma_schema_update=true after applying the pinned SQL in fixture setup. Keep HTTP response
-  comparison in B001; do not call FastAPI handlers as helper functions. Use POSTGRES_TEST_URL first and
-  testcontainers only when absent. Add local TLS Postgres support with test-owned CA/server certificates
-  for certificate verification cases. Seed test keys as SHA256 hashes with deterministic owner roles;
-  the fixture is the only tool that may inject DB faults or a controlled clock for server cases. The CI
-  architect supplies a Postgres service.
+  Extend B001's booted HTTP runner with independent Postgres fixtures for both gateways. Build the
+  dev-only betterlite-postgres-fixture package under tools/postgres-fixture; no product migration or
+  repository crate is a dependency. When POSTGRES_TEST_URL is set, use that server. An empty, malformed,
+  unreachable or unauthorized configured URL fails setup, never silently starts a container. Only an
+  absent variable selects testcontainers. CI supplies the Postgres service. Return connection options
+  without displaying credentials and clean up resources on success, setup failure and cancellation.
 
+  Expose isolated schemas for small repository tests and isolated databases for full migration/HTTP
+  fixtures. Full pinned baseline SQL guards foreign keys with database-wide pg_constraint conname
+  lookups, so two schemas in one database are not independent copies. Create a fresh randomly named
+  database for each gateway from the configured server's administrative connection; the CI/test role
+  needs CREATEDB for this mode. A privilege failure is an actionable fixture failure, not a skip.
+  Apply independently pinned fixture SQL to each database, then seed typed users, keys, teams,
+  memberships, budgets and JWT mappings in foreign-key order. Never seed through betterlite's product
+  repositories. Scope all cleanup identifiers to resources this fixture created; close gateway/pool
+  connections before dropping databases, and do not drop the database named in POSTGRES_TEST_URL.
 
-  Create tools/postgres-fixture (package betterlite-postgres-fixture) with unique schema setup/cleanup
-  and shared connection configuration. It is a dev-dependency only. Use separately applied pinned SQL
-  fixtures, not product migration startup or repositories. Add typed optional database fixtures to B001
-  HttpCase and extend the actual process runner; existing cases remain valid. tests::configured_url_wins
-  and containers_when_unset exercise selection through injected environment/process collaborators; tests::isolated_schemas
-  and cleanup_after_failure use real Postgres. http::postgres::tests::detects_status_mismatch must intentionally
-  alter a response and prove comparison fails. Also prove schema/roles cannot leak between cases and TLS
-  hostname validation works. Expose the production B001 HttpCase decoder as decode_http_case(&[u8]) and
-  add http_case in the existing B171 oracle fuzz workspace, with postgres setup seeds and replays_the_http_case_corpus.
-  This is the existing HTTP schema decoder, not a second parser or fake endpoint. Estimate 250 fixture/process
-  plumbing, 180 tests, 100 HTTP schema/comparison, 70 manifests/TLS setup lines: 600 total.
+  Start the actual betterlite binary and LiteLLM without its enterprise package. Give each its own
+  general_settings.database_url and disable_prisma_schema_update=true after fixture SQL has been
+  applied. At the pin that switch still permits check_prisma_schema_diff; it does not disable schema
+  verification or make a partial baseline sufficient. Seed fixture virtual keys as UTF-8 SHA256 hex
+  hashes, and explicit caller roles/team memberships, preserving the un-hashed request credential only
+  in the test request. Compare response status, type, message, param, code, named headers and ordered
+  database effects using B001's existing comparison. A public route remains public: database setup
+  alone does not inject an authentication requirement.
+
+  Add an optional typed database fixture field to HttpCase with absence preserving existing cases.
+  Reject unknown fixture fields, duplicate row identities and references to missing fixture principals
+  before starting either gateway. Fixtures may define controlled fault/clock inputs for tests that
+  explicitly request them; do not silently replace production clocks or run FastAPI handlers in a
+  helper adapter. Tests must prove a deliberately changed status, error param or principal role is
+  detected, and that a first gateway's write cannot alter the second gateway's initial state.
+
+  Add local TLS fixture support with test-owned CA/server certificates and explicit hostnames. Exercise
+  a trusted matching hostname, an untrusted CA and a mismatched hostname against a real TLS Postgres
+  server; parsing sslmode alone is insufficient. Keep certificate assets in fixture paths and do not
+  weaken verification to make the test pass. If a test requires TLS the fixture provisions that local
+  TLS server explicitly, independently of the normal configured-URL preference tests.
+
+  Expose B001's actual decode_http_case(&[u8]) for the existing HTTP case format and extend B171's fuzz
+  workspace with http_case. Replay old cases plus valid database fixtures, malformed YAML, unknown
+  fields, duplicate identities, missing references and truncated nested rows. The same parser serves
+  the CLI, tests and fuzz target; add no test-only decoder. Keep each module below 300 lines. This is
+  native test infrastructure with no owned LiteLLM function port; budget 300 fixture/process plumbing,
+  240 tests, 110 HTTP schema/comparison and 80 TLS/manifests, 730 within 800.
 scope:
   paths:
     - Cargo.toml
@@ -44,17 +67,31 @@ scope:
     - tools/oracle/fuzz/corpus/http_case/postgres-*
     - tools/oracle/cases/management/postgres-fixture/**
   lint_tables: false
-references: []
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/migrations/20250326162113_baseline/migration.sql#L319-L429
+    why: Foreign-key existence checks are global within a database, requiring separate databases for independent migration copies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1386-L1405
+    why: disable_prisma_schema_update still runs schema-diff verification.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6691-L6704
+    why: The actual database URL and master-key configuration reads used by the booted proxy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7119-L7125
+    why: Virtual-key fixture tokens use the same UTF-8 SHA256 hex representation.
 dod:
-  - text: Real Postgres fixtures prefer POSTGRES_TEST_URL, otherwise start testcontainers, isolate schemas
-      and clean up after failure.
-    proof:
-      - fixture-tests
-  - text: The actual HTTP runner detects changed status and roles and its extended HttpCase fixture parser
-      replays.
-    proof:
-      - http-fixture-tests
-      - http-case-corpus
+  - text: 'Fixture selection/lifecycle cases are configured_url_wins, containers_when_unset,
+      empty_configured_url_fails, unreachable_configured_url_fails, createdb_privilege_failure,
+      isolated_schemas, independent_databases_have_all_baseline_foreign_keys,
+      existing_database_never_dropped, cleanup_after_failure, cleanup_after_cancellation,
+      concurrent_fixture_roles_do_not_leak and connection_credentials_redacted.'
+    proof: [fixture-tests]
+  - text: 'Booted runner cases are legacy_case_without_database, independent_initial_rows,
+      first_gateway_write_not_shared, hashed_fixture_keys_and_roles, public_route_without_key,
+      disabled_schema_update_still_checks_current_schema, detects_status_mismatch,
+      detects_error_param_mismatch and detects_role_mismatch.'
+    proof: [http-fixture-tests]
+  - text: trusted_ca_matching_hostname, untrusted_ca_rejected and wrong_hostname_rejected use a real TLS database connection.
+    proof: [fixture-tests]
+  - text: fixture_unknown_field, duplicate_identity, missing_principal, malformed_yaml and truncated_rows fail before gateway spawn; valid and legacy cases replay through decode_http_case.
+    proof: [http-fixture-tests, http-case-corpus]
 checks:
   optional: []
   commands:
@@ -74,14 +111,15 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - Product Postgres repositories and migration behavior belong to B700 and the other database tasks.
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B001 retains HTTP request/response comparison and process supervision; B171 provides the oracle fuzz workspace.
 pitfalls:
   - A set but unreachable POSTGRES_TEST_URL is a failure, not permission to silently fall back to a container.
   - Both servers require equivalent independent data; sharing a mutated fixture can hide a persistence
     mismatch.
   - TLS verification tests require a server certificate and a mismatched hostname, not merely a parsed
     sslmode string.
+  - A second schema can lack foreign keys because baseline guards match the first schema's constraint names.
 budget:
-  max_changed_lines: 650
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: security

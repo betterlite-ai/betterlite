@@ -1,0 +1,10 @@
+id: B103
+milestone: M5 api families
+title: Provider pass-through routes and their logging
+status: todo
+depends_on: [B102, B101]
+file: null
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/**"
+  - "litellm/proxy/vertex_ai_endpoints/**"
+  - "litellm/types/passthrough_endpoints/{assembly_ai,tinyfish,vertex_ai}.py"

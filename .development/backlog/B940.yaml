@@ -1,0 +1,8 @@
+id: B940
+milestone: M5 api families
+title: Cursor responses compat
+status: todo
+depends_on: [B014, B302, B919, B932, B1087, B1100, B732, B855, B756, B003, B1139, B856, B004, B007, B216]
+file: tasks/B940-cursor-responses-compat.yaml
+covers:
+  - "litellm/proxy/response_api_endpoints/endpoints.py"

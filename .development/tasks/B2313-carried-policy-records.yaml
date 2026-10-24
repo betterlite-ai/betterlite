@@ -1,0 +1,175 @@
+id: B2313
+title: Request-carried agent policies and budget snapshots
+description: >-
+  Establish the betterlite-auth library's manifest, exports and typed error foundation below B732,
+  then implement agent_policy and budget_snapshots as separate modules. These are the records that
+  the resolved key carries; putting them in the higher-level agent registry or budget job would make
+  the auth model depend on its own consumers. Own only the source ranges listed below, not agent
+  CRUD, kill-switch execution, identity verification or budget admission. B071/B141 compose them.
+
+  AgentKillSwitchBearerAuth is frozen, forbids extra fields and requires type="bearer" and token.
+  AgentKillSwitchApiKeyAuth likewise requires type="api_key" and api_key, with header_name default
+  x-api-key. AgentKillSwitchBasicAuth requires type="basic", username and password. Discriminate
+  their union on type; no inference from credential field names. Empty strings are accepted, while
+  null/missing required fields fail. Keep secret values out of Debug/errors without changing explicit
+  serialization at the caller's contract boundary. No encryption, masking substitution or env lookup
+  occurs while constructing these records.
+
+  AgentKillSwitchConfig is frozen and forbids extras. url is required; method defaults POST and
+  allows only POST/PUT/PATCH/DELETE/GET. headers and query_params are fresh empty string maps,
+  body is an optional open object default None, and auth defaults None. Its validator uses urlsplit
+  and requires parsed scheme http or https plus a nonempty netloc, otherwise ValueError
+  "kill_switch.url must be an absolute http(s) URL". Preserve the ORIGINAL string on success.
+  It does not resolve DNS, inspect private addresses, reject userinfo, require a valid port, validate
+  header syntax or fetch the URL. Match the Python split acceptance with a maintained URL parser,
+  including accepted case/leading whitespace and malformed authority failures; do not silently
+  canonicalize the returned URL. B141 owns actual outbound requests and their configured limits.
+
+  AgentCaller is frozen with user_id=None and team_id=None; extra fields are ignored. Preserve the
+  two header-name constants x-litellm-user-id and x-litellm-team-id here; reading headers is B141's
+  job. AgentKeySummary requires token, defaults key_alias/key_name to None and ignores extras.
+  AgentResponse requires agent_id, agent_name and the open object agent_card_params. Its defaults
+  are identity=None, identity_managed=false, enabled=true, execution_mode="autonomous",
+  jwt_auth_configured=false; execution_mode accepts autonomous/delegated/both. litellm_params,
+  object_permission, spend, tpm_limit, rpm_limit, session_tpm_limit, session_rpm_limit,
+  static_headers, extra_headers, access_group_ids, kill_switch, keys, search_score, created_at,
+  updated_at, created_by and updated_by all default None. Keep the dictionary/list shapes, sequence
+  order/duplicates and negative numeric values. identity uses AgentIdentityBinding, kill_switch
+  uses the strict config above and keys is a list of AgentKeySummary; the other open objects are
+  explicit passthrough fields, not untyped replacements for the whole record. Response extras are
+  ignored and the response record is not frozen. Construction neither decrypts credentials nor
+  decides whether an agent is enabled/authorized.
+
+  AgentIdentityBinding is frozen, with required agent_id, provider="microsoft_entra", tenant_id,
+  client_id, issuer and revision; active defaults true, service_principal_id/last_authenticated_at
+  default None, required_roles defaults empty tuple and required_scopes defaults to the one-element
+  tuple user_impersonation. These identifiers are plain strings here: EntraIdentityConfig's UUID
+  normalization belongs to B141 and must not be applied to an already stored binding. Unknown
+  fields are ignored. ManagedAgentContext is frozen and requires agent_id and mode
+  autonomous/delegated; binding_revision, user_id and subject_oid default None. It does not accept
+  mode=both or verify a signature. Empty identifiers remain empty.
+
+  Budget snapshots are frozen, allow both native field names and validation aliases, and ignore
+  extra metadata. Every declared field is REQUIRED even when nullable: KeyBudgetSnapshot has
+  nullable budget_reset_at alias user_api_key_budget_reset_at; TeamBudgetSnapshot has nullable
+  budget_reset_at/user_api_key_team_budget_reset_at and max_budget/user_api_key_team_table_max_budget;
+  UserBudgetSnapshot has nullable budget_reset_at/user_api_key_user_budget_reset_at,
+  max_budget/user_api_key_user_table_max_budget and user_alias/user_api_key_user_alias;
+  OrgBudgetSnapshot has nonnullable spend/user_api_key_org_spend and nullable
+  max_budget/user_api_key_org_max_budget. Alias values take precedence when both spellings exist.
+  No omitted nullable field acquires an implicit None default.
+
+  metadata_entries returns a read-only mapping serialized by aliases in JSON mode, including
+  explicit nulls; dates use the source datetime JSON representation, with UTC/offset/naive forms
+  distinguished. It does not leak the native field names or unrelated metadata. from_metadata
+  validates the complete snapshot and returns None on ValidationError without warning. One missing
+  or invalid required field discards the whole snapshot, not just that field; a valid all-null
+  nullable snapshot remains a snapshot rather than None. Do not parse JSON text embedded in a
+  metadata value. These operations never fetch an entity or update a budget.
+
+  Use Decimal for spend, budgets and the numeric search score, with checked conversions and no
+  new positive floor. Reject nonfinite/out-of-range values under the native numeric rule; source
+  float acceptance is the recorded difference. The helper operation carried_policy_records invokes
+  the pinned constructors, URL validator and snapshot methods directly with decoded inputs. Name
+  a separate rstest case for every field's omission/null/default and each enum variant. This task
+  introduces no external JSON decoder: request/cache owners decode bytes before these contracts,
+  and B171 owns the oracle envelope. No task-specific fuzz workspace is created.
+
+  The owned ranges have 132 nonblank noncomment lines after removing explanatory docstrings:
+  70 in agents.py, 21 in agent_identity.py and 41 in carried_budget_state.py. Allow 155 typed
+  records/validation, 270 tests, 80 adapters and 65 crate/dispatch wiring, 570 within 650. Reuse
+  existing serde, error, secrecy, date and Decimal dependencies; do not introduce an agent SDK.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - deny.toml
+    - crates/betterlite-auth/Cargo.toml
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/src/error.rs
+    - crates/betterlite-auth/src/agent_policy.rs
+    - crates/betterlite-auth/src/agent_policy/**
+    - crates/betterlite-auth/src/budget_snapshots.rs
+    - crates/betterlite-auth/src/budget_snapshots/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/carried_policy_records.rs
+    - tools/oracle/helpers/carried_policy_records.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/carried-policy-records/**
+    - tools/oracle/fuzz/corpus/helper_case/carried-policy-records-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L187-L237
+    why: Three strict auth variants, kill-switch defaults and validation without an outbound request.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L291-L339
+    why: Caller header names, caller/key-summary records and all AgentResponse fields carried by auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L7-L7
+    why: Shared execution-mode literal set; no identity-provider setup is owned here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L33-L47
+    why: Stored binding defaults differ from EntraIdentityConfig normalization.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/agent_identity.py#L64-L71
+    why: Request-carried managed context accepts only autonomous/delegated mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/carried_budget_state.py#L17-L64
+    why: Required nullable fields, alias projection and whole-snapshot validation failure fallback.
+dod:
+  - text: 'Per-field cases named kill_auth_field_<field>, kill_config_field_<field>,
+      agent_response_field_<field>, binding_field_<field> and managed_context_field_<field>
+      assert the defaults/nullability above. Cases also name auth_discriminator_exact,
+      auth_and_kill_config_extras_forbidden, empty_credentials_preserved,
+      kill_method_five_variants, kill_maps_fresh, kill_url_absolute_http_https,
+      kill_url_original_not_normalized, kill_url_userinfo_and_port_not_restricted,
+      kill_url_bad_authority, kill_headers_not_validated_here, caller_header_spellings,
+      agent_record_extras_ignored, response_open_objects_retained,
+      response_sequence_order_duplicates, binding_ids_not_uuid_normalized,
+      binding_scopes_default_user_impersonation and managed_mode_both_rejected.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Snapshot cases name each_snapshot_field_alias, snapshot_required_nullable_fields,
+      snapshot_alias_wins_over_field_name, snapshot_extras_ignored,
+      metadata_entries_aliases_and_nulls, metadata_dates_utc_offset_naive,
+      metadata_mapping_readonly, invalid_field_discards_snapshot,
+      omitted_field_discards_snapshot, all_null_valid_snapshot_retained,
+      embedded_json_string_not_decoded and snapshot_failure_silent.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Native cases name negative_policy_numbers_preserved, policy_decimal_exact,
+      policy_nonfinite_or_out_of_range_rejected and policy_secrets_absent_from_debug.
+      Secret wrappers preserve authorized explicit field serialization for fixture values.'
+    proof: [behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Agent policy records and carried budget snapshots must each have field-level cases.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_policy::/)' && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^budget_snapshots::/)'
+    - id: helper-python
+      why: Contract comparisons must run actual Pydantic constructors and snapshot methods.
+      run: test -f tools/oracle/helpers/carried_policy_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added carried-policy inputs must precede replay of the common helper envelope corpus.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/carried-policy-records-*")" && grep -rlq carried_policy_records tools/oracle/fuzz/corpus/helper_case/carried-policy-records-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/carried-policy-records/kill-switch-auth-and-url.yaml
+  - tools/oracle/cases/helpers/carried-policy-records/agent-response-fields.yaml
+  - tools/oracle/cases/helpers/carried-policy-records/binding-and-managed-context.yaml
+  - tools/oracle/cases/helpers/carried-policy-records/snapshot-field-aliases.yaml
+  - tools/oracle/cases/helpers/carried-policy-records/snapshot-validation-fallback.yaml
+deviations:
+  - what: Policy spend/budgets and search scores reject nonfinite or out-of-Decimal-range values.
+    why: The native numeric policy forbids floating-point storage; ordinary finite values retain source defaults and signs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L314-L339
+out_of_scope:
+  - B141 owns agents.py outside L187-L237/L291-L339, including AgentCard/AgentConfig/PatchAgentRequest,
+    AgentKillSwitchResult.succeeded, other response wrappers and A2A response normalization.
+  - B141 owns agent_identity.py outside the execution-mode alias, AgentIdentityBinding and ManagedAgentContext,
+    including EntraIdentityConfig.normalize_identifier/issuer and its other subject/status contracts.
+  - B071 owns spend_tracking/carried_budget_state.py snapshot capture and its admission/reset/ledger effects;
+    this task owns every function in types/proxy/carried_budget_state.py.
+  - B732 owns principals and auth-stage interfaces; later auth models reference these lower records.
+pitfalls:
+  - AgentResponse.agent_card_params is an open dictionary, not the stricter AgentCard TypedDict.
+  - Nullable budget snapshot fields are required, so missing metadata and explicit null metadata differ.
+  - Kill-switch URL validation preserves the supplied string and does not itself authorize an outbound call.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

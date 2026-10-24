@@ -1,10 +1,35 @@
 id: B1229
 title: Organization route role and request context policy
 description: >-
-  Implement organization_role_based_access_check, user organization membership reads, caller organization-admin
-  detection and request team/org context. Preserve a caller-supplied organization_id and the source organizations
-  membership test. Return the pinned public failures without changing route normalization or imposing
-  a rewritten organization policy.
+  Implement the pure organization role policy and injected team-context enrichment. Missing user_object
+  skips role checks. /organization/new requires user_role=proxy_admin; reject other roles with
+  ProxyException 401/auth_error, param user_role, message Only proxy admins can create new organizations
+  followed by the caller role. Proxy admins then bypass all remaining checks. For B867 org_admin_only_routes
+  (/organization/info, /organization/delete, /organization/member_add, /organization/member_update and
+  /organization/member_delete), distinguish memberships=None, absent/null organization_id, no role for the
+  selected organization, and a role other than org_admin. Each is 401/auth_error; the first three use param
+  organization_id, the last user_role. Preserve the corresponding not-a-member/contact-admin, pass-an-ID,
+  no-role-in-selected-organization and required-role messages. An empty membership list reaches the
+  missing-ID or no-role branch, unlike None. Other routes are untouched except /team/new.
+
+
+  /team/new applies its organization constraint whenever memberships is nonempty, even for just one
+  membership. Require organization_id or return 401/auth_error, param organization_id, with the source
+  message saying multiple organizations and listing IDs. Require org_admin for that ID or return
+  401/auth_error, param user_role. Empty/None memberships skip this restriction. No team lookup or DB
+  write occurs in role checks. get_user_organization_info skips null IDs, retains duplicate IDs in order
+  and lets the last membership overwrite the role map. _user_is_org_admin returns false without a user,
+  memberships or candidates; collect a non-null organization_id and append organizations only when it is
+  a list, then require admin membership for ALL candidates. It has no proxy-admin shortcut; duplicate
+  candidates are harmless, and a singular unauthorized ID is not hidden by an authorized list.
+
+
+  Context enrichment keeps the input object when organization_id is truthy, not merely present. For
+  /team/update read body.team_id; otherwise use the final route path segment only when the supplied route
+  template is exactly /team/{team_id}. This avoids lookups for sibling /team/<verb> routes. Nonstring or
+  empty team IDs skip lookup. Await the supplied fetch_team_org_id once; falsey results keep the same body,
+  truthy results produce a shallow copy replacing organization_id. Explicit null/empty IDs can thus be
+  filled from the team. Preserve other fields and let lookup exceptions propagate; never mutate input.
 
 
   Build the production organization_route_policy module in betterlite-auth; reuse the typed dependencies
@@ -18,11 +43,10 @@ description: >-
   (L183-L216; 31 source lines).
 
 
-  Add the organization_route_policy operation under B856 Management::auth. Python calls only the owned
-  MIT helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the
-  expected algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a organization-route-policy-* seed to B171 helper_case, which already owns this decoder.
+  Compare the pure membership projections, role checks and all-requested-organizations predicate under
+  B856 Management::auth, seeding B171 helper_case. Native tests cover asynchronous context lookup and
+  booted HTTP cases cover integration through B757's auth error conversion, which preserves these
+  ProxyException fields. This module takes typed membership rows and does not fetch them itself.
 
 
   The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
@@ -50,8 +74,8 @@ description: >-
 
 
   Sizing: 160 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  160 production, 139 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 429 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  160 production, 260 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 550 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -92,8 +116,14 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
     why: Auth exceptions become public HTTP type, param and code.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_admin_team_scope,
-      caller_org_context_retained, cross_org_denied.'
+  - text: 'Cover no_user_skips_policy, organization_create_proxy_admin_only, proxy_admin_bypasses,
+      org_admin_route_matrix, memberships_null_vs_empty, missing_selected_org, missing_org_role,
+      wrong_role_error_param, one_membership_requires_org_on_team_create, team_create_without_memberships,
+      duplicate_memberships_last_role_wins, null_membership_ids_ignored, all_candidate_organizations,
+      no_candidates_and_nonlist_organizations, org_predicate_has_no_admin_shortcut,
+      truthy_caller_org_retained, null_and_empty_org_enriched, exact_patch_template_only,
+      invalid_team_id_skips_lookup, missing_team_org_preserves_identity, lookup_error_propagates
+      and enrichment_copies_body.'
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -135,19 +165,27 @@ checks:
         - test(/replays_the_/)'
 oracle_cases:
   - tools/oracle/cases/helpers/organization-route-policy/org-admin-team-scope.yaml
-  - tools/oracle/cases/helpers/organization-route-policy/caller-org-context-retained.yaml
   - tools/oracle/cases/helpers/organization-route-policy/cross-org-denied.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/membership-null-empty-and-duplicates.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/all-requested-organizations.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/one-org-team-create-requires-id.yaml
+  - tools/oracle/cases/helpers/organization-route-policy/no-user-and-proxy-admin.yaml
   - tools/oracle/cases/auth/organization-route-policy/org-admin-team-scope.yaml
   - tools/oracle/cases/auth/organization-route-policy/caller-org-context-retained.yaml
   - tools/oracle/cases/auth/organization-route-policy/cross-org-denied.yaml
+  - tools/oracle/cases/auth/organization-route-policy/organization-create-role-error.yaml
+  - tools/oracle/cases/auth/organization-route-policy/org-admin-route-error-params.yaml
+  - tools/oracle/cases/auth/organization-route-policy/team-create-one-membership.yaml
+  - tools/oracle/cases/auth/organization-route-policy/patch-template-enrichment.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B867 owns the org-admin route allowlist; B757 owns public auth exception handling. Callers supply the team-org lookup.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve a caller-supplied organization_id and the source organizations membership test.
+  - The /team/new error mentions multiple organizations although one membership is enough to require organization_id.
+  - An explicit null or empty organization_id does not suppress team-derived enrichment.
+  - _user_is_org_admin requires every candidate organization and does not special-case proxy admins.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 575
   max_new_expects: 0
 review_level: security

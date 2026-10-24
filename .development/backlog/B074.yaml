@@ -1,0 +1,13 @@
+id: B074
+milestone: M4 keys, spend and management
+title: Usage, daily activity and analytics API
+status: todo
+depends_on: [B070, B2312]
+file: null
+covers:
+  - "litellm/proxy/management_endpoints/usage_endpoints/**"
+  - "litellm/proxy/management_endpoints/{daily_activity_routes,daily_activity_scopes,common_daily_activity,user_agent_analytics_endpoints,gateway_request_endpoints}.py"
+  - "litellm/proxy/analytics_endpoints/**"
+  - "litellm/proxy/db/gateway_request_tracking.py"
+  - "litellm/types/proxy/management_endpoints/common_daily_activity.py"
+  - "litellm/types/proxy/gateway_requests.py"

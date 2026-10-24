@@ -1,0 +1,8 @@
+id: B1412
+milestone: M3 providers
+title: Codestral FIM options, text replies and chunk decoding
+status: todo
+depends_on: [B004, B005, B2237, B249, B171]
+file: tasks/B1412-codestral-records.yaml
+covers:
+  - "litellm/llms/codestral/completion/{transformation,handler}.py"

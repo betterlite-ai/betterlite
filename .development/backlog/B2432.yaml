@@ -1,0 +1,8 @@
+id: B2432
+milestone: M5 API families
+title: Compaction summary execution
+status: todo
+depends_on: [B014, B162, B004, B171, B968, B969, B970, B971, B2401]
+file: tasks/B2432-summary-execution.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"

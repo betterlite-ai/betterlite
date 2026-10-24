@@ -1,0 +1,8 @@
+id: B2322
+milestone: M4 keys, spend and management
+title: Authoritative spend reads and cold-counter reseeding
+status: todo
+depends_on: [B002, B125, B126, B171, B199, B715, B722, B723, B724, B726, B732, B733, B856, B860, B2316]
+file: tasks/B2322-spend-counter-reseed.yaml
+covers:
+  - "litellm/proxy/db/spend_counter_reseed.py"

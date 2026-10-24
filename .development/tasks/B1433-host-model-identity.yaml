@@ -1,0 +1,106 @@
+id: B1433
+title: Clarifai, CompactifAI and DataRobot request and reply identity
+description: >-
+  Build host_model_identity in betterlite-openai for the live methods in these three
+  configurations. Clarifai inherits B503/B668 and advertises both token limits,
+  response_format, stream, temperature, top_p, tool_choice, tools, both penalties and
+  stream_options. Its identity uses explicit base or https://api.clarifai.com/v2/ext/openai/v1
+  and explicit key/CLARIFAI_API_KEY/empty string. A truthy model must split on dots into
+  exactly user_id, app_id and model_id, becoming https://clarifai.com/{user}/{app}/models/{model}
+  before parent request transformation; empty components are accepted, wrong arity fails.
+  A falsey model passes unchanged. CompactifAI uses the same parent with base explicit
+  or https://api.compactif.ai/v1 and key explicit/COMPACTIFAI_API_KEY/empty string.
+
+  Both reply methods call B249 post_call with original raw text, input messages, supplied
+  key and complete_input_dict before parsing. Clarifai wraps JSON decode failures as
+  OpenAIError retaining status and headers; CompactifAI propagates its JSON failure.
+  Construct B004's ModelResponse semantics rather than the compatible handler's null-token
+  cleanup. Clarifai replaces a non-None response model with clarifai/{request_model},
+  leaving None unchanged. CompactifAI always assigns compactifai/{request_model}.
+  In CompactifAI JSON mode only, a truthy message with exactly one truthy tool_calls
+  entry copies function.arguments to content with a missing-only empty-string default,
+  then clears tool_calls. Explicit null arguments remain null. Both get_error_class
+  methods return OpenAIError with the supplied headers.
+
+  DataRobot uses B1425's compatible policy but resolves key explicit/DATAROBOT_API_TOKEN/
+  fake-api-key and base explicit/DATAROBOT_ENDPOINT, defaulting to https://app.datarobot.com
+  only when the resolved base is None. Parse its URL and change only path: empty or /
+  gains /api/v2//genai/llmgw/chat/completions; a path containing api/v2/deployments is
+  preserved; another path containing api/v2 but not /genai/llmgw/chat/completions gains
+  that suffix. Ensure a final slash and perform one non-overlapping // to / replacement.
+  Preserve params, query and fragment. get_complete_url returns the string form of the
+  supplied base, including None becoming the literal None. Test empty-env and repeated
+  slash behavior rather than imposing an absolute-URL requirement inside this transform.
+
+  Add host_identity_settings loader tests for the four absent-by-default environment
+  keys and explicit/fallback values. decode_host_named_reply takes bounded bytes plus
+  Clarifai/CompactifAI mode; fuzz both modes with invalid JSON, null usage and malformed
+  choices, and name replay separately from behavioral tests. Helper host_model_identity
+  captures original post_call ordering as well as model identity, endpoint and error
+  records. Its new seeds must parse call.host_model_identity with nonzero coverage of
+  all three policies. The files contain 271 nonblank/noncomment lines; the two unused
+  Clarifai getter methods remove six. Budget 230 production, 185 tests, 125 adapters,
+  65 fuzz/replay and 70 settings/wiring lines, capped at 725.
+scope:
+  paths:
+    - crates/betterlite-openai/src/{lib,host_model_identity}.rs
+    - crates/betterlite-openai/src/host_model_identity/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/host_named_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/host_named_reply/**
+    - crates/betterlite-config/src/{lib,settings,providers}.rs
+    - crates/betterlite-config/src/providers/{mod,host_identity}.rs
+    - crates/betterlite-config/tests/host_identity_settings.rs
+    - tools/oracle/src/helpers/{mod,host_model_identity}.rs
+    - tools/oracle/helpers/{dispatch,host_model_identity}.py
+    - tools/oracle/cases/helpers/host-model-identity/**
+    - tools/oracle/fuzz/corpus/helper_case/host_model_identity*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/clarifai/chat/transformation.py#L24-L130
+    why: Dotted model conversion and response model rewriting have different inputs and conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/compactifai/chat/transformation.py#L27-L118
+    why: Raw-text logging precedes JSON parsing and the single-tool conversion retains explicit null.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/datarobot/chat/transformation.py#L14-L89
+    why: DataRobot edits only URL path and supplies a testing key when credentials are absent.
+dod:
+  - text: Request and returned model names obey each host's distinct identity transformation.
+    proof: [host-identity-tests, host-identity-python, oracle]
+  - text: DataRobot URL edits and loaded identity settings retain empty and missing distinctions.
+    proof: [host-identity-tests, host-identity-settings, host-identity-python, oracle]
+  - text: Host reply decoding and helper dispatch replay new tagged inputs without panics.
+    proof: [host-identity-corpus, host-identity-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: host-identity-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^host_model_identity::/) - test(replays_host_named_reply_corpus)'
+      why: Logging-before-failure and nullable model identity must remain observable in production tests.
+    - id: host-identity-settings
+      run: cargo nextest run --locked -p betterlite-config --test host_identity_settings --no-tests=fail
+      why: DataRobot's fake key and empty endpoint are not equivalent to missing settings.
+    - id: host-identity-python
+      run: test -f tools/oracle/helpers/host_model_identity.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Source calls must expose post_call before malformed-body errors.
+    - id: host-identity-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/host_named_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/host_named_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_host_named_reply_corpus)'
+      why: Exercise both decoder policies on fresh malformed response bytes.
+    - id: host-identity-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/host_model_identity*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::host_model_identity::/)'
+      why: Seed assertions must identify the host_model_identity variant before inspecting outcomes.
+oracle_cases:
+  - tools/oracle/cases/helpers/host-model-identity/clarifai-dot-arity-and-response-null.yaml
+  - tools/oracle/cases/helpers/host-model-identity/compactifai-null-tool-arguments.yaml
+  - tools/oracle/cases/helpers/host-model-identity/log-before-json-failure.yaml
+  - tools/oracle/cases/helpers/host-model-identity/datarobot-root-deployment-and-query.yaml
+  - tools/oracle/cases/helpers/host-model-identity/datarobot-empty-base-and-fake-key.yaml
+deviations: []
+out_of_scope:
+  - ClarifaiConfig.get_api_key and get_api_base have no caller at the pin; its live identity method resolves the equivalent values itself.
+  - B038 composes these policies with executable chat calls; B503 and B1425 retain their inherited request and response behavior.
+pitfalls:
+  - CompactifAI uses a missing-only default for function.arguments, so an explicit null is not an empty string.
+  - Clarifai must not prefix a response model that is None.
+  - DataRobot's single replacement pass can leave double slashes when the input path contains a longer slash run.
+budget: {max_changed_lines: 725, max_new_expects: 0}
+review_level: security

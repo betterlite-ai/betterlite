@@ -1,0 +1,8 @@
+id: B2227
+milestone: M3 providers
+title: Shared streamed-response assembly
+status: todo
+depends_on: [B004, B196, B068, B184, B171, B218, B2232, B2233, B2234, B2235, B2239]
+file: tasks/B2227-streamed-response-assembly.yaml
+covers:
+  - "litellm/main.py"

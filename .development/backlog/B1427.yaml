@@ -1,0 +1,8 @@
+id: B1427
+milestone: M3 providers
+title: Legacy compatible line streaming shared with Databricks
+status: todo
+depends_on: [B004, B005, B171]
+file: tasks/B1427-compatible-line-stream.yaml
+covers:
+  - "litellm/llms/databricks/streaming_utils.py"

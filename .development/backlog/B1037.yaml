@@ -1,0 +1,8 @@
+id: B1037
+milestone: M5 api families
+title: Batch provider read
+status: todo
+depends_on: [B009, B010, B171, B1035, B1087, B002, B1129, B517]
+file: tasks/B1037-batch-provider-read.yaml
+covers:
+  - "litellm/batches/main.py"

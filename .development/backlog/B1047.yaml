@@ -1,0 +1,9 @@
+id: B1047
+milestone: M5 api families
+title: Batch precall
+status: todo
+depends_on: [B014, B126, B171, B1043, B1045, B1046, B1087, B1042, B1044, B002]
+file: tasks/B1047-batch-precall.yaml
+covers:
+  - "litellm/proxy/hooks/batch_rate_limiter.py"
+  - "litellm/proxy/hooks/batch_redis_get.py"

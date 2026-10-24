@@ -1,0 +1,8 @@
+id: B1229
+milestone: M4 keys, spend and management
+title: Organization route role and request context policy
+status: todo
+depends_on: [B001, B003, B171, B732, B757, B856, B860, B867]
+file: tasks/B1229-organization-route-policy.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks_organization.py"

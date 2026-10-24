@@ -1,0 +1,8 @@
+id: B1741
+milestone: M4 keys, spend and management
+title: Share retention time across logs, session rollups, health checks and tags
+status: todo
+depends_on: [B002, B198, B700, B860, B1690, B1699, B1739, B1740]
+file: tasks/B1741-spend-retention-runner.yaml
+covers:
+  - "litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py"

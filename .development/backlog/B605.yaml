@@ -1,0 +1,8 @@
+id: B605
+milestone: M3 providers
+title: Bedrock Converse usage and thinking details
+status: todo
+depends_on: [B579, B196, B171]
+file: tasks/B605-bedrock-converse-usage.yaml
+covers:
+  - "litellm/llms/bedrock/chat/converse_transformation.py"

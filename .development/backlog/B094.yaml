@@ -1,0 +1,11 @@
+id: B094
+milestone: M5 api families
+title: Containers API
+status: todo
+depends_on: [B087]
+file: null
+covers:
+  - "litellm/containers/**"
+  - "litellm/llms/base_llm/containers/**"
+  - "litellm/proxy/container_endpoints/**"
+  - "litellm/types/containers/**"

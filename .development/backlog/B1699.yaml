@@ -1,0 +1,8 @@
+id: B1699
+milestone: M4 keys, spend and management
+title: Persist and replay baseline observations with retryable publication
+status: todo
+depends_on: [B700, B708, B714, B860, B1690, B1696, B1697, B1698]
+file: tasks/B1699-baseline-accounting-store.yaml
+covers:
+  - "litellm/proxy/db/baseline_accounting.py"

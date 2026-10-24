@@ -1,0 +1,8 @@
+id: B1370
+milestone: M3 providers
+title: Studio interactions revision migration and lifecycle records
+status: todo
+depends_on: [B1331, B171]
+file: tasks/B1370-studio-interactions.yaml
+covers:
+  - "litellm/llms/gemini/interactions/**"

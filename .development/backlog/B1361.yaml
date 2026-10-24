@@ -1,0 +1,8 @@
+id: B1361
+milestone: M3 providers
+title: Vertex Veo create and edit request preparation
+status: todo
+depends_on: [B1301, B1302, B1305, B193, B525, B672, B171]
+file: tasks/B1361-vertex-veo-requests.yaml
+covers:
+  - "litellm/llms/vertex_ai/videos/transformation.py"

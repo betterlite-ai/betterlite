@@ -1,0 +1,8 @@
+id: B686
+milestone: M3 providers
+title: Azure assistant definition operations
+status: todo
+depends_on: [B519, B531, B171, B159]
+file: tasks/B686-azure-assistant-definitions.yaml
+covers:
+  - "litellm/llms/azure/assistants.py"

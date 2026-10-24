@@ -1,0 +1,8 @@
+id: B1702
+milestone: M4 keys, spend and management
+title: Execute management lists consistently in SQL and memory
+status: todo
+depends_on: [B171, B204, B1665, B1701]
+file: tasks/B1702-management-list-execution.yaml
+covers:
+  - "litellm/proxy/list_api/{__init__,list_framework,in_memory}.py"

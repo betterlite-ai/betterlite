@@ -1,0 +1,8 @@
+id: B2232
+milestone: M3 providers
+title: Stream base response assembly
+status: todo
+depends_on: [B004, B174, B2230, B187, B171]
+file: tasks/B2232-stream-base-assembly.yaml
+covers:
+  - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"

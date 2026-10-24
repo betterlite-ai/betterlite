@@ -1,0 +1,9 @@
+id: B1128
+milestone: M5 API families
+title: File type and MIME records
+status: todo
+depends_on: [B171]
+file: tasks/B1128-file-type-records.yaml
+covers:
+  - "litellm/types/files.py"
+  - "litellm/files/types.py"

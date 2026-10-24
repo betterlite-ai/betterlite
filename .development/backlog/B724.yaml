@@ -1,0 +1,8 @@
+id: B724
+milestone: M4 keys, spend and management
+title: Team row decoding and advisory-locked roster reads
+status: todo
+depends_on: [B171, B700, B714, B856, B859, B860, B2307]
+file: tasks/B724-team-repository.yaml
+covers:
+  - "litellm/repositories/team_repository.py"

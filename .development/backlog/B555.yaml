@@ -1,0 +1,11 @@
+id: B555
+milestone: M3 providers
+title: Foundry Flux and MAI image edits
+status: todo
+depends_on: [B549, B553, B554, B512, B183, B171, B002, B668, B004, B129, B249]
+file: tasks/B555-foundry-image-edits.yaml
+covers:
+  - "litellm/llms/azure_ai/image_edit/__init__.py"
+  - "litellm/llms/azure_ai/image_edit/transformation.py"
+  - "litellm/llms/azure_ai/image_edit/flux2_transformation.py"
+  - "litellm/llms/azure_ai/image_edit/mai_transformation.py"

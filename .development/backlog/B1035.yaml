@@ -1,0 +1,12 @@
+id: B1035
+milestone: M5 api families
+title: Batch records
+status: todo
+depends_on: [B010, B171, B207, B1015, B1087, B2214]
+file: tasks/B1035-batch-records.yaml
+covers:
+  - "litellm/llms/base_llm/batches/transformation.py"
+  - "litellm/router_utils/batch_utils.py"
+  - "litellm/proxy/batches_endpoints/common_utils.py"
+  - "litellm/types/llms/openai.py"
+  - "litellm/types/utils.py"

@@ -1,0 +1,8 @@
+id: B1002
+milestone: M5 api families
+title: Audio subtitles
+status: todo
+depends_on: [B171, B1087]
+file: tasks/B1002-audio-subtitles.yaml
+covers:
+  - "litellm/litellm_core_utils/audio_utils/subtitle_utils.py"

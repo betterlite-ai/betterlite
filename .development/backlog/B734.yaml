@@ -1,0 +1,10 @@
+id: B734
+milestone: M4 keys, spend and management
+title: Auth-object refresh and spend-reset invalidation
+status: todo
+depends_on: [B002, B125, B126, B171, B721, B733, B856, B859, B878, B2314]
+file: tasks/B734-auth-invalidation.yaml
+covers:
+  - "litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py"
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/proxy_server.py"

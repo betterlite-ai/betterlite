@@ -1,9 +1,33 @@
 id: B1216
 title: Team query authorization and BYOK model visibility
 description: >-
-  Authorize explicit team_id model queries and filter BYOK deployment rows using live caller team memberships
-  and shared grants. Keep a missing team and an unauthorized team distinct, and never let a search filter
-  introduce another tenant credential-bearing deployment.
+  Supply model query scope to the listing handlers. No caller, no DB, PROXY_ADMIN or PROXY_ADMIN_VIEW_ONLY
+  yields None (unscoped). Otherwise start with the truthy key.team_id and add B723 UserRepository's live
+  user.teams. Missing user_id/row keeps only key scope; a lookup exception logs and falls back to that
+  same scope. _byok_row_outside_caller_teams leaves non-team rows and None scope unchanged, but rejects
+  any non-null model_info.team_id outside a concrete set, including an empty set.
+
+  Explicit teamId authorization permits admin/viewer; everyone else needs user_id and a DB row whose
+  teams includes the target. Missing ID, missing row, foreign membership or lookup failure is
+  HTTPException 403 detail.error, with an exception log only for lookup failure. A key's team_id alone
+  does not authorize this query. Authorize before loading the target; if no caller was supplied skip
+  authorization. B724 team lookup warns on missing row and logs exceptions, returning None; filtering
+  then returns []. No 404 is manufactured.
+
+  Gather IDs from B847 get_model_access_groups and B844 get_model_list. Empty team.models or
+  all-proxy-models includes router IDs except rows assigned to another team; omit missing IDs. Otherwise
+  expand access groups and query each resolved name with team_id. Also query B725 ModelRepository by
+  resolved names only (no additional team predicate); add truthy model_id values, and debug-log/drop DB
+  failures without losing router IDs. The name-expansion helper preserves order and duplicates. Filter
+  input rows in order by owned BYOK team_id, then list-valued access_via_team_ids, then a truthy gathered
+  ID. Viewer direct_access does not widen this set; preserve duplicate input rows.
+
+  _find_model_by_id first deep-copies B845 get_model_info. Only None triggers the B725 DB lookup and
+  B124 ProxyConfig.decrypt_model_list_from_db; select the first decrypted deployment. Log and swallow
+  DB/decrypt failures. A nonblank search is trimmed and case-insensitively matched against model_name;
+  whitespace-only search is ignored. Return [] or [model] with count 0 or 1. Consume decrypted rows,
+  never store credentials here or bypass B124's per-field secret resolution. Real lookup tests run
+  against POSTGRES_TEST_URL or testcontainers; pure scope/name/filter projections use the helper oracle.
 
 
   Build the production model_team_scope module in betterlite-server; reuse the typed dependencies listed
@@ -19,11 +43,10 @@ description: >-
   46 source lines), _find_model_by_id (L15252-L15292; 31 source lines).
 
 
-  Add the model_team_scope operation under B856 Management::teams. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a model-team-scope-*
-  seed to B171 helper_case, which already owns this decoder.
+  B856 Management::teams helper cases invoke only _byok_row_outside_caller_teams and
+  _team_models_resolve_to_names, using B171's typed decoder. All caller-scope reads, teamId authorization,
+  team filtering and model lookup cases run natively against the real router/repository/decryption services
+  and Postgres. Their HTTP exposure belongs to the model listing routes that consume these functions.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -37,8 +60,8 @@ description: >-
 
 
   Sizing: 225 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  225 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 462 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  225 production, 270 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 590 changed lines estimated within a 625-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 scope:
   paths:
@@ -73,8 +96,16 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L15252-L15292
     why: Own _find_model_by_id; preserve caller-visible values and failure ordering.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: byok_other_team_hidden,
-      team_id_query_denied, unknown_deployment, member_visible_models.'
+  - text: >-
+      Cases unscoped_admin_missing_context, key_scope_no_user, live_user_scope_union,
+      lookup_failure_key_scope_log, byok_other_team_hidden, nonteam_rows_unrestricted,
+      empty_scope_denies_byok, explicit_team_requires_user_membership, team_lookup_failure_403,
+      authorize_before_team_read, missing_team_warn_empty, team_read_error_empty,
+      all_models_excludes_foreign_byok, named_access_group_expansion, db_names_only,
+      db_query_error_keeps_router_ids, missing_ids_omitted, access_via_list_only,
+      direct_access_does_not_widen, stable_filter_order, config_before_db_deep_copy,
+      db_decrypted_first_row, decryption_error_logs_empty, trimmed_search and unknown_deployment
+      assert both results and log levels. Count always matches the zero-or-one result.
     proof:
       - behavior-tests
   - text: The independently invoked MIT helper matches the production operation and the new helper-case
@@ -102,9 +133,9 @@ checks:
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/model-team-scope/byok-other-team-hidden.yaml
-  - tools/oracle/cases/helpers/model-team-scope/team-id-query-denied.yaml
-  - tools/oracle/cases/helpers/model-team-scope/unknown-deployment.yaml
-  - tools/oracle/cases/helpers/model-team-scope/member-visible-models.yaml
+  - tools/oracle/cases/helpers/model-team-scope/none-versus-empty-scope.yaml
+  - tools/oracle/cases/helpers/model-team-scope/access-group-name-expansion.yaml
+  - tools/oracle/cases/helpers/model-team-scope/group-expansion-order-and-duplicates.yaml
 deviations: []
 out_of_scope:
   - 'litellm/proxy/proxy_server.py: B124 owns showwarning (L195-L198), generate_feedback_box (L236-L260),
@@ -274,8 +305,7 @@ out_of_scope:
     (L20123-L20141), aggregate_mcp_route (L20148-L20164), toolset_mcp_route (L20173-L20214), _mcp_forward_as_path
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20312-L20379).'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B124 owns the database model reader and credential decryption used here; these filters do not write stored secrets.
   - 'litellm/proxy/proxy_server.py: B060 owns model_deprecations (L16290-L16317), _get_model_group_info
     (L16320-L16351), model_group_info (L16359-L16581).'
   - 'litellm/proxy/proxy_server.py: B848 owns _check_if_model_is_user_added (L14161-L14187), _check_if_model_is_team_model
@@ -462,9 +492,9 @@ out_of_scope:
     (L20217-L20227), _resolve_mcp_csv_tokens (L20230-L20275), _is_mcp_access_group_cached (L20278-L20304),
     dynamic_mcp_route (L20308-L20379).'
 pitfalls:
-  - Keep a missing team and an unauthorized team distinct, and never let a search filter introduce another
-    tenant credential-bearing deployment..
+  - A BYOK search tolerates a failed user lookup by narrowing to the key team, while explicit teamId authorization rejects the same failure with 403.
+  - Restricted-name database lookup does not add a team predicate; preserve that query and apply the caller's filtering stages in their source order.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 625
   max_new_expects: 0
 review_level: security

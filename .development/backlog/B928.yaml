@@ -1,0 +1,8 @@
+id: B928
+milestone: M5 api families
+title: Response synthetic events
+status: todo
+depends_on: [B068, B171, B902, B1113, B1138, B196, B2413, B909]
+file: tasks/B928-response-synthetic-events.yaml
+covers:
+  - "litellm/responses/streaming_iterator.py"

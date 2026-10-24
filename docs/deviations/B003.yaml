@@ -1,0 +1,5 @@
+task: B003
+deviations:
+  - what: Readiness reports betterlite's own state instead of LiteLLM database, cache, and version fields.
+    why: Those services do not exist in betterlite yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1960-L1980

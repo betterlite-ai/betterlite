@@ -1,0 +1,8 @@
+id: B1062
+milestone: M5 api families
+title: Vector store registry
+status: todo
+depends_on: [B002, B061, B171, B1131, B726, B858]
+file: tasks/B1062-vector-store-registry.yaml
+covers:
+  - "litellm/vector_stores/vector_store_registry.py"

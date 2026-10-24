@@ -1,9 +1,47 @@
 id: B1203
 title: Organization-scoped UI user search
 description: >-
-  Implement GET /user/filter/ui and reusable organization-enrollment/search scope helpers. Preserve scope_user_search_to_org=false
-  and caller/team organization boundaries; the supplied organization filter is intersected with caller
-  authority before querying.
+  Register GET /user/filter/ui once, authenticated by B052 and hidden from the API schema. Its optional
+  user_id, user_email, search and team_id query parameters default None; page defaults 1 with minimum 1,
+  and page_size defaults 50 with range 1..100. There is no organization-filter query parameter. This is
+  case-insensitive substring search, not an email-prefix lookup. Own the three-line LiteLLM_UserTableFiltered
+  projection at _types.py L3789-L3791 below B124: output only user_id and user_email (default null), never
+  other columns or a pagination envelope.
+
+  Call B066 get_ui_settings_cached and read scope_user_search_to_org with default false. This is stored
+  in litellm_uisettings, row id ui_settings, not general_settings or a dedicated environment variable.
+  B066 owns cache key ui_settings:settings_dict, TTL 600, stored-JSON decoding and allowed-field filtering.
+  A falsey value permits any authenticated caller to search all users. A truthy value first permits B2314
+  admin-view roles proxy_admin and proxy_admin_viewer without scoping. Otherwise fetch a non-null caller
+  user_id through B736 with user_id_upsert=false, swallowing only ValueError. Collect ALL organization
+  memberships in their existing order, regardless of role or duplicates. A nonempty list takes precedence
+  over the supplied team. With no memberships, choose truthy query team_id before the key's team_id; if
+  the result is non-null resolve it through B737. Do not infer a team from the requested user/email.
+
+  Every HTTPException from team lookup becomes 403 with detail.error scope_user_search_to_org is enabled
+  but team '<id>' was not found. Other lookup errors propagate. Then require B800 is_team_admin; false
+  gives 403 with scope_user_search_to_org is enabled. You must be an admin of this team to search users.
+  A truthy team.organization_id becomes the single filter ID. Otherwise return 403 with
+  scope_user_search_to_org is enabled and this team is not part of an organization. Contact your proxy
+  admin to adjust this setting. With no caller organizations or resolved team, return 403 with
+  scope_user_search_to_org is enabled. Only proxy admins, organization admins, or team admins can search
+  users. Keep this last message even though ordinary organization members pass the actual membership check.
+
+  Reject a missing database before the try block with HTTPException 500 and detail.error No db connected.
+  Inside the try block, scope first, then compute skip=(page-1)*page_size. Truthy user_id and user_email
+  each add an insensitive contains condition, combined with AND. Truthy search adds an OR of those same
+  two contains predicates, ANDed with the individual filters. Empty strings add nothing. A non-null org
+  list adds organization_memberships.some.organization_id.in. Drop None-valued predicates and call B790's
+  user-table accessor once with take=page_size and created_at descending, without a tiebreaker or count.
+  No rows returns []; populated rows validate through the two-field response projection.
+
+  The route's own except HTTPException rethrows unchanged. Its other except branch asks B1217 to classify
+  the complete error chain: database unavailability warns Database unavailable during user search: <class>
+  and raises the shared 503 ProxyException, type no_db_connection, param string "None", code 503, with
+  the pinned transient retry or permanent-deployment message. Other failures log Error searching users
+  and raise HTTPException 500 with string detail Error searching users: <exception>. This route never
+  calls handle_exception_on_proxy. HTTPException branches set no type/param/code themselves; compare the
+  booted B003 handler's full wire body rather than inventing an auth error envelope.
 
 
   Build the production user_search_scope module in betterlite-server; reuse the typed dependencies listed
@@ -17,49 +55,22 @@ description: >-
   source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): scope_user_search_to_org=False.
+  B001 HTTP cases run this route through the actual authenticated proxy. Seed B066's persisted UI settings
+  and cache state, then prove absent/false/true flag behavior and cached-setting consumption. Missing bearer
+  exercises B052's rejection; an unrelated authenticated user is allowed when the flag is off. An unknown
+  searched user produces [] rather than an invalid-target error. No cookies, redirects or changed-by header
+  are read or set by this GET. Compare response field omissions, null email, status, error body and content type.
 
 
-  general_settings.scope_user_search_to_org=false; invalid/missing organization context follows the pinned
-  branch, not an unfiltered search.
+  Use POSTGRES_TEST_URL when supplied, otherwise testcontainers via betterlite-postgres-fixture. Native
+  Postgres tests inspect the actual predicates, page offsets and response redaction, plus failures from UI
+  settings/cache/user/team loading and user queries. An unavailable selected fixture fails the test. The
+  flag's stored-data and cache boundary belongs to B066, so do not add a fake config-loader acceptance test.
 
 
-  Register these actual HTTP routes and aliases exactly once: GET /user/filter/ui -> ui_view_users. For
-  each route send a typed successful request, an invalid or missing target, and a caller lacking that
-  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
-  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
-  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
-  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
-  management error mapping; keep source partial writes visible in fixture inspection.
-
-
-  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
-  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
-  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
-  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
-
-
-  Write betterlite-config::user_search_scope::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 173 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  173 production, 142 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 430 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Sizing starts with 173 helper/route lines before docstring exclusion and the response projection:
+  allow 210 production, 380 behavior/Postgres tests and 100 HTTP integration/wiring lines, totaling 690
+  within 750. B003 parses query parameters; B066 decodes stored settings. Neither decoder is duplicated.
 
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
@@ -75,29 +86,30 @@ scope:
     - crates/betterlite-server/src/state.rs
     - crates/betterlite-server/src/app.rs
     - tools/oracle/cases/management/user-search-scope/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/user_search_scope.rs
-    - crates/betterlite-config/src/user_search_scope/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/user-search-scope-*
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2653-L2716
     why: Own _resolve_org_filter_for_user_search; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2719-L2754
     why: Own _resolve_team_org_filter; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2766-L2860
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2757-L2860
     why: Own ui_view_users; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L2205-L2215
     why: Own _user_search_where; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L1-L6
-    why: scope_user_search_to_org default and read site.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
-    why: Management exception HTTP status and public error translation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py#L1667-L1703
+    why: B066 owns the actual stored UI-setting lookup and cache, not a YAML setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3789-L3791
+    why: The response exposes exactly user_id and nullable user_email.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L368-L419
+    why: B1217 owns outage-chain classification and the 503 no_db_connection projection used by this route.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: org_scoped_search, team_org_filter,
-      unauthorized_search, email_prefix.'
+  - text: 'Cases flag_absent_or_false_allows_authenticated_search, cached_truthy_flag_consumed,
+      admin_and_viewer_bypass_scope, any_membership_role_scopes_all_orgs, memberships_precede_query_team,
+      user_value_error_falls_back_to_team, other_user_error_propagates, query_team_before_key_team,
+      empty_query_team_uses_key_team, four_exact_scope_forbidden_details, team_http_error_maps_to_not_found,
+      missing_database_before_scope, no_match_empty_array, contains_insensitive_and_combined_or,
+      empty_search_no_predicate, page_defaults_bounds_and_offset, created_desc_without_tiebreaker,
+      response_only_id_and_nullable_email, outage_chain_503 and other_exception_500 cover the owned branches.'
     proof:
       - behavior-tests
   - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
@@ -105,40 +117,34 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
+  - text: Postgres fixtures prove stored UI-setting consumption, organization-membership predicates, paging and error order.
     proof:
-      - config-tests
-      - config-corpus
+      - postgres-tests
 checks:
-  optional:
-    - mutants
+  optional: []
   commands:
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_search_scope::tests::/)
         - test(/replays_the_/)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^user_search_scope::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/user-search-scope-*")"
-        && grep -rlq "scope_user_search_to_org" crates/betterlite-config/fuzz/corpus/config_yaml/user-search-scope-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: postgres-tests
+      why: Real stored settings or membership filters produce the wrong search result or error.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^user_search_scope::tests::postgres_/)'
 oracle_cases:
-  - tools/oracle/cases/management/user-search-scope/get--user-filter-ui-success.yaml
-  - tools/oracle/cases/management/user-search-scope/get--user-filter-ui-invalid-target.yaml
-  - tools/oracle/cases/management/user-search-scope/get--user-filter-ui-unauthorized-caller.yaml
+  - tools/oracle/cases/management/user-search-scope/flag-off-ordinary-user.yaml
+  - tools/oracle/cases/management/user-search-scope/missing-bearer.yaml
+  - tools/oracle/cases/management/user-search-scope/no-matching-users.yaml
   - tools/oracle/cases/management/user-search-scope/org-scoped-search.yaml
   - tools/oracle/cases/management/user-search-scope/team-org-filter.yaml
   - tools/oracle/cases/management/user-search-scope/unauthorized-search.yaml
-  - tools/oracle/cases/management/user-search-scope/email-prefix.yaml
+  - tools/oracle/cases/management/user-search-scope/email-substring-and-search.yaml
+  - tools/oracle/cases/management/user-search-scope/admin-viewer-and-ordinary-org-member.yaml
+  - tools/oracle/cases/management/user-search-scope/team-scope-forbidden-matrix.yaml
+  - tools/oracle/cases/management/user-search-scope/page-bounds-and-projection.yaml
+  - tools/oracle/cases/management/user-search-scope/missing-database-and-query-errors.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B066 owns get_ui_settings_cached, its cache constants, UISettingsRepository access and settings mutation routes.
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B056 owns new_user (L482-L672).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B790 owns _user_table (L121-L125),
     _team_table (L128-L132), _verification_token_table (L135-L141), _organization_membership_table (L148-L154),
@@ -168,16 +174,14 @@ out_of_scope:
     (L2866-L2875), _resolve_user_email_metadata (L2878-L2889), get_user_daily_activity (L2899-L3004).'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py: B1226 owns check_if_default_team_set
     (L413-L434), add_new_user_to_default_team (L437-L467).'
-  - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization:
-    no production caller at the pinned commit; repository-wide identifier search finds only this definition.'
   - 'litellm/proxy/management_endpoints/internal_user_endpoints.py::add_internal_user_to_organization
     (L2607-L2650): no production caller at the pinned commit; repository-wide identifier search finds
     only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Preserve scope_user_search_to_org=false and caller/team organization boundaries; the supplied organization
-    filter is intersected with caller authority before querying..
+  - The docstring says org admins but the executable membership branch accepts every organization role.
+  - A team lookup HTTPException is rewritten to 403 before the route can classify its database cause.
 budget:
-  max_changed_lines: 450
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

@@ -1,0 +1,9 @@
+id: B1336
+milestone: M3 providers
+title: Vertex Gemma prediction envelopes and embedded errors
+status: todo
+depends_on: [B1306, B668, B503, B173, B171]
+file: tasks/B1336-vertex-gemma-envelope.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_gemma_models/transformation.py"
+  - "litellm/types/llms/vertex_ai_gemma.py"

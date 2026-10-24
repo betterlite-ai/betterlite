@@ -1,0 +1,9 @@
+id: B559
+milestone: M3 providers
+title: Foundry agent request and run URL construction
+status: todo
+depends_on: [B549, B218, B171, B206, B668, B129, B2202]
+file: tasks/B559-foundry-agent-requests.yaml
+covers:
+  - "litellm/llms/azure_ai/agents/transformation.py"
+  - "litellm/llms/azure_ai/agents/handler.py"

@@ -1,0 +1,9 @@
+id: B372
+milestone: M2 routing
+title: Affinity identity and atomic pin claims
+status: todo
+depends_on: [B360, B052, B301, B361]
+file: tasks/B372-affinity-claims.yaml
+covers:
+  - "litellm/router_utils/pre_call_checks/deployment_affinity_check.py"
+  - "litellm/caching/affinity_cache.py"

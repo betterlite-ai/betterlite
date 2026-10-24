@@ -1,0 +1,8 @@
+id: B2206
+milestone: M3 providers
+title: Bedrock Invoke custom stream composition
+status: todo
+depends_on: [B2205, B691, B176, B173, B004, B171]
+file: tasks/B2206-bedrock-invoke-stream.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"

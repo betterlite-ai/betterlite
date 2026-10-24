@@ -1,0 +1,11 @@
+id: B1500
+milestone: M3 providers
+title: Resolve proxy credentials and preserve forwarded model options
+status: todo
+depends_on: [B002, B171, B668, B504, B506, B511, B512]
+file: tasks/B1500-proxy-provider-options.yaml
+covers:
+  - "litellm/llms/litellm_proxy/chat/**"
+  - "litellm/llms/litellm_proxy/responses/**"
+  - "litellm/llms/litellm_proxy/image_generation/**"
+  - "litellm/llms/litellm_proxy/image_edit/**"

@@ -1,0 +1,9 @@
+id: B2302
+milestone: M4 keys, spend and management
+title: Shared pass-through registry lookup and root-path normalization
+status: todo
+depends_on: [B002, B003, B171, B856, B868]
+file: tasks/B2302-pass-through-registry-lookup.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+  - "litellm/proxy/utils.py"

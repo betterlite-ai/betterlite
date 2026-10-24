@@ -1,0 +1,8 @@
+id: B1529
+milestone: M3 providers
+title: Handle Fal Bria and Recraft URL-only image results
+status: todo
+depends_on: [B1525, B997, B171]
+file: tasks/B1529-fal-bria-recraft.yaml
+covers:
+  - "litellm/llms/fal_ai/image_generation/{bria_transformation,recraft_v3_transformation}.py"

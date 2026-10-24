@@ -1,0 +1,8 @@
+id: B1507
+milestone: M3 providers
+title: Construct ChatGPT subscription headers and session identity
+status: todo
+depends_on: [B002, B171, B184]
+file: tasks/B1507-chatgpt-headers.yaml
+covers:
+  - "litellm/llms/chatgpt/common_utils.py"

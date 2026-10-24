@@ -1,0 +1,9 @@
+id: B140
+milestone: M9 agents and mcp
+title: MCP client and MCP tools in chat and Responses calls
+status: todo
+depends_on: [B136, B080]
+file: null
+covers:
+  - "litellm/experimental_mcp_client/**"
+  - "litellm/responses/mcp/**"

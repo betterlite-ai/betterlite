@@ -1,0 +1,9 @@
+id: B897
+milestone: M4 keys, spend and management
+title: Key SQL filters and paging query plans
+status: todo
+depends_on: [B171, B700, B720, B722, B723, B726, B770, B816, B856, B860, B2314]
+file: tasks/B897-key-query-plan.yaml
+covers:
+  - "litellm/proxy/management_endpoints/key_management_endpoints.py"
+  - "litellm/proxy/_types.py"

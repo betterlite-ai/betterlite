@@ -1,0 +1,79 @@
+id: B1519
+title: Submit BFL generation jobs and poll their terminal state
+description: >-
+  Implement api::bfl::generation_call and a reusable api::bfl::poll operation from the entire generation
+  handler.py. Map its response protocol declarations to B1517's decoded reply type; _task_payload
+  calls that decoder. Construction receives B173 transport, clock and sleeper instead of storing a
+  module singleton. The sync facade and async entry share one operation. Preserve dictionary versus
+  typed litellm_params access, discard an incompatible supplied sync/async transport, and use the
+  provider pool when none is suitable. Prepare with B1517, overlay extra_headers after validation and
+  call B249 pre_call with the prompt, empty api_key and complete request details before POST. Submission
+  gets the supplied timeout; submission exceptions become BFL 500 Request failed errors.
+
+  The polling stage checks initial status >=400 before JSON, rejects any errors key even when null,
+  and requires a truthy polling_url. Initial decode failures keep the initial status, missing URL is
+  500, and B1517 validates the BFL host before credentials leave the client. Poll with only x-key,
+  defaulting it to an empty string if absent. The public timeout is not forwarded to GET and the unused
+  polling timeout argument must not acquire new semantics. Default interval is 1.5 seconds and total
+  elapsed-time limit 300 seconds; check elapsed time before each GET. Exactly status 200 is accepted.
+  Ready returns the response, Error/Failed/Content Moderated/Request Moderated raise 400, and any other
+  or absent state sleeps then retries. Exhaustion raises 408. Poll transport/JSON failures retain their
+  uncaught shared-error path rather than the submission 500 wrapper. Finish using B1517's image projection.
+
+  Expose the poll operation to B1520 so identical edit lifecycle logic can be reused. Add bfl_jobs
+  helper cases submission_headers, initial_error_presence, pending_ready, moderated_state,
+  poll_non_200, deadline_before_get and invalid_poll_host. Script HTTP/clock/sleep at the pinned
+  handler seam and compare the complete ordered effects, including timeout omission and no GET on a
+  rejected host. Register call.bfl_jobs. Unit tests in api::bfl::generation_call and api::bfl::poll
+  also verify dropping a pending operation cancels its request and timer. No new decoder is needed.
+  This file has 389 nonblank/non-comment lines, largely duplicated sync/async bodies; one native
+  implementation needs 290 lines, tests 240, adapters 120 and wiring 40, within 750.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/bfl.rs
+    - crates/betterlite-core/src/api/bfl/{generation_call,poll}.rs
+    - crates/betterlite-core/src/api/bfl/generation_call/**
+    - crates/betterlite-core/src/api/bfl/poll/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/bfl_jobs.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/bfl_jobs.py
+    - tools/oracle/cases/helpers/bfl-jobs/**
+    - tools/oracle/fuzz/corpus/helper_case/bfl_jobs*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/handler.py#L38-L490
+    why: Submission preparation, initial errors and the generation polling state machine.
+dod:
+  - text: Generation submission observes source header, logging, timeout and transport-error ordering.
+    proof: [bfl-job-tests, oracle, bfl-job-python]
+  - text: Polling enforces trusted hosts, exact status handling and elapsed-time termination while cancellation releases resources.
+    proof: [bfl-job-tests, oracle, bfl-job-python]
+checks:
+  optional: []
+  commands:
+    - id: bfl-job-tests
+      why: submission execution or a polling transition has no production behavior tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::bfl::generation_call::/) | test(/^api::bfl::poll::/)'
+    - id: bfl-job-python
+      why: the independent job lifecycle trace cannot be compared
+      run: grep -qE '^[[:space:]]+bfl_jobs:' tools/oracle/fuzz/corpus/helper_case/bfl_jobs* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/bfl_jobs.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/bfl-jobs/submission-headers.yaml
+  - tools/oracle/cases/helpers/bfl-jobs/initial-error-presence.yaml
+  - tools/oracle/cases/helpers/bfl-jobs/pending-ready.yaml
+  - tools/oracle/cases/helpers/bfl-jobs/moderated-state.yaml
+  - tools/oracle/cases/helpers/bfl-jobs/poll-non-200.yaml
+  - tools/oracle/cases/helpers/bfl-jobs/deadline-before-get.yaml
+  - tools/oracle/cases/helpers/bfl-jobs/invalid-poll-host.yaml
+deviations: []
+out_of_scope:
+  - B046 connects the prepared generation executor to ImageGenerationPlan; B1517 controls result parsing and the hostname allowlist.
+pitfalls:
+  - Submission accepts a non-error 201, but a poll returning 201 fails.
+  - The presence of errors is sufficient to reject a submission even when its value is an empty list.
+  - Extra authentication headers used for submission must not accompany polling GETs.
+review_level: security
+budget:
+  max_changed_lines: 750
+  max_new_expects: 0

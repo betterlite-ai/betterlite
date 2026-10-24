@@ -1,0 +1,8 @@
+id: B1375
+milestone: M3 providers
+title: Vertex batch input conversion and rewindable upload streams
+status: todo
+depends_on: [B1374, B1340, B1310, B1321, B1025, B010, B1128, B517, B171]
+file: tasks/B1375-vertex-batch-upload-stream.yaml
+covers:
+  - "litellm/llms/vertex_ai/files/transformation.py"

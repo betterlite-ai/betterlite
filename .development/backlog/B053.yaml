@@ -1,0 +1,8 @@
+id: B053
+milestone: M4 keys, spend and management
+title: Install JWT and OAuth authentication backends
+status: todo
+depends_on: [B001, B002, B003, B052, B171, B732, B754, B760, B761, B762, B763, B764, B765, B766, B767, B768, B769, B856, B860, B869, B870, B871, B875, B877, B891]
+file: tasks/B053-jwt-auth.yaml
+covers:
+  - "litellm/proxy/auth/handle_jwt.py"

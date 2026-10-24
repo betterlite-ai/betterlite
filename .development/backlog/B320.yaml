@@ -1,0 +1,8 @@
+id: B320
+milestone: M2 routing
+title: Typed tag selectors and bounded header patterns
+status: todo
+depends_on: [B002, B301, B361]
+file: tasks/B320-tag-matchers.yaml
+covers:
+  - "litellm/router_strategy/tag_based_routing.py"

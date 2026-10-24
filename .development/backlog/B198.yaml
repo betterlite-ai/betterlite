@@ -1,0 +1,10 @@
+id: B198
+milestone: M1 openai data plane
+title: Injected call context and shared settings
+status: todo
+depends_on: [B002, B171]
+file: tasks/B198-call-context.yaml
+covers:
+  - "litellm/{_internal_context,_uuid,_version,constants}.py"
+  - "litellm/litellm_core_utils/{asyncify,cached_imports,coroutine_checker,env_utils,thread_pool_executor,aws_partition}.py"
+  - "litellm/main.py"

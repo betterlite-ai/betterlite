@@ -1,0 +1,9 @@
+id: B576
+milestone: M3 providers
+title: Anthropic chat parameter and context mapping
+status: todo
+depends_on: [B2201, B569, B575, B574, B688, B206, B171, B2202]
+file: tasks/B576-anthropic-params.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"
+  - "litellm/types/llms/anthropic.py"

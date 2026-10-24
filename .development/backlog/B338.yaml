@@ -1,0 +1,9 @@
+id: B338
+milestone: M2 routing
+title: Quality-tier and keyword routing
+status: todo
+depends_on: [B328, B013, B016, B301, B002]
+file: tasks/B338-quality-router.yaml
+covers:
+  - "litellm/router_strategy/quality_router/**"
+  - "litellm/router_utils/add_retry_fallback_headers.py"

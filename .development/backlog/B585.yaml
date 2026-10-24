@@ -1,0 +1,11 @@
+id: B585
+milestone: M3 providers
+title: Anthropic native token counting
+status: todo
+depends_on: [B567, B173, B198, B002, B171]
+file: tasks/B585-anthropic-count-tokens.yaml
+covers:
+  - "litellm/llms/anthropic/count_tokens/handler.py"
+  - "litellm/llms/anthropic/count_tokens/token_counter.py"
+  - "litellm/llms/anthropic/count_tokens/transformation.py"
+  - "litellm/llms/anthropic/common_utils.py"

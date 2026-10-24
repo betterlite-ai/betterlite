@@ -1,0 +1,8 @@
+id: B1208
+milestone: M4 keys, spend and management
+title: Team block state and auxiliary read routes
+status: todo
+depends_on: [B001, B002, B003, B052, B732, B736, B737, B800, B801, B860, B865, B1231, B2318]
+file: tasks/B1208-team-state.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"

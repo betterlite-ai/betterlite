@@ -1,0 +1,75 @@
+id: B2327
+title: Provider attribution for local auth and budget rejections
+description: >-
+  Move rate_limiter_utils.py resolve_llm_provider_for_rate_limit L14-L65 and
+  _resolve_provider_from_router_alias L68-L124 below B072 into betterlite-auth::rejection_provider.
+  B757 needs this before the rate-limiter umbrella exists. Inject B174 provider resolution and a B302
+  deployment snapshot; production must not import proxy_server globals. The constants owner supplies
+  PROXY_LLM_PROVIDER_FALLBACK='litellm_proxy'. No provider transport, credentials or database is accessed.
+
+  Missing/falsey model returns ('','litellm_proxy') without lookup. Otherwise first call B174 with
+  the model; successful resolution returns resolved_model or original_model, and provider or
+  litellm_proxy. A successful result with empty provider does not try aliases. Only an exception
+  triggers router fallback. Missing router or model_list returns None from that helper. Scan entries
+  in order, skipping non-dict entries, nonmatching model_name, nondict params, and missing/nonstring/
+  empty underlying params.model. Try B174 per valid candidate, continuing after exceptions or empty
+  provider; the first successful provider wins with resolved model or underlying model. Outer alias
+  lookup failures return None silently. If no alias succeeds, DEBUG once with original error and
+  model, then return (original_model,'litellm_proxy'), not an empty model. Never replace the original
+  budget/rate-limit error with a secondary resolver failure.
+
+  B856 Management::auth rejection_provider compares direct MIT calls with the production helper,
+  using injected router/resolver outcomes and ordered calls. Add B171 helper_case seeds. Named cases
+  absent_model_no_lookup, direct_resolution, direct_empty_fields_no_alias, first_alias_success,
+  malformed_deployments_skipped, alias_failed_candidate_continues, alias_missing_provider_continues,
+  absent_router_or_list, alias_outer_error_silent, unresolved_keeps_original_model_debug_once and
+  provider_failure_never_masks_budget exercise every branch. There are no config reads or new bytes
+  to parse. The 65 nonblank non-comment logic lines after docstrings allow 100 production, 165 tests,
+  90 adapters and 45 wiring, 400 total. Keep Rust files below 300 lines.
+scope:
+  paths:
+    - crates/betterlite-auth/src/rejection_provider.rs
+    - crates/betterlite-auth/src/rejection_provider/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/rejection_provider.rs
+    - tools/oracle/helpers/rejection_provider.py
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/rejection-provider/**
+    - tools/oracle/fuzz/corpus/helper_case/rejection-provider-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/rate_limiter_utils.py#L14-L124
+    why: Direct provider resolution, ordered alias scan and defensive fallback.
+dod:
+  - text: Every named case compares model/provider, resolver call order and DEBUG occurrence with the MIT functions.
+    proof: [behavior-tests, helper-python, oracle]
+  - text: The shared helper decoder accepts the newly added rejection-provider operation seeds.
+    proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Rejection attribution is missing or a secondary error escapes.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^rejection_provider::tests::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: The pinned source adapter is absent or fails strict checking.
+      run: test -f tools/oracle/helpers/rejection_provider.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The rejection-provider operation has no new seed.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/rejection-provider-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/rejection-provider/direct-resolution.yaml
+  - tools/oracle/cases/helpers/rejection-provider/alias-scan.yaml
+  - tools/oracle/cases/helpers/rejection-provider/defensive-fallback.yaml
+deviations: []
+out_of_scope:
+  - B072 retains convert_priority_to_percent and rate-limiter hooks; B757 attaches this result to budget exceptions.
+pitfalls:
+  - The direct resolver returning an empty provider is success and does not trigger the alias scan.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

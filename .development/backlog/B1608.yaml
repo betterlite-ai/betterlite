@@ -1,0 +1,12 @@
+id: B1608
+milestone: M4 keys, spend and management
+title: SSO identity records and privilege ordering
+status: todo
+depends_on: [B171, B732, B733, B770]
+file: tasks/B1608-sso-types.yaml
+covers:
+  - "litellm/types/proxy/management_endpoints/ui_sso.py"
+  - "litellm/types/proxy/ui_sso.py"
+  - "litellm/proxy/management_endpoints/types.py"
+  - "litellm/proxy/management_endpoints/sso_helper_utils.py"
+  - "litellm/proxy/management_endpoints/ui_sso.py"

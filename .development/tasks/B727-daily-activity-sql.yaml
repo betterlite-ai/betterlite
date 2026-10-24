@@ -1,150 +1,150 @@
 id: B727
 title: Daily spend query and rollup builders
 description: >-
-  Implement DailyActivityScope and parameterized SQL builders for aggregate, entity rollup and key page
-  queries. Retain timezone-adjusted date windows, PTU flat-cost attribution and filters without string-interpolating
-  caller values. Return Decimal sums and typed query plans; actual execution is provided by daily activity
-  repository.
+  Implement daily_activity_sql L43-L301 and the expression constants L14-L15 in betterlite-db.
+  Reuse B2312's scope, query and identifier contracts. Own adjust_dates_for_timezone,
+  build_where_clause, _ptu_flat_cost_select, _rollup_metric_select, _validate_api_key_limit,
+  _top_api_keys_sql, build_aggregated_sql, build_entity_rollup_sql, _key_spend_select and
+  build_key_page_sql. These functions return SQL/ordered parameters without executing it.
 
+  Time adjustment defaults include_current_utc_day=false and utc_now=None. With the flag off or
+  offset=None, return both input strings unchanged without reading the clock. Otherwise calculate
+  caller_local_today from UTC now MINUS offset minutes. If end_date sorts before that ISO date,
+  retain the window; otherwise replace only end_date with max(input end, current UTC date).
+  Offset zero still enters this path. Never shift start_date, parse the input dates, trim them,
+  infer a timezone or truncate a future end_date. Inject the clock for both direct and nested calls.
 
-  This task returns SQL plans over typed filters and executes no query. Helper cases call the pinned SQL
-  builder only; real Postgres execution belongs to B729. There is no outside-byte decoder or task fuzz
-  target here.
+  build_where_clause defaults start_index=1 and emits inclusive date >= and <= binds first.
+  entity_ids=None omits its predicate; an empty tuple emits FALSE without a parameter; a nonempty
+  tuple binds one text[] with the validated entity identifier. Nonempty exclusions bind another
+  text[] and retain null entities through (field IS NULL OR NOT(field=ANY(...))). A truthy model
+  adds equality; None and empty string omit it. api_keys follows the same None/empty/nonempty
+  distinction as entity_ids. Bind order is dates, present entity array, exclusion array, model,
+  present key array; absent/FALSE predicates consume no slots. Preserve array order/duplicates.
+  Both empty inclusions can emit FALSE. start_index is supplied by internal callers, without
+  invented positivity validation. Values containing quotes or SQL syntax stay parameters.
 
+  PTU_SENTINEL_API_KEY is the static literal __ptu_flat_cost__. USAGE_TOP_API_KEYS_MAX=1000 and
+  USAGE_KEY_PAGE_MAX=100 are static constants, not environment settings. Aggregate and entity
+  builders calculate their WHERE before checking api_key_limit in inclusive 1..1000, otherwise
+  ValueError "api_key_limit must be between 1 and 1000". Their final parameters append sentinel
+  then limit. The shared top-key query excludes sentinel and null keys, groups by key, ranks
+  SUM(spend::numeric) descending then api_key ascending, and counts all grouped keys before LIMIT.
+  Selection is global across the scoped dates/entities, not a fresh top list per dimension.
 
-  Build the production daily_activity_sql module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Rollup metrics are SUM(spend), SUM(ptu_flat_cost) only for TEAM and literal zero otherwise,
+  plus SUM of prompt_tokens, completion_tokens, cache_read_input_tokens,
+  cache_creation_input_tokens, compression_saved_tokens, compression_savings_spend,
+  prompt_caching_savings_spend, gateway_injected_caching_savings_spend, autorouter_savings_spend,
+  api_requests, successful_requests, failed_requests, total_response_time_ms and timed_requests.
+  Preserve bigint casts for counters and the source monetary SQL projections with B2312's checked
+  Decimal row conversion. There is no COALESCE in these sums: an empty grand total has null
+  metrics, except non-team PTU zero. Non-team queries must not reference a nonexistent PTU column.
+  The export-facing aggregate=false form prefixes scoped.ptu_flat_cost and omits its output alias.
 
+  build_aggregated_sql UNION ALLs unrestricted totals, including the sentinel, with top-key-only
+  breakdowns. Totals have grouping sets date; date/model; date/model_group; date/provider;
+  date/mcp_namespaced_tool_name; date/endpoint; and the grand total (). Model group means
+  COALESCE(NULLIF(model_group, ''), model). Its grouping mask is (GROUPING(date)<<6) | 32 |
+  GROUPING(model, group-expression, provider, tool, endpoint). The keyed half adds api_key to
+  each of the six dated sets, uses GROUPING(date,key,model,group,provider,tool,endpoint), and
+  MAX(top_api_keys.distinct_api_keys); it has no grand-total set. Totals set api_key and
+  distinct_api_keys null. Keep true null dimension values distinguishable by the mask. There
+  is no overall ORDER BY or deduplication between the two halves.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/daily_activity_sql.py:
-  adjust_dates_for_timezone (L43-L56; 14 source lines), build_where_clause (L59-L106; 48 source lines),
-  _ptu_flat_cost_select (L109-L112; 4 source lines), _rollup_metric_select (L115-L132; 18 source lines),
-  _validate_api_key_limit (L135-L137; 3 source lines), _top_api_keys_sql (L140-L148; 9 source lines),
-  build_aggregated_sql (L151-L216; 66 source lines), build_entity_rollup_sql (L219-L261; 43 source lines),
-  _key_spend_select (L264-L274; 11 source lines), build_key_page_sql (L277-L301; 25 source lines). litellm/types/repositories/daily_activity.py:
-  DailyActivityScope.__post_init__ (L43-L45; 3 source lines), DailyActivityProxyReads.recover_key_metadata
-  (L158-L160; 3 source lines).
+  build_entity_rollup_sql coalesces null entity identifiers to the empty string. A separate CTE
+  counts distinct nonsentinel keys per entity across the entire window. Daily entity totals
+  include sentinel rows, set api_key=null/api_key_rolled=1 and join that count with fallback zero.
+  Daily entity/key rows use the same GLOBAL top keys, api_key_rolled=0 and distinct_api_keys=null.
+  Null and empty entity identifiers merge; the distinct count is not a per-day count. Again
+  UNION ALL does not promise row ordering.
 
+  _key_spend_select coalesces spend and each prompt/completion/request/success/failure/cache
+  sum to zero. total_tokens is summed prompt plus completion, never a stored total column.
+  build_key_page_sql first rejects limits outside 1..100 with "limit must be between 1 and 100",
+  then negative offsets with "offset must be non-negative", before building WHERE. It groups
+  nonsentinel keys, ranks numeric spend descending/key ascending, and appends sentinel, limit,
+  offset binds. COUNT(*) over all ranked keys is returned through a LEFT JOIN LATERAL from
+  one dummy row: empty/out-of-range pages still produce one row with total count and null page
+  columns. B729 removes that placeholder; changing the SQL to return no row loses the count.
 
-  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
-  column type; retain source storage types.
-
-
-  Add the daily_activity_sql operation under B856 Management::database. Python calls only the owned MIT
-  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
-  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a daily-activity-sql-* seed to B171 helper_case, which already owns this decoder.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 247 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  247 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 490 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Helper operation daily_activity_sql invokes the source builders with an injected clock and
+  compares SQL structure, ordered parameters and validation failures. Normalize whitespace only,
+  never predicates, aliases, grouping masks, casts or parameter positions. Each named case below
+  has a helper fixture; execute representative plans against Postgres in B729. No SQL execution,
+  request decoder or task-specific fuzz target belongs here. After moving the shared declarations
+  to B2312, this part owns 243 nonblank noncomment lines excluding imports, including SQL strings. Allow 255
+  production, 270 tests, 100 adapters and 35 wiring, 660 within 750; split source files by query family.
 scope:
   paths:
     - crates/betterlite-db/src/daily_activity_sql.rs
     - crates/betterlite-db/src/daily_activity_sql/**
     - crates/betterlite-db/src/lib.rs
-    - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/daily_activity_sql/fixtures/**
     - tools/oracle/src/helpers/daily_activity_sql.rs
-    - tools/oracle/src/helpers/daily_activity_sql/**
     - tools/oracle/helpers/daily_activity_sql.py
-    - tools/oracle/Cargo.toml
     - tools/oracle/src/helpers/management/database.rs
     - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/daily-activity-sql/**
     - tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L1-L301
-    why: Pinned implementation and exact ownership boundary for daily_activity_sql.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L1-L192
-    why: Pinned implementation and exact ownership boundary for daily_activity_sql.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L43-L56
-    why: Own adjust_dates_for_timezone; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L59-L106
-    why: Own build_where_clause; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L109-L112
-    why: Own _ptu_flat_cost_select; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L115-L132
-    why: Own _rollup_metric_select; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L135-L137
-    why: Own _validate_api_key_limit; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L140-L148
-    why: Own _top_api_keys_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L151-L216
-    why: Own build_aggregated_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L219-L261
-    why: Own build_entity_rollup_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L264-L274
-    why: Own _key_spend_select; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L277-L301
-    why: Own build_key_page_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L43-L45
-    why: Own DailyActivityScope.__post_init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L158-L160
-    why: Own DailyActivityProxyReads.recover_key_metadata; preserve caller-visible values and failure
-      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L43-L148
+    why: Date extension, exact predicate/bind order, sums and global top-key validation/ranking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L151-L301
+    why: Grouping masks, entity counts and the count-preserving lateral key page.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L2163-L2169
+    why: Static sentinel and the aggregate/key-page maxima read by the builders.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: timezone_day_window,
-      entity_scope, ptu_flat_cost, top_key_limit, empty_filter, malicious_filter_bound.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
+  - text: 'Timezone/filter cases name flag_false_does_not_read_clock, null_offset_unchanged,
+      zero_offset_current_day, positive_offset_crosses_midnight, negative_offset_crosses_midnight,
+      historical_end_unchanged, future_end_not_truncated, start_never_shifted,
+      dates_compared_as_strings, nondefault_bind_start, null_filters_omitted,
+      empty_entity_and_key_filters_false, exclusion_keeps_null_entity,
+      empty_model_omitted, every_filter_bind_order, duplicate_filters_preserved and sql_values_bound.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Aggregate cases name aggregate_limit_one_and_thousand, aggregate_limit_zero_and_excess,
+      team_ptu_sum_and_other_tables_zero, export_ptu_expression_without_alias,
+      every_rollup_metric_projection, empty_total_keeps_null_sums, top_keys_global_not_per_day,
+      sentinel_in_totals_not_keys, top_key_spend_tie_order, distinct_count_before_limit,
+      six_dimensions_and_grand_total, grouping_bits_keep_real_nulls,
+      empty_model_group_falls_back, entity_null_and_empty_merge,
+      entity_distinct_count_whole_window, entity_sentinel_only_count_zero and union_has_no_order.'
+    proof: [behavior-tests, helper-python, oracle]
+  - text: 'Key-page cases name key_page_limit_one_and_hundred, limit_error_before_offset_error,
+      negative_offset_rejected, page_parameter_order, key_metrics_nulls_zero,
+      total_tokens_prompt_plus_completion, key_page_numeric_rank_tie,
+      empty_page_preserves_count_row and offset_past_end_preserves_count_row.'
+    proof: [behavior-tests, helper-python, oracle]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_sql::tests::/)
-        - test(/replays_the_/)'
+      why: Each query family must preserve its distinct filters, masks and placeholder-row behavior.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_sql::/)'
     - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/daily_activity_sql.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
+      why: SQL comparisons must come from source builders with a controlled clock.
+      run: test -f tools/oracle/helpers/daily_activity_sql.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-*")"
-        && grep -rlq "daily_activity_sql" tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-* &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: Require new SQL-builder operation inputs before replaying the shared helper decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-*")" && grep -rlq daily_activity_sql tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/daily-activity-sql/timezone-day-window.yaml
-  - tools/oracle/cases/helpers/daily-activity-sql/entity-scope.yaml
-  - tools/oracle/cases/helpers/daily-activity-sql/ptu-flat-cost.yaml
-  - tools/oracle/cases/helpers/daily-activity-sql/top-key-limit.yaml
-  - tools/oracle/cases/helpers/daily-activity-sql/empty-filter.yaml
-  - tools/oracle/cases/helpers/daily-activity-sql/malicious-filter-bound.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/clock-and-date-extension.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/filter-presence-and-bind-order.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/aggregate-limits-and-sentinel.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/metric-and-grouping-projections.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/entity-rollup-counts.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/key-page-lateral-count.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/repositories/daily_activity_sql.py: B728 owns _bounded_limit (L304-L306), build_key_search_sql
-    (L309-L341), build_model_top_keys_sql (L344-L363), build_cache_leakage_keys_sql (L366-L380), build_export_sql
-    (L383-L454), _export_grouping (L457-L509), _export_cursor_clause (L512-L526).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B2312 owns every type in types/repositories/daily_activity.py and SqlQuery/ExportCursor/PRISMA_TO_PG_TABLE in daily_activity_sql.py L18-L40.
+  - B728 owns _bounded_limit, build_key_search_sql, build_model_top_keys_sql,
+    build_cache_leakage_keys_sql, build_export_sql, _export_grouping and _export_cursor_clause, L304-L526.
+  - B729 executes plans and converts rows; B074 validates route dates, pagination and authorized scopes.
 pitfalls:
-  - Caller filter values must remain bind parameters even when the query contains dynamic grouping or
-    cursor predicates.
+  - PTU sentinel spend remains in totals even when api_key_limit hides most real keys.
+  - model_group='' falls back to model, but a real null grouped dimension is not a rolled-up dimension.
+  - Empty key pages need the lateral placeholder to report the total count beyond the last page.
 budget:
-  max_changed_lines: 500
+  max_changed_lines: 750
   max_new_expects: 0
 review_level: security

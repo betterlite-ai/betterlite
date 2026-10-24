@@ -1,130 +1,145 @@
 id: B728
 title: Daily spend search and export queries
 description: >-
-  Implement typed key search, top model keys, cache leakage and cursor export query builders with stable
-  grouping/order and bounded limits. Preserve cursor tuple comparison and timezone behavior; export rows
-  remain scoped to the authorized entity set supplied by the endpoint.
+  Implement daily_activity_sql.py L304-L526 as betterlite-db::daily_activity_export: _bounded_limit,
+  build_key_search_sql, build_model_top_keys_sql, build_cache_leakage_keys_sql, build_export_sql,
+  _export_grouping and _export_cursor_clause. Consume B2312's closed scopes, ExportType, SqlQuery,
+  ExportCursor and table mapping, and B727's WHERE/key metrics/PTU expressions. Each function is
+  a pure SQL-plan builder; B729 executes it. The builders have no authentication or setting reads.
 
+  _bounded_limit defaults minimum=1 and rejects values below it with ValueError "limit must be
+  at least 1" for all production calls. It has no upper bound: 101, 1001 and larger positive
+  limits are valid here. Validate before building WHERE. The repository applies its separate
+  maxima for searches/rankings; do not move those into these helpers or clamp a supplied value.
 
-  This task returns SQL plans over typed filters and executes no query. Helper cases call the pinned SQL
-  builder only; real Postgres execution belongs to B729. There is no outside-byte decoder or task fuzz
-  target here.
+  Key search escapes backslash first, then percent and underscore, and binds the result between
+  percent wildcards. Use ILIKE with ESCAPE backslash. An empty search is %% and searches all keys
+  remaining in scope; whitespace is not trimmed. Match the stored api_key itself, or active OR
+  deleted key_alias/user_id/user_email via their user-table joins. A deleted record at any deletion
+  time can match, even when an active record also exists. UNION deduplicates candidate tokens;
+  grouping aggregates each spend row once. Metadata lookup has no extra entity predicate, but the
+  outer daily-spend WHERE always retains the authorized scope and api_keys filter. Exclude
+  __ptu_flat_cost__ and null keys, project B727's zero-coalesced key metrics, order numeric spend
+  descending then key ascending, and bind WHERE values, escaped pattern, sentinel, limit in that order.
 
+  Model ranking uses either model = supplied model_group or
+  COALESCE(NULLIF(model_group, ''), model) = supplied model_group, according to by_model_group.
+  This predicate intersects, rather than replaces, an existing scope.model predicate. Empty and
+  whitespace model strings are bound unchanged. Exclude sentinel/null keys; use the same key
+  metrics and spend/key ranking; append model value, sentinel and limit after WHERE parameters.
+  Cache leakage instead groups keys with HAVING SUM(prompt_tokens)-SUM(cache_read_input_tokens)>0
+  and ranks that difference descending then api_key. It does not subtract cache-creation tokens,
+  sort by spend or coalesce a null difference before HAVING. Zero/negative/null differences vanish.
+  Its final parameters are sentinel then limit.
 
-  Build the production daily_activity_export module in betterlite-db; reuse the typed dependencies listed
-  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
-  adjacent tests.rs files.
+  Exports first scope source rows with B727's WHERE. DAILY retains sentinel and null keys; every
+  other export excludes them in the scoped CTE. Group by date and COALESCE(entity field,''); add
+  the type-specific group key except for DAILY. Order these same grouping keys ascending, then
+  LIMIT a bound batch_size. No offset, transaction snapshot or synthetic tie-breaker is added.
+  Null and empty entity identifiers merge. TEAM left-joins LiteLLM_TeamTable and selects
+  MAX(team_alias); ORGANIZATION similarly selects MAX(organization_alias); other scopes emit
+  null entity_alias without a join. Missing aliases do not discard spend rows.
 
+  DAILY uses constant empty group key and null api_key/key_alias/user_id/user_email/model.
+  DAILY_WITH_KEYS groups by scoped.api_key and emits NULLIF(api_key,''). It left-joins the active
+  verification token and, ONLY WHEN vt.token IS NULL, the most recently deleted token through a
+  lateral ORDER BY deleted_at DESC LIMIT 1. There is no tie-breaker for equal deletion times.
+  Thus an active key with null alias/user_id does not recover those fields from deleted history.
+  Output MAX(COALESCE(active alias, deleted alias)), MAX(COALESCE(active user_id, deleted user_id))
+  and MAX(user_email), joining users on the selected user id. DAILY_WITH_USERS uses the same
+  joins, groups by COALESCE(active user_id,deleted user_id,''), emits null api_key/key_alias and
+  the maximum selected user_id/email. Missing owners group together; empty user IDs remain empty.
+  DAILY_WITH_MODELS groups COALESCE(scoped.model,'') and emits NULLIF(COALESCE(model,''),'');
+  key/user fields are null and model_group is irrelevant. Null/empty model values share a group.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/daily_activity_sql.py:
-  _bounded_limit (L304-L306; 3 source lines), build_key_search_sql (L309-L341; 33 source lines), build_model_top_keys_sql
-  (L344-L363; 20 source lines), build_cache_leakage_keys_sql (L366-L380; 15 source lines), build_export_sql
-  (L383-L454; 72 source lines), _export_grouping (L457-L509; 53 source lines), _export_cursor_clause (L512-L526;
-  15 source lines).
+  Every export projects date/entity_id/entity_alias/api_key/key_alias/user_id/user_email/model,
+  zero-coalesced SUM(spend), SUM of prompt_tokens/completion_tokens/api_requests/
+  successful_requests/failed_requests/cache_read_input_tokens/cache_creation_input_tokens with
+  bigint casts and zero fallback, and flat_cost. TEAM flat_cost is SUM(scoped.ptu_flat_cost)
+  WITHOUT COALESCE; all other tables use literal zero. Reuse B2312's checked Decimal conversion
+  while retaining source SQL casts. No savings fields or total_tokens are exported.
 
+  after=None adds no cursor predicate or binds. Otherwise filter after the joins and before
+  GROUP BY using strict tuple comparison (date,coalesced entity,type group key) > (three binds).
+  Bind the cursor's strings exactly, including an empty third value for DAILY; do not silently
+  repair a nonempty daily cursor group_key. Cursor values never become SQL text. Parameter order
+  is WHERE, sentinel only for nondaily types, cursor date/entity/group if present, batch_size.
+  Use internal typed fixed-length bind indices rather than reproducing unchecked tuple indexing.
 
-  Add the daily_activity_export operation under B856 Management::database. Python calls only the owned
-  MIT helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the
-  expected algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
-  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
-  a daily-activity-export-* seed to B171 helper_case, which already owns this decoder.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 211 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  211 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 454 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Add a daily_activity_export helper operation calling the pinned pure builders. Compare normalized
+  whitespace only, every projection/condition/order and the complete parameter tuple. B729's real
+  Postgres tests cover resulting rows and multi-page behavior; no effectful helper simulation is
+  needed. This task has no JSON/cursor byte parser. The 211 nonblank noncomment source lines include
+  SQL text; allow 225 native code, 260 tests, 90 adapters and 30 wiring, 605 within 700.
 scope:
   paths:
     - crates/betterlite-db/src/daily_activity_export.rs
     - crates/betterlite-db/src/daily_activity_export/**
     - crates/betterlite-db/src/lib.rs
-    - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/daily_activity_export/fixtures/**
     - tools/oracle/src/helpers/daily_activity_export.rs
-    - tools/oracle/src/helpers/daily_activity_export/**
     - tools/oracle/helpers/daily_activity_export.py
-    - tools/oracle/Cargo.toml
     - tools/oracle/src/helpers/management/database.rs
     - tools/oracle/helpers/management/database.py
     - tools/oracle/cases/helpers/daily-activity-export/**
     - tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L304-L526
-    why: Pinned implementation and exact ownership boundary for daily_activity_export.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L304-L306
-    why: Own _bounded_limit; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L309-L341
-    why: Own build_key_search_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L344-L363
-    why: Own build_model_top_keys_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L366-L380
-    why: Own build_cache_leakage_keys_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L304-L380
+    why: Positive-only limits, exact LIKE escaping and distinct ranking expressions.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L383-L454
-    why: Own build_export_sql; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L457-L509
-    why: Own _export_grouping; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L512-L526
-    why: Own _export_cursor_clause; preserve caller-visible values and failure ordering.
+    why: Scope/sentinel placement, all export projections, joins, grouping and parameter order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L457-L526
+    why: Four export grouping variants, conditional deleted-key recovery and strict cursor tuple.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: search_escaped_pattern,
-      cursor_next_page, same_timestamp_tie, bounded_limit, cache_leakage, model_top_keys.'
-    proof:
-      - behavior-tests
-  - text: The independently invoked MIT helper matches the production operation and the new helper-case
-      seed replays.
-    proof:
-      - oracle
-      - helper-python
-      - helper-case-corpus
+  - text: 'Search/ranking cases name nonpositive_limit_rejected_first, positive_limit_has_no_maximum,
+      search_backslash_percent_underscore_literal, search_empty_and_whitespace,
+      search_active_and_deleted_alias_user_email, search_outer_scope_retained,
+      search_union_does_not_multiply_spend, search_sentinel_and_null_excluded,
+      search_numeric_spend_tie_order, model_group_empty_falls_back,
+      model_exact_mode_does_not_use_group, model_filter_intersects_scope,
+      leakage_positive_uncached_tokens_only, leakage_cache_creation_ignored,
+      leakage_difference_rank_and_key_tie and all_search_ranking_bind_orders.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Export cases name all_four_export_groupings, daily_alone_keeps_sentinel,
+      entity_null_empty_merge, team_org_alias_joins, other_entities_no_alias_join,
+      active_key_null_metadata_blocks_deleted_fallback, latest_deleted_metadata_lateral,
+      deletion_time_tie_has_no_tiebreaker, missing_owner_user_group,
+      null_empty_model_group_merge, key_empty_string_output_null, export_every_metric_projection,
+      team_flat_cost_not_coalesced, nonteam_flat_cost_zero,
+      cursor_absent_adds_no_binds, cursor_strict_three_column_comparison,
+      daily_cursor_third_value_not_repaired, cursor_after_joins_before_grouping,
+      export_group_order_matches_cursor, all_export_bind_orders and cursor_values_bound.'
+    proof: [behavior-tests, helper-python, oracle]
 checks:
   optional: []
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_export::tests::/)
-        - test(/replays_the_/)'
+      why: SQL generation must preserve search escaping and all four distinct export plans.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_export::/)'
     - id: helper-python
-      why: The referenced helper adapter is missing or strict Python checking fails.
-      run: test -f tools/oracle/helpers/daily_activity_export.py && uv run --locked --project tools/oracle/litellm
-        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
-        --project tools/oracle/helpers/pyrightconfig.json
+      why: Read source SQL from the actual helpers, including their conditional lateral join.
+      run: test -f tools/oracle/helpers/daily_activity_export.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
-      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*")"
-        && grep -rlq "daily_activity_export" tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: The new export operation must add decoder inputs before corpus replay can pass.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*")" && grep -rlq daily_activity_export tools/oracle/fuzz/corpus/helper_case/daily-activity-export-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/daily-activity-export/search-escaped-pattern.yaml
-  - tools/oracle/cases/helpers/daily-activity-export/cursor-next-page.yaml
-  - tools/oracle/cases/helpers/daily-activity-export/same-timestamp-tie.yaml
-  - tools/oracle/cases/helpers/daily-activity-export/bounded-limit.yaml
-  - tools/oracle/cases/helpers/daily-activity-export/cache-leakage.yaml
-  - tools/oracle/cases/helpers/daily-activity-export/model-top-keys.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/positive-limits.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/literal-search-and-metadata.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/model-and-leakage-rankings.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/four-groupings-and-sentinel.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/active-deleted-user-joins.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/metric-alias-and-null-projections.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/cursor-bind-order.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/repositories/daily_activity_sql.py: B727 owns adjust_dates_for_timezone (L43-L56), build_where_clause
-    (L59-L106), _ptu_flat_cost_select (L109-L112), _rollup_metric_select (L115-L132), _validate_api_key_limit
-    (L135-L137), _top_api_keys_sql (L140-L148), build_aggregated_sql (L151-L216), build_entity_rollup_sql
-    (L219-L261), _key_spend_select (L264-L274), build_key_page_sql (L277-L301).'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - B2312 owns SqlQuery, ExportCursor, PRISMA_TO_PG_TABLE and every daily-activity row/scope contract.
+  - B727 owns daily_activity_sql.py L14-L15 and L43-L301, including the shared WHERE/key-metric/PTU helpers.
+  - B729 owns query execution, repository limit maxima, export iteration and cursor creation from the last row.
 pitfalls:
-  - Caller filter values must remain bind parameters even when the query contains dynamic grouping or
-    cursor predicates.
+  - The lateral deleted-key join is disabled by any active token row, even when its alias and user_id are null.
+  - Search can match an old deleted alias although export metadata selects only the latest deleted record.
+  - Only DAILY retains PTU sentinel rows; model, key and user exports can therefore sum to different spend.
 budget:
-  max_changed_lines: 475
+  max_changed_lines: 700
   max_new_expects: 0
 review_level: security

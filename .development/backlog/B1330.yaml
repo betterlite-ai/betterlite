@@ -1,0 +1,8 @@
+id: B1330
+milestone: M3 providers
+title: Select Google token counters and preserve wrapper differences
+status: todo
+depends_on: [B1306, B1312, B1329, B1332, B1331, B171]
+file: tasks/B1330-google-token-counter-selection.yaml
+covers:
+  - "litellm/llms/{gemini,vertex_ai}/common_utils.py"

@@ -1,0 +1,8 @@
+id: B766
+milestone: M4 keys, spend and management
+title: Resolve verified JWT claims to virtual keys
+status: todo
+depends_on: [B001, B002, B003, B171, B213, B722, B732, B733, B734, B738, B753, B757, B856, B860, B869, B870, B893, B2314]
+file: tasks/B766-jwt-key-resolution.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

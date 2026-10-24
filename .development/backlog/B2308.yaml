@@ -1,0 +1,8 @@
+id: B2308
+milestone: M4 keys, spend and management
+title: RDS database credential selection and token signing
+status: todo
+depends_on: [B002, B129]
+file: tasks/B2308-rds-database-credentials.yaml
+covers:
+  - "litellm/proxy/auth/rds_iam_token.py"

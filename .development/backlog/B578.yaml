@@ -1,0 +1,10 @@
+id: B578
+milestone: M3 providers
+title: Anthropic reply content and tool-result projection
+status: todo
+depends_on: [B902, B171]
+file: tasks/B578-anthropic-response-content.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"
+  - "litellm/types/llms/anthropic.py"
+  - "litellm/llms/base_llm/base_utils.py"

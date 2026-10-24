@@ -1,0 +1,9 @@
+id: B1408
+milestone: M3 providers
+title: Mistral option mapping and Magistral prompt policy
+status: todo
+depends_on: [B002, B668, B2221, B171]
+file: tasks/B1408-mistral-options.yaml
+covers:
+  - "litellm/llms/mistral/chat/transformation.py"
+  - "litellm/utils.py"

@@ -1,21 +1,39 @@
 id: B863
 title: Management administrator and invitation scope
 description: >-
-  Resolve administrator and invitation scope from live organization memberships and team roles using injected
-  UserLookup and TeamRoleLookup ports. Invite targets must share an administered organization or team.
-  Preserve exception-to-false fallback and no-user/no-database refusal. The lower-level policy accepts
-  typed role snapshots; B736 and B800 implement the read ports after their services exist, avoiding a
-  dependency back to key or user endpoints.
+  Build administrator and invitation scope with distinct read and pure-policy layers. Exact proxy_admin
+  returns True before requiring a database, user id or target; proxy_admin_viewer does not. Otherwise
+  missing DB or user_id=None returns False; empty user_id still reaches lookup. _user_has_admin_privileges
+  calls B736 UserLookup with user_id_upsert=False and supplied logger, using the passed
+  cache or a fresh B2226 DualCache. A missing user returns False. Any organization_memberships row
+  with user_role='org_admin' returns True without team reads; otherwise a nonempty teams list triggers
+  one B724 query where team_id in that list, validates each B859 team and checks is_team_admin. First
+  match wins. Lookup, validation and policy exceptions are caught, debug-logged as 'Error checking admin
+  privileges for user %s: %s', and return False. No DB creation/update or role elevation occurs.
+
+  _org_admin_can_invite_user returns True only for intersection of caller org ids with role org_admin
+  and ANY target organization membership, regardless of target role. None/empty memberships return
+  False. _team_admin_can_invite_user first rejects empty caller or target teams without querying;
+  otherwise fetch caller teams, validate them, collect actual roster-admin team ids and intersect
+  with target teams. It has no local catch, so direct repository/validation errors propagate to its
+  caller. No organization or team is inferred from the key's org_id/team_id alone.
+
+  admin_can_invite_user uses the same proxy-admin/no-DB/no-user short circuits, creates one cache for
+  both reads, loads caller first and target second with user_id_upsert=False, and returns False for
+  either missing row. Org intersection wins before any team query. Team intersection follows. Any
+  error in that block logs debug 'Error checking invite permission for user %s: %s' and returns False;
+  a self-invite is not automatically allowed. No exception is converted into a public 401/403 here:
+  route callers decide what a False result means.
+
+  Lower is_team_admin from management/teams/access.py L47-L51 into this task so B800 can call it
+  without a reverse dependency. It returns any members_with_roles entry with non-null user_id equal
+  to caller.user_id AND role exactly 'admin'. No email match, proxy role shortcut, team_id shortcut
+  or None==None match exists; empty-string ids may match. Keep the remaining TeamAccess policy in B800.
 
 
-  Injected port instead of a reverse dependency on B736: UserLookup::load(UserId)->Result<UserRow,AuthError>;
-  B736 installs the lookup. A configured but unregistered implementation is a named startup error, never
-  a success stub.
-
-
-  Injected port instead of a reverse dependency on B800: TeamRoleLookup::is_admin(Caller,TeamRow)->bool;
-  B800 implements the policy over typed snapshots. A configured but unregistered implementation is a named
-  startup error, never a success stub.
+  B736 is a direct dependency for user lookup; deterministic test injection must retain its email/ID
+  lookup behavior and upsert=false argument. is_team_admin is owned locally, so the higher B800
+  TeamAccess policy is not imported by these helpers.
 
 
   Build the production management_admins module in betterlite-server; reuse the typed dependencies listed
@@ -29,27 +47,14 @@ description: >-
   61 source lines).
 
 
-  Add the management_admins operation under B856 Management::models. Python calls only the owned MIT helper
-  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
-  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
-  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a management-admins-*
-  seed to B171 helper_case, which already owns this decoder.
+  Management::models.management_admins contains only pure org-intersection and roster-admin cases;
+  Python calls the actual helpers. Async policy/order tests run natively with typed injected user
+  reads and B724 against Postgres through POSTGRES_TEST_URL, else B860 testcontainers. Failure to
+  provision fails. Assert the two distinct debug messages and zero writes, not imaginary HTTP errors.
 
 
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 167 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  167 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 0 config lines, 407 changed lines estimated within a 425-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  The four helpers contain 122 nonblank noncomment lines excluding docstrings; lowered is_team_admin
+  adds five. Allow 150 production, 250 tests, 80 adapters and 30 wiring lines, 510 within 600.
 scope:
   paths:
     - crates/betterlite-server/src/management_admins.rs
@@ -66,6 +71,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/management-admins-*
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management/teams/access.py#L47-L51
+    why: Five-line roster predicate moved below B800, which already depends on this task.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L224-L287
     why: Own _user_has_admin_privileges; preserve caller-visible values and failure ordering.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L290-L317
@@ -75,6 +82,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_utils.py#L359-L429
     why: Own admin_can_invite_user; preserve caller-visible values and failure ordering.
 dod:
+  - text: 'Native/Postgres cases proxy_admin_before_missing_db, viewer_not_bypass, no_user_no_db,
+      empty_user_id_lookup, user_upsert_disabled, fresh_cache_when_absent, same_cache_two_reads,
+      admin_read_before_target, missing_user_denies, org_short_circuits_team_query,
+      team_query_exact_ids, direct_team_error_propagates, admin_lookup_error_debug_false,
+      invite_lookup_error_debug_false, invalid_team_row_denies and self_invite_needs_scope prove policy composition.'
+    proof: [behavior-tests, postgres-tests]
   - text: 'Implement the owned behavior and ordered failure effects; named tests: proxy_admin, shared_org,
       shared_team, unrelated_target, lookup_failure_denies.'
     proof:
@@ -88,6 +101,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: postgres-tests
+      why: Team membership scope must be checked against real rows with no mutation.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/management_admins::tests::team_query_exact_ids$/)'
     - id: behavior-tests
       why: The named domain behavior tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_admins::tests::/)
@@ -103,15 +119,15 @@ checks:
         && grep -rlq "management_admins" tools/oracle/fuzz/corpus/helper_case/management-admins-* && cargo
         nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
-  - tools/oracle/cases/helpers/management-admins/proxy-admin.yaml
   - tools/oracle/cases/helpers/management-admins/shared-org.yaml
-  - tools/oracle/cases/helpers/management-admins/shared-team.yaml
   - tools/oracle/cases/helpers/management-admins/unrelated-target.yaml
-  - tools/oracle/cases/helpers/management-admins/lookup-failure-denies.yaml
+  - tools/oracle/cases/helpers/management-admins/org-role-exact-target-role-any.yaml
+  - tools/oracle/cases/helpers/management-admins/empty-org-memberships.yaml
+  - tools/oracle/cases/helpers/management-admins/roster-admin-exact-user-role.yaml
+  - tools/oracle/cases/helpers/management-admins/roster-none-and-empty-ids.yaml
 deviations: []
 out_of_scope:
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
+  - B800 retains access.py TeamAccess.allows, strongest_role, _is_org_admin, OrgRoles.is_org_admin, team_access_denied and the role-set declarations; is_team_admin is reassigned here.
   - 'litellm/proxy/management_endpoints/common_utils.py: B800 owns _team_member_has_permission (L208-L221).'
   - 'litellm/proxy/management_endpoints/common_utils.py: B861 owns validate_finite_spend (L13-L24), validate_budget_duration
     (L27-L41), validate_team_model_max_budget (L77-L123), require_caller_user_id_for_non_admin (L126-L150),
@@ -125,8 +141,10 @@ out_of_scope:
     the pinned commit; repository-wide identifier search finds only this definition.'
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
-  - Invite targets must share an administered organization or team.
+  - A proxy admin can invite a nonexistent target without any lookup; ordinary callers cannot.
+  - The direct team helper propagates errors, while its two outer policy callers log and return False.
+  - Team administration comes from an exact roster user id and role, never a matching email.
 budget:
-  max_changed_lines: 425
+  max_changed_lines: 600
   max_new_expects: 0
 review_level: security

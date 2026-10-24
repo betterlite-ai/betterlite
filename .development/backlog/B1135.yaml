@@ -1,0 +1,8 @@
+id: B1135
+milestone: M5 API families
+title: Speech provider contract
+status: todo
+depends_on: [B010, B2202, B171]
+file: tasks/B1135-speech-provider-contract.yaml
+covers:
+  - "litellm/llms/base_llm/text_to_speech/transformation.py"

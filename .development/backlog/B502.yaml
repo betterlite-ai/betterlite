@@ -1,0 +1,10 @@
+id: B502
+milestone: M3 providers
+title: OpenAI reasoning and audio model parameters
+status: todo
+depends_on: [B175, B193, B171, B668, B174, B503, B206, B2221]
+file: tasks/B502-openai-reasoning-models.yaml
+covers:
+  - "litellm/llms/openai/chat/gpt_5_transformation.py"
+  - "litellm/llms/openai/chat/o_series_transformation.py"
+  - "litellm/llms/openai/chat/gpt_audio_transformation.py"

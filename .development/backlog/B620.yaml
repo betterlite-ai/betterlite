@@ -1,0 +1,8 @@
+id: B620
+milestone: M3 providers
+title: Bedrock runtime reasoning-tag and choice decoding
+status: todo
+depends_on: [B2203, B598, B504, B038, B206, B171]
+file: tasks/B620-bedrock-reasoning-stream.yaml
+covers:
+  - "litellm/llms/bedrock/chat/chat_completions/transformation.py"

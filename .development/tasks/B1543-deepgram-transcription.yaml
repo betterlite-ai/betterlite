@@ -1,0 +1,85 @@
+id: B1543
+title: Adapt Deepgram raw-audio transcription and diarized paragraphs
+description: >-
+  Implement api::deepgram::transcription over B1122's transcription contract and B1001 local audio
+  processing. Own all audio_transcription methods; reuse B1542 DeepgramException. Load DEEPGRAM_API_BASE
+  default https://api.deepgram.com/v1 and optional DEEPGRAM_API_KEY in betterlite-config, verified by
+  deepgram_transcription_settings. Explicit non-null base, including empty, suppresses that default.
+  Append /listen and urlencode model plus B1122-filtered non-null provider options; booleans become
+  lowercase true/false and other values use source string conversion, without expanding lists.
+  Mapping accepts language only and ignores unsupported inputs. The request body is raw processed
+  audio bytes with no multipart files. validate_environment replaces headers entirely with
+  Authorization=Token <explicit-or-env key>; absent key intentionally yields Token None.
+
+  decode_deepgram_transcript parses the provider reply and requires the first channel and its first
+  alternative. Detect diarization only by presence of speaker on the first word, including null.
+  Without it, use transcript; with it, prefer paragraphs.transcript when paragraphs exists, otherwise
+  reconstruct contiguous speaker runs from punctuated_word or word. Retain the source formatting:
+  earlier runs have no leading newline, while the final run gets a leading and trailing newline
+  before all runs are joined by newline. Empty input to reconstruction yields an empty string.
+
+  Set task=transcribe, choose truthy detected_language or en, require metadata.duration, and map all
+  present words to word/start/end, stripping speaker from public word entries. Preserve the complete
+  provider payload in hidden parameters. Any decode/projection failure becomes the source ValueError
+  with raw body text. Use typed known fields and a single hidden passthrough. Add deepgram_transcript
+  fuzzing plus replays_the_deepgram_transcript_corpus with missing channels, malformed words, null
+  paragraphs and bad bytes. call.deepgram_transcription compares raw_audio_request, query_booleans,
+  missing_token, plain_transcript, paragraph_priority, speaker_run_spacing and first_word_detection
+  against actual Python methods. The 176 source lines warrant 210 production/config, 220 tests and
+  180 oracle/fuzz lines within 700 changed lines.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/deepgram.rs
+    - crates/betterlite-core/src/api/deepgram/transcription.rs
+    - crates/betterlite-core/src/api/deepgram/transcription/**
+    - crates/betterlite-config/src/providers.rs
+    - crates/betterlite-config/src/providers/deepgram.rs
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/deepgram_transcript.rs
+    - crates/betterlite-core/fuzz/corpus/deepgram_transcript/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/deepgram_transcription.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/deepgram_transcription.py
+    - tools/oracle/cases/helpers/deepgram-transcription/**
+    - tools/oracle/fuzz/corpus/helper_case/deepgram_transcription*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepgram/audio_transcription/transformation.py#L26-L266
+    why: Binary request/query construction and diarization-sensitive response projection.
+dod:
+  - text: Deepgram request bytes, query values and loaded authentication settings match the pinned transcription adapter.
+    proof: [deepgram-transcript-tests, oracle, deepgram-transcript-python]
+  - text: Diarization detection and exact paragraph spacing survive provider response validation and corpus replay.
+    proof: [deepgram-transcript-tests, deepgram-transcript-corpus, oracle, deepgram-transcript-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: deepgram-transcript-tests
+      why: raw-audio or diarization behavior and configuration loading have not been implemented
+      run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::deepgram::transcription::/) - test(replays_the_deepgram_transcript_corpus) | test(deepgram_transcription_settings)'
+    - id: deepgram-transcript-corpus
+      why: new Deepgram reply seeds are absent or bypass the real decoder
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/deepgram_transcript)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_deepgram_transcript_corpus)'
+    - id: deepgram-transcript-python
+      why: diarized output and raw request cases lack source-backed helper execution
+      run: grep -qE '^[[:space:]]+deepgram_transcription:' tools/oracle/fuzz/corpus/helper_case/deepgram_transcription* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/deepgram_transcription.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/deepgram-transcription/raw-audio-request.yaml
+  - tools/oracle/cases/helpers/deepgram-transcription/query-booleans.yaml
+  - tools/oracle/cases/helpers/deepgram-transcription/missing-token.yaml
+  - tools/oracle/cases/helpers/deepgram-transcription/plain-transcript.yaml
+  - tools/oracle/cases/helpers/deepgram-transcription/paragraph-priority.yaml
+  - tools/oracle/cases/helpers/deepgram-transcription/speaker-run-spacing.yaml
+  - tools/oracle/cases/helpers/deepgram-transcription/first-word-detection.yaml
+deviations: []
+out_of_scope:
+  - Live listen WebSocket query identity and duration/channel billing helpers remain in B1542; this adapter handles prerecorded HTTP audio only.
+pitfalls:
+  - A speaker field appearing only on the second word does not enable diarization.
+  - Deepgram header validation discards caller headers even when no API key was found.
+  - The reconstructed final speaker run introduces an extra blank line between the last two runs.
+review_level: security
+budget:
+  max_changed_lines: 700
+  max_new_expects: 1

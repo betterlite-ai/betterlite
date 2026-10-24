@@ -1,0 +1,8 @@
+id: B1411
+milestone: M3 providers
+title: Mistral native file purposes and batch-job records
+status: todo
+depends_on: [B1410, B1015, B1035, B235, B171]
+file: tasks/B1411-mistral-resources.yaml
+covers:
+  - "litellm/llms/mistral/{files,batches}/**"

@@ -1,0 +1,8 @@
+id: B2328
+milestone: M4 keys, spend and management
+title: Environment and endpoint model enumeration
+status: todo
+depends_on: [B002, B171, B193, B856, B2220, B2226]
+file: tasks/B2328-provider-model-enumeration.yaml
+covers:
+  - "litellm/utils.py"

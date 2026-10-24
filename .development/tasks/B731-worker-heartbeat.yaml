@@ -1,147 +1,187 @@
 id: B731
-title: Database worker heartbeats and lifecycle
+title: Database worker census and database-tool diagnostics
 description: >-
-  Implement WorkerHeartbeat with injected process instance ID and clock, same heartbeat table/TTL and
-  deregistration on shutdown; emit structured migration/database logs through tracing. DynamoDBWrapper
-  and set_env_vars_based_on_arn have no call sites in the MIT package at the pin and the module declares
-  Postgres-only support: do not port these dead helpers; report the dynamodb database setting unsupported
-  at startup. No DynamoDB fallback may bypass the Postgres schema decision. Native-only deviation tests
-  (not oracle equality cases): dynamodb-startup-error.
+  Build betterlite-db::worker_heartbeat from proxy_worker_heartbeat.py, owning its four SQL
+  statements, count-row contract, constructor, beat, deregister and count_live_proxy_workers.
+  Also implement the separate database_diagnostics module from proxy-extras/_logging.py for
+  database-tool record formatting and settings. Keep these responsibilities in different source
+  files. B051 composes the services; B124 owns startup scheduling/shutdown and B130 owns the
+  no-Redis warning decision. None of those higher-level callers is imported here.
 
+  Each heartbeat service captures one worker_id and hostname. A truthy supplied worker_id is
+  used verbatim; None or empty string generates UUID4 once, while whitespace is retained.
+  Obtain the hostname once at construction; a hostname error is not swallowed. Inject identity
+  and hostname providers for tests. Do not inject application time into heartbeat SQL: both
+  writes and comparisons use Postgres NOW(), so process clock skew cannot alter the census.
+  PROXY_WORKER_HEARTBEAT_INTERVAL_SECONDS=60, PROXY_WORKER_LIVENESS_WINDOW_SECONDS=180 and
+  STALE_ROW_RETENTION_SECONDS=3600 are fixed constants with no env/config overrides.
 
-  Build the production worker_heartbeat module in betterlite-db; reuse the typed dependencies listed in
-  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
-  tests.rs files.
+  beat first INSERTs worker_id,hostname,last_heartbeat_at=NOW() into LiteLLM_ProxyWorkerHeartbeat,
+  ON CONFLICT(worker_id) updating ONLY last_heartbeat_at. A repeated worker ID retains its original
+  hostname. After that statement succeeds, DELETE all rows with last_heartbeat_at strictly less
+  than NOW()-make_interval(secs=>3600), across every hostname. There is no wrapping transaction,
+  retry or lock. Upsert failure skips pruning; prune failure leaves the successful upsert committed.
+  Either ordinary exception produces one DEBUG "Proxy worker heartbeat write failed: %s" and
+  returns success. Cancellation propagates rather than being converted into a successful beat.
 
+  deregister executes DELETE WHERE worker_id=$1, without checking hostname or refreshing time.
+  Missing rows are successful and repeated calls are harmless. Ordinary errors emit DEBUG
+  "Proxy worker heartbeat deregister failed: %s" and return success; cancellation propagates.
+  count_live_proxy_workers explicitly selects the writer when the supplied database is routed,
+  regardless of reader freshness or degradation. COUNT(*)::int AS live_workers includes rows
+  strictly newer than NOW()-180 seconds. The exact boundary is not live, and an exactly 3600-second
+  old row is not pruned. Return the first validated count row; extra rows are validated too but
+  their counts are not added. Zero is a known result. Empty/None/malformed results, SQL overflow
+  or query exceptions emit DEBUG "Live proxy worker count unavailable: %s" and return None,
+  never zero or an HTTP 503. Do not add positivity validation absent from the source adapter.
 
-  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/proxy_worker_heartbeat.py:
-  ProxyWorkerHeartbeat.__init__ (L61-L64; 4 source lines), ProxyWorkerHeartbeat.beat (L66-L71; 6 source
-  lines), ProxyWorkerHeartbeat.deregister (L73-L77; 5 source lines), count_live_proxy_workers (L80-L93;
-  14 source lines). litellm-proxy-extras/litellm_proxy_extras/_logging.py: JsonFormatter.formatTime (L8-L10;
-  3 source lines), JsonFormatter.format (L12-L20; 9 source lines), _is_json_enabled (L23-L29; 6 source
-  lines).
+  B124 performs an initial awaited beat, then schedules every 60 seconds as
+  proxy_worker_heartbeat_job with replacement enabled; it awaits deregistration before disconnect
+  when both heartbeat and database exist. This task supplies the operations/constants, not a second
+  scheduler or shutdown hook. B130 uses count != 1, so unknown and zero both retain its warning.
+  Missing tables during a rolling migration follow the same best-effort DEBUG/None paths.
 
+  For database-tool diagnostics, own JsonFormatter.formatTime/format, _is_json_enabled and the
+  one-time logger initialization. JsonFormatter emits exactly message, uppercase level and
+  timestamp; timestamp is local datetime.fromtimestamp(record.created).isoformat(), WITHOUT
+  a timezone suffix, with microseconds only when nonzero. datefmt is ignored. Message formatting
+  applies the supplied logging arguments. Add stacktrace only when exc_info is truthy; arbitrary
+  record extras and logger name do not enter the JSON object. Preserve Unicode/control escaping
+  semantically; JSON whitespace is not an API requirement. The legacy formatter uses local
+  YYYY-MM-DD HH:MM:SS,mmm - litellm_proxy_extras - LEVEL - message and appends an exception trace.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): JSON_LOGS='false'.
+  _is_json_enabled first uses the supplied litellm.json_logs attribute, default false if absent;
+  the environment does not override a false/missing attribute. Only ImportError or AttributeError
+  triggers fallback JSON_LOGS default "false", enabled by case-insensitive exact "true" without
+  trimming. Other errors propagate. Keep the source truthiness of an explicitly supplied global
+  attribute in the compatibility helper. Normal global flag parsing remains B012's core-logging
+  concern; pass its resolved value rather than importing that higher-level integration here.
 
+  With existing handlers, the source does nothing: no new handler, formatter or level update,
+  and no validation of an invalid LITELLM_LOG. Otherwise install one stderr handler, choose the
+  formatter once, and set LITELLM_LOG default INFO after uppercasing without trimming. Accept
+  DEBUG/INFO/WARN/WARNING/ERROR/FATAL/CRITICAL/NOTSET; invalid/empty/numeric strings fail logging
+  initialization, without fallback. Preserve existing handlers and idempotent initialization.
+  A level error happens AFTER installing the handler; preserve that installed handler and make
+  a repeated initialization observe it rather than validating the same bad level again. The
+  gateway retains B003's JSON stderr policy; legacy text selection remains a database-tool option,
+  not a way to change gateway stderr. Inject typed format/level/local-time/diagnostic sinks.
 
-  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
-  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
-  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
-  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
-  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
-  clean it on every exit.
+  Reuse B002's shared JSON_LOGS flag where available and add a database-tool level field with
+  its INFO default, distinct from the core logger's DEBUG default. Loader tests exercise the
+  fallback environment and attribute precedence; there is no invented general_settings.JSON_LOGS
+  alias. Source exception traces can contain credentials; native diagnostics retain typed causes
+  and redacted context rather than copying arbitrary Python traceback text. The compatibility
+  formatter oracle uses harmless deterministic fixture exceptions only.
 
-
-  Write betterlite-config::worker_heartbeat::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
-
-
-  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
-  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
-  contract owner, not a duplicate decoder in the handler.
-
-
-  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
-  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
-  prove those differences in Rust tests, outside the equality corpus.
-
-
-  Sizing: 47 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  65 production, 148 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 293 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
-  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  Run heartbeat tests on B860 Postgres through POSTGRES_TEST_URL, falling back to testcontainers
+  only when absent. Setup failures are fatal. Freeze database NOW inside a test transaction for
+  exact-boundary predicates; separate autocommit sessions prove upsert survival after prune failure.
+  Two independent writer/reader fixtures prove count uses the writer even when the reader disagrees.
+  Pure helper operation database_diagnostics calls the source formatter and flag probe with restored
+  globals/environment and controlled local timezone; no helper simulates heartbeat SQL. Inputs are
+  typed records and settings, adding no byte parser or fuzz target. The heartbeat file contains 57
+  nonblank noncomment lines after excluding its explanatory docstrings; logging adds 34.
+  Allow 130 native code, 260 tests, 65 config, 65 adapters and 35 wiring, 555 within 650.
 scope:
   paths:
     - crates/betterlite-db/src/worker_heartbeat.rs
     - crates/betterlite-db/src/worker_heartbeat/**
+    - crates/betterlite-db/src/database_diagnostics.rs
+    - crates/betterlite-db/src/database_diagnostics/**
     - crates/betterlite-db/src/lib.rs
     - crates/betterlite-db/Cargo.toml
-    - crates/betterlite-db/src/worker_heartbeat/fixtures/**
-    - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
     - crates/betterlite-config/src/config.rs
-    - crates/betterlite-config/src/worker_heartbeat.rs
-    - crates/betterlite-config/src/worker_heartbeat/**
-    - crates/betterlite-config/fuzz/corpus/config_yaml/worker-heartbeat-*
+    - crates/betterlite-config/src/database_diagnostics.rs
+    - crates/betterlite-config/src/database_diagnostics/**
+    - tools/oracle/src/helpers/database_diagnostics.rs
+    - tools/oracle/helpers/database_diagnostics.py
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/database-diagnostics/**
+    - tools/oracle/fuzz/corpus/helper_case/database-diagnostics-*
   lint_tables: false
 references:
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L1-L93
-    why: Pinned implementation and exact ownership boundary for worker_heartbeat.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L1-L43
-    why: Pinned implementation and exact ownership boundary for worker_heartbeat.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L28-L93
+    why: Fixed timings, database-clock SQL, hostname-preserving upsert and all best-effort error paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L7-L43
+    why: Actual flag fallback/read site, local timestamps, handler guard and LITELLM_LOG INFO default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10616-L10626
+    why: B124 owns the initial beat and proxy_worker_heartbeat_job scheduling, using this task's interval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1122-L1134
+    why: B124 awaits deregistration before database disconnect.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/health_endpoints/_health_endpoints.py#L1666-L1676
+    why: B130 treats None/zero as not provably one worker; no HTTP error originates in census.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/dynamo_db.py#L1-L72
-    why: Pinned implementation and exact ownership boundary for worker_heartbeat.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2463-L2481
-    why: DynamoDBArgs request/response fields and defaults.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L61-L64
-    why: Own ProxyWorkerHeartbeat.__init__; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L66-L71
-    why: Own ProxyWorkerHeartbeat.beat; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L73-L77
-    why: Own ProxyWorkerHeartbeat.deregister; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/proxy_worker_heartbeat.py#L80-L93
-    why: Own count_live_proxy_workers; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L8-L10
-    why: Own JsonFormatter.formatTime; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L12-L20
-    why: Own JsonFormatter.format; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L23-L29
-    why: Own _is_json_enabled; preserve caller-visible values and failure ordering.
-  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L29-L34
-    why: JSON_LOGS default and read site.
+    why: Both deprecated DynamoDB methods have no production caller and remain unimplemented.
 dod:
-  - text: 'Implement the owned behavior and ordered failure effects; named tests: heartbeat_upsert, expired_worker_excluded,
-      deregister_idempotent, heartbeat_failure_diagnostic, postgres_pinned_rows, postgres_failure_effects.'
-    proof:
-      - behavior-tests
-  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
-    proof:
-      - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
+  - text: 'Heartbeat cases name provided_worker_id_preserved, empty_id_generates_uuid_once,
+      hostname_captured_once, hostname_error_propagates, postgres_clock_ignores_process_skew,
+      postgres_conflict_keeps_hostname, postgres_upsert_then_prune,
+      upsert_failure_skips_prune, postgres_prune_failure_keeps_upsert,
+      postgres_live_and_prune_strict_boundaries, postgres_deregister_idempotent,
+      deregister_failure_debug, postgres_count_uses_writer_not_reader,
+      count_zero_is_known, count_empty_none_malformed_unknown,
+      count_validates_all_rows_uses_first, count_failure_debug_unknown and cancellation_propagates.
+      Failure assertions include the exact DEBUG event and absence of retry/HTTP conversion.'
+    proof: [behavior-tests, postgres-tests]
+  - text: 'Formatter/probe cases name json_three_fields_only, message_arguments_formatted,
+      local_iso_no_zone, iso_fraction_only_when_nonzero, datefmt_ignored,
+      stacktrace_only_with_exception, json_unicode_control_strings,
+      legacy_local_millisecond_layout, global_flag_precedes_env,
+      missing_global_attribute_false, only_import_attribute_errors_fallback,
+      env_true_casefold_without_trim, existing_handlers_untouched, initialization_once,
+      invalid_level_leaves_installed_handler and repeated_init_after_level_error_skips_validation.'
+    proof: [behavior-tests, helper-python, helper-case-corpus, oracle]
+  - text: 'Config cases name tool_level_default_info, tool_level_casefold_aliases,
+      tool_level_invalid_empty_numeric_fail, existing_handlers_skip_level_validation,
+      json_env_default_false, json_env_exact_true and global_false_ignores_true_env.
+      The real loader supplies the settings consumed by the diagnostics service.'
+    proof: [config-tests, behavior-tests]
+  - text: native_gateway_stderr_stays_json and
+      native_database_diagnostics_redact_exception_values prove each recorded difference.
+    proof: [behavior-tests]
 checks:
-  optional:
-    - mutants
+  optional: [mutants]
   commands:
     - id: behavior-tests
-      why: The named domain behavior tests are absent or the pinned behavior fails.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^worker_heartbeat::tests::/)
-        - test(/replays_the_/)'
+      why: Census SQL and tool formatting need independent cases in both domain modules.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^worker_heartbeat::/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_diagnostics::/)'
     - id: postgres-tests
-      why: Actual Postgres row and failure-effect tests are absent or fail.
-      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/worker_heartbeat::tests::postgres_pinned_rows$/)'
-        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/worker_heartbeat::tests::postgres_failure_effects$/)'
+      why: Database time, writer routing and surviving upserts require real Postgres statements.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/worker_heartbeat::.*postgres_/)' && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/worker_heartbeat::.*postgres_prune_failure_keeps_upsert$/)'
     - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^worker_heartbeat::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/worker-heartbeat-*")"
-        && grep -rlq "JSON_LOGS" crates/betterlite-config/fuzz/corpus/config_yaml/worker-heartbeat-* &&
-        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
-oracle_cases: []
-deviations: []
+      why: Database-tool defaults and invalid-level behavior differ from a generic boolean fallback.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_diagnostics::tests::/)'
+    - id: helper-python
+      why: Formatter and flag probe must be checked against their real source functions.
+      run: test -f tools/oracle/helpers/database_diagnostics.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Require new formatting/probe seeds before shared helper parser replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/database-diagnostics-*")" && grep -rlq database_diagnostics tools/oracle/fuzz/corpus/helper_case/database-diagnostics-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/database-diagnostics/json-fields-and-time.yaml
+  - tools/oracle/cases/helpers/database-diagnostics/message-and-exception.yaml
+  - tools/oracle/cases/helpers/database-diagnostics/global-and-env-precedence.yaml
+deviations:
+  - what: Gateway stderr remains B003's JSON format even when the database-tool formatter selects legacy text.
+    why: Keep the established gateway logging contract while preserving the source selection for standalone database diagnostics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L34-L43
+  - what: Native exception records contain redacted typed causes rather than raw Python traceback text.
+    why: Runtime stacks differ and arbitrary exception messages may contain secrets; fixture-only format comparisons do not authorize leaking them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L18-L20
 out_of_scope:
-  - 'dynamo_db.py: DynamoDBWrapper.__init__ and set_env_vars_based_on_arn are dead compatibility helpers
-    with no MIT-package call sites at this pin; Postgres-only support is declared at module start.'
-  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
-    production fallback.
-  - 'litellm/proxy/db/dynamo_db.py::DynamoDBWrapper.__init__: no production caller at the pin; deprecated
-    DynamoDBWrapper is the unused CustomDB subclass.'
-  - 'litellm/proxy/db/dynamo_db.py::DynamoDBWrapper.set_env_vars_based_on_arn: no production caller at
-    the pin; deprecated DynamoDBWrapper is the unused CustomDB subclass.'
-  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - dynamo_db.py DynamoDBWrapper.__init__ and set_env_vars_based_on_arn have no caller at the pin;
+    no AWS calls, credential environment mutation or DynamoDB support are implemented here.
+  - litellm_proxy_extras/__init__.py is empty; it contributes no initializer behavior.
+  - B124 owns job scheduling and shutdown invocation, B130 owns warning/HTTP presentation,
+    B051 installs database startup diagnostics, and B012 owns core logging outside proxy-extras.
 pitfalls:
-  - Worker deregistration is joined during shutdown even if the last heartbeat failed.
+  - Upsert conflict does not update hostname, even when a new process reuses the same worker_id.
+  - A count at exactly the 180-second threshold is excluded; pruning waits strictly beyond 3600 seconds.
+  - Missing litellm.json_logs returns false without consulting JSON_LOGS; only import/attribute exceptions take the fallback.
 budget:
-  max_changed_lines: 400
+  max_changed_lines: 650
   max_new_expects: 0
 review_level: security

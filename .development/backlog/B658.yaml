@@ -1,0 +1,8 @@
+id: B658
+milestone: M3 providers
+title: Bedrock passthrough and typed logging collectors
+status: todo
+depends_on: [B591, B595, B599, B608, B609, B2205, B2203, B101, B005, B004, B682, B171, B2227, B2230]
+file: tasks/B658-bedrock-services-passthrough.yaml
+covers:
+  - "litellm/llms/bedrock/passthrough/transformation.py"

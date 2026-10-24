@@ -1,0 +1,8 @@
+id: B2461
+milestone: M5 API families
+title: Provider file upload HTTP execution
+status: todo
+depends_on: [B1015, B1087, B173, B012, B2401, B2402]
+file: tasks/B2461-file-http-upload.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

@@ -1,0 +1,8 @@
+id: B1078
+milestone: M5 api families
+title: Responses synchronous create execution
+status: todo
+depends_on: [B010, B171, B174, B176, B198, B206, B905, B931, B918, B916, B2414, B904, B247, B500, B185, B186, B2401]
+file: tasks/B1078-responses-create-plan.yaml
+covers:
+  - "litellm/responses/main.py"

@@ -1,0 +1,8 @@
+id: B1537
+milestone: M3 providers
+title: Prepare Runway video tasks and report creation usage
+status: todo
+depends_on: [B002, B1534, B525, B672, B171]
+file: tasks/B1537-runway-video-create.yaml
+covers:
+  - "litellm/llms/runwayml/videos/transformation.py"

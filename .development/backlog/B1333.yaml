@@ -1,0 +1,8 @@
+id: B1333
+milestone: M3 providers
+title: Vertex Claude chat policy and output sanitization
+status: todo
+depends_on: [B1300, B568, B569, B576, B577, B580, B688, B183, B171]
+file: tasks/B1333-vertex-claude-chat.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/{transformation,output_params_utils}.py"

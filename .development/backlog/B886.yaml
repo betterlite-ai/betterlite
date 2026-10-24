@@ -1,0 +1,8 @@
+id: B886
+milestone: M4 keys, spend and management
+title: Model grants for keys and parent entities
+status: todo
+depends_on: [B001, B003, B732, B737, B747, B856, B860, B879, B887]
+file: tasks/B886-entity-model-access.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"

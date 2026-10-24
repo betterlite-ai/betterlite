@@ -1,0 +1,9 @@
+id: B1696
+milestone: M4 keys, spend and management
+title: Replay baseline cache history in request-start order
+status: todo
+depends_on: [B171, B204, B1668]
+file: tasks/B1696-baseline-cache-history.yaml
+covers:
+  - "litellm/proxy/spend_tracking/baseline_accounting.py"
+  - "litellm/llms/anthropic/prompt_cache_prediction.py"

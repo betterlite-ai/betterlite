@@ -1,0 +1,8 @@
+id: B1534
+milestone: M3 providers
+title: Authenticate and poll Runway image and speech jobs
+status: todo
+depends_on: [B002, B173, B171]
+file: tasks/B1534-runway-task-polling.yaml
+covers:
+  - "litellm/llms/runwayml/{image_generation,text_to_speech}/transformation.py"

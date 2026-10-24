@@ -1,0 +1,11 @@
+id: B536
+milestone: M3 providers
+title: Azure image generation and edits
+status: todo
+depends_on: [B531, B535, B511, B512, B553, B554, B171, B529, B2200, B668, B004, B129, B673, B249]
+file: tasks/B536-azure-images.yaml
+covers:
+  - "litellm/llms/azure/azure.py"
+  - "litellm/llms/azure/image_generation/__init__.py"
+  - "litellm/llms/azure/image_generation/http_utils.py"
+  - "litellm/llms/azure/image_edit/transformation.py"

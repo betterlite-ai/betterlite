@@ -1,0 +1,8 @@
+id: B1636
+milestone: M4 keys, spend and management
+title: Provision unresolved SCIM group members and preserve retry failures
+status: todo
+depends_on: [B056, B723, B732, B860, B1616, B1632, B1633, B1634, B1635]
+file: tasks/B1636-scim-member-provision.yaml
+covers:
+  - "litellm/proxy/management_endpoints/scim/scim_v2.py"

@@ -1,0 +1,10 @@
+id: B007
+milestone: M1 openai data plane
+title: Model list
+status: in-progress
+depends_on: [B003]
+file: tasks/B007-models.yaml
+covers:
+  - "litellm/proxy/list_api/**"
+  - "litellm/proxy/common_utils/model_listing_utils.py"
+  - "litellm/types/proxy/model_listing.py"

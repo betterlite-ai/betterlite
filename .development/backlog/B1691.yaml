@@ -1,0 +1,8 @@
+id: B1691
+milestone: M4 keys, spend and management
+title: Compute PTU daily charges and maintain deployment-keyed sentinel rows
+status: todo
+depends_on: [B171, B198, B204, B725, B726, B860, B1664]
+file: tasks/B1691-ptu-charge-storage.yaml
+covers:
+  - "litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py"

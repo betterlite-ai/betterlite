@@ -1,0 +1,8 @@
+id: B1042
+milestone: M5 api families
+title: Batch enqueued reserve
+status: todo
+depends_on: [B126, B171, B198, B1019, B1087, B732]
+file: tasks/B1042-batch-enqueued-reserve.yaml
+covers:
+  - "litellm/proxy/hooks/batch_enqueued_tokens.py"

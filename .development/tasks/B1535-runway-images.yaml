@@ -1,0 +1,83 @@
+id: B1535
+title: Complete Runway image jobs and charge returned image counts
+description: >-
+  Build api::runway::images on B997 image records and B1534 task decoding/polling. Implement the
+  image selector, supported parameters, mapping, request construction, both response transformations,
+  _transform_runwayml_response_to_openai, and cost_calculator.py. Only size is advertised. Its five
+  exact presets become colon-separated ratios; unknown sizes select 1920:1080. Mapping also retains
+  size in the optional map, although request construction excludes it. Unsupported keys already in
+  optional_params bypass rejection; otherwise drop_params controls the ValueError. A falsey model
+  becomes gen4_image, promptText comes from prompt, ratio defaults to 1920:1080, and optional values
+  cannot overwrite fields already constructed.
+
+  Decode the submission, require a truthy id, then poll even if submission status is SUCCEEDED.
+  Poll at https://api.dev.runwayml.com regardless of the submission URL or RUNWAYML_API_BASE. Forward
+  only original request Authorization (empty when missing) and X-Runway-Version (configured default
+  when missing). Initial JSON errors become the inherited image error with original HTTP status and
+  headers; subsequent poll errors retain their own causes. Append string output members as URLs and
+  mapping members as url/b64_json pairs to existing image data; skip other members and leave created
+  untouched. Empty or non-list output is a successful empty result, not a reason to retry.
+
+  Resolve model pricing through B068 resolve_image_model_info, use zero for absent/falsey
+  output_cost_per_image, and multiply Decimal price by the actual response data length. Reject a
+  non-ImageResponse input even when price is zero. No pixel or requested-n multiplier applies.
+  Register call.runway_images with retained_size, preset_fallback, preexisting_option, default_host_poll,
+  completed_submission_still_polls, append_mixed_output and actual_count_cost. Python patches transport
+  and price lookup while executing source methods; Rust uses the production service. Existing B1534
+  byte decoding is sufficient. The 217 image-method lines, nine selector lines and 27 pricing lines
+  justify 210 implementation, 230 tests and 120 adapter/fixture lines within a 650-line budget.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/runway.rs
+    - crates/betterlite-core/src/api/runway/images.rs
+    - crates/betterlite-core/src/api/runway/images/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/runway_images.rs
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/runway_images.py
+    - tools/oracle/cases/helpers/runway-images/**
+    - tools/oracle/fuzz/corpus/helper_case/runway_images*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L93-L153
+    why: Output accumulation preserves existing data and tolerates unrelated members.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L301-L512
+    why: Unconditional default-host polling, size mapping and request field priority.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/__init__.py#L1-L13
+    why: The selector accepts every model and returns one image configuration.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/cost_calculator.py#L8-L31
+    why: Model price fallback and response-count billing.
+dod:
+  - text: Runway image formatting and completion preserve field priority, polling destination and accumulated outputs.
+    proof: [runway-image-tests, oracle, runway-image-python]
+  - text: Image charges use resolved Decimal pricing and actual returned entries, including an empty result.
+    proof: [runway-image-tests, oracle, runway-image-python]
+checks:
+  optional: []
+  commands:
+    - id: runway-image-tests
+      why: image completion or count-based cost behavior has no production tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::runway::images::/)'
+    - id: runway-image-python
+      why: Runway image cases do not invoke the pinned implementation
+      run: grep -qE '^[[:space:]]+runway_images:' tools/oracle/fuzz/corpus/helper_case/runway_images* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/runway_images.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/runway-images/retained-size.yaml
+  - tools/oracle/cases/helpers/runway-images/preset-fallback.yaml
+  - tools/oracle/cases/helpers/runway-images/preexisting-option.yaml
+  - tools/oracle/cases/helpers/runway-images/default-host-poll.yaml
+  - tools/oracle/cases/helpers/runway-images/completed-submission-still-polls.yaml
+  - tools/oracle/cases/helpers/runway-images/append-mixed-output.yaml
+  - tools/oracle/cases/helpers/runway-images/actual-count-cost.yaml
+deviations: []
+out_of_scope:
+  - B1534 owns image task records, URL/authentication and timeout/status/poll methods at 33-91 and 154-300.
+  - B046 connects this image configuration to the existing generation executor and booted proxy.
+pitfalls:
+  - A custom submission host does not become the Runway image polling host.
+  - ratio and size coexist after mapping, but only ratio reaches the image request body.
+  - A dictionary output member lacking both url and b64_json still contributes an image entry and a charge.
+review_level: security
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0

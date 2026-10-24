@@ -1,0 +1,10 @@
+id: B1688
+milestone: M4 keys, spend and management
+title: Prepare completion billing candidates and text accounting inputs
+status: todo
+depends_on: [B171, B174, B196, B204, B579, B906, B1668, B1678, B1681, B1682, B1683]
+file: tasks/B1688-completion-billing-inputs.yaml
+covers:
+  - "litellm/cost_calculator.py"
+  - "litellm/utils.py"
+  - "litellm/litellm_core_utils/llm_response_utils/get_formatted_prompt.py"

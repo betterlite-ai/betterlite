@@ -1,0 +1,8 @@
+id: B507
+milestone: M3 providers
+title: OpenAI Responses replay input and tool schemas
+status: todo
+depends_on: [B506, B178, B171, B907, B219, B192, B902]
+file: tasks/B507-openai-response-input.yaml
+covers:
+  - "litellm/llms/openai/responses/transformation.py"

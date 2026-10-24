@@ -1,0 +1,9 @@
+id: B2303
+milestone: M4 keys, spend and management
+title: Shared stored-secret and bearer-token codecs
+status: todo
+depends_on: [B002, B171]
+file: tasks/B2303-secret-codecs.yaml
+covers:
+  - "litellm/proxy/common_utils/encrypt_decrypt_utils.py"
+  - "litellm/proxy/common_utils/callback_utils.py"

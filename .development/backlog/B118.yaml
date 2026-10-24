@@ -1,0 +1,11 @@
+id: B118
+milestone: M7 observability
+title: Shadow evals, LLM judges and the agent logger
+status: todo
+depends_on: [B012]
+file: null
+covers:
+  - "litellm/integrations/shadow_eval_logger.py"
+  - "litellm/integrations/litellm_agent/**"
+  - "litellm/proxy/db/shadow_eval_funnel.py"
+  - "litellm/litellm_core_utils/llm_judge.py"

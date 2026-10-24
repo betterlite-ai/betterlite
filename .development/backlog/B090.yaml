@@ -1,0 +1,11 @@
+id: B090
+milestone: M5 api families
+title: Vector stores
+status: todo
+depends_on: [B004, B902, B012, B1131, B171]
+file: tasks/B090-vector-stores.yaml
+covers:
+  - "litellm/integrations/vector_store_integrations/vector_store_pre_call_hook.py"
+  - "litellm/vector_stores/__init__.py"
+  - "litellm/vector_store_files/__init__.py"
+  - "litellm/proxy/vector_store_files_endpoints/__init__.py"

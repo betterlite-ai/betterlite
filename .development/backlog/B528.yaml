@@ -1,0 +1,9 @@
+id: B528
+milestone: M3 providers
+title: OpenAI realtime connection and session requests
+status: todo
+depends_on: [B500, B173, B171, B187, B1004, B1005, B249]
+file: tasks/B528-openai-realtime.yaml
+covers:
+  - "litellm/llms/openai/realtime/handler.py"
+  - "litellm/llms/openai/realtime/http_transformation.py"
