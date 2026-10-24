@@ -23,6 +23,7 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     wait_until_ready(port, 100).await;
     let mut request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     let mut health_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let mut readiness_request = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
     request
         .write_all(b"GET /not-served HTTP/1.1\r\nHost: localhost\r\n")
         .await
@@ -31,19 +32,14 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
         .write_all(b"GET /health/liveliness HTTP/1.1\r\nHost: localhost\r\n")
         .await
         .unwrap();
+    readiness_request
+        .write_all(b"GET /health/readiness HTTP/1.1\r\nHost: localhost\r\n")
+        .await
+        .unwrap();
     sleep(Duration::from_millis(10)).await;
     send_sigterm(server.child.as_ref().unwrap().id().unwrap()).await;
-    health_request
-        .write_all(b"Connection: close\r\n\r\n")
-        .await
-        .unwrap();
-    let mut health_response = Vec::new();
-    health_request
-        .read_to_end(&mut health_response)
-        .await
-        .unwrap();
-    assert!(health_response.starts_with(b"HTTP/1.1 503"));
-    assert!(health_response.ends_with(b"{\"status\":\"shutting_down\"}"));
+    assert_shutdown_response(&mut health_request).await;
+    assert_shutdown_response(&mut readiness_request).await;
     request
         .write_all(b"Authorization: Bearer test-master\r\nConnection: close\r\n\r\n")
         .await
@@ -54,6 +50,16 @@ async fn sigterm_finishes_in_flight_request_and_writes_flat_json_logs() {
     assert!(response.ends_with(b"{\"detail\":\"Not Found\"}"));
     let stderr = server.wait().await;
     assert_json_logs(&stderr);
+}
+async fn assert_shutdown_response(request: &mut TcpStream) {
+    request
+        .write_all(b"Connection: close\r\n\r\n")
+        .await
+        .unwrap();
+    let mut response = Vec::new();
+    request.read_to_end(&mut response).await.unwrap();
+    assert!(response.starts_with(b"HTTP/1.1 503"));
+    assert!(response.ends_with(b"{\"status\":\"shutting_down\"}"));
 }
 #[tokio::test]
 async fn short_config_alias_starts_server() {

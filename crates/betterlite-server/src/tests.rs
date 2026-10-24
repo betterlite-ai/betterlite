@@ -36,10 +36,12 @@ fn authorization_prefixes_match_litellm(#[case] value: &str, #[case] expected: &
     let key = parse_key_header("authorization", value.as_bytes()).unwrap();
     assert_eq!(key.expose_secret(), expected);
 }
-#[test]
-fn invalid_utf8_header_is_ignored() {
-    assert!(parse_key_header("x-litellm-api-key", b"invalid-\xFF").is_none());
-    assert!(parse_key_header("x-litellm-api-key", b"invalid-\xC3\xBF").is_none());
+#[rstest]
+#[case::invalid_byte(b"invalid-\xFF")]
+#[case::utf8_bytes(b"invalid-\xC3\xBF")]
+fn non_utf8_header_is_used_as_wrong_key(#[case] value: &[u8]) {
+    let key = parse_key_header("x-litellm-api-key", value).unwrap();
+    assert_ne!(key.expose_secret(), "test-master");
 }
 #[rstest]
 #[case::authorization("authorization")]

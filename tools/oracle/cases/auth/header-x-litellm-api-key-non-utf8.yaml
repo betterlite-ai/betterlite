@@ -4,15 +4,19 @@ config: |
     master_key: oracle-master
 env: {}
 request:
-  method: GET
-  path: /not-served
+  method: POST
+  path: /v1/chat/completions
   headers:
     x-litellm-api-key: "invalid-\xFF"
     Authorization: Bearer oracle-master
-  body: null
+  body:
+    model: test
+    messages: []
 upstream: []
 compare:
   headers: []
   headers_present: []
   upstream_headers: []
-  ignore: []
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own message

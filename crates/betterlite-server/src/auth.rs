@@ -6,7 +6,6 @@ use axum::middleware::Next;
 use axum::response::Response;
 use regex::Regex;
 use secrecy::{ExposeSecret as _, SecretString};
-use std::str;
 use subtle::ConstantTimeEq as _;
 pub(crate) async fn authenticate(
     State(master_key_state): State<Option<SecretString>>,
@@ -62,10 +61,7 @@ pub fn parse_key_header(name: &str, header_bytes: &[u8]) -> Option<SecretString>
     if header_bytes.is_empty() {
         return None;
     }
-    let header_value = str::from_utf8(header_bytes).ok()?.to_owned();
-    if name == "x-litellm-api-key" && !header_value.is_ascii() {
-        return None;
-    }
+    let header_value: String = header_bytes.iter().map(|byte| char::from(*byte)).collect();
     let token = if name == header::AUTHORIZATION.as_str() {
         strip_prefix(&header_value).unwrap_or_default()
     } else if name == "x-litellm-api-key" {
