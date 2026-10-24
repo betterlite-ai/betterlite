@@ -1,11 +1,16 @@
-from typing import TypeAlias
+from collections.abc import Callable
+from typing import TypeAlias, cast
 
-from litellm.litellm_core_utils.dot_notation_indexing import (
-    delete_nested_value,
-    get_nested_value,
-)
+from litellm.litellm_core_utils import dot_notation_indexing
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+get_nested_value = cast(
+    Callable[[dict[str, Json], str, Json], Json], dot_notation_indexing.get_nested_value
+)
+delete_nested_value = cast(
+    Callable[[dict[str, Json], str], Json], dot_notation_indexing.delete_nested_value
+)
 
 
 def object_fields(value: Json, expected: set[str], name: str) -> dict[str, Json]:
@@ -29,7 +34,7 @@ def data_field(fields: dict[str, Json]) -> dict[str, Json]:
     return data
 
 
-def run(input_value: dict[str, Json]) -> object:
+def run(input_value: dict[str, Json]) -> Json:
     if len(input_value) != 1:
         raise ValueError("dot_paths input must name exactly one function")
     function, arguments = next(iter(input_value.items()))
