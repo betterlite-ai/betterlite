@@ -2585,11 +2585,11 @@ tasks:
     - B329
     - B353
     - B358
+    - B301
     file: tasks/B351-complexity-evaluation.yaml
     covers:
     - litellm/router_strategy/complexity_router/evals/**
     - litellm/proxy/public_endpoints/autorouter_presets.json
-
   - id: B352
     milestone: M2 routing
     title: Image and health gates for complexity placement
