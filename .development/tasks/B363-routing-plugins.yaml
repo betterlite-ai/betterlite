@@ -13,9 +13,10 @@ description: Implement typed routing-context input/output and wire the ordered r
   deterministic candidate sets or supplied random samples for comparisons, and separate seeded distribution
   tests for random choices. Extend the existing config_yaml fuzz target and committed corpus for every
   newly accepted config form; unsupported keys still fail by full path. Add a cargo-fuzz target plugin_json
-  under crates/betterlite-router/fuzz and a normal replays_the_plugin_json_corpus test using
-  the production parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures
-  and oracle cases are budget-excluded by checks.yaml.
+  under crates/betterlite-router/fuzz and a normal replays_the_plugin_json_corpus test using the production
+  parser. Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases
+  are budget-excluded by checks.yaml. Retain the pinned catalog as typed embedded informational data under
+  betterlite-router, with its source attribution and no automatic installation behavior.
 scope:
   paths:
   - crates/betterlite-router/**
@@ -74,9 +75,8 @@ checks:
       && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: parser-corpus
     why: the parser fuzz target or seed corpus is missing, or replay fails
-    run: test -f crates/betterlite-router/fuzz/fuzz_targets/plugin_json.rs && test -n "$(ls -A
-      crates/betterlite-router/fuzz/corpus/plugin_json)" && cargo nextest run --locked -p betterlite-router
-      --no-tests=fail -E 'test(replays_the_plugin_json_corpus)'
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/plugin_json.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/plugin_json)"
+      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_plugin_json_corpus)'
   - id: probe-python
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
