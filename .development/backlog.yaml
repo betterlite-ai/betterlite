@@ -164,7 +164,14 @@ tasks:
     milestone: M1 openai data plane
     title: Text completions and moderations
     status: todo
-    depends_on: [B010, B202, B203]
+    depends_on:
+    - B010
+    - B202
+    - B203
+    - B014
+    - B011
+    - B009
+    - B204
     file: tasks/B015-moderations.yaml
     covers: []
   - id: B016
