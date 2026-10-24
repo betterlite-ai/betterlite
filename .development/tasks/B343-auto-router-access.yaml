@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/auto-router-access/**
-  - tools/oracle/src/router_probes/auto-router-access/**
+  - tools/oracle/src/router_probes/auto_router_access/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/auto_router_access.py
   - tools/oracle/litellm/probes/registry.py
@@ -32,17 +32,18 @@ references:
   why: Config placement validation and license-gate boundaries.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/auto_router_permissions.py#L109-L370
   why: Member write and dependency permissions.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auto_router_checks.py#L26-L159
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auto_router_checks.py#L26-L136
   why: Inference-time revalidation.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/auto_router_tuning_baseline.py#L147-L174
   why: License quotas deliberately omitted.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the auto_router_access prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
