@@ -21,7 +21,7 @@ pub(crate) fn python_repr(text: &str) -> String {
         match character {
             _ if character == quote => repr.extend(['\\', quote]),
             _ if character == '\\' || character.is_control() => {
-                repr.extend(character.escape_default())
+                repr.extend(character.escape_default());
             }
             _ => repr.push(character),
         }

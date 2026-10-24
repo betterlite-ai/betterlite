@@ -8,6 +8,7 @@ call:
       - {pattern: "^bare$", model_info: {}, fill_missing_for_providers: [openai]}
       - {pattern: "^route$", model_info: {litellm_provider: openai}, fill_missing_for_providers: [openai]}
       - {pattern: "^plain$", model_info: {mode: chat}}
+      - {pattern: "^$", model_info: {mode: blank}, fill_missing_for_providers: [vertex_ai]}
     routing: []
     capabilities: []
     fill_missing:

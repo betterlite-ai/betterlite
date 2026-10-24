@@ -1,6 +1,8 @@
 #![no_main]
 
-use betterlite_models::catalog_generalizations::{CatalogGeneralizations, decode_model_generalization_rules};
+use betterlite_models::catalog_generalizations::{
+    CatalogGeneralizations, decode_model_generalization_rules,
+};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

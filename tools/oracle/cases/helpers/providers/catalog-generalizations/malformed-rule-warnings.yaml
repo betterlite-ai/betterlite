@@ -14,6 +14,7 @@ call:
       - {pattern: f2, model_info: {}, fill_missing_for_providers: [1]}
       - {pattern: prov, model_info: {litellm_provider: null}}
       - {pattern: ok, model_info: {mode: chat}}
+      - {pattern: "'\"\\\t(", model_info: {}}
     routing: [prov]
     capabilities: [ok, f2, p1]
     fill_missing: []
@@ -23,4 +24,6 @@ compare:
     - pointer: /value/warnings/5/message
       why: the invalid-regex warning ends with the regex engine's own error text; the subject still compares the pattern
     - pointer: /value/warnings/6/message
+      why: the invalid-regex warning ends with the regex engine's own error text; the subject still compares the pattern
+    - pointer: /value/warnings/10/message
       why: the invalid-regex warning ends with the regex engine's own error text; the subject still compares the pattern

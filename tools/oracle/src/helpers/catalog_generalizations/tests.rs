@@ -19,7 +19,21 @@ fn helper_seeds_select_catalog_generalizations() {
             serde_saphyr::from_str(&source).unwrap()
         })
         .collect();
-    assert!(!seeds.is_empty());
-    let selected = |seed: &HelperCase| matches!(seed.call, HelperCall::CatalogGeneralizations(_));
-    assert!(seeds.iter().all(selected));
+    let mut outputs: Vec<String> = seeds
+        .iter()
+        .filter_map(|seed| match &seed.call {
+            HelperCall::CatalogGeneralizations(input) => {
+                serde_json::to_string(&super::invoke(input)).ok()
+            }
+            HelperCall::UrlPath(_) => None,
+        })
+        .collect();
+    outputs.sort();
+    assert_eq!(
+        outputs,
+        [
+            r#"{"ok":true,"value":{"capabilities":[],"fill_missing":[],"routing":[null],"rules":[],"warnings":[]}}"#,
+            r#"{"ok":true,"value":{"capabilities":[{"litellm_provider":"anthropic","mode":"chat","supports_vision":true}],"fill_missing":[{"mode":"chat","supports_vision":true}],"routing":["anthropic",null],"rules":[{"model_info":{"litellm_provider":"anthropic","mode":"chat"},"name":"base","pattern":"^claude-"},{"extends":"base","fill_missing_for_providers":["anthropic"],"model_info":{"supports_vision":true},"name":"child","pattern":"claude-x"},{"model_info":{},"pattern":"("},7],"warnings":[{"message":"LiteLLM: skipping fallback generalization rule with invalid regex '(': Parsing error at position 1: Opening parenthesis without closing parenthesis","subject":"("}]}}"#,
+        ]
+    );
 }
