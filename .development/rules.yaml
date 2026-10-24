@@ -505,3 +505,16 @@ rules:
         let child = Command::new("uv").args(["run", "--locked", "litellm"]).spawn()?;
       write: |
         let child = Command::new("setpriv").args(["--pdeathsig", "KILL", "--"]).arg(venv.join("bin/litellm")).spawn()?;
+
+  - id: owned-behavior-is-built
+    title: Everything a task owns in LiteLLM is built
+    statement: >-
+      The LiteLLM code a task's references mark as owned is its spec, and the task text is a guide to it. Every behavior in that code a user can observe (defaults, header names and values, env vars, config keys, error status and codes, warn-and-drop paths, body rewrites) is built and tested, listed as a deviation with its reason, or listed out of scope with its owner, even when the task text doesn't name it.
+    why: Task text is a summary and misses things. A review of the planned provider tasks found missing behavior in 6 of 8 of them, and a gap nobody builds ships as a silent difference from LiteLLM.
+    enforced_by: [oracle]
+    reviewed: true
+    example:
+      instead_of: |
+        the task names the vector store routes but not the OpenAI-Beta header, so the header is left out
+      write: |
+        OpenAI-Beta: assistants=v2 is added when the caller didn't send it, with a named oracle case, and a note says the task text missed it

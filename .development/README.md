@@ -21,7 +21,7 @@ Inside a run, both CLIs call `cargo gate hook` when the agent tries to stop: Cod
 
 - backlog.yaml lists every task with its milestone, status, dependencies and the LiteLLM paths it covers. The architect owns it; the planner fills in task files and splits oversized entries on a plan branch.
 - tasks/B*.yaml holds one task each: description, scope, references, definition of done, checks, oracle cases, deviations, out-of-scope items, pitfalls, review level and budget.
-- rules.yaml is the code standard: 34 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
+- rules.yaml is the code standard: 35 rules, each with its reason, the checks that enforce it, whether reviewers read for it, and an example of code that breaks it next to the same intent written right.
 - checks.yaml pins the CLI tools to exact versions and defines the shared settings, the base checks every task runs, and the optional checks a task can add.
 - agents.yaml maps roles to runners, models and limits.
 - litellm.yaml pins the LiteLLM release betterlite follows: repository, version, commit, the folders and files that make up LiteLLM outside its enterprise directory, and the paths left out, each with its reason.
