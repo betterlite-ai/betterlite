@@ -1,0 +1,19 @@
+kind: helper
+name: response-format-tool
+call:
+  provider_message_primitives:
+    function: response_format
+    optional_params:
+      tools: [{type: function, function: {name: weather}}]
+      tool_choice: auto
+      response_format: {type: text}
+    value:
+      type: json_schema
+      json_schema:
+        name: answer
+        schema: {type: object, properties: {answer: {type: string}}}
+    supported: false
+    enforce_tool_choice: null
+env: {}
+compare:
+  ignore: []

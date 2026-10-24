@@ -1,4 +1,5 @@
 mod catalog_generalizations;
+mod provider_message_primitives;
 mod url_path;
 
 use std::collections::BTreeMap;
@@ -19,6 +20,8 @@ use crate::process::sync_litellm;
 pub(crate) enum HelperCall {
     #[serde(rename = "url_path")]
     UrlPath(url_path::UrlPathInput),
+    #[serde(rename = "provider_message_primitives")]
+    ProviderMessagePrimitives(provider_message_primitives::PrimitivesInput),
     #[serde(rename = "catalog_generalizations")]
     CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
 }
@@ -76,20 +79,22 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 }
 
 fn invoke(call: &HelperCall) -> HelperOutput {
-    match call {
-        HelperCall::UrlPath(input) => match url_path::invoke(input) {
-            Ok(value) => HelperOutput {
-                ok: true,
-                value: Some(value),
-                error: None,
-            },
-            Err(error) => HelperOutput {
-                ok: false,
-                value: None,
-                error: Some(*error),
-            },
+    let result = match call {
+        HelperCall::UrlPath(input) => url_path::invoke(input),
+        HelperCall::ProviderMessagePrimitives(input) => provider_message_primitives::invoke(input),
+        HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
+    };
+    match result {
+        Ok(value) => HelperOutput {
+            ok: true,
+            value: Some(value),
+            error: None,
         },
-        HelperCall::CatalogGeneralizations(input) => catalog_generalizations::invoke(input),
+        Err(error) => HelperOutput {
+            ok: false,
+            value: None,
+            error: Some(*error),
+        },
     }
 }
 

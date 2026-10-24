@@ -1,0 +1,9 @@
+kind: helper
+name: iterator-initial-state
+call:
+  provider_message_primitives:
+    function: iterator_state
+    json_mode: {explicit: null}
+env: {}
+compare:
+  ignore: []

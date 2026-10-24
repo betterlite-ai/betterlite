@@ -1,0 +1,18 @@
+kind: helper
+name: response-format-native
+call:
+  provider_message_primitives:
+    function: response_format
+    optional_params:
+      temperature: 0.2
+      tools: [{type: function, function: {name: weather}}]
+      tool_choice: auto
+    value:
+      type: json_schema
+      response_schema: {}
+      json_schema: malformed
+    supported: true
+    enforce_tool_choice: null
+env: {}
+compare:
+  ignore: []
