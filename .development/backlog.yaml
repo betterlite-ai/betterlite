@@ -2515,12 +2515,14 @@ tasks:
     depends_on:
     - B016
     - B017
-    - B304
+    - B360
+    - B301
+    - B361
+    - B002
     file: tasks/B346-request-scheduler.yaml
     covers:
     - litellm/scheduler.py
     - litellm/types/scheduler.py
-
   - id: B347
     milestone: M2 routing
     title: Adaptive concurrency permits
