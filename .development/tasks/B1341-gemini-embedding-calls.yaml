@@ -1,0 +1,78 @@
+id: B1341
+title: Execute Google embedding requests and resolve native file references
+description: >-
+  Implement gemini_embedding_call for all GoogleBatchEmbeddings methods in
+  batch_embed_content_handler.py (337 nonblank noncomment lines). B1302 authenticates before
+  facade selection. Vertex always chooses embedContent; Studio always chooses batchEmbedContents,
+  using B1304 target selection and B1340 bodies/replies. Content-Type is application/json;
+  charset=utf-8, followed by auth-map/Bearer fields and caller extra_headers last. Native files/
+  references are metadata GETs to the fixed https://generativelanguage.googleapis.com/v1beta/
+  resource with x-goog-api-key, not arbitrary request URL downloads or enterprise managed files.
+  Flatten Studio groups for detection/resolution; require an API key before resolving any file.
+  Vertex only resolves when api_key is supplied and does not flatten groups. Repeated references
+  repeat GETs, with later metadata overwriting the map. Missing mimeType becomes empty and
+  missing uri falls back to the file identifier. Require 200 for each GET and final POST.
+  Preserve timeout=300 by default; sync timeout=None creates 600-second/read and 5-second/connect
+  settings, while the async source computes that fallback but passes the original timeout into
+  its pooled client. The outer async handoff does not forward the supplied sync client. Decode
+  native metadata and embedding replies through decode_embedding_http with embedding_http
+  fuzz/replay; use B1340 record projections afterwards. Helper gemini_embedding_call_plan calls
+  only _flatten_and_detect_file_refs, with nested_file_refs, repeated_refs_retained,
+  nonstring_elements_ignored and plain_text_only. Native plans tests cover vertex_single_path,
+  missing_api_key, extra_header_precedence and timeout_none_modes. Fixture-transport tests assert the GET/POST
+  sequence and that gs:// content is forwarded without downloads. Budget 320 execution,
+  210 tests, 110 helper and 100 decoder/fuzz lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_embedding_call}.rs
+    - crates/betterlite-vertex/src/gemini_embedding_call/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/embedding_http.rs
+    - crates/betterlite-vertex/fuzz/corpus/embedding_http/**
+    - tools/oracle/src/helpers/{mod,gemini_embedding_call_plan}.rs
+    - tools/oracle/helpers/{dispatch,gemini_embedding_call_plan}.py
+    - tools/oracle/cases/helpers/gemini-embedding-call-plan/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_embedding_call_plan*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py#L35-L384
+    why: File metadata resolution, provider-specific operation choice and timeout/client handoffs.
+dod:
+  - text: Pure input flattening preserves repeated file references and ignores non-string elements as the source does.
+    proof: [embedding-call-plans, embedding-call-python, oracle]
+  - text: Native file GETs and embedding POSTs execute in source order with matching timeout and error behavior.
+    proof: [embedding-call-http]
+  - text: External embedding HTTP bodies and helper seeds reach bounded production decoders.
+    proof: [embedding-http-corpus, embedding-call-seeds]
+checks:
+  optional: []
+  commands:
+    - id: embedding-call-plans
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_embedding_call::tests::plans/)'
+      why: Provider mode and file-reference cases must assert the exact planned operation sequence.
+    - id: embedding-call-http
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_embedding_call::tests::http/)'
+      why: Transport traces detect missing repeated GETs, wrong client handoff and unintended media retrieval.
+    - id: embedding-call-python
+      run: test -f tools/oracle/helpers/gemini_embedding_call_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: File detection invokes the source static helper and never metadata GET or embedding execution.
+    - id: embedding-http-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/embedding_http.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/embedding_http)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_embedding_http_corpus)'
+      why: Both file metadata and embedding response variants must replay through decode_embedding_http.
+    - id: embedding-call-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_embedding_call_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_embedding_call_plan::/)'
+      why: New planned-call fixtures must select the corresponding helper variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-embedding-call-plan/nested-file-refs.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-call-plan/repeated-refs-retained.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-call-plan/nonstring-elements-ignored.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-call-plan/plain-text-only.yaml
+deviations: []
+out_of_scope:
+  - B1340 owns content/usage transformations and B033/B035 install the embedding operation into their provider dispatchers.
+pitfalls:
+  - Studio file metadata lookup uses the fixed Google API host even when embeddings use a custom api_base.
+  - The async timeout fallback local variable is unused by the pinned client construction.
+  - Repeated files/ references are not deduplicated before metadata GETs.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

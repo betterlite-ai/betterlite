@@ -1,0 +1,83 @@
+id: B1352
+title: Cloud speech synthesis voices, SSML and audio decoding
+description: >-
+  Implement vertex_speech from transformation.py L1-L139 and L210-L484, 308 nonblank
+  noncomment lines, plus the 38-line Vertex speech type file. Defaults are en-US,
+  en-US-Studio-O, LINEAR16 and speakingRate string 1. Preserve all six OpenAI voice mappings,
+  language extraction from the first two hyphen components, unchanged voice dictionaries and
+  original voice strings returned by option mapping. Map mp3/opus/aac/flac/wav/pcm to the source
+  encodings; unknown formats pass through. Stringify a non-None speed, and copy audioConfig
+  and use_ssml only from kwargs. Input validation removes None fields, converts text when
+  use_ssml is truthy or the literal substring <speak> occurs, and rejects absent input or both
+  remaining text and ssml. Header validation copies caller headers and forces JSON plus
+  charset UTF-8. The URL is a truthy custom base or the fixed texttospeech v1 text:synthesize
+  endpoint. Request preparation resolves auth through B1302/B1304 using vertex_ai_beta,
+  overwrites Authorization and x-goog-user-project, prefers a truthy litellm_params voice
+  dictionary over the mapped option, and lets a full audioConfig replace encoding/rate fields.
+  Decode JSON audioContent and its permissive base64 with decode_vertex_speech_audio, rejecting
+  a falsey content value. Return status 200 regardless of the upstream status and only add
+  content-type when the injected B1003 media sniffer recognizes bytes. Define a leaf BinaryAudio
+  record and media-sniffer callback; B033 maps B1135's operation types without importing core
+  into this crate. Add vertex_speech helpers for alloy_voice, custom_voice_language,
+  aac_maps_mp3, ssml_substring, full_audio_config, voice_dict_precedence and decoded_status_200.
+  Native tests also cover malformed JSON/base64 and sensitive header redaction; replay the
+  vertex_speech_audio fuzz corpus. Budget 335 implementation, 170 tests, 120 oracle and 90 fuzz
+  lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_speech}.rs
+    - crates/betterlite-vertex/src/vertex_speech/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_speech_audio.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_speech_audio/**
+    - tools/oracle/src/helpers/{mod,vertex_speech}.rs
+    - tools/oracle/helpers/{dispatch,vertex_speech}.py
+    - tools/oracle/cases/helpers/vertex-speech/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_speech*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/text_to_speech/transformation.py#L49-L484
+    why: Cloud TTS configuration, voice mapping, authentication and decoded audio output; dispatch is assigned separately.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_text_to_speech.py#L10-L56
+    why: Input, voice and audio configuration records.
+dod:
+  - text: Cloud synthesis preserves voice mapping, SSML selection and replacement precedence.
+    proof: [speech-synthesis-tests, speech-synthesis-python, oracle]
+  - text: Provider JSON and base64 audio are bounded and replay newly committed malformed inputs.
+    proof: [speech-audio-fuzz]
+  - text: Speech fixture records deserialize the added helper variant.
+    proof: [speech-synthesis-seeds]
+checks:
+  optional: []
+  commands:
+    - id: speech-synthesis-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_speech::/) - test(replays_the_vertex_speech_audio_corpus)'
+      why: Parameter assertions include the string speaking rate and full audioConfig replacement.
+    - id: speech-synthesis-python
+      run: test -f tools/oracle/helpers/vertex_speech.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Reference transformations receive deterministic token and MIME dependencies.
+    - id: speech-audio-fuzz
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_speech_audio.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_speech_audio)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_speech_audio_corpus)'
+      why: Both the JSON envelope and audio string pass through the production decoder during replay.
+    - id: speech-synthesis-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_speech*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_speech::/)'
+      why: Corpus parsing must reach Cloud TTS inputs rather than an existing image helper.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-speech/alloy-voice.yaml
+  - tools/oracle/cases/helpers/vertex-speech/custom-voice-language.yaml
+  - tools/oracle/cases/helpers/vertex-speech/aac-maps-mp3.yaml
+  - tools/oracle/cases/helpers/vertex-speech/ssml-substring.yaml
+  - tools/oracle/cases/helpers/vertex-speech/full-audio-config.yaml
+  - tools/oracle/cases/helpers/vertex-speech/voice-dict-precedence.yaml
+  - tools/oracle/cases/helpers/vertex-speech/decoded-status-200.yaml
+deviations: []
+out_of_scope:
+  - dispatch_text_to_speech L140-L208 belongs to B033; VertexAILyriaTextToSpeechConfig L487-L676 belongs to B1353.
+  - text_to_speech_handler.py has no caller at the pin; VertexTextToSpeechAPI.__init__, audio_speech, async_audio_speech and validate_vertex_input are retired with its unused request types.
+  - B1003 owns audio MIME sniffing and B1135 owns provider-facing speech contracts; B033 injects their projections.
+pitfalls:
+  - AAC requests use MP3 encoding at this provider.
+  - SSML detection checks a case-sensitive substring rather than parsing XML.
+  - Successful synthesis reconstruction resets the response status to 200 and discards upstream headers.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

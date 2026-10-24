@@ -1,0 +1,75 @@
+id: B1318
+title: Google cached-content endpoint and paginated lookup
+description: >-
+  Add cache_lookup to betterlite-vertex for ContextCachingEndpoints initialization,
+  _get_token_and_url_context_caching, check_cache and async_check_cache. Reuse B1304 custom-base
+  rules, B1305 regional hosts and B173 transport. Vertex cache collections use v1, vertex_ai_beta
+  uses v1beta1, and Studio uses v1beta cachedContents with x-goog-api-key. Extra query parameters
+  survive pageToken insertion. Search displayName exactly and return its name, stopping on the
+  first match, absent cachedContents, absent/empty nextPageToken or 100 pages. A list 403 returns
+  no cache; other HTTP failures preserve status and a non-HTTP failure becomes VertexAIError 500.
+  Do not add expiry filtering or a second local content cache. The listing does not create anything.
+  decode_cached_page consumes bounded provider JSON into CachedPage/CachedContent records,
+  preserving absent names and optional page tokens. Add a cache_page fuzz target and replay test.
+  Pure helper vertex_cache_lookup compares only _get_token_and_url_context_caching with an
+  already resolved auth token; transport tests drive scripted
+  pages for second_page_hit, forbidden_is_miss, missing_items_stops, page_limit and non403_error.
+  B031's booted chat cases compare those cache-list effects against the pinned proxy. The helper
+  cases cover Vertex v1, beta v1beta1, Studio v1beta, a custom version root and an existing query
+  string without calling either list method. Include one helper seed per target form.
+  The list/target slice has 193 nonblank noncomment lines; allocate 220 provider/decoder,
+  170 tests, 105 adapters, 75 fuzz and 50 wiring lines under a 675-line budget.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,cache_lookup}.rs
+    - crates/betterlite-vertex/src/cache_lookup/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/cache_page.rs
+    - crates/betterlite-vertex/fuzz/corpus/cache_page/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/vertex_cache_lookup.rs
+    - tools/oracle/src/helpers/vertex_cache_lookup/**
+    - tools/oracle/helpers/{dispatch,vertex_cache_lookup}.py
+    - tools/oracle/cases/helpers/vertex-cache-lookup/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_cache_lookup*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L34-L276
+    why: Own the target builder and both list loops, unified behind native async IO.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L323-L337
+    why: Cache resource properties used in list responses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L361-L364
+    why: Optional collection and page-token fields.
+dod:
+  - text: Pure cache target selection matches the pin and native transport tests enforce pagination and failure handling.
+    proof: [lookup-tests, oracle, lookup-python]
+  - text: Provider cache JSON and helper inputs have new replayed corpora.
+    proof: [lookup-corpora]
+checks:
+  optional: []
+  commands:
+    - id: lookup-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^cache_lookup::/) - test(replays_the_cache_page_corpus)'
+      why: Pagination must be tested separately from JSON corpus replay.
+    - id: lookup-python
+      run: test -f tools/oracle/helpers/vertex_cache_lookup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter calls the target builder with resolved tokens and performs no network operation.
+    - id: lookup-corpora
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/cache_page)" && test -f crates/betterlite-vertex/fuzz/fuzz_targets/cache_page.rs && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_cache_page_corpus)' && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_cache_lookup*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_cache_lookup::/)'
+      why: Cache-page parsing and helper selection each require newly added corpus inputs.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-cache-lookup/provider-cache-targets.yaml
+  - tools/oracle/cases/helpers/vertex-cache-lookup/beta-version.yaml
+  - tools/oracle/cases/helpers/vertex-cache-lookup/studio-api-key.yaml
+  - tools/oracle/cases/helpers/vertex-cache-lookup/custom-version-root.yaml
+  - tools/oracle/cases/helpers/vertex-cache-lookup/existing-query.yaml
+deviations: []
+out_of_scope:
+  - check_and_create_cache and async_check_and_create_cache are B1324; prefix and request transformations are B1317.
+  - get_cache and async_get_cache at L592-L597 have no caller at the pin and contain only pass.
+pitfalls:
+  - A 403 cache list response permits the later create path instead of failing inference immediately.
+  - A matching displayName with no name stops the search with no usable cache name.
+  - Cache list pagination is bounded at 100 even if the provider repeats its nextPageToken forever.
+budget: {max_changed_lines: 675, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,89 @@
+id: B1390
+title: Search and create Gemini File Search stores
+description: >-
+  Add studio_file_search for gemini/vector_stores/transformation.py, 288 nonblank
+  noncomment lines. Reuse B1058 vector records, B1331 key/base resolution and B1384's ISO
+  timestamp conversion. Publish read POST /models/{model}:generateContent and write POST
+  /fileSearchStores; support max_num_results and filters. get_auth_credentials returns empty.
+  Environment validation preserves an existing Content-Type and only resolves/adds
+  x-goog-api-key when litellm_params is truthy, using explicit key then B1331's environment
+  lookup. _cached_api_key is written but never read at the pin; do not create shared mutable
+  key state. A None base uses GeminiModelInfo, then append /v1beta without slash trimming.
+  Search defaults model to gemini-2.5-flash, removes every gemini/ occurrence only when
+  the model starts with that prefix, and independently requires an explicit or ModelInfo
+  key despite not placing it in the URL. Join query lists with spaces; construct contents
+  without role and snake_case file_search.file_search_store_names. A truthy dictionary
+  filters value becomes ordered key = value clauses joined with AND, quoting strings
+  without escaping them and preserving Python scalar spelling; non-dict truthy filters
+  pass through. Any truthy max_num_results sets candidateCount=1, not that requested count.
+  extra_body is ignored.
+  decode_studio_file_search parses create or generateContent response bytes. Append every
+  truthy retrievedContext across candidates, including empty-text records, with score None,
+  nullable URI/title identifiers and uri/title attributes retained even empty. Then append
+  support segment text only if nonempty and absent from all prior result content; use the
+  first confidence score and grounding_chunk_indices, without inventing file metadata.
+  Create forwards only truthy name as displayName. Its result keeps the complete
+  fileSearchStores/... identifier, zero size/counts, completed status, null metadata/expiry
+  and created_at 0 for invalid or absent time. Failures wrap raw status/headers with the
+  source search-versus-create message prefix. Helper studio_file_search cases no_params_auth,
+  missing_search_key, untrimmed_base, filter_scalar_spelling, result_limit_one,
+  grounding_and_support_dedup, empty_retrieved_text, complete_store_id and malformed_create
+  compare these projections. Reserve 300 code, 180 tests, 100 adapters and 95 fuzz lines
+  within 725, including key isolation tests across two request contexts.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_file_search}.rs
+    - crates/betterlite-vertex/src/studio_file_search/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_search.rs
+    - crates/betterlite-vertex/fuzz/corpus/studio_file_search/**
+    - tools/oracle/src/helpers/{mod,studio_file_search}.rs
+    - tools/oracle/helpers/{dispatch,studio_file_search}.py
+    - tools/oracle/cases/helpers/studio-file-search/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_file_search*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/vector_stores/transformation.py#L1-L390
+    why: File Search auth, metadata filtering, grounding-result projection and store creation.
+dod:
+  - text: File Search preparation retains its header/key asymmetry, native tool spelling and truthy result-limit behavior.
+    proof: [studio-search-tests, studio-search-python, oracle]
+  - text: Grounding records and store results preserve deduplication, nullable identifiers and complete store names.
+    proof: [studio-search-tests, studio-search-python, oracle]
+  - text: File Search response bytes and helper seeds replay through the production decoding boundaries.
+    proof: [studio-search-corpus, studio-search-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-search-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_file_search::/) - test(replays_the_studio_file_search_corpus)'
+      why: Fixtures cover request, response, error and per-context key isolation behavior.
+    - id: studio-search-python
+      run: test -f tools/oracle/helpers/studio_file_search.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pinned record methods run with explicit environment snapshots and in-memory responses.
+    - id: studio-search-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_file_search.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_file_search)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_file_search_corpus)'
+      why: decode_studio_file_search receives malformed candidates, supports and create times.
+    - id: studio-search-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_file_search*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_file_search::/)'
+      why: Added fixtures assert call.studio_file_search before shared corpus replay.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-file-search/no-params-auth.yaml
+  - tools/oracle/cases/helpers/studio-file-search/missing-search-key.yaml
+  - tools/oracle/cases/helpers/studio-file-search/untrimmed-base.yaml
+  - tools/oracle/cases/helpers/studio-file-search/filter-scalar-spelling.yaml
+  - tools/oracle/cases/helpers/studio-file-search/result-limit-one.yaml
+  - tools/oracle/cases/helpers/studio-file-search/grounding-and-support-dedup.yaml
+  - tools/oracle/cases/helpers/studio-file-search/empty-retrieved-text.yaml
+  - tools/oracle/cases/helpers/studio-file-search/complete-store-id.yaml
+  - tools/oracle/cases/helpers/studio-file-search/malformed-create.yaml
+deviations: []
+out_of_scope:
+  - B035 connects the adapter to vector execution; B1067/B1068 retain HTTP route and authorization ownership.
+  - Standalone Gemini files are B1367 and are not implicitly attached to a File Search store here.
+pitfalls:
+  - max_num_results=100 still requests candidateCount=1 and does not cap the returned grounding records.
+  - Support-text deduplication spans previously processed candidates as well as the current candidate.
+  - The create result keeps fileSearchStores/ in its id instead of returning only the last path segment.
+budget: {max_changed_lines: 725, max_new_expects: 1}
+review_level: security

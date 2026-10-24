@@ -1,0 +1,95 @@
+id: B1345
+title: Vertex Gemini image generation and image credential fallback
+description: >-
+  Implement vertex_gemini_images and shared vertex_image_identity. Own all Gemini image-generation
+  methods (269 nonblank noncomment file lines) and the three _resolve_vertex_* methods in each
+  Imagen generation, Gemini edit and Imagen edit file (72 additional method lines). Resolve
+  request safe-getter values first; fallback project is instance override, VERTEXAI_PROJECT,
+  litellm_settings.vertex_project, secret snapshot. Location adds VERTEX_LOCATION after
+  VERTEXAI_LOCATION and before the module value; credentials use instance, VERTEXAI_CREDENTIALS,
+  litellm_settings.vertex_credentials, GOOGLE_APPLICATION_CREDENTIALS, then secret snapshot.
+  None is the default for all. Test vertex_image_identity_settings with the real config loader.
+  A supplied custom base bypasses token validation and is returned trimmed; otherwise require
+  project/location, use B1305's host and v1 Google :generateContent with B1302 auth. Preserve
+  get_complete_url's truthy-base check versus validation's non-None-base check.
+  Map n to candidate_count, size via the exact five-size map with 1:1 fallback, both flat naming
+  variants to camelCase, and ignore nonobject imageConfig with a warning. B1334 handles tools.
+  The body has user role, responseModalities=[IMAGE], nested imageConfig overlaid by flat fields,
+  candidate_count before n and truthy tools/toolConfig. Replies append every inlineData.data
+  field without MIME filtering, preserving truthy thoughtSignature as thought_signature. Usage
+  sums only TEXT/IMAGE input detail counts and attaches Search requests only when usage exists.
+  Decode sparse image responses with decode_google_image and fuzz target google_image; retain
+  upstream status/headers on parse failure. Helper vertex_gemini_images compares custom_base_no_auth,
+  empty_base_difference, five_size_fallback, flat_over_nested, nonobject_config_warning,
+  signature_image and search_without_usage. Budget 330 code, 190 tests, 110 adapters and 140 config/fuzz.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_gemini_images,vertex_image_identity}.rs
+    - crates/betterlite-vertex/src/{vertex_gemini_images,vertex_image_identity}/**
+    - crates/betterlite-config/src/{env,settings}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/images.rs
+    - crates/betterlite-config/src/providers/vertex/images/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/google_image.rs
+    - crates/betterlite-vertex/fuzz/corpus/google_image/**
+    - tools/oracle/src/helpers/{mod,vertex_gemini_images}.rs
+    - tools/oracle/helpers/{dispatch,vertex_gemini_images}.py
+    - tools/oracle/cases/helpers/vertex-gemini-images/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_gemini_images*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_gemini_transformation.py#L36-L331
+    why: Vertex image credential resolution, request dialect and generated-image usage/signatures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_imagen_transformation.py#L86-L111
+    why: Identical Imagen generation fallback methods consolidated into image identity.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py#L72-L97
+    why: Gemini edit resolver methods share these exact priorities.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L69-L94
+    why: Imagen edit credential fallback has the same three source methods.
+dod:
+  - text: Vertex Gemini images preserve body dialect, option precedence, signatures and usage attachment.
+    proof: [gemini-image-tests, gemini-image-python, oracle]
+  - text: Image-specific credential fallback loads correctly and custom bases skip authentication exactly where specified.
+    proof: [image-identity-config, image-identity-tests]
+  - text: Sparse upstream image JSON and helper records replay new production-parser inputs.
+    proof: [google-image-corpus, gemini-image-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: gemini-image-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_gemini_images::/) - test(replays_the_google_image_corpus)'
+      why: Generated-image tests must preserve absent usage and source field spellings.
+    - id: image-identity-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_image_identity::/)'
+      why: Custom-base and fallback precedence assertions protect credential forwarding boundaries.
+    - id: image-identity-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_image_identity_settings::/)'
+      why: Image credential aliases and environment priorities must use loaded configuration.
+    - id: gemini-image-python
+      run: test -f tools/oracle/helpers/vertex_gemini_images.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter compares this Vertex-specific implementation rather than Studio's different image policy.
+    - id: google-image-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/google_image.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/google_image)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_google_image_corpus)'
+      why: Sparse and malformed Google image reply bytes must reach decode_google_image.
+    - id: gemini-image-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_images*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_gemini_images::/)'
+      why: New image-generation helper tags must be registered in fixture parsing.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-gemini-images/custom-base-no-auth.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-images/empty-base-difference.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-images/five-size-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-images/flat-over-nested.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-images/nonobject-config-warning.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-images/signature-image.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-images/search-without-usage.yaml
+deviations: []
+out_of_scope:
+  - B1346 owns remaining Imagen generation methods; B1347 owns remaining Gemini edit methods; B1348 owns remaining Imagen edit methods.
+  - B1349 owns generation execution, selector exports and Vertex image pricing.
+pitfalls:
+  - Vertex image generation uses a five-entry size map, not Studio's nearest-aspect algorithm.
+  - The credential fallback can use litellm_settings.vertex_credentials even though the generic Vertex credential getter does not.
+  - An empty custom base skips credential validation but cannot satisfy the URL builder's truthy custom-base branch.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

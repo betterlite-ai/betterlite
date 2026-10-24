@@ -1,0 +1,95 @@
+id: B1362
+title: Vertex Veo operation results, content and usage defaults
+description: >-
+  Complete vertex_veo_operation with _parse_veo_operation, video count/usage helpers, create,
+  status, content and edit response methods, status/content/prefetch request methods and every
+  unsupported-operation/error method. These spans total about 330 nonblank noncomment source
+  lines. Reuse B1361's model extraction and B672's IDs. Implement decode_vertex_veo_operation
+  for bounded JSON and first-video base64 content. Create/edit require a truthy operation name,
+  return processing, optionally encode provider/model into the ID and attach request-derived
+  usage. Count sampleCount only when it is a positive integer excluding bool. Nonempty request
+  data uses durationSeconds or DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS, default 8 from the same
+  environment variable; invalid duration conversion is omitted. Resolution is stripped and
+  lowercased, with whitespace-only values omitted. Add the B002-loaded setting to VertexSettings
+  and named betterlite-config test vertex_video_settings::loads_default_google_video_duration
+  for absent, override and invalid integer inputs, plus fresh config_yaml seeds. Poll/content
+  requests decode the operation ID, require a model at component seven and append
+  /model:fetchPredictOperation with operationName. Content requires done and the first video's
+  truthy bytesBase64Encoded; gcsUri alone is not downloaded. Status prefers truthy error over
+  done, retains provider error, uses B1306 timestamp parsing or injected current epoch seconds
+  on missing/invalid createTime, and does not infer usage. Edit prefetch delegates to polling.
+  Remix/list/delete/character/extension methods retain their explicit NotImplementedError
+  behavior; ordinary provider errors carry Vertex status and headers. Add vertex_veo_operation
+  cases missing_operation_name, error_beats_done, invalid_timestamp_clock, first_video_content,
+  gcs_content_rejected, zero_duration_default, boolean_sample_count and whitespace_resolution.
+  Use a vertex_veo_operation fuzz target for provider JSON/base64. Budget 290 code, 180 tests,
+  125 oracle, 80 fuzz and 55 config lines; ceiling 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_veo_operation}.rs
+    - crates/betterlite-vertex/src/vertex_veo_operation/**
+    - crates/betterlite-config/src/{lib,vertex}.rs
+    - crates/betterlite-config/src/vertex/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_video*
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_veo_operation.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_veo_operation/**
+    - tools/oracle/src/helpers/{mod,vertex_veo_operation}.rs
+    - tools/oracle/helpers/{dispatch,vertex_veo_operation}.py
+    - tools/oracle/cases/helpers/vertex-veo-operation/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_veo_operation*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L48-L102
+    why: Operation fields, sample-count validation and usage fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L422-L721
+    why: Create/poll/content mapping, failures and edit prefetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L783-L843
+    why: Edit response usage, unsupported extension and provider error class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L679-L679
+    why: Video duration fallback is env-configured and defaults to eight seconds.
+dod:
+  - text: Veo operation conversion retains status precedence, first-video extraction and request-derived usage.
+    proof: [veo-operation-tests, veo-operation-python, oracle]
+  - text: Video usage duration defaults are accepted through the production config loader.
+    proof: [veo-duration-setting]
+  - text: Veo response decoding and helper dispatch replay new corpus records.
+    proof: [veo-operation-corpus, veo-operation-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: veo-operation-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_veo_operation::/) - test(replays_the_vertex_veo_operation_corpus)'
+      why: Failed operations, sparse video content and usage defaults have distinct assertions.
+    - id: veo-duration-setting
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/vertex_video*')" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(vertex_video_settings::loads_default_google_video_duration)'
+      why: The real loader must accept and apply the environment value rather than merely contain its spelling.
+    - id: veo-operation-python
+      run: test -f tools/oracle/helpers/vertex_veo_operation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Fixed time and settings expose deterministic operation and billing projections.
+    - id: veo-operation-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_veo_operation.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_veo_operation)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_veo_operation_corpus)'
+      why: Completed-operation and malformed base64 seeds use the production decoder.
+    - id: veo-operation-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_veo_operation::/)'
+      why: Newly authored operation cases are recognized by shared helper parsing.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-veo-operation/missing-operation-name.yaml
+  - tools/oracle/cases/helpers/vertex-veo-operation/error-beats-done.yaml
+  - tools/oracle/cases/helpers/vertex-veo-operation/invalid-timestamp-clock.yaml
+  - tools/oracle/cases/helpers/vertex-veo-operation/first-video-content.yaml
+  - tools/oracle/cases/helpers/vertex-veo-operation/gcs-content-rejected.yaml
+  - tools/oracle/cases/helpers/vertex-veo-operation/zero-duration-default.yaml
+  - tools/oracle/cases/helpers/vertex-veo-operation/boolean-sample-count.yaml
+  - tools/oracle/cases/helpers/vertex-veo-operation/whitespace-resolution.yaml
+deviations: []
+out_of_scope:
+  - Constants other than DEFAULT_GOOGLE_VIDEO_DURATION_SECONDS in constants.py remain with B198's shared settings work and their consuming families.
+  - B1361 owns image conversion, constructor, model extraction, capability/parameter/size mapping, validation, URL construction and create/edit request bodies.
+  - videos/__init__.py only re-exports the configuration assembled from these two tasks; B093 owns public video routes and request execution.
+pitfalls:
+  - A completed operation with a truthy error is failed rather than completed.
+  - Duration zero falls back to the configured eight-second default for usage.
+  - Content retrieval rejects GCS-only output even though edit accepts that same GCS reference.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

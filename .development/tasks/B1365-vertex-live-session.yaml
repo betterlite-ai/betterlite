@@ -1,0 +1,82 @@
+id: B1365
+title: Vertex Live setup policy and Chirp backend selection
+description: >-
+  Add vertex_live request policy and api::vertex_realtime_factory for all 173 nonblank
+  noncomment lines of Vertex realtime transformation.py. Credentials/project/location are
+  injected before construction. Copy headers, force Bearer and add x-goog-user-project only
+  for a nonempty project; ignore API keys. A custom base trims trailing slashes, replaces
+  http/https schemes with ws/wss and appends
+  /ws/google.cloud.aiplatform.v1.LlmBidiService/BidiGenerateContent. Without one, global uses
+  aiplatform.googleapis.com and other locations
+  use the regional host. PCM16 MIME is audio/pcm;rate=24000, with pcma/pcmu alternatives and
+  octet-stream fallback. Override the shared function-response policy to omit response IDs.
+  Initial default setup uses the fully qualified project/location/model path, AUDIO modality,
+  enabled automatic activity detection, silenceDurationMs 800 and both input/output transcription
+  objects. For session.update, run B1378's GA-to-beta normalization and option mapping, fill
+  the Vertex defaults and finalize the model modality policy. Force VAD enabled unless the
+  client's normalized turn_detection.create_response is literally False; preserve that
+  explicit disable because guardrails use it. Only an absent session_configuration_request
+  permits setup. Later updates are dropped, warning specifically when they attempt
+  create_response=False and otherwise logging debug. Other client messages delegate to B1379.
+  Reuse its decoder rather than parsing JSON twice. In core, vertex_realtime_config selects
+  B1357 Chirp for B1356-recognized models; otherwise choose Vertex Live with B1304 region policy.
+  Keep the leaf independent of core and attach shared response handling in B033. Compare
+  vertex_live cases global_wss, custom_http_scheme, pcm_rate, qualified_model,
+  partial_vad_defaults, guardrail_disable_preserved and second_setup_warning. Native factory
+  tests cover chirp_selection and live_region_selection. Budget 215 leaf/core code, 180 tests
+  and 125 oracle lines; maximum 600.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_live}.rs
+    - crates/betterlite-vertex/src/vertex_live/**
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/vertex_realtime_factory.rs
+    - crates/betterlite-core/src/api/vertex_realtime_factory/**
+    - tools/oracle/src/helpers/{mod,vertex_live}.rs
+    - tools/oracle/helpers/{dispatch,vertex_live}.py
+    - tools/oracle/cases/helpers/vertex-live/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_live*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/realtime/transformation.py#L27-L257
+    why: Vertex Live URL/auth/setup overrides and Speech-to-Text backend selection.
+dod:
+  - text: Vertex Live emits one setup while preserving explicit guardrail response suppression and warning on late updates.
+    proof: [vertex-live-tests, vertex-live-python, oracle]
+  - text: The realtime factory chooses Chirp or Live without a leaf-to-core dependency.
+    proof: [vertex-live-factory-tests]
+  - text: Vertex Live fixture additions exercise the shared helper reader.
+    proof: [vertex-live-seeds]
+checks:
+  optional: []
+  commands:
+    - id: vertex-live-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_live::/)'
+      why: Tests distinguish an absent create_response field from an explicit false value.
+    - id: vertex-live-factory-tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vertex_realtime_factory::/)'
+      why: Catalog-recognized Chirp and regional Live construction must both reach production factory branches.
+    - id: vertex-live-python
+      run: test -f tools/oracle/helpers/vertex_live.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Fixed injected auth and captured warnings make the setup policy directly comparable.
+    - id: vertex-live-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_live*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_live::/)'
+      why: Shared fixture parsing includes Vertex-specific Live setup inputs.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-live/global-wss.yaml
+  - tools/oracle/cases/helpers/vertex-live/custom-http-scheme.yaml
+  - tools/oracle/cases/helpers/vertex-live/pcm-rate.yaml
+  - tools/oracle/cases/helpers/vertex-live/qualified-model.yaml
+  - tools/oracle/cases/helpers/vertex-live/partial-vad-defaults.yaml
+  - tools/oracle/cases/helpers/vertex-live/guardrail-disable-preserved.yaml
+  - tools/oracle/cases/helpers/vertex-live/second-setup-warning.yaml
+deviations: []
+out_of_scope:
+  - Every method in the Vertex realtime file is owned here; B1378/B1379 own inherited Gemini setup/request behavior.
+  - B1357 owns Chirp's backend adapter; B084 owns realtime WebSocket route registration and B033 performs provider composition.
+pitfalls:
+  - A later create_response=False update cannot be sent as a second setup and must produce a warning.
+  - Partial turn detection normally enables VAD, but literal false create_response must keep it disabled.
+  - Vertex function responses omit IDs even when the Studio parent includes them.
+budget: {max_changed_lines: 600, max_new_expects: 1}
+review_level: security

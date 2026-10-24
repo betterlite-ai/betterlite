@@ -1,0 +1,84 @@
+id: B1311
+title: Gemini media references and MIME hints
+description: >-
+  Implement gemini_media with the MIME alias, media-resolution, video-metadata and part-key
+  helpers from transformation.py L79-L639, plus _explicit_mime_type/_ai_studio_inlines/_vertex_inlines
+  at L1313-L1328 as a typed decision about whether a request would need remote loading. B183
+  supplies bounded inline data and B1128 the accepted file/MIME registry. image/jpg becomes
+  image/jpeg after trimming parameters and lowercasing. An explicit GCS MIME hint bypasses the
+  registry; inferred extensions must be Gemini-accepted. Gemini Files API references beginning
+  https://generativelanguage.googleapis.com/v1beta/files/ pass through as file_data, even without
+  mime_type. Vertex HTTPS references with explicit or inferable MIME also pass to Google without
+  a gateway fetch. Inputs requiring an HTTP download or extensionless GCS metadata lookup fail
+  with the deviation below; do not construct a metadata client or acquire ADC for them.
+  Apply per-part resolution only to Gemini 3+, map ultra_high, and compute the maximum global
+  resolution for Gemini 2 callers. Video fps/start_offset/end_offset map independently of media
+  kind as the source does. Part matching checks only supplied nonexcluded keys, accepting
+  camelCase/snake_case equivalence. Own typed BlobType/FileDataType and the media metadata fields
+  consumed here; the surrounding message enum is B1312. Helper gemini_media cases compare
+  mime_alias, explicit_gcs_format, files_uri_without_mime, https_passthrough, video_offsets,
+  resolution_maximum and part_key_equivalence. A separate Rust no_remote_fetch test proves
+  both rejected fetch paths make zero transport and credential calls. No byte decoder is added.
+  The full media area contains 467 nonblank noncomment lines, of which 214 are metadata-fetch
+  implementation intentionally unavailable; MIME policy and later predicates fit 280 production,
+  180 tests, 100 adapters and 40 seed/export lines, maximum 675.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,gemini_media}.rs
+    - crates/betterlite-vertex/src/gemini_media/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/gemini_media.rs
+    - tools/oracle/src/helpers/gemini_media/**
+    - tools/oracle/helpers/{dispatch,gemini_media}.py
+    - tools/oracle/cases/helpers/gemini-media/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_media*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L79-L639
+    why: MIME aliases, resolution metadata, GCS metadata branch, media parts and equivalent-key matching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1313-L1328
+    why: Decide which remote media would have required inlining on each Google provider.
+dod:
+  - text: Inline data and provider-side URI references retain the pinned MIME and media metadata.
+    proof: [media-tests, oracle, media-python]
+  - text: Disallowed remote loading fails before network access or credential resolution.
+    proof: [no-media-fetch]
+  - text: A new media operation seed decodes successfully.
+    proof: [media-seed]
+checks:
+  optional: []
+  commands:
+    - id: media-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_media::tests::media_cases/)'
+      why: MIME hints and media metadata must be asserted on produced parts.
+    - id: no-media-fetch
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_media::tests::no_remote_fetch$/)'
+      why: Request media must not trigger either anonymous or credentialed retrieval.
+    - id: media-python
+      run: test -f tools/oracle/helpers/gemini_media.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Safe media comparisons must call the original transform with network disabled.
+    - id: media-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_media*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_media::/)'
+      why: Media helper seed tests require call.gemini_media and a nonempty input set.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-media/mime-alias.yaml
+  - tools/oracle/cases/helpers/gemini-media/explicit-gcs-format.yaml
+  - tools/oracle/cases/helpers/gemini-media/files-uri-without-mime.yaml
+  - tools/oracle/cases/helpers/gemini-media/https-passthrough.yaml
+  - tools/oracle/cases/helpers/gemini-media/video-offsets.yaml
+  - tools/oracle/cases/helpers/gemini-media/resolution-maximum.yaml
+  - tools/oracle/cases/helpers/gemini-media/part-key-equivalence.yaml
+deviations:
+  - what: Media needing gateway URL retrieval, including extensionless GCS metadata lookup, returns HTTP 400 with type invalid_request_error, param naming the media field and code unsupported_remote_media; URI-only provider forwarding and inline data still work.
+    why: Request URL downloads remain undecided; the current boundary never fetches a request URL or builds credentialed GCS probing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L329-L587
+out_of_scope:
+  - The metadata-fetch helpers _get_vertex_base, _get_gcs_metadata_http_handler, _parse_gs_uri, _is_valid_gcs_bucket_name, _gs_uri_requires_content_type_metadata, _image_url_payload_may_need_sync_gcs_metadata_fetch, _openai_messages_may_need_sync_gcs_metadata_fetch and _get_gcs_object_content_type remain unbuilt under this task's explicit no-download deviation.
+  - B1312 owns the full role/history walk and B1321 the request body/system-message functions.
+pitfalls:
+  - A Gemini Files API URI must never be downloaded to determine its content type.
+  - Explicit format outranks mime_type, which outranks content_type.
+  - The model=None media path deliberately omits both per-part resolution and video metadata.
+budget: {max_changed_lines: 675, max_new_expects: 0}
+review_level: security

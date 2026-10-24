@@ -1,0 +1,117 @@
+id: B035
+title: Install Google AI Studio provider capabilities
+description: >-
+  Build studio_dispatch and core studio_bindings around the already separated Google adapters.
+  Use B031's beta completion entry with provider=gemini and B1325's Studio chat policy, so
+  API-key authentication never starts Vertex credential discovery. Expose B1330's Studio counter
+  and B1331 model discovery. Own the Gemini embedding branch of main.py L6813-L6835, 21
+  nonblank noncomment lines: key precedence is explicit, GOOGLE_API_KEY, GEMINI_API_KEY,
+  litellm_settings.api_key, without PALM_API_KEY; base uses explicit, litellm_settings.api_base,
+  GEMINI_API_BASE. Pass B1341 no Vertex project/location/credentials, preserve the supplied
+  client and extra headers, and use its batch embedding operation. The retained context-cache
+  README redirects to the shared Vertex implementation; no separate Studio cache is introduced.
+  Connect B1350/B1351 generation/edit to B998/B999, injecting B1120 MIME selection and preserving
+  image generation's narrower GEMINI_API_KEY fallback. B1366 transcription uses B1122 execution
+  with B1001 language normalization. Install B1367's two-stage native file upload plan using
+  B173 transport and B009 URL policy: start request, required resumable-upload URL, then bytes
+  with upload, finalize. A failed start must not send bytes; cancellation drops the active
+  response. Reuse B1028/B1029 provider file operation contracts for retrieve/delete; native
+  listing/content stay unsupported. Bind B1390 File Search to B1064 vector execution.
+  Assemble Live from B1378 setup, B1379 client state, B1382 ordered server frames and B1381
+  accounting, injecting B1115 usage conversion into the B1008 relay. Retain the Studio response
+  ID in functionResponse; Vertex's omission policy does not apply. Expose B1363/B1364 video,
+  B1368 native generateContent, B1370 Interactions, B1391 guardrail projection and B1392 agent
+  lifecycle as native capabilities. Interactions receives B206 header conversion. These exports
+  are consumed later by B093/B098/B104/B141, not mounted under invented HTTP paths here.
+  Observe chat through POST /v1/chat/completions, /chat/completions,
+  /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions.
+  Embedding aliases are POST /v1/embeddings, /embeddings, /engines/{model:path}/embeddings and
+  /openai/deployments/{model:path}/embeddings. Images use POST /v1/images/generations,
+  /images/generations, /openai/deployments/{model:path}/images/generations, /v1/images/edits,
+  /images/edits and /openai/deployments/{model:path}/images/edits. Transcriptions use POST
+  /v1/audio/transcriptions and /audio/transcriptions. File upload uses POST /{provider}/v1/files,
+  /v1/files and /files; retrieve/delete use GET/DELETE /{provider}/v1/files/{file_id:path},
+  /v1/files/{file_id:path} and /files/{file_id:path}. File Search uses POST /v1/vector_stores,
+  /vector_stores, /v1/vector_stores/{vector_store_id:path}/search and
+  /vector_stores/{vector_store_id:path}/search. Live uses WebSocket /v1/realtime, /realtime and
+  /openai/v1/realtime. Existing route owners remain the only registrars.
+  Booted fixtures distinguish chat versus image key precedence, exercise cached-content reuse,
+  local multipart edits, interaction-backed transcription, resumable files and File Search.
+  Live transcripts test deferred setup and tool completion with both JSON key orders. Assert
+  captured provider traffic, status/error type/param/code, response media/usage and headers.
+  Native tests cover every exported operation, file-start failure/cancellation and zero Vertex
+  auth calls. Plan 240 composition/transport lines, 180 tests and 350 fixtures within 800;
+  decoding and configuration acceptance stay with the referenced leaves and route tasks.
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/{lib,provider,operation,prepared,studio_dispatch}.rs
+    - crates/betterlite-provider/src/studio_dispatch/**
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/{dispatch,operation}.rs
+    - crates/betterlite-core/src/api/{mod,studio_bindings}.rs
+    - crates/betterlite-core/src/api/studio_bindings/**
+    - tools/oracle/cases/api/studio/**
+    - tools/oracle/fixtures/studio/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6813-L6835
+    why: Owned Studio embedding dispatch differs from the shared beta chat key fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/context_caching/README.md#L1-L1
+    why: Studio context caching is deliberately the Vertex shared implementation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/files/transformation.py#L1-L392
+    why: B1367 supplies resumable request/result transforms consumed by the native file executor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11960
+    why: Chat route decorators used to verify Studio selection and key behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12315
+    why: Embedding aliases accept the Studio batch operation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/image_endpoints/endpoints.py#L67-L353
+    why: Generation and multipart edit HTTP boundaries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12655-L12801
+    why: Transcription decorators and error conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L530-L1649
+    why: File upload, retrieve and delete aliases; content is not installed for Studio.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L100-L283
+    why: File Search uses existing native vector create/search operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12856-L13045
+    why: Authenticated realtime aliases supply the shared relay.
+dod:
+  - text: Studio operation matching supplies each adapter's own key policy and never invokes Vertex ADC.
+    proof: [studio-provider, studio-core, oracle]
+  - text: Native file upload obeys start-before-bytes ordering, handles failure and closes on cancellation.
+    proof: [studio-core, studio-protocol-fixtures, oracle]
+  - text: Chat, embeddings, media, retrieval and Live work through the mounted API aliases with provider captures.
+    proof: [studio-protocol-fixtures, oracle]
+checks:
+  optional: []
+  commands:
+    - id: studio-provider
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^studio_dispatch::/)'
+      why: Capability tests must execute the installed Studio adapters, including native-only operations.
+    - id: studio-core
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::studio_bindings::/)'
+      why: Core bindings must inject usage/MIME callbacks and prove resumable upload lifecycle behavior.
+    - id: studio-protocol-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/studio)" && test -f tools/oracle/cases/api/studio/resumable-files.yaml && test -f tools/oracle/cases/api/studio/live-key-order.yaml
+      why: Native upload and order-sensitive Live events need new protocol-level comparisons.
+oracle_cases:
+  - tools/oracle/cases/api/studio/chat-and-cache.yaml
+  - tools/oracle/cases/api/studio/embedding-aliases.yaml
+  - tools/oracle/cases/api/studio/image-key-precedence.yaml
+  - tools/oracle/cases/api/studio/local-image-edit.yaml
+  - tools/oracle/cases/api/studio/transcription.yaml
+  - tools/oracle/cases/api/studio/resumable-files.yaml
+  - tools/oracle/cases/api/studio/file-search.yaml
+  - tools/oracle/cases/api/studio/live-deferred-setup.yaml
+  - tools/oracle/cases/api/studio/live-key-order.yaml
+deviations: []
+out_of_scope:
+  - B031 owns both named Vertex completion dispatch functions, including the gemini beta call; this task only supplies its Studio operation binding.
+  - B1325/B1330/B1331/B1350/B1351/B1363/B1364/B1366-B1368/B1370/B1378-B1382/B1390-B1392/B1394 retain the Studio files and functions split from this entry.
+  - B004/B005/B006/B082/B083/B1032/B1034/B087/B1067/B1125 retain public handlers; B093/B098/B104/B141 remain future native-family API owners.
+pitfalls:
+  - GOOGLE_API_KEY can authenticate chat while image generation still requires its separate explicit or GEMINI_API_KEY source.
+  - A Studio embedding request must not inherit Vertex project options merely because both implementations share a crate.
+  - Reordering top-level Live frame keys changes whether tool completion consumes usage before another completion event.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

@@ -1,0 +1,109 @@
+id: B034
+title: Assemble Vertex batch, file, tuning and retrieval services
+description: >-
+  Install vertex_service_dispatch and core vertex_service_bindings for native Google resources.
+  The remaining package files contain 12 nonblank noncomment declaration/docstring lines and
+  the batch README; their callable implementations already belong to the service leaves.
+  Connect B1372 batch creation and B1373 retrieve/list/cancel, B1376 file upload/metadata/delete,
+  B1377 streaming output conversion and B1383 buffered file content to the existing operation
+  contract. B1375 receives B1025's Responses-to-chat projection and B010's developer-role
+  normalization; B1376 receives B1015's batch-JSONL classifier. Keep those callbacks above the
+  provider leaf. Use B1393's resolved GCS access context for each deployment and do not borrow
+  a bucket or credential from a different model. Wire B1384 tuning to the fine-tuning operation
+  family and B1388 RAG-vector/B1389 Discovery Engine search to B1064 execution and B1058 records.
+  Export B1385 RAG ingestion, B1386 Agent Engine config, B1368 Vertex native generateContent and
+  B1369 Interactions as typed provider capabilities. Supply B206 response-header projection to
+  Interactions. B097/B098 later own their public API paths; Agent Engine chat is installed by
+  B031. No generic RAG, native Google or agent route is invented in this task.
+  Integration uses the existing native files/batches APIs with the enterprise hook absent.
+  Exercise POST /{provider}/v1/files, /v1/files and /files; GET and DELETE
+  /{provider}/v1/files/{file_id:path}, /v1/files/{file_id:path} and /files/{file_id:path}; GET
+  /{provider}/v1/files/{file_id:path}/content, /v1/files/{file_id:path}/content and
+  /files/{file_id:path}/content. B1034 retains GET /{provider}/v1/files, /v1/files and /files.
+  Batches use POST and GET /{provider}/v1/batches, /v1/batches and /batches; GET
+  /{provider}/v1/batches/{batch_id:path}, /v1/batches/{batch_id:path} and /batches/{batch_id:path};
+  cancellation POST /{provider}/v1/batches/{batch_id:path}/cancel,
+  /v1/batches/{batch_id:path}/cancel and /batches/{batch_id:path}/cancel. Tuning uses POST/GET
+  /v1/fine_tuning/jobs and /fine_tuning/jobs, plus GET /v1/fine_tuning/jobs/{fine_tuning_job_id:path}
+  and /fine_tuning/jobs/{fine_tuning_job_id:path}. Vector fixtures use POST /v1/vector_stores,
+  /vector_stores, /v1/vector_stores/{vector_store_id:path}/search and
+  /vector_stores/{vector_store_id:path}/search. Route factories stay with their current owners.
+  Capture a native GCS JSONL upload, tuned endpoint lookup before batch POST, cancellation POST
+  followed by retrieval, and streamed transformed output with corrected Content-Length behavior.
+  Include native tuning creation and both search backends. Use permitted configured credentials
+  and admin/nonadmin raw-cloud cases; compare upstream effects, response headers and exact error
+  status/type/param/code. A managed-ID case must preserve OSS's missing-hook failure rather than
+  fabricate managed resource metadata. Native capability tests cover ingestion upload-before-import,
+  wait_for_import=false doing no import RPC, generic operation rejection and native GenAI/Interactions
+  dispatch. Allocate 250 binding lines, 190 native tests and 310 HTTP fixtures, cap 800. All
+  decoders, JSONL state machines and settings tests remain in their implementation tasks.
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_service_dispatch}.rs
+    - crates/betterlite-provider/src/vertex_service_dispatch/**
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/{dispatch,operation}.rs
+    - crates/betterlite-core/src/api/{mod,vertex_service_bindings}.rs
+    - crates/betterlite-core/src/api/vertex_service_bindings/**
+    - crates/betterlite-vertex/src/lib.rs
+    - tools/oracle/cases/api/vertex-services/**
+    - tools/oracle/fixtures/vertex-services/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/__init__.py#L1-L12
+    why: Agent Engine config/error exports; chat execution remains B031's branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/__init__.py#L1-L4
+    why: The two separate Vertex retrieval provider exports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/Readme.md#L1-L5
+    why: Batch support exposes native prediction jobs using the OpenAI batch shape.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L530-L1860
+    why: File route decorators, native dispatch and absent managed-hook branches exercised here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L218-L1263
+    why: Existing batch lifecycle aliases and managed ownership failure behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L62-L492
+    why: Fine-tuning create/read/list routes use the installed provider operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L100-L283
+    why: Search and creation decorators for native retrieval backends.
+dod:
+  - text: Service operation variants execute their selected native Google implementation with deployment-local dependencies.
+    proof: [vertex-services-provider, vertex-services-core]
+  - text: Native file, batch, tuning and vector requests preserve provider effects and public error/header contracts.
+    proof: [vertex-services-fixtures, oracle]
+  - text: Enterprise-managed operations retain the missing-hook outcome while permitted native GCS operations remain usable.
+    proof: [vertex-services-core, vertex-services-fixtures, oracle]
+checks:
+  optional: []
+  commands:
+    - id: vertex-services-provider
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^vertex_service_dispatch::/)'
+      why: An advertised resource operation must reach the native leaf with its typed arguments.
+    - id: vertex-services-core
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vertex_service_bindings::/)'
+      why: Callback binding, credential isolation and no-hook behavior must be asserted at their real call seams.
+    - id: vertex-services-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/vertex-services)" && test -f tools/oracle/cases/api/vertex-services/native-batch-lifecycle.yaml && test -f tools/oracle/cases/api/vertex-services/managed-hook-absent.yaml
+      why: Added lifecycle fixtures must include native success and the OSS managed-resource boundary.
+oracle_cases:
+  - tools/oracle/cases/api/vertex-services/native-file-lifecycle.yaml
+  - tools/oracle/cases/api/vertex-services/native-batch-lifecycle.yaml
+  - tools/oracle/cases/api/vertex-services/batch-output-stream.yaml
+  - tools/oracle/cases/api/vertex-services/cloud-access.yaml
+  - tools/oracle/cases/api/vertex-services/managed-hook-absent.yaml
+  - tools/oracle/cases/api/vertex-services/tuning.yaml
+  - tools/oracle/cases/api/vertex-services/rag-vector.yaml
+  - tools/oracle/cases/api/vertex-services/discovery-search.yaml
+deviations:
+  - what: Enterprise-managed files and batches remain unavailable. A unified managed file deletion or required-managed ownership check without the hook returns HTTP 500, type internal_server_error, param null and code 500; native provider IDs still follow OSS routing.
+    why: Max has not chosen a managed-resource implementation. Preserve the open-source hook-absent behavior and build no replacement hook or dependent managed workflow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1558-L1584
+out_of_scope:
+  - B1368/B1369/B1371-B1377/B1383-B1389/B1393 own service callables and their declared records; the retained empty interactions initializer introduces no method.
+  - B1032-B1034/B087, B1050/B1051/B1133/B086, B088 and B1067 own the routes invoked by these fixtures.
+  - B097/B098/B141 retain public RAG, native Google and agent APIs; SDK PathLike/stream wrappers belong to B157-B161.
+pitfalls:
+  - Native GCS output conversion must not be mistaken for the unavailable enterprise-managed output-ID hook.
+  - A batch cancel performs a second GET after its POST; returning the cancel body loses the observed job state.
+  - RAG ingestion writes its upload before import; an import failure must not be described as an atomic rollback.
+budget: {max_changed_lines: 800, max_new_expects: 0}
+review_level: security

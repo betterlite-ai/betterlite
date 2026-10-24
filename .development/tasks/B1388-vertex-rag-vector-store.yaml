@@ -1,0 +1,89 @@
+id: B1388
+title: Search Vertex RAG contexts and create corpus records
+description: >-
+  Implement vertex_rag_store for vector_stores/rag_api/transformation.py's 267 nonblank
+  noncomment lines. Reuse B1058's OpenAI vector records, B1301 settings, B1302 auth and
+  B1305 host selection. Auth overwrites caller Bearer/JSON headers. Publish read POST
+  :retrieveContexts and write POST /ragCorpora permissions. A truthy api_base is trimmed
+  of trailing slashes; otherwise construct v1/projects/project/locations/location without
+  inventing an additional location fallback. Search joins query arrays with spaces and
+  records that query for the response. A projects/-prefixed corpus ID is already complete;
+  other IDs are expanded under the configured project/location. Emit vertex_rag_store.
+  rag_resources and query.text; map non-None max_num_results, filters and ranking_options
+  to top_k, filter and ranking under rag_retrieval_config, omitting that object only when
+  empty. extra_body is unused. Decode nested contexts.contexts in decode_vertex_rag_payload.
+  Each context emits one text content item, score default 0, source URI then display-name
+  file_id, display-name then Unknown Document filename, and only truthy source/pageSpan
+  attributes; retain provider ordering and exact decimal scores.
+  Create posts display_name from name default litellm-vector-store, fixed description
+  Vector store created via LiteLLM and labels from metadata, excluding only None fields.
+  Read the final resource-name segment as id, display_name as name and dict labels as
+  metadata. createTime accepts an integer, ISO string via B1384's timestamp helper, or 0
+  otherwise; preserve Python bool-as-int conversion. Return completed with zero bytes and
+  all five file counts zero, and null expiry/activity fields. Decode errors retain raw
+  status/headers through B1058's provider error contract. Helper vertex_rag_store cases
+  full_corpus_query, zero_top_k, empty_retrieval_config, source_fallback, page_span,
+  default_corpus_name, null_create_name, create_time_variants and nonobject_labels cover
+  pure transforms. Native auth tests require replacement and independent identities.
+  Budget 285 implementation, 170 tests, 95 adapters and 90 fuzz lines, maximum 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,vertex_rag_store}.rs
+    - crates/betterlite-vertex/src/vertex_rag_store/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rag_payload.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_rag_payload/**
+    - tools/oracle/src/helpers/{mod,vertex_rag_store}.rs
+    - tools/oracle/helpers/{dispatch,vertex_rag_store}.py
+    - tools/oracle/cases/helpers/vertex-rag-store/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_rag_store*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/rag_api/transformation.py#L1-L362
+    why: Complete RAG vector adapter, including corpus creation and nested context result fields.
+dod:
+  - text: RAG search and corpus-create records preserve optional-value presence, source metadata and timestamp fallbacks.
+    proof: [rag-store-tests, rag-store-python, oracle]
+  - text: The provider permission map and auth replacement are suitable for the existing vector executor.
+    proof: [rag-store-auth]
+  - text: New RAG payload and helper corpus entries run through the production readers.
+    proof: [rag-store-corpus, rag-store-seeds]
+checks:
+  optional: []
+  commands:
+    - id: rag-store-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_rag_store::records::/) - test(replays_the_vertex_rag_payload_corpus)'
+      why: Typed fixtures check nested contexts, creation fields and presence-sensitive omission.
+    - id: rag-store-auth
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_rag_store::authorization::/)'
+      why: Tests assert the two endpoint permissions and credential/header isolation.
+    - id: rag-store-python
+      run: test -f tools/oracle/helpers/vertex_rag_store.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The source request/response transforms run on fixture settings and in-memory responses.
+    - id: rag-store-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_rag_payload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_rag_payload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_rag_payload_corpus)'
+      why: decode_vertex_rag_payload handles malformed context/corpus JSON with bounded input.
+    - id: rag-store-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_rag_store*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_rag_store::/)'
+      why: All introduced helper envelopes assert call.vertex_rag_store.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-rag-store/full-corpus-query.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/zero-top-k.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/empty-retrieval-config.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/source-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/page-span.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/default-corpus-name.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/null-create-name.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/create-time-variants.yaml
+  - tools/oracle/cases/helpers/vertex-rag-store/nonobject-labels.yaml
+deviations: []
+out_of_scope:
+  - B1385 uploads/imports corpus files; this adapter only implements the source's create and search operations.
+  - B034 supplies vector operation binding to B1064 without adding another HTTP route.
+pitfalls:
+  - RAG creation reads display_name, so a camelCase displayName alone does not populate the returned name.
+  - Explicit zero top_k is retained because only None suppresses retrieval options.
+  - Corpus creation reports completed immediately without polling an operation.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

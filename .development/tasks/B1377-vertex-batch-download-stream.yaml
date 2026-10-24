@@ -1,0 +1,101 @@
+id: B1377
+title: Convert Vertex batch downloads with bounded first-row detection
+description: >-
+  Implement vertex_batch_download owning files/transformation.py L295-L381 and L1239-L1512,
+  285 nonblank noncomment lines. Load litellm_settings.disable_vertex_batch_output_transformation
+  with default false through named config test loads_disable_vertex_batch_output_transformation.
+  When disabled or B1374 identifies a passthrough object, return the original bytes/stream
+  and headers. Otherwise peek for the first nonempty completed JSONL line, retaining every
+  byte for replay; stop after the buffered prefix exceeds 32 MiB without a completed line,
+  but inspect completed lines before checking that limit. Accept the final unterminated line
+  at EOF. Reuse B1374 classification/JSON decoding and B1375 UTF-8 line iteration. Unknown
+  formats pass through exactly. Recognized embeddings require the complete file for B1374
+  regrouping and return one chunk with recalculated content-length, including raw fallback.
+  Recognized generation output streams stripped nonempty lines, removes every case-insensitive
+  Content-Length header and keeps a failing individual row raw. Retain upstream closure
+  through peek, replay, iteration and cancellation; use existing file-size limits, not an
+  unbounded hidden queue. Buffered generation conversion returns the entire original payload
+  if parsing or a row-level outer conversion fails, and only changes content-length when
+  bytes change. Its single-row mapper returns vertex_ai_error for truthy status; otherwise
+  defaults modelVersion to gemini-1.5-flash-001, removes the @ suffix and invokes B1326.
+  Errors inside that invocation become transformation_error rows rather than raw fallback.
+  Inject IDs/time into the shared conversion context; no fake transport is executed.
+  Expose vertex_batch_download pure buffer/line projections with cases unknown_binary,
+  successful_generation, provider_status_error, response_conversion_error,
+  outer_failure_whole_buffer, passthrough_object and embedding_content_length. Native
+  stream tests cover peek_limit_replay, newline_before_limit, split_utf8,
+  malformed_middle_row, case_insensitive_length_removal and closes_upstream_on_drop.
+  decode_vertex_batch_download_chunk consumes network bytes and drives the production
+  peeking/line state machine; fuzz split boundaries as well as raw content. Budget 280
+  implementation, 65 loader, 190 tests, 95 adapters and 100 fuzz lines, maximum 775.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,vertex_batch_download}.rs
+    - crates/betterlite-vertex/src/vertex_batch_download/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_download.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_batch_download/**
+    - crates/betterlite-config/src/{config,settings,providers,tests}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/tests/vertex_batch_download_settings.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_batch_download*
+    - tools/oracle/src/helpers/{mod,vertex_batch_download}.rs
+    - tools/oracle/helpers/{dispatch,vertex_batch_download}.py
+    - tools/oracle/cases/helpers/vertex-batch-download/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_batch_download*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L295-L381
+    why: Prefix replay, line streaming, closure and deterministic conversion context seams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1239-L1512
+    why: Buffered versus streamed fallbacks and transformation-error row construction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L344-L350
+    why: The module setting disables automatic Vertex output conversion by defaulting false.
+dod:
+  - text: Converted downloads preserve the distinct buffered, streamed and embedding fallback semantics.
+    proof: [download-record-tests, download-python, oracle]
+  - text: Prefix peeking never loses bytes and cancellation closes the owned source iterator.
+    proof: [download-stream-tests]
+  - text: The output-conversion switch is accepted by the loader and actually bypasses conversion.
+    proof: [download-settings, download-record-tests]
+  - text: Chunk-boundary and helper-envelope corpora are newly seeded and replayed.
+    proof: [download-corpus, download-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: download-record-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_download::records::/) - test(replays_the_vertex_batch_download_corpus)'
+      why: In-memory fixtures distinguish an error row from a raw-file fallback.
+    - id: download-stream-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_download::streaming::/)'
+      why: Scripted chunks expose peeking order, byte replay and iterator closure.
+    - id: download-settings
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_batch_download_settings::loads_disable_vertex_batch_output_transformation/)'
+      why: The real loader proves the setting, false default and explicit true override.
+    - id: download-python
+      run: test -f tools/oracle/helpers/vertex_batch_download.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Only in-memory source response/line transforms are exposed as helpers.
+    - id: download-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_download.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_download)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_download_corpus)'
+      why: New split and malformed downloads enter decode_vertex_batch_download_chunk.
+    - id: download-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_download*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_download::/)'
+      why: Shared-parser replay checks the call.vertex_batch_download tag on every added fixture.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-batch-download/unknown-binary.yaml
+  - tools/oracle/cases/helpers/vertex-batch-download/successful-generation.yaml
+  - tools/oracle/cases/helpers/vertex-batch-download/provider-status-error.yaml
+  - tools/oracle/cases/helpers/vertex-batch-download/response-conversion-error.yaml
+  - tools/oracle/cases/helpers/vertex-batch-download/outer-failure-whole-buffer.yaml
+  - tools/oracle/cases/helpers/vertex-batch-download/passthrough-object.yaml
+  - tools/oracle/cases/helpers/vertex-batch-download/embedding-content-length.yaml
+deviations: []
+out_of_scope:
+  - B1374 defines row detection, correlation and embedding groups; B1375 defines input/line sources and JSONL upload formatting.
+  - File authentication, object targets and metadata stay B1376/B1393; B1383 owns concrete native handler calls.
+pitfalls:
+  - A generation conversion exception caught inside the single-row mapper is emitted as an error row, not treated as a whole-file failure.
+  - The first complete line can be accepted from a chunk that already pushes the buffered prefix beyond 32 MiB.
+  - Streamed embedding regrouping changes content-length even if conversion returns the original bytes.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: standard

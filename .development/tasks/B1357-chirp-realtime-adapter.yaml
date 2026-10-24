@@ -1,0 +1,83 @@
+id: B1357
+title: Connect Chirp realtime commands and backend event decoding
+description: >-
+  Build api::vertex_chirp in betterlite-core for the 111 nonblank noncomment lines at
+  realtime_transformation.py L320-L446. Compose B1354 validators, B1356 session/event policy
+  and B1359's native backend behind B1004's existing realtime contract. The supplied async
+  token resolver stays attached to SpeechStreamingTarget; constructing/opening the backend
+  does not resolve it early. Validate project and location with us default. Reject models
+  missing the Speech-to-Text realtime catalog capability, use the speech hostname by default,
+  and reduce a custom api_base to its authority by stripping scheme and everything after
+  the first slash. Headers pass through unchanged. Setup detection checks kind=configure.
+  Session-created uses the logging session ID and default config before any update. For client
+  messages reuse B1123 JSON/session/base64 decoding: only the first session.update or
+  transcription_session.update configures; subsequent updates log debug and return no commands.
+  Audio append requires configuration and divides decoded PCM into at most 25000-byte chunks.
+  Commit/end emits finish_turn, clear emits discard_turn, and other events log debug and drop.
+  Generate a sess_ ID only if configuration precedes session creation. Add bounded
+  decode_chirp_backend_event for the internal streaming JSON projection and preserve every
+  current_* and session_configuration_request field from the response-transform input while
+  replacing response events. Expose positive unreported billing on close. Native tests prove
+  backend_factory_target, no_token_until_audio and close_usage_once. The chirp_adapter helper
+  compares repeat_update_ignored, append_before_config, chunk_boundary, commit_and_clear,
+  unsupported_event_drop, custom_authority and response_state_preserved. Replay a
+  chirp_backend_event fuzz corpus; no WebSocket route is registered here. Budget 190 glue,
+  175 tests, 110 oracle and 85 decoder lines, cap 625.
+scope:
+  paths:
+    - crates/betterlite-core/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-core/src/api.rs
+    - crates/betterlite-core/src/api/vertex_chirp.rs
+    - crates/betterlite-core/src/api/vertex_chirp/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/chirp_backend_event.rs
+    - crates/betterlite-core/fuzz/corpus/chirp_backend_event/**
+    - tools/oracle/src/helpers/{mod,chirp_adapter}.rs
+    - tools/oracle/helpers/{dispatch,chirp_adapter}.py
+    - tools/oracle/cases/helpers/chirp-adapter/**
+    - tools/oracle/fuzz/corpus/helper_case/chirp_adapter*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py#L320-L446
+    why: Backend target assembly, client command dispatch, event decoding and state passthrough.
+dod:
+  - text: Chirp's realtime adapter enforces first-update configuration and preserves command and response ordering.
+    proof: [chirp-adapter-tests, chirp-adapter-python, oracle]
+  - text: Backend event bytes have a bounded decoder exercised by newly added fuzz inputs.
+    proof: [chirp-adapter-decoder]
+  - text: Oracle helper records cover command chunking and preserved response state.
+    proof: [chirp-adapter-seeds]
+checks:
+  optional: []
+  commands:
+    - id: chirp-adapter-tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vertex_chirp::/) - test(replays_the_chirp_backend_event_corpus)'
+      why: Adapter tests include backend construction and close billing as well as pure command mapping.
+    - id: chirp-adapter-python
+      run: test -f tools/oracle/helpers/chirp_adapter.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference adapter calls transformation methods only and never opens SpeechStreamingBackend.
+    - id: chirp-adapter-decoder
+      run: test -f crates/betterlite-core/fuzz/fuzz_targets/chirp_backend_event.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/chirp_backend_event)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_chirp_backend_event_corpus)'
+      why: Sparse and malformed streaming event records must traverse decode_chirp_backend_event.
+    - id: chirp-adapter-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_adapter*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::chirp_adapter::/)'
+      why: Shared fixture parsing dispatches the new command-transform traces.
+oracle_cases:
+  - tools/oracle/cases/helpers/chirp-adapter/repeat-update-ignored.yaml
+  - tools/oracle/cases/helpers/chirp-adapter/append-before-config.yaml
+  - tools/oracle/cases/helpers/chirp-adapter/chunk-boundary.yaml
+  - tools/oracle/cases/helpers/chirp-adapter/commit-and-clear.yaml
+  - tools/oracle/cases/helpers/chirp-adapter/unsupported-event-drop.yaml
+  - tools/oracle/cases/helpers/chirp-adapter/custom-authority.yaml
+  - tools/oracle/cases/helpers/chirp-adapter/response-state-preserved.yaml
+deviations: []
+out_of_scope:
+  - B1356 covers the session policy and event transformer at L60-L317 except SpeechStreamingTarget, which B1358 defines.
+  - B1359 implements backend send/recv/close, and B033/B084 compose the public realtime route with this adapter.
+pitfalls:
+  - An update after successful configuration is ignored even if it would now be invalid.
+  - Empty PCM input yields no audio chunks rather than a single empty message.
+  - The custom endpoint transformation drops its path and scheme before the speech SDK sees it.
+budget: {max_changed_lines: 625, max_new_expects: 1}
+review_level: security

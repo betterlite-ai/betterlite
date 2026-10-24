@@ -1,0 +1,118 @@
+id: B1306
+title: Vertex model routing, labels and catalog metadata
+description: >-
+  Create model_policy, request_labels and provider_metadata modules in betterlite-vertex.
+  Own common_utils L28-L351 and L388-L408, together with the partner prefix enum and its two
+  recognition predicates. Route base_model containing gemini first, then agent_engine, numeric
+  endpoint with api_base, partner prefixes, BGE, Gemma, Model Garden and Gemini, finally legacy
+  models. Keep partner-prefix recognition separate from the substring test selecting the OpenAI
+  handler; google/gemma- is a partner while gemma/ is a deployed endpoint. Capability lookup
+  treats vertex_ai_beta as vertex_ai and warns then returns false on system-message lookup
+  failure. responseJsonSchema uses its own Gemini-2-plus regex, not the URL version predicate.
+  Implement typed Lyria catalog overlays with invalid runtime entries falling back to bundled
+  data and runtime price absence falling back independently. Billing labels consume explicit
+  labels first, then metadata.requester_metadata, then litellm_metadata.requester_metadata;
+  only string values survive and an empty selection falls through. Redaction clears the five
+  named provider metadata fields on response objects and removes their hidden copies from both
+  metadata dictionaries. Preserve VertexAIError's status and headers using B240's classifier.
+  Use separate rstest tables route_cases, label_cases and metadata_cases; the helper operation
+  vertex_model_policy invokes the matching pinned function on each typed input. Cases include
+  base_model_priority, numeric_psc, partner_vs_deployed_gemma, catalog_failure_warning,
+  lyria_runtime_fallback, labels_fall_through and metadata_hidden_copies. Record timestamp
+  conversion in metadata_cases too: own _convert_vertex_datetime_to_openai_datetime L972-L986.
+  decode_vertex_timestamp accepts bounded UTF-8 timestamp bytes in %Y-%m-%dT%H:%M:%S.%fZ
+  format, with one to six fractional digits. Despite Z, Python creates a naive datetime and
+  interprets it in the process's local timezone; int(timestamp) truncates toward zero.
+  Supply an immutable LocalTimeContext from bootstrap, preserving fold=0 behavior at timezone
+  transitions without runtime environment reads. Use a maintained calendar library and share
+  this context with file/tuning timestamp conversions. Test UTC, a non-UTC zone, transition
+  boundaries, negative fractional epoch and invalid fractional width. Fuzz this decoder with
+  vertex_timestamp and replay new seeds. The owned functions/constants contain 312 nonblank
+  noncomment lines excluding the partner constructor, plus metadata-field declarations; plan
+  300 implementation, 230 tests, 110 adapters and 110 fuzz/wiring lines within 800.
+scope:
+  paths:
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/lib.rs
+    - crates/betterlite-vertex/src/error.rs
+    - crates/betterlite-vertex/src/model_policy.rs
+    - crates/betterlite-vertex/src/model_policy/**
+    - crates/betterlite-vertex/src/request_labels.rs
+    - crates/betterlite-vertex/src/request_labels/**
+    - crates/betterlite-vertex/src/provider_metadata.rs
+    - crates/betterlite-vertex/src/provider_metadata/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_timestamp.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_timestamp/**
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/vertex_model_policy.rs
+    - tools/oracle/src/helpers/vertex_model_policy/**
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/vertex_model_policy.py
+    - tools/oracle/cases/helpers/vertex-model-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_model_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L28-L351
+    why: Own endpoint unsupported-parameter constants, Lyria lookup, error, redaction, labels and model policy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L388-L408
+    why: Publisher versus deployed Model Garden recognition.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L972-L986
+    why: The Z-shaped timestamp is parsed as a naive local datetime before integer conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/main.py#L29-L88
+    why: Own PartnerModelPrefixes and is_vertex_partner_model/should_use_openai_handler; constructor is B032.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L781-L787
+    why: Exact fields removed from logging metadata copies.
+dod:
+  - text: Routing order, capability failure, Lyria overlays and labels match their independent source helpers.
+    proof: [policy-tests, oracle, policy-python]
+  - text: Both visible and hidden metadata copies are scrubbed and timestamp conversion keeps source precision rules.
+    proof: [metadata-tests, oracle, policy-python]
+  - text: The policy helper variant is exercised by a newly committed input.
+    proof: [policy-seed]
+  - text: Timestamp decoding preserves fractional width and local-time behavior on newly committed parser inputs.
+    proof: [metadata-tests, timestamp-corpus, oracle, policy-python]
+checks:
+  optional: []
+  commands:
+    - id: policy-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^model_policy::/)' && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^request_labels::/)'
+      why: Every routing and label module must contain behavior tests.
+    - id: metadata-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^provider_metadata::/) - test(replays_the_vertex_timestamp_corpus)'
+      why: Hidden response metadata or timestamp behavior is untested or incorrect.
+    - id: policy-python
+      run: test -f tools/oracle/helpers/vertex_model_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Policy adapters must preserve Python warnings and metadata effects.
+    - id: policy-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_model_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_model_policy::/)'
+      why: Seed decoding must assert the vertex_model_policy variant and reject zero inputs.
+    - id: timestamp-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_timestamp.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_timestamp)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_timestamp_corpus)'
+      why: Timestamp replay must call the production decoder with a deterministic injected local-time context.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-model-policy/base-model-priority.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/numeric-psc.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/partner-vs-deployed-gemma.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/catalog-failure-warning.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/lyria-runtime-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/labels-fall-through.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/metadata-hidden-copies.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/fractional-utc-timestamp.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/local-zone-timestamp.yaml
+  - tools/oracle/cases/helpers/vertex-model-policy/negative-fractional-epoch.yaml
+deviations: []
+out_of_scope:
+  - Common URL functions L352-L387/L409-L602 are B1305; _check_text_in_content is B1312; schema functions L618-L971/L987-L1066 are B1307; passthrough helpers L1067-L1169 are B1304; model-info/token-count classes from L1170 are B1330.
+  - Partner main.py error construction, initialization, completion and count_tokens are composed by B032.
+  - Provider response wire records in types/llms/vertex_ai.py belong to B1311-B1315 and the corresponding endpoint tasks; this part owns only metadata field names.
+pitfalls:
+  - Explicit labels containing only non-string values still permit requester_metadata fallback.
+  - An arbitrary model containing bge routes before the Gemma and Model Garden checks.
+  - metadata and litellm_metadata can each contain a hidden_params copy that needs removal.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: security

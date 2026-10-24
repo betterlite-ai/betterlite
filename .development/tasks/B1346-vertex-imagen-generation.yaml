@@ -1,0 +1,75 @@
+id: B1346
+title: Vertex Imagen generation requests and prediction images
+description: >-
+  Add vertex_imagen_generation for vertex_imagen_transformation.py except its three fallback
+  resolvers, which B1345 supplies. The remaining file has 174 nonblank noncomment lines.
+  Support n and size only: n becomes sampleCount, and the five exact size strings use B1345's
+  aspect map with 1:1 for all other values. Existing option keys suppress mappings. A truthy
+  custom base is returned with trailing slashes removed; otherwise resolve safe project/location
+  plus B1345 image fallbacks, require both and construct the v1 Google model :predict URL.
+  Header validation uses the same custom-base non-None skip and B1302 token resolution.
+  Request instances contain one prompt. Pop B1306 labels before merging parameters, starting
+  sampleCount=1 and allowing optional parameters to overwrite it; truthy labels belong at the
+  body root. Decode response JSON with decode_imagen_generation, append predictions only when
+  bytesBase64Encoded is present, and leave usage unchanged. Presence allows an empty image
+  string; there is no MIME check or generated-URL substitution. On decode failure preserve the
+  upstream response status and headers through the base image error class. Register helper
+  vertex_imagen_generation with default_sample_count, explicit_zero_samples, labels_at_root,
+  custom_complete_base, unknown_size_square, absent_image_key and empty_image_value. Seed an
+  imagen_generation fuzz target for prediction bytes and replay it. Budget 190 adapter/decoder,
+  170 tests, 100 oracle and 85 fuzz lines; cap 600.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_imagen_generation}.rs
+    - crates/betterlite-vertex/src/vertex_imagen_generation/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/imagen_generation.rs
+    - crates/betterlite-vertex/fuzz/corpus/imagen_generation/**
+    - tools/oracle/src/helpers/{mod,vertex_imagen_generation}.rs
+    - tools/oracle/helpers/{dispatch,vertex_imagen_generation}.py
+    - tools/oracle/cases/helpers/vertex-imagen-generation/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_imagen_generation*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/vertex_imagen_transformation.py#L31-L247
+    why: Imagen option map, complete-base handling, sample defaults and prediction images.
+dod:
+  - text: Imagen generation preserves parameter defaults, labels and sparse prediction behavior.
+    proof: [imagen-generation-tests, imagen-generation-python, oracle]
+  - text: Imagen prediction JSON is decoded through a bounded parser with new fuzz corpus inputs.
+    proof: [imagen-generation-corpus]
+  - text: The shared fixture parser dispatches new Imagen generation helper cases.
+    proof: [imagen-generation-seeds]
+checks:
+  optional: []
+  commands:
+    - id: imagen-generation-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_imagen_generation::/) - test(replays_the_imagen_generation_corpus)'
+      why: Parameter and response assertions distinguish absent image fields from empty values.
+    - id: imagen-generation-python
+      run: test -f tools/oracle/helpers/vertex_imagen_generation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pure fixtures compare this Imagen request dialect and response appending behavior.
+    - id: imagen-generation-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/imagen_generation.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/imagen_generation)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_imagen_generation_corpus)'
+      why: New prediction byte inputs must replay through decode_imagen_generation.
+    - id: imagen-generation-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_imagen_generation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_imagen_generation::/)'
+      why: Helper fixture records must invoke the installed Imagen generation variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-imagen-generation/default-sample-count.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-generation/explicit-zero-samples.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-generation/labels-at-root.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-generation/custom-complete-base.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-generation/unknown-size-square.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-generation/absent-image-key.yaml
+  - tools/oracle/cases/helpers/vertex-imagen-generation/empty-image-value.yaml
+deviations: []
+out_of_scope:
+  - B1345 owns _resolve_vertex_project/_resolve_vertex_location/_resolve_vertex_credentials at L86-L111; all other methods in this file are owned here.
+  - B1349 selects this generation configuration and executes provider HTTP calls.
+pitfalls:
+  - labels must be removed before optional_params is merged into parameters.
+  - sampleCount=0 overrides the default one rather than being replaced by it.
+  - Imagen generation appends images to an existing nonempty response.data list.
+budget: {max_changed_lines: 600, max_new_expects: 1}
+review_level: security

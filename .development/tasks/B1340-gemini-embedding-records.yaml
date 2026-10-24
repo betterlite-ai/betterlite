@@ -1,0 +1,83 @@
+id: B1340
+title: Gemini text and multimodal embedding transformations
+description: >-
+  Implement gemini_embedding_records from the entire batch_embed_content_transformation.py
+  (388 nonblank noncomment lines), plus its request/response declarations in vertex_ai.py
+  L575-L624. Represent input as a string or a list of strings/combined string groups. Studio
+  batch requests contain models/{model} per item; a nested nonempty group becomes one content
+  with multiple parts. The Vertex embedContent path combines a flat input into one content and
+  rejects nested groups. Filter options to outputDimensionality/taskType/title, with dimensions
+  and task_type aliases overwriting their native spellings. data: inputs are media only when
+  they contain ;base64,; parse MIME and payload without validating the base64 itself. Accept
+  exactly PNG/JPEG, MPEG/WAV audio, MP4/QuickTime video and PDF. gs:// MIME inference lowercases
+  the whole URI and checks its final extension; files/ references require a resolved MIME/URI
+  record. Ordinary strings, including HTTP URLs, remain text. Emit snake_case inline_data/file_data
+  fields used by these TypedDict records. Batch reply indices follow embedding order; local
+  B196 usage counts concatenated text elements only, excluding media and flattening groups.
+  Single replies require embedding, validate usageMetadata with the pinned record rules, and
+  fall back to zero for multimodal input or local text counting when metadata is invalid.
+  totalTokenCount=0 falls back to prompt count. Without modality details, text_tokens=0 and
+  image_tokens equals prompt count only for a nonempty image-only input. Explicit details sum
+  exact uppercase modality labels. Helper gemini_embedding_records covers combined_group,
+  vertex_nested_rejected, option_aliases, unresolved_file, unsupported_mime, batch_text_usage,
+  image_only_usage and invalid_usage_fallback. Add decode_embedding_data_url and its
+  embedding_data_url fuzz target/replay; HTTP JSON decoding is B1341. Budget 340 transformation,
+  210 tests, 110 oracle and 90 parser/fuzz lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_embedding_records}.rs
+    - crates/betterlite-vertex/src/gemini_embedding_records/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/embedding_data_url.rs
+    - crates/betterlite-vertex/fuzz/corpus/embedding_data_url/**
+    - tools/oracle/src/helpers/{mod,gemini_embedding_records}.rs
+    - tools/oracle/helpers/{dispatch,gemini_embedding_records}.py
+    - tools/oracle/cases/helpers/gemini-embedding-records/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_embedding_records*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L33-L481
+    why: Media detection, combined inputs, filtered parameters and different usage fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L575-L624
+    why: Google embedContent and batchEmbedContents record shapes.
+dod:
+  - text: Gemini embedding records preserve grouping, MIME restrictions and distinct single/batch usage rules.
+    proof: [embedding-record-tests, embedding-record-python, oracle]
+  - text: Data-URL parsing is bounded without adding source-incompatible base64 validation.
+    proof: [embedding-data-corpus]
+  - text: New embedding transformation fixtures dispatch into the production mapper.
+    proof: [embedding-record-seeds]
+checks:
+  optional: []
+  commands:
+    - id: embedding-record-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_embedding_records::/) - test(replays_the_embedding_data_url_corpus)'
+      why: Grouping and modality-usage assertions must fail independently of HTTP execution.
+    - id: embedding-record-python
+      run: test -f tools/oracle/helpers/gemini_embedding_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter invokes the pinned transformations with deterministic local token counts.
+    - id: embedding-data-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/embedding_data_url.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/embedding_data_url)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_embedding_data_url_corpus)'
+      why: Malformed delimiters and MIME values must exercise the actual data-URL parser.
+    - id: embedding-record-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_embedding_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_embedding_records::/)'
+      why: Each new record fixture must select the embedding transformation variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-embedding-records/combined-group.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-records/vertex-nested-rejected.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-records/option-aliases.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-records/unresolved-file.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-records/unsupported-mime.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-records/batch-text-usage.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-records/image-only-usage.yaml
+  - tools/oracle/cases/helpers/gemini-embedding-records/invalid-usage-fallback.yaml
+deviations: []
+out_of_scope:
+  - B1341 resolves provider file identifiers and executes HTTP; these functions receive file metadata records.
+  - Other vertex_ai.py declarations stay with request/cache/response tasks B1307-B1312/B1317/B1318/B1322/B1324/B1326 and their media/service consumers.
+pitfalls:
+  - An HTTP URL is plain embedding text here, not a fetchable media input.
+  - A data URL without the literal ;base64, marker also remains ordinary text.
+  - Batch usage ignores media while single embedContent can report image-only prompt tokens from usageMetadata.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

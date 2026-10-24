@@ -1,0 +1,79 @@
+id: B1394
+title: Emit complete Live tool-call turns with correlated client events
+description: >-
+  Extract the FUNCTION_CALL_ARGUMENTS_DONE branch of transform_realtime_response,
+  realtime/transformation.py L1365-L1538, into gemini_live_tool_turn. This 162-line
+  nonblank noncomment slice takes a decoded frame, selected toolCall value, B1379 state,
+  caller IDs/setup, B1381 accounting and an injected UUID/Responses-usage converter.
+  Empty functionCalls marks the branch handled and produces no events or new IDs.
+  Otherwise generate a conversation ID if missing and decode setup through B1378, falling
+  back to empty setup on JSON/type errors. Create response/item IDs and response.created
+  only when current_response_id is None; an existing response with missing item ID lets
+  B1381 generate its own tool-item base. Obtain argument-done records and LRU updates from
+  B1381. For each function call, emit output_item.added, conversation.item.added,
+  function_call_arguments.delta, function_call_arguments.done and output_item.done in
+  exactly that order. Added items carry in_progress and empty arguments; the one delta
+  carries the whole serialized argument string; done items are independent completed
+  copies with matching call/name/item identifiers and index.
+  Consume frame or pending usage exactly once through B1381, call B1322 chat usage then
+  the injected B1115 Responses converter, and add the same singular detail aliases.
+  Unlike ordinary response.done, this branch does not add frame grounding counters.
+  Append one completed response.done containing every function-call item, lowered setup
+  modalities, and temperature/max_output_tokens only when non-None. Reset response/item
+  IDs to None while retaining conversation ID and tool-name cache. Do not synthesize a
+  second close for a pending follow-up answer. Register gemini_live_tool_turn helper cases
+  empty_calls_handled, two_tool_event_order, existing_response_no_created,
+  missing_item_base, full_arguments_delta, tool_usage_once and no_grounding_fee_overlay.
+  The Python adapter invokes the pinned full transform on a toolCall-only frame and
+  projects events, IDs and accounting state; it must not reproduce the extracted branch.
+  Rust calls the production branch directly. Budget 220 implementation, 170 tests and
+  140 adapters/seed wiring within 600; JSON byte decoding belongs to B1382.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_live_tool_turn}.rs
+    - crates/betterlite-vertex/src/gemini_live_tool_turn/**
+    - tools/oracle/src/helpers/{mod,gemini_live_tool_turn}.rs
+    - tools/oracle/helpers/{dispatch,gemini_live_tool_turn}.py
+    - tools/oracle/cases/helpers/gemini-live-tool-turn/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_live_tool_turn*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L1365-L1538
+    why: Explicit tool-turn dispatch branch, event ordering, usage and caller-ID reset.
+dod:
+  - text: Tool turns emit the complete ordered event sequence with stable correlation and independent item copies.
+    proof: [live-tool-turn-tests, live-tool-turn-python, oracle]
+  - text: Empty calls, existing responses and usage consumption retain the source branch's state transitions.
+    proof: [live-tool-turn-tests, live-tool-turn-python, oracle]
+  - text: The shared helper corpus contains new tool-turn operation fixtures.
+    proof: [live-tool-turn-seeds]
+checks:
+  optional: []
+  commands:
+    - id: live-tool-turn-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_live_tool_turn::/)'
+      why: Full event arrays and resulting IDs/cache/usage are compared with deterministic identifiers.
+    - id: live-tool-turn-python
+      run: test -f tools/oracle/helpers/gemini_live_tool_turn.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python delegates to the pinned transform with tool-only inputs and a projection-only adapter.
+    - id: live-tool-turn-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_tool_turn*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_live_tool_turn::/)'
+      why: Added envelopes must be recognized as call.gemini_live_tool_turn.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-live-tool-turn/empty-calls-handled.yaml
+  - tools/oracle/cases/helpers/gemini-live-tool-turn/two-tool-event-order.yaml
+  - tools/oracle/cases/helpers/gemini-live-tool-turn/existing-response-no-created.yaml
+  - tools/oracle/cases/helpers/gemini-live-tool-turn/missing-item-base.yaml
+  - tools/oracle/cases/helpers/gemini-live-tool-turn/full-arguments-delta.yaml
+  - tools/oracle/cases/helpers/gemini-live-tool-turn/tool-usage-once.yaml
+  - tools/oracle/cases/helpers/gemini-live-tool-turn/no-grounding-fee-overlay.yaml
+deviations: []
+out_of_scope:
+  - B1382 owns all other transform_realtime_response branches, frame decoding and final chunk-state updates.
+  - B1381 owns tool-name eviction, argument-done construction and usage primitives; B1380 owns message/audio content events.
+pitfalls:
+  - conversation.item.added arrives before function_call_arguments.done so clients can register call_id first.
+  - Tool response.done resets response/item IDs but leaves the conversation available for the next turn.
+  - The tool-turn usage path omits the grounding-counter overlay used for ordinary response.done.
+budget: {max_changed_lines: 600, max_new_expects: 1}
+review_level: security

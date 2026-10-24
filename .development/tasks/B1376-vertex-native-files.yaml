@@ -1,0 +1,96 @@
+id: B1376
+title: Prepare native Vertex file uploads and GCS metadata operations
+description: >-
+  Add vertex_files for transformation.py L851-L1137 excluding B1393's bucket resolver
+  and B1375's parameter mapper, plus L1153-L1237: 304 nonblank noncomment lines. Include
+  the GCS metadata records at L102-L107 and vertex_ai.py L649-L692. Select streaming media
+  upload using B1375 raw passthrough or converted JSONL; an injected B1015 batch-file
+  predicate receives purpose and MIME from B235. Other uploads require extracted bytes.
+  Deployment model wins over JSONL body.model when naming batch objects; numeric tuned
+  models become endpoints/id, otherwise preserve an embedded publishers/google/models path
+  or prepend it. B1393 sanitizes the model path, and an injected UUID names the object.
+  Passthrough never probes JSONL and requires a deployment model, otherwise VertexAIError
+  400. Empty batch and ordinary files use litellm-vertex-files/uploads/ plus UUID-hex and
+  sanitized filename. Reject batch custom_endpoint before bucket lookup. Require file and
+  non-None purpose, prepend the configured object prefix, and build api_base-or-storage-host
+  /upload/storage/v1/b/bucket/o?uploadType=media&name=encoded-object. Preserve the source's
+  slash concatenation. For auth, a truthy explicit api_key leaves headers untouched;
+  otherwise B1302 resolves credentials/project and inserts Bearer or errors if empty.
+  Retrieve/delete/content use B1393 authorization and the fixed storage.googleapis.com host,
+  even when upload used a custom base; content adds alt=media. File listing raises the
+  source unsupported error. decode_vertex_file_metadata reads bounded response JSON and maps
+  B516 file records: remove the last slash component of id regardless of whether numeric,
+  parse size as integer, and use B1306's timestamp conversion. Upload reads root purpose
+  default batch/status uploaded; retrieve reads metadata.purpose/status processed. Delete
+  returns deleted=true without checking status, reconstructing gs:// from the request URL
+  or using deleted as fallback. Helper vertex_files cases deployment_model_wins,
+  tuned_object_path, passthrough_requires_model, empty_batch_filename, custom_endpoint_first,
+  explicit_key_header_noop, upload_metadata, retrieve_metadata, delete_url_id and list_unsupported
+  exercise pure preparation on byte fixtures; native tests cover token acquisition and
+  upload-stream selection. Target 320 code, 185 tests, 100 adapters and 95 fuzz lines, cap 775.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_files}.rs
+    - crates/betterlite-vertex/src/vertex_files/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_file_metadata.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_file_metadata/**
+    - tools/oracle/src/helpers/{mod,vertex_files}.rs
+    - tools/oracle/helpers/{dispatch,vertex_files}.py
+    - tools/oracle/cases/helpers/vertex-files/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_files*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L851-L1137
+    why: Object naming, auth asymmetry, upload selection and response mapping, with delegated bucket/parameter helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L1153-L1237
+    why: Fixed-host lifecycle targets and metadata/delete projections.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L649-L692
+    why: Provider upload metadata shape.
+dod:
+  - text: Native file preparation keeps deployment-controlled model naming and the separate upload/read hosts.
+    proof: [vertex-file-tests, vertex-file-python, oracle]
+  - text: Auth and media-upload selection use injected dependencies without bypassing GCS object validation.
+    proof: [vertex-file-execution]
+  - text: GCS metadata bytes and helper calls are covered by fresh decoder corpus entries.
+    proof: [vertex-file-corpus, vertex-file-seeds]
+checks:
+  optional: []
+  commands:
+    - id: vertex-file-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_files::records::/) - test(replays_the_vertex_file_metadata_corpus)'
+      why: File-object and URL fixtures detect status, purpose and identifier changes.
+    - id: vertex-file-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_files::selection::/)'
+      why: Injected token and upload factories expose which effects are actually selected.
+    - id: vertex-file-python
+      run: test -f tools/oracle/helpers/vertex_files.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Source preparation methods receive in-memory file data and deterministic IDs; token-fetching branches stay native tests.
+    - id: vertex-file-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_file_metadata.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_file_metadata)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_file_metadata_corpus)'
+      why: The production metadata decoder receives missing, malformed and oversized field fixtures.
+    - id: vertex-file-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_files*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_files::/)'
+      why: Helper seeds must decode as call.vertex_files before oracle execution.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-files/deployment-model-wins.yaml
+  - tools/oracle/cases/helpers/vertex-files/tuned-object-path.yaml
+  - tools/oracle/cases/helpers/vertex-files/passthrough-requires-model.yaml
+  - tools/oracle/cases/helpers/vertex-files/empty-batch-filename.yaml
+  - tools/oracle/cases/helpers/vertex-files/custom-endpoint-first.yaml
+  - tools/oracle/cases/helpers/vertex-files/explicit-key-header-noop.yaml
+  - tools/oracle/cases/helpers/vertex-files/upload-metadata.yaml
+  - tools/oracle/cases/helpers/vertex-files/retrieve-metadata.yaml
+  - tools/oracle/cases/helpers/vertex-files/delete-url-id.yaml
+  - tools/oracle/cases/helpers/vertex-files/list-unsupported.yaml
+deviations: []
+out_of_scope:
+  - B1393 supplies bucket settings, URI authorization and sanitizers; B1375 owns upload sources and parameter translation.
+  - B1374 owns label/embedding records at L110-L156 and row helpers; B1377 owns response content conversion and its context.
+  - B1383 owns the older concrete FilesHandler entry points, while B034 binds native file operations into existing API execution.
+pitfalls:
+  - Supplying api_key does not itself add Authorization in this file configuration.
+  - Upload purpose is read at the metadata root while retrieval purpose is nested under metadata.
+  - A malformed-looking final component of a GCS id is still stripped as a generation suffix.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,84 @@
+id: B1359
+title: Chirp stream rotation, turn discard and backend shutdown
+description: >-
+  Add chirp_backend around SpeechStreamingBackend's 158 nonblank noncomment lines and its
+  configure/finish/discard command records. Reuse B1358 streams with a 256-item outbox and
+  64-item link queue. Commands enter decode_chirp_command; binary messages are audio. Configure
+  stores streaming settings and queues configured without opening a stream. Audio before
+  configuration fails; the first audio lazily resolves a fresh token and opens a stream with
+  its recognizer/config request. Reuse a stream until elapsed time reaches 240 seconds while
+  speech is inactive or 280 seconds regardless of activity. Rotation half-closes the current
+  stream before opening its successor; a single ordered pump relays links and adds each
+  completed stream's maximum billed seconds exactly once. Finish clears the current turn,
+  increments its index, half-closes its last stream and queues turn_finished. Discard marks the
+  turn, cancels all its streams and queues a discard marker behind their relays; suppress their
+  pending result events until that marker removes the discarded index and emits cumulative
+  billing. Deliver stream failures as close 1011 with the first 120 characters of the reason,
+  and normal closure as 1000. Close is idempotent, cancels and joins the pump, closes unrelayed
+  streams and inserts a closed sentinel only if the outbox is not full; recv drains buffered
+  messages before normal closure. Use owned tasks and injected monotonic time/token/client
+  factories. Native cases rotation_waits_for_silence, hard_deadline_rotation, finish_fifo,
+  discard_suppresses_old_events, fresh_token_each_stream, full_outbox_close and no_task_leak
+  exercise real queue transitions. Pure chirp_backend_policy helper cases cover the deadline
+  predicate and deliverable filtering, not asynchronous handler execution. Fuzz bounded command
+  JSON with a chirp_command target. Budget 260 state-machine code, 220 tests, 90 oracle and
+  80 fuzz lines, cap 725.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,chirp_backend}.rs
+    - crates/betterlite-vertex/src/chirp_backend/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/chirp_command.rs
+    - crates/betterlite-vertex/fuzz/corpus/chirp_command/**
+    - tools/oracle/src/helpers/{mod,chirp_backend_policy}.rs
+    - tools/oracle/helpers/{dispatch,chirp_backend_policy}.py
+    - tools/oracle/cases/helpers/chirp-backend-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/chirp_backend_policy*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L244-L418
+    why: Stream rotation, ordered links, discard filtering and backend closure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L45-L69
+    why: Discriminated streaming commands accepted by the backend.
+dod:
+  - text: Chirp rotation and shutdown preserve turn order, bounded queues and one-time stream billing.
+    proof: [chirp-backend-lifecycle]
+  - text: Rotation thresholds and discarded-turn filtering match the source's pure predicates.
+    proof: [chirp-backend-policy-tests, chirp-backend-python, oracle]
+  - text: Backend command JSON and helper fixture additions are exercised through their parsers.
+    proof: [chirp-command-replay, chirp-backend-seeds]
+checks:
+  optional: []
+  commands:
+    - id: chirp-backend-lifecycle
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^chirp_backend::lifecycle::/)'
+      why: Paused clients and clock advancement expose rotation, cancellation and queue saturation failures.
+    - id: chirp-backend-policy-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^chirp_backend::policy::/)'
+      why: Exact 240/280-second boundaries and delivered discard markers are independently asserted.
+    - id: chirp-backend-python
+      run: test -f tools/oracle/helpers/chirp_backend_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Reference policy calls use in-memory state without opening or driving the backend.
+    - id: chirp-command-replay
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/chirp_command.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/chirp_command)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_chirp_command_corpus)'
+      why: New command variants and invalid records must pass through decode_chirp_command.
+    - id: chirp-backend-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/chirp_backend_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::chirp_backend_policy::/)'
+      why: Corpus dispatch recognizes the backend policy's fixture representation.
+oracle_cases:
+  - tools/oracle/cases/helpers/chirp-backend-policy/rotation-before-threshold.yaml
+  - tools/oracle/cases/helpers/chirp-backend-policy/speech-at-soft-threshold.yaml
+  - tools/oracle/cases/helpers/chirp-backend-policy/hard-deadline.yaml
+  - tools/oracle/cases/helpers/chirp-backend-policy/discarded-result-hidden.yaml
+  - tools/oracle/cases/helpers/chirp-backend-policy/discard-marker-clears-index.yaml
+  - tools/oracle/cases/helpers/chirp-backend-policy/failure-close-reason.yaml
+deviations: []
+out_of_scope:
+  - B1358 owns open_speech_client, SDK projections, _RecognizeStream, protocol declarations and _normal_closure in L1-L237.
+  - B1356 transforms transcript events; B1357 connects this backend to the existing realtime operation without creating a route.
+pitfalls:
+  - Soft rotation is blocked by speech activity until the hard 280-second deadline.
+  - Discard removes its suppression marker only when the ordered discard event becomes deliverable.
+  - Configuring a stream does not mint credentials or establish gRPC until audio arrives.
+budget: {max_changed_lines: 725, max_new_expects: 1}
+review_level: security

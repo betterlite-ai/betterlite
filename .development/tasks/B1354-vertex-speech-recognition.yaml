@@ -1,0 +1,82 @@
+id: B1354
+title: Vertex Speech-to-Text recognition and duration metadata
+description: >-
+  Implement vertex_recognition for all 179 nonblank noncomment transformation lines and the
+  recognize request/response types at vertex_ai_speech_to_text.py L8-L42. Advertise language
+  and response_format, overlay supported non-default values on supplied options, and accept
+  only absent/json/text response formats. Unsupported formats raise UnsupportedParamsError
+  400 unless call drop_params or B175's loaded module setting removes the field. Location
+  defaults to us and passes B1305 validation; global uses speech.googleapis.com, others use
+  location-speech.googleapis.com. Reject empty project, '..' or any listed URL-unsafe project
+  character before building v2/projects/project/locations/location/recognizers/_:recognize,
+  even with a custom base. Missing project comes from B1302 credentials. Force Bearer,
+  x-goog-user-project and JSON headers over caller values. Accept processed audio bytes and
+  normalized language from injected B1001 functions; do not import the core crate. The
+  request strips one vertex_ai/ prefix, enables automatic punctuation, includes empty
+  autoDecodingConfig and uses languageCodes [auto] for absent/empty/non-string language.
+  Implement decode_vertex_recognition for JSON plus decimal duration strings ending in s.
+  Response text joins only the first nonempty alternative from each result, task is transcribe,
+  language is the first truthy languageCode, and duration is omitted when its suffix or number
+  is invalid. Preserve the decoded provider envelope as hidden metadata. Type validation
+  ignores extra provider fields and defaults missing results/alternatives to empty. Compare
+  helper vertex_recognition cases default_us_auto, global_host, unsafe_project, drop_subtitles,
+  first_alternatives, first_detected_language and malformed_duration. Fuzz response JSON and
+  duration parsing; use exact decimal seconds rather than floating point. Plan 250 code,
+  170 tests, 120 oracle and 90 fuzz lines, capped at 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_recognition}.rs
+    - crates/betterlite-vertex/src/vertex_recognition/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_recognition.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_recognition/**
+    - tools/oracle/src/helpers/{mod,vertex_recognition}.rs
+    - tools/oracle/helpers/{dispatch,vertex_recognition}.py
+    - tools/oracle/cases/helpers/vertex-recognition/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_recognition*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/transformation.py#L32-L200
+    why: Recognition auth, project validation, language defaults and transcript assembly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_speech_to_text.py#L8-L42
+    why: Native recognize records and response defaults.
+dod:
+  - text: Recognition preserves its URL safeguards, auto language and first-alternative response projection.
+    proof: [recognition-tests, recognition-python, oracle]
+  - text: Recognition response and duration byte parsing replay a fresh bounded corpus.
+    proof: [recognition-decoder]
+  - text: New recognition cases select the production helper operation.
+    proof: [recognition-case-parser]
+checks:
+  optional: []
+  commands:
+    - id: recognition-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_recognition::/) - test(replays_the_vertex_recognition_corpus)'
+      why: Header overrides, unsafe projects and absent transcript fields each exercise production branches.
+    - id: recognition-python
+      run: test -f tools/oracle/helpers/vertex_recognition.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Recognition fixtures call pinned transformations with local audio and fixed credentials.
+    - id: recognition-decoder
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_recognition.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_recognition)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_recognition_corpus)'
+      why: Malformed duration and response inputs cannot bypass decode_vertex_recognition.
+    - id: recognition-case-parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_recognition*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_recognition::/)'
+      why: Shared corpus parsing must recognize the vertex_recognition input record.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-recognition/default-us-auto.yaml
+  - tools/oracle/cases/helpers/vertex-recognition/global-host.yaml
+  - tools/oracle/cases/helpers/vertex-recognition/unsafe-project.yaml
+  - tools/oracle/cases/helpers/vertex-recognition/drop-subtitles.yaml
+  - tools/oracle/cases/helpers/vertex-recognition/first-alternatives.yaml
+  - tools/oracle/cases/helpers/vertex-recognition/first-detected-language.yaml
+  - tools/oracle/cases/helpers/vertex-recognition/malformed-duration.yaml
+deviations: []
+out_of_scope:
+  - Every function in audio_transcription/transformation.py is implemented here; streaming speech types beginning at L45 belong to B1356 and B1358.
+  - B1001 processes uploaded audio and language aliases; B033 binds those functions and B1122's transcription contract to this leaf adapter.
+pitfalls:
+  - A later alternative never substitutes for an empty first alternative.
+  - The default Speech-to-Text location is us rather than the general Vertex default.
+  - x-goog-user-project is the resolved credential project even when caller headers supplied another value.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,92 @@
+id: B1386
+title: Prepare Agent Engine queries and collect nonstreamed answers
+description: >-
+  Implement vertex_agent_engine records and error handling for transformation.py L46-L344
+  and L480-L500. These 241 nonblank noncomment lines own request construction, auth,
+  buffered response mapping and capability flags. Remove one agent_engine/ prefix; a
+  projects/... model is already a resource path, otherwise require the configured project
+  and construct reasoningEngines/id. The regional host uses configured location or
+  us-central1 even when the supplied resource path names another location. Always target
+  v1beta1/resource:streamQuery, ignoring api_base and stream when choosing the path.
+  Support only OpenAI user, mapped to user_id. Payload class_method is stream_query and
+  input.message is B218's text projection of the last message, including its search-result
+  text; empty message arrays fail. Pick truthy user_id then user, else litellm-user- plus
+  the first eight UUID characters; include only truthy session_id. B1301/B1302 auth replaces
+  caller Authorization and Content-Type. Advertise custom streaming, no stream body field
+  and no fake streaming.
+  decode_vertex_agent_buffer consumes UTF-8 response bytes one stripped LF line at a time;
+  malformed JSON lines and non-object JSON are ignored, including ordinary data:-prefixed
+  SSE lines. For each object, return the first part containing a text key even if empty;
+  only without such a part fall back to the first nonempty string actions.state_delta
+  value. Keep the last nonempty extracted text, never concatenate snapshots. Set one
+  assistant choice with stop/index 0 and the requested model. B196 counts prompt and
+  answer using gpt-3.5-turbo regardless of agent model; counting failure warns and leaves
+  existing usage unchanged. Other response errors become VertexAgentEngineError using
+  raw status. Register vertex_agent_records helper cases full_resource_host,
+  generated_user_id, last_message_only, empty_session, first_text_even_empty,
+  state_delta_fallback, last_snapshot, data_prefix_ignored and counter_failure_warning.
+  Native auth tests verify caller_header_replacement and identity_isolation. Budget 280
+  code, 170 tests, 100 adapters and 90 fuzz/seed lines within 700.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,error,vertex_agent_engine}.rs
+    - crates/betterlite-vertex/src/vertex_agent_engine/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_agent_buffer.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_agent_buffer/**
+    - tools/oracle/src/helpers/{mod,vertex_agent_records}.rs
+    - tools/oracle/helpers/{dispatch,vertex_agent_records}.py
+    - tools/oracle/cases/helpers/vertex-agent-records/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_agent_records*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L46-L344
+    why: Query target/user/session selection and last-snapshot buffered response behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L480-L500
+    why: Custom-stream capability, forbidden stream body field and provider error factory.
+dod:
+  - text: Agent Engine query and response projections preserve last-message and last-snapshot selection.
+    proof: [agent-record-tests, agent-record-python, oracle]
+  - text: Agent credentials override caller auth headers without crossing deployment identities.
+    proof: [agent-auth-tests]
+  - text: Buffered line decoding and helper envelopes have new production-parser replay fixtures.
+    proof: [agent-buffer-corpus, agent-record-seeds]
+checks:
+  optional: []
+  commands:
+    - id: agent-record-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_agent_engine::records::/) - test(replays_the_vertex_agent_buffer_corpus)'
+      why: Cases distinguish empty first parts, ignored SSE prefixes and token-counter warnings.
+    - id: agent-auth-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_agent_engine::auth::/)'
+      why: Injected auth fixtures assert exact header replacement and credential partitioning.
+    - id: agent-record-python
+      run: test -f tools/oracle/helpers/vertex_agent_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Python adapters expose record conversion with deterministic UUID and tokenizer seams only.
+    - id: agent-buffer-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_agent_buffer.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_agent_buffer)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_agent_buffer_corpus)'
+      why: Incoming raw text reaches decode_vertex_agent_buffer under malformed and mixed-line inputs.
+    - id: agent-record-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_agent_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_agent_records::/)'
+      why: Added helper fixtures must select call.vertex_agent_records.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-agent-records/full-resource-host.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/generated-user-id.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/last-message-only.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/empty-session.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/first-text-even-empty.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/state-delta-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/last-snapshot.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/data-prefix-ignored.yaml
+  - tools/oracle/cases/helpers/vertex-agent-records/counter-failure-warning.yaml
+deviations: []
+out_of_scope:
+  - B1387 owns get_streaming_response and both custom stream wrappers at L346-L478 plus sse_iterator.py.
+  - B031 owns _complete_vertex_ai's Agent Engine selection; B034 composes its non-chat service operations.
+pitfalls:
+  - A fully qualified resource does not override the host region chosen from configuration.
+  - Buffered responses ignore data:-prefixed lines even though the streaming iterator accepts them.
+  - An empty first text part prevents state_delta fallback for that object.
+budget: {max_changed_lines: 700, max_new_expects: 1}
+review_level: security

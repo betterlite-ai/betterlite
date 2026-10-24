@@ -1,0 +1,86 @@
+id: B1335
+title: Vertex OpenAI partner policies and Llama stream repair
+description: >-
+  Add partner_openai for all functions in partner ai21, gpt_oss, llama3 and mistral
+  transformation.py files (50+25+188+5 nonblank noncomment lines). Reuse B668 base parameters
+  and B504 decoded choices/chunks. AI21 and Llama translate max_completion_tokens into max_tokens,
+  overwriting an existing max_tokens; class max_tokens defaults remain None and configured
+  non-None constructor values persist in the typed configuration snapshot. Llama normally excludes
+  max_retries, but self-deployed endpoints use B1306's ten-field exclusion set. GPT-OSS appends
+  reasoning_effort and, only when function support is explicitly false, removes tool, tool_choice,
+  function_call and functions; preserve the singular tool spelling. Mistral's only override is
+  provider=vertex_ai and its inherited policy is supplied by the B036 caller.
+  Llama complete replies default missing id to empty and created to zero, retain upstream model
+  when present, and delegate choices/usage conversion. Llama stream state repairs the first
+  choice's missing role to assistant. If its first chunk also has finish_reason, emit the first
+  chunk without that reason and queue a second terminal chunk with index=0, no content/role,
+  retaining id/model/created. Empty initial content gets an empty provider_specific_fields map
+  to keep downstream emission. Later chunks do not repeat role injection. JSON/SSE framing stays
+  with B504/B005; this task transforms decoded records. Helper vertex_partner_openai cases
+  token_alias_overwrite, self_deployed_exclusions, gpt_oss_singular_tool, missing_reply_defaults,
+  initial_missing_role, initial_terminal_split and empty_initial_delta cover the source edges.
+  Constructor values use existing max_tokens configuration loading; add partner_max_tokens_settings
+  in betterlite-config to prove alias snapshots. Budget 280 policy/state, 180 tests, 120 adapters
+  and 70 config wiring, cap 725.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - crates/betterlite-vertex/src/{lib,partner_openai}.rs
+    - crates/betterlite-vertex/src/partner_openai/**
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/partner_options.rs
+    - crates/betterlite-config/src/providers/vertex/partner_options/**
+    - tools/oracle/src/helpers/{mod,vertex_partner_openai}.rs
+    - tools/oracle/helpers/{dispatch,vertex_partner_openai}.py
+    - tools/oracle/cases/helpers/vertex-partner-openai/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_partner_openai*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/ai21/transformation.py#L8-L58
+    why: AI21 max-token alias mutation before inherited OpenAI mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/gpt_oss/transformation.py#L7-L36
+    why: GPT-OSS reasoning support and the exact singular tool exclusion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/llama3/transformation.py#L31-L228
+    why: Llama options, complete defaults and two-chunk terminal repair.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/mistral/transformation.py#L1-L7
+    why: Mistral keeps its parent policy and changes only provider identity.
+dod:
+  - text: Partner parameter and reply overrides preserve exact exclusions, defaults and Llama first-chunk repair.
+    proof: [partner-openai-tests, partner-openai-python, oracle]
+  - text: Configured max_tokens values enter the partner configuration snapshots through the real loader.
+    proof: [partner-openai-config]
+  - text: Added partner fixtures deserialize through the registered helper operation.
+    proof: [partner-openai-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: partner-openai-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^partner_openai::/) - test(replays_)'
+      why: State-machine tests must observe both chunks produced by a terminal first response.
+    - id: partner-openai-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/partner_max_tokens_settings::/)'
+      why: Constructor defaults and explicit token settings cannot be seed-only support.
+    - id: partner-openai-python
+      run: test -f tools/oracle/helpers/vertex_partner_openai.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter feeds decoded Llama chunks through the actual pinned handler.
+    - id: partner-openai-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_partner_openai*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_partner_openai::/)'
+      why: Partner fixture tags must map to the intended production policy.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-partner-openai/token-alias-overwrite.yaml
+  - tools/oracle/cases/helpers/vertex-partner-openai/self-deployed-exclusions.yaml
+  - tools/oracle/cases/helpers/vertex-partner-openai/gpt-oss-singular-tool.yaml
+  - tools/oracle/cases/helpers/vertex-partner-openai/missing-reply-defaults.yaml
+  - tools/oracle/cases/helpers/vertex-partner-openai/initial-missing-role.yaml
+  - tools/oracle/cases/helpers/vertex-partner-openai/initial-terminal-split.yaml
+  - tools/oracle/cases/helpers/vertex-partner-openai/empty-initial-delta.yaml
+deviations: []
+out_of_scope:
+  - B032 executes the selected partner call; B036 owns inherited Mistral/Codestral implementations.
+  - B504/B005 own OpenAI response JSON/SSE decoding, so this adapter adds no new byte parser.
+pitfalls:
+  - GPT-OSS removes tool rather than tools at the pin, leaving the plural field in the inherited allowlist.
+  - A split terminal chunk uses index=0 even when the first source choice had a different index.
+  - provider_specific_fields={} is needed to prevent an empty initial assistant chunk being dropped.
+budget: {max_changed_lines: 725, max_new_expects: 1}
+review_level: standard

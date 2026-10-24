@@ -1,0 +1,91 @@
+id: B1371
+title: Vertex batch job records, GCS model paths and row accounting
+description: >-
+  Implement vertex_batch_records for all 354 nonblank noncomment transformation lines and
+  the consumed batch job types at vertex_ai.py L627-L647 and L694-L712. A create request
+  requires input_file_id, puts it unchanged into one GCS URI, sets JSONL input/output formats,
+  derives output prefix by removing the last slash component and injects a
+  litellm-vertex-batch- UUID display name. Decode the URI for model discovery: the first valid
+  publishers/publisher/models/model path wins; otherwise use the last endpoints/ segment
+  only when its first component is digit-only. Tuned endpoints require project and use
+  location or us-central1; raw GCS eligibility also requires the literal gs:// prefix.
+  This is model discovery from an identifier, never a read of the GCS object. Job responses
+  use the last name component as ID, completion_window 24h, empty endpoint, first input URI,
+  B1306 createTime conversion, no error_file_id and outputInfo directory plus predictions.jsonl
+  only when nonempty. Preserve the full twelve-state mapping, including partial success to
+  completed and unknown-state failure. List preserves order, first/last IDs and nextPageToken,
+  with has_more based on token truthiness. Row accounting accepts dictionary responses only.
+  Without usageMetadata, only embeddings qualify and use promptTokenCount metadata or tokenCount
+  fallback; the integer reader accepts Python integers and digit-only strings, otherwise zero.
+  With usageMetadata, validate as a native generateContent response, log debug and skip invalid
+  records, then use injected B1322 usage conversion. Choose non-wildcard deployment model,
+  otherwise string modelVersion, otherwise the supplied wildcard. Missing model or pricing
+  failure warns and returns zero costs while retaining usage; total_tokens uses a truthy
+  provider total or prompt+completion. Inject B1319-compatible pricing with exact decimal
+  results. Add vertex_batch_records cases encoded_publisher_path, last_tuned_endpoint,
+  partial_success, output_prefix_absent, empty_page, embedding_token_fallback,
+  wildcard_model_version and pricing_failure_zero. Name decode_vertex_batch_identifier for
+  percent-decoded URI bytes and fuzz it with native row validation in vertex_batch_records.
+  Budget 345 code, 190 tests, 135 oracle and 85 fuzz lines, maximum 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-vertex/src/{lib,error,vertex_batch_records}.rs
+    - crates/betterlite-vertex/src/vertex_batch_records/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_records.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_batch_records/**
+    - tools/oracle/src/helpers/{mod,vertex_batch_records}.rs
+    - tools/oracle/helpers/{dispatch,vertex_batch_records}.py
+    - tools/oracle/cases/helpers/vertex-batch-records/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_batch_records*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L20-L414
+    why: Native row usage/cost, job projections and encoded model discovery.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L627-L647
+    why: GCS input/output job configurations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai.py#L694-L712
+    why: Batch job request and response declarations.
+dod:
+  - text: Native Vertex batch records preserve model discovery, job state mapping and per-row billing fallbacks.
+    proof: [vertex-batch-record-tests, vertex-batch-record-python, oracle]
+  - text: Encoded batch identifiers and row validation replay new malformed input seeds.
+    proof: [vertex-batch-record-corpus]
+  - text: The oracle parser accepts the batch record helper variant.
+    proof: [vertex-batch-record-seeds]
+checks:
+  optional: []
+  commands:
+    - id: vertex-batch-record-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_records::/) - test(replays_the_vertex_batch_records_corpus)'
+      why: URI precedence, status coverage and price-failure accounting require separate assertions.
+    - id: vertex-batch-record-python
+      run: test -f tools/oracle/helpers/vertex_batch_records.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Fixed UUID, time context and pricing callbacks make batch transformations deterministic.
+    - id: vertex-batch-record-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_records.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_records)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_records_corpus)'
+      why: Percent-decoding and native response validation are exercised through production entry points.
+    - id: vertex-batch-record-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_records*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_records::/)'
+      why: Added case bytes must dispatch call.vertex_batch_records.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-batch-records/encoded-publisher-path.yaml
+  - tools/oracle/cases/helpers/vertex-batch-records/last-tuned-endpoint.yaml
+  - tools/oracle/cases/helpers/vertex-batch-records/partial-success.yaml
+  - tools/oracle/cases/helpers/vertex-batch-records/output-prefix-absent.yaml
+  - tools/oracle/cases/helpers/vertex-batch-records/empty-page.yaml
+  - tools/oracle/cases/helpers/vertex-batch-records/embedding-token-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-batch-records/wildcard-model-version.yaml
+  - tools/oracle/cases/helpers/vertex-batch-records/pricing-failure-zero.yaml
+deviations: []
+out_of_scope:
+  - Every callable in batches/transformation.py belongs here; B1372 and B1373 own HTTP execution in handler.py.
+  - B1039 consumes native row accounting, while B1041 and B086 retain the separate managed-batch policy; this task does not expand unified file IDs.
+pitfalls:
+  - An unknown job state is not silently mapped to failed by the dictionary lookup.
+  - A failed pricing callback leaves the row's token usage intact and returns zero monetary cost.
+  - Publisher model paths take precedence over endpoint-looking components earlier in a bucket prefix.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

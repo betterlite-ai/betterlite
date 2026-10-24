@@ -1,0 +1,83 @@
+id: B1366
+title: Studio interactions transcription with word timestamps
+description: >-
+  Implement studio_transcription for its complete 229 nonblank noncomment transformation
+  lines and 52 dedicated type lines. Unlike Vertex Gemini transcription, this uses
+  /v1beta/interactions and Api-Revision 2026-05-20. B1331 resolves the API base/key; missing
+  key raises GeminiError 401, and JSON, x-goog-api-key and revision headers overwrite caller
+  values. Advertise language, response_format and timestamp_granularities, overlay accepted
+  options and declare subtitle synthesis support. Inject B1001's local audio processing and
+  language normalization. Encode one audio input with data/mime_type, strip one gemini/
+  prefix, and omit generation_config altogether when transcription_config is empty. A list
+  containing word in timestamp_granularities, or response_format srt/vtt, enables verbatim
+  mode with word timestamps and speaker diarization. Language contributes language_codes
+  independently. decode_studio_transcription validates the typed interactions response and
+  requires status exactly completed, retaining upstream status for non-JSON or incomplete
+  interaction errors. Traverse every step's content, retaining type=text with non-None text,
+  including empty strings in the space join. Convert only word_info annotations with non-None
+  text into word records; omit invalid/absent start/end offsets and absent speaker. Duration
+  uses only the last word's end when present, never the largest earlier offset. Reuse B1354's
+  exact seconds-string parsing. Usage counts exact lowercase audio modality, permits negative
+  derived text tokens and preserves provider totals. Helper studio_transcription cases are
+  bare_audio_request, subtitle_implies_diarization, language_plus_word_mode, revision_override,
+  incomplete_interaction_error, empty_text_spacing, last_word_missing_end and audio_case.
+  Fuzz interactions JSON and annotation offsets. Allocate 290 code, 180 tests, 125 oracle and
+  90 fuzz lines within 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_transcription}.rs
+    - crates/betterlite-vertex/src/studio_transcription/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/studio_transcription.rs
+    - crates/betterlite-vertex/fuzz/corpus/studio_transcription/**
+    - tools/oracle/src/helpers/{mod,studio_transcription}.rs
+    - tools/oracle/helpers/{dispatch,studio_transcription}.py
+    - tools/oracle/cases/helpers/studio-transcription/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_transcription*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/audio_transcription/transformation.py#L36-L256
+    why: Interactions request configuration, completion requirement, word annotations and modality usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini_audio_transcription.py#L7-L81
+    why: Audio input, transcription mode and sparse interaction response records.
+dod:
+  - text: Studio transcription preserves revision headers, conditional configuration and word annotation semantics.
+    proof: [studio-transcription-tests, studio-transcription-python, oracle]
+  - text: Interactions transcript JSON and offset inputs replay through the production decoder.
+    proof: [studio-transcription-replay]
+  - text: The helper corpus recognizes Studio transcription records and their timestamp options.
+    proof: [studio-transcription-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-transcription-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_transcription::/) - test(replays_the_studio_transcription_corpus)'
+      why: Tests assert omitted generation_config and last-word duration independently from token accounting.
+    - id: studio-transcription-python
+      run: test -f tools/oracle/helpers/studio_transcription.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pure transcription functions receive uploaded bytes and deterministic resolved identity.
+    - id: studio-transcription-replay
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_transcription.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_transcription)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_transcription_corpus)'
+      why: Invalid annotation and usage shapes must reach decode_studio_transcription during replay.
+    - id: studio-transcription-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_transcription*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_transcription::/)'
+      why: New call.studio_transcription inputs exercise the shared helper parser.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-transcription/bare-audio-request.yaml
+  - tools/oracle/cases/helpers/studio-transcription/subtitle-implies-diarization.yaml
+  - tools/oracle/cases/helpers/studio-transcription/language-plus-word-mode.yaml
+  - tools/oracle/cases/helpers/studio-transcription/revision-override.yaml
+  - tools/oracle/cases/helpers/studio-transcription/incomplete-interaction-error.yaml
+  - tools/oracle/cases/helpers/studio-transcription/empty-text-spacing.yaml
+  - tools/oracle/cases/helpers/studio-transcription/last-word-missing-end.yaml
+  - tools/oracle/cases/helpers/studio-transcription/audio-case.yaml
+deviations: []
+out_of_scope:
+  - All functions and dedicated transcription types belong to this task; generic subtitle rendering remains B1002.
+  - B035 connects B1001 audio preparation and B1122 transcription capabilities to these leaf transformations.
+pitfalls:
+  - Word timestamp mode is enabled by a list containing word, not by any arbitrary timestamp_granularities value.
+  - An empty text content item participates in transcript spacing.
+  - A missing last-word end omits duration even if an earlier word has a valid end.
+budget: {max_changed_lines: 750, max_new_expects: 1}
+review_level: security

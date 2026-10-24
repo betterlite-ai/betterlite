@@ -1,0 +1,75 @@
+id: B1336
+title: Vertex Gemma prediction envelopes and embedded errors
+description: >-
+  Add gemma_envelope for parse_vertex_gemma_container_error, VertexGemmaConfig methods through
+  _async_post at transformation.py L35-L239 and the seven substantive lines of vertex_ai_gemma.py.
+  This slice owns 185 nonblank noncomment lines including the error record. Reuse B668/B503 OpenAI
+  request shaping, remove model, stream, stream_options and context_management, then wrap one
+  instance with @requestFormat=chatCompletions. The supported-parameter list excludes B1306's
+  self-deployed endpoint fields. should_fake_stream always returns true; actual fake-stream
+  wrapping only occurs when requested. Accept a leaf-local SingleResponseStreamFactory that
+  B032 binds to B010's existing iterator; betterlite-vertex never imports betterlite-provider.
+  Unwrapping requires predictions or raises 422. Recognize an embedded container error only if
+  object is exactly error, message is a string, and code satisfies the pinned Pydantic integer
+  coercion and range 400..599; malformed error-shaped predictions pass to the ordinary response
+  converter. Preserve unknown fields as the source model's ignored fields. Supply sync/async
+  post adapters over B173: caller client first, pooled fallback; a raw client omits timeout when
+  None, while HTTPHandler receives it explicitly. Pure helper gemma_envelope compares wrapper_keys,
+  context_management_removed, missing_predictions, embedded_429, invalid_error_code,
+  coercible_error_code and fake_stream_flag. Instrumented-client Rust tests verify timeout
+  omission versus explicit None. No bytes are parsed here; B1337 owns the HTTP JSON boundary.
+  Budget 200 code, 170 tests and 120 adapters, capped at 550.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemma_envelope}.rs
+    - crates/betterlite-vertex/src/gemma_envelope/**
+    - tools/oracle/src/helpers/{mod,gemma_envelope}.rs
+    - tools/oracle/helpers/{dispatch,gemma_envelope}.py
+    - tools/oracle/cases/helpers/gemma-envelope/**
+    - tools/oracle/fuzz/corpus/helper_case/gemma_envelope*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_gemma_models/transformation.py#L35-L239
+    why: Envelope stripping, validated embedded errors, fake-stream policy and client timeout forwarding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemma.py#L1-L10
+    why: Frozen error record with object literal and 400..599 code bounds.
+dod:
+  - text: Gemma envelopes retain only supported request fields and distinguish real container errors from malformed lookalikes.
+    proof: [gemma-envelope-tests, gemma-envelope-python, oracle]
+  - text: Post adapters preserve caller client selection and timeout omission semantics.
+    proof: [gemma-client-tests]
+  - text: Gemma fixture seeds decode into the newly installed envelope helper.
+    proof: [gemma-envelope-seeds]
+checks:
+  optional: []
+  commands:
+    - id: gemma-envelope-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemma_envelope::tests::projection/)'
+      why: Error recognition must reject out-of-range codes without inventing a container error.
+    - id: gemma-client-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemma_envelope::tests::client_timeout/)'
+      why: Raw-client defaults differ from an explicit None passed to the HTTPHandler seam.
+    - id: gemma-envelope-python
+      run: test -f tools/oracle/helpers/gemma_envelope.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Pydantic error coercion must be compared against the pinned record validator.
+    - id: gemma-envelope-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemma_envelope*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemma_envelope::/)'
+      why: Shared parser tests must identify the Gemma envelope call tag.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemma-envelope/wrapper-keys.yaml
+  - tools/oracle/cases/helpers/gemma-envelope/context-management-removed.yaml
+  - tools/oracle/cases/helpers/gemma-envelope/missing-predictions.yaml
+  - tools/oracle/cases/helpers/gemma-envelope/embedded-429.yaml
+  - tools/oracle/cases/helpers/gemma-envelope/invalid-error-code.yaml
+  - tools/oracle/cases/helpers/gemma-envelope/coercible-error-code.yaml
+  - tools/oracle/cases/helpers/gemma-envelope/fake-stream-flag.yaml
+deviations: []
+out_of_scope:
+  - B1337 owns completion/_sync_completion/_async_completion from L240 onward and all Gemma main.py methods.
+  - B010 owns generic MockResponseIterator in base_model_iterator.py; B032 supplies its implementation through the injected factory.
+pitfalls:
+  - predictions is returned as its original object, not automatically indexed as a one-element list.
+  - A malformed object=error payload does not raise the embedded status until the full error model validates.
+  - should_fake_stream=true does not make a nonstreaming request return a stream.
+budget: {max_changed_lines: 550, max_new_expects: 1}
+review_level: standard

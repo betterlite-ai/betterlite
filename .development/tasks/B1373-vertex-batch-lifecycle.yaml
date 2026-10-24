@@ -1,0 +1,83 @@
+id: B1373
+title: Retrieve, list and cancel native Vertex batch jobs
+description: >-
+  Implement vertex_batch_lifecycle for handler.py L293-L694 and _vertex_batch_list_payload
+  L79-L80, 347 nonblank noncomment lines. Reuse B1372's collection builder/job decoder and
+  B1371 result mapping. All wrappers resolve B1302 token/project before choosing sync or async
+  transport, default location to us-central1 and construct JSON charset=utf-8 plus Bearer
+  headers. Retrieve encodes batch_id as one path segment, applies B1304 custom proxy settings
+  with explicit project/location/v1, uses B009 protected GET and requires status 200. Logging
+  metadata retains the target and typed headers, while its printable curl masks Bearer.
+  List forwards pageSize=str(limit) and pageToken=after for non-None values, including 0 and
+  empty string; its custom-proxy call deliberately omits project/location/version arguments.
+  It performs one page GET and requires 200, with no automatic pagination. Cancel appends
+  :cancel outside the encoded ID, applies the custom proxy, and derives retrieval URL by
+  removing a terminal :cancel or splitting its last occurrence and trimming slashes. Post
+  serialized {} with the supplied timeout, then GET the job without an explicit timeout;
+  return the retrieved state rather than manufacturing cancelled. HTTPStatusError from POST
+  logs status and the first 1000 body characters and aborts the GET; a non-200 follow-up
+  logs similarly and raises VertexAIError preserving status. No other wrapper forwards its
+  timeout/max_retries arguments. Extend decode_vertex_batch_page for bounded list JSON and
+  expose the source's pure payload reader through vertex_batch_page helper cases jobs_present,
+  null_jobs, next_token_empty and malformed_page. Native lifecycle tests cover encoded_read_id,
+  protected_read_target, zero_limit_empty_token, single_page_only, cancel_then_retrieve,
+  cancel_failure_no_get, cancel_timeout_only and caller_cancel_closes_response. B034 adds
+  booted-proxy lifecycle oracle cases once it composes provider operations. Budget 300 code,
+  235 transport tests, 75 oracle and 85 fuzz lines within 775.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_batch_lifecycle}.rs
+    - crates/betterlite-vertex/src/vertex_batch_lifecycle/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_page.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_batch_page/**
+    - tools/oracle/src/helpers/{mod,vertex_batch_page}.rs
+    - tools/oracle/helpers/{dispatch,vertex_batch_page}.py
+    - tools/oracle/cases/helpers/vertex-batch-page/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_batch_page*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L79-L80
+    why: Pure page payload decoding used by list operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L293-L694
+    why: Native retrieve/list/cancel ordering, custom proxy arguments and timeout asymmetry.
+dod:
+  - text: Batch lifecycle calls retain one-page reads, protected retrieval and cancel-then-get behavior.
+    proof: [batch-lifecycle-tests]
+  - text: Batch page payload parsing matches the pinned reader on present, null and malformed fields.
+    proof: [batch-page-tests, batch-page-python, oracle]
+  - text: New batch-page byte and helper corpora exercise both parser entry points.
+    proof: [batch-page-corpus, batch-page-seeds]
+checks:
+  optional: []
+  commands:
+    - id: batch-lifecycle-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_lifecycle::execution::/)'
+      why: Scripted transports assert HTTP methods, targets, timeout presence, error propagation and cleanup.
+    - id: batch-page-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_batch_lifecycle::page::/) - test(replays_the_vertex_batch_page_corpus)'
+      why: Page records are validated independently of the effectful lifecycle executor.
+    - id: batch-page-python
+      run: test -f tools/oracle/helpers/vertex_batch_page.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The helper calls _vertex_batch_list_payload on an in-memory response, never a provider HTTP method.
+    - id: batch-page-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_page.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_page)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_page_corpus)'
+      why: Malformed and boundary-sized list bodies replay through decode_vertex_batch_page.
+    - id: batch-page-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_page*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_batch_page::/)'
+      why: New page fixtures must be recognized by the shared helper reader.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-batch-page/jobs-present.yaml
+  - tools/oracle/cases/helpers/vertex-batch-page/null-jobs.yaml
+  - tools/oracle/cases/helpers/vertex-batch-page/next-token-empty.yaml
+  - tools/oracle/cases/helpers/vertex-batch-page/malformed-page.yaml
+deviations: []
+out_of_scope:
+  - B1372 owns handler construction, single-job payload reading, create, endpoint resolution and collection URL generation at L38-L291 except the page reader.
+  - B1371 transforms decoded job/page records and B034 performs provider-to-route composition over B086's registered aliases.
+pitfalls:
+  - Cancel returns the subsequent provider state, which may still be in_progress or cancelling.
+  - An empty after value is sent as pageToken rather than omitted.
+  - Only cancellation's POST receives the caller timeout; its follow-up GET does not.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

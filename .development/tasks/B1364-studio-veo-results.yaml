@@ -1,0 +1,86 @@
+id: B1364
+title: Studio Veo operation decoding and generated video retrieval
+description: >-
+  Add studio_veo_operation for _json_payload, resolution usage normalization and all methods
+  from create response through get_error_class, about 290 nonblank noncomment method lines,
+  plus Gemini operation types L301-L355. decode_studio_veo_operation must require name, default
+  done=false, accept absent metadata/response/error and validate nested generatedSamples/video/uri
+  when a response exists. Create requires a truthy name, returns processing and optionally
+  encodes provider/model through B672. Usage follows B1362's configured duration and sampleCount
+  helper; resolution None or empty string is absent, but a whitespace-only string becomes an
+  included empty string after stripping. Poll URL is base/v1beta/decoded-operation with an
+  empty parameter map. Status uses done alone, ignoring error, and provider ID encoding uses
+  model=None; it does not copy metadata timestamps into the result. Content preparation first
+  performs a status GET using injected B173 transport and the supplied headers, requires
+  success/done/response, then selects generatedSamples[0].video.uri as the provider download
+  target. The subsequent content response returns its bytes unchanged. Preserve an empty
+  sample-list failure rather than scanning for another artifact. This is retrieval of a
+  provider-produced artifact, not fetching a URL from a request image/file field. Keep status
+  lookup asynchronous in async operations and close both responses on cancellation. Native
+  tests assert lookup_then_download, status_failure_stops_download and cancel_closes_status.
+  The studio_veo_operation pure helper compares missing_name, done_with_error_completed,
+  status_id_loses_model, whitespace_resolution_retained and first_sample_uri. Keep all
+  remix/list/delete/character/edit/extension request and response methods unsupported, and
+  GeminiError retains status/headers. Fuzz provider operation JSON; do not put the effectful
+  content-request method in a helper adapter. Budget 290 code, 200 tests, 125 oracle and 85
+  fuzz lines, maximum 775.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,studio_veo_operation}.rs
+    - crates/betterlite-vertex/src/studio_veo_operation/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/studio_veo_operation.rs
+    - crates/betterlite-vertex/fuzz/corpus/studio_veo_operation/**
+    - tools/oracle/src/helpers/{mod,studio_veo_operation}.rs
+    - tools/oracle/helpers/{dispatch,studio_veo_operation}.py
+    - tools/oracle/cases/helpers/studio-veo-operation/**
+    - tools/oracle/fuzz/corpus/helper_case/studio_veo_operation*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L60-L72
+    why: JSON envelope and resolution normalization helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/videos/transformation.py#L299-L618
+    why: Operation results, provider artifact lookup and unsupported video operations.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/gemini.py#L301-L355
+    why: Nested operation response validation and defaults.
+dod:
+  - text: Studio Veo results retain done-only status and their distinct usage and ID projection.
+    proof: [studio-veo-result-tests, studio-veo-result-python, oracle]
+  - text: Generated video retrieval performs status lookup before artifact access and releases cancelled responses.
+    proof: [studio-veo-download-tests]
+  - text: Studio operation JSON and helper cases have fresh parser corpus coverage.
+    proof: [studio-veo-result-corpus, studio-veo-result-seeds]
+checks:
+  optional: []
+  commands:
+    - id: studio-veo-result-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_veo_operation::records::/)'
+      why: The status and usage tests expose differences from Vertex operation results.
+    - id: studio-veo-download-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_veo_operation::download::/)'
+      why: Scripted HTTP bodies verify request order, error short-circuiting and cancellation cleanup.
+    - id: studio-veo-result-python
+      run: test -f tools/oracle/helpers/studio_veo_operation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Only pure response/URL projections run in the Python helper; HTTP effects remain native tests.
+    - id: studio-veo-result-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/studio_veo_operation.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/studio_veo_operation)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_studio_veo_operation_corpus)'
+      why: Newly committed provider envelopes must traverse decode_studio_veo_operation.
+    - id: studio-veo-result-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/studio_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::studio_veo_operation::/)'
+      why: The added Studio operation variant is exercised by real HelperCase bytes.
+oracle_cases:
+  - tools/oracle/cases/helpers/studio-veo-operation/missing-name.yaml
+  - tools/oracle/cases/helpers/studio-veo-operation/done-with-error-completed.yaml
+  - tools/oracle/cases/helpers/studio-veo-operation/status-id-loses-model.yaml
+  - tools/oracle/cases/helpers/studio-veo-operation/whitespace-resolution-retained.yaml
+  - tools/oracle/cases/helpers/studio-veo-operation/first-sample-uri.yaml
+deviations: []
+out_of_scope:
+  - B1363 implements every create-input and identity method, including the local image converter; B1362 provides shared duration configuration and valid sample-count extraction.
+  - B093 owns video HTTP route registration and generic operation execution; B035 supplies the Studio adapter binding.
+pitfalls:
+  - A done operation with an error still becomes completed in Studio's status transformation.
+  - Whitespace-only resolution survives usage mapping as an empty string.
+  - Status retrieval encodes provider IDs without preserving the creation model.
+budget: {max_changed_lines: 775, max_new_expects: 1}
+review_level: security

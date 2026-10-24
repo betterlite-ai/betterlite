@@ -1,0 +1,69 @@
+id: B1369
+title: Vertex native interactions targets and authentication
+description: >-
+  Implement vertex_interactions from its full 129 nonblank noncomment lines, composing
+  B1370's request/response policy while replacing provider identity, version, auth and targets.
+  api_version is v1beta1 and the interactions-specific default location is global. Inject
+  a mint callback, normally backed by B1302, into VertexInteractionsConfig. Each target
+  construction mints using B1301 safe credential/project getters and requires a nonempty
+  resolved project. Location comes from explicit_vertex_ai_location or global and passes
+  B1305 validation; choose B1304 get_api_base using a truthy custom base. The collection is
+  base/v1beta1/projects/project/locations/location/interactions. Preserve project spelling
+  rather than applying the interaction-ID encoder to it. Encode only interaction_id as one
+  path segment for get/delete/cancel, with :cancel appended outside the encoding. Create
+  appends ?alt=sse for truthy stream; by-ID bodies are empty. Header validation mints again,
+  supplies JSON and Bearer, then caller headers override both. Unlike the Studio override,
+  it does not add Api-Revision or an API key. Expose a project-only mint callback for B1353's
+  Lyria URL construction so that computing that URL does not trigger another credential
+  refresh. Add vertex_interactions helper cases global_default, explicit_region,
+  missing_project, encoded_interaction_id, streaming_collection, caller_bearer_override
+  and revision_not_injected. Native tests assert target_and_headers_mint_order and
+  lyria_project_only_callback using deterministic token resolvers. Budget 155 implementation,
+  160 tests and 110 oracle lines, capped at 500.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_interactions}.rs
+    - crates/betterlite-vertex/src/vertex_interactions/**
+    - tools/oracle/src/helpers/{mod,vertex_interactions}.rs
+    - tools/oracle/helpers/{dispatch,vertex_interactions}.py
+    - tools/oracle/cases/helpers/vertex-interactions/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_interactions*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/interactions/transformation.py#L13-L149
+    why: Vertex interactions target, mint injection, header precedence and lifecycle URLs.
+dod:
+  - text: Vertex interactions use their own version, location and credential precedence while retaining native body conversion.
+    proof: [vertex-interactions-tests, vertex-interactions-python, oracle]
+  - text: Vertex interactions helper inputs enter the shared corpus dispatcher.
+    proof: [vertex-interactions-seeds]
+checks:
+  optional: []
+  commands:
+    - id: vertex-interactions-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_interactions::/)'
+      why: Tests verify mint sequencing in addition to literal URLs and caller header overrides.
+    - id: vertex-interactions-python
+      run: test -f tools/oracle/helpers/vertex_interactions.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The source's injected mint callback makes identity-dependent URL methods pure fixture functions.
+    - id: vertex-interactions-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_interactions*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_interactions::/)'
+      why: Corpus parsing must recognize the Vertex interactions call representation.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-interactions/global-default.yaml
+  - tools/oracle/cases/helpers/vertex-interactions/explicit-region.yaml
+  - tools/oracle/cases/helpers/vertex-interactions/missing-project.yaml
+  - tools/oracle/cases/helpers/vertex-interactions/encoded-interaction-id.yaml
+  - tools/oracle/cases/helpers/vertex-interactions/streaming-collection.yaml
+  - tools/oracle/cases/helpers/vertex-interactions/caller-bearer-override.yaml
+  - tools/oracle/cases/helpers/vertex-interactions/revision-not-injected.yaml
+deviations: []
+out_of_scope:
+  - All functions and VertexInteractionsTarget properties in this file belong here; inherited payload migration and response decoding are B1370.
+  - B098 owns native interactions routing and execution; B034 assembles these provider hooks without registering routes.
+pitfalls:
+  - Vertex interactions default to global independently of the ordinary Vertex region fallback.
+  - Caller Authorization can replace the minted Bearer header in this adapter.
+  - The Vertex override does not inherit Studio's Api-Revision insertion.
+budget: {max_changed_lines: 500, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,86 @@
+id: B1332
+title: Vertex partner rawPredict token counting
+description: >-
+  Build partner_count from every method in vertex_ai_partner_models/count_tokens/handler.py
+  and VertexAIPartnerModels.count_tokens at main.py L267-L323, roughly 180 nonblank noncomment
+  lines. Publishers are anthropic for claude, mistralai for mistral/codestral and meta for
+  llama/meta/; unknown models fail. Strip the first @ suffix from both URL model selection and
+  request_data.model. Require the messages key, accepting an empty list. Choose truthy
+  vertex_count_tokens_location before the normal B1301 location, then us-east5 for every model,
+  not only Claude. Explicit global remains global; do not silently repair it. Resolve B1303
+  credentials and build {base}/v1/projects/{project}/locations/{location}/publishers/{publisher}/
+  models/count-tokens:rawPredict with Bearer auth. POST uses timeout=30 seconds and accepts
+  exactly 200. Missing input_tokens becomes zero and tokenizer_used is vertex_ai_partner_models.
+  The convenience wrapper sends only model/messages and overlays truthy explicit Vertex settings
+  onto a copy of litellm_params, preserving exceptions with status_code and wrapping other
+  failures as Vertex 500. No Gemini SDK is required. Add vertex_count_tokens_location to the
+  config-owned provider options, default absent, proven by partner_count_settings. Decode
+  rawPredict count replies through decode_partner_count with partner_count fuzz/replay. Compare
+  pure helper partner_count_plan by calling only _get_publisher_for_model,
+  _build_count_tokens_endpoint and _strip_version_suffix: claude_endpoint, explicit_global,
+  first_at_suffix, meta_publisher and unknown_publisher. Native tests retain the default-region,
+  empty-messages and URL/body suffix-removal checks, plus timeout/status and
+  credential immutability. Budget 230 implementation, 170 tests, 110 adapters and 110 config/fuzz.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,partner_count}.rs
+    - crates/betterlite-vertex/src/partner_count/**
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/providers/vertex/partner_count.rs
+    - crates/betterlite-config/src/providers/vertex/partner_count/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/partner_count.rs
+    - crates/betterlite-vertex/fuzz/corpus/partner_count/**
+    - tools/oracle/src/helpers/{mod,partner_count_plan}.rs
+    - tools/oracle/helpers/{dispatch,partner_count_plan}.py
+    - tools/oracle/cases/helpers/partner-count-plan/**
+    - tools/oracle/fuzz/corpus/helper_case/partner_count_plan*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/count_tokens/handler.py#L16-L196
+    why: Publisher selection, region precedence, suffix stripping and the 30-second call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/main.py#L267-L323
+    why: SDK-free convenience wrapper and its credential-copy/error semantics.
+dod:
+  - text: Partner count plans match publisher, region and version stripping rules without mutating deployment options.
+    proof: [partner-count-plans, partner-count-python, oracle]
+  - text: The location override loads and execution uses the required timeout, status gate and response defaults.
+    proof: [partner-count-config, partner-count-http]
+  - text: Count response and helper parser corpora contain new exercised inputs.
+    proof: [partner-count-corpus, partner-count-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: partner-count-plans
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^partner_count::tests::plans/)'
+      why: Model and region cases must assert exact rawPredict URLs.
+    - id: partner-count-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/partner_count_settings::/)'
+      why: vertex_count_tokens_location must pass through loaded deployment settings.
+    - id: partner-count-http
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^partner_count::tests::http/)'
+      why: Only a 200 reply may become a partner token count.
+    - id: partner-count-python
+      run: test -f tools/oracle/helpers/partner_count_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference adapter observes source planning without importing cloud SDK clients.
+    - id: partner-count-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/partner_count.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/partner_count)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_partner_count_corpus)'
+      why: Partner count JSON parsing must be exercised independently of HTTP success fixtures.
+    - id: partner-count-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/partner_count_plan*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::partner_count_plan::/)'
+      why: Newly introduced partner count call tags must deserialize successfully.
+oracle_cases:
+  - tools/oracle/cases/helpers/partner-count-plan/claude-endpoint.yaml
+  - tools/oracle/cases/helpers/partner-count-plan/explicit-global.yaml
+  - tools/oracle/cases/helpers/partner-count-plan/first-at-suffix.yaml
+  - tools/oracle/cases/helpers/partner-count-plan/meta-publisher.yaml
+  - tools/oracle/cases/helpers/partner-count-plan/unknown-publisher.yaml
+deviations: []
+out_of_scope:
+  - B1306 owns partner prefix predicates; B032 owns completion dispatch and the remaining constructor/error methods in partner main.py.
+pitfalls:
+  - The endpoint contains models/count-tokens:rawPredict rather than the requested model name.
+  - A supplied global location is retained despite the comment explaining that Claude counting is unavailable there.
+  - The convenience wrapper does not forward tools or system into request_data.
+budget: {max_changed_lines: 675, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,78 @@
+id: B1361
+title: Vertex Veo create and edit request preparation
+description: >-
+  Add vertex_veo_request for _convert_image_to_vertex_format and VertexAIVideoConfig methods
+  through transform_video_create_request, plus transform_video_edit_request L723-L781:
+  291 nonblank noncomment lines including request imports/types, and about 50 edit lines.
+  Use B525 video records, B672 identifier decoding and an injected B1120 MIME reader. Local
+  image streams seek to zero and remain consumed after reading; dictionaries pass through,
+  and gs:// strings become gcsUri without fetching. Other strings fail. Map input_reference
+  before image, preserve nested parameters and explicit resolution, infer 720p/1080p only
+  when B193's vertex_ai/model metadata contains a non-None output_cost_per_second_1080p.
+  Unknown nonempty sizes mean 16:9; empty sizes map nothing. Parse string seconds as integers,
+  ignore failed conversions and insert no default duration. Header validation calls B1302's
+  get_access_token, then caller headers override Bearer/JSON defaults. URL construction
+  separately requires configured project, defaults location to us-central1, removes all
+  vertex_ai/ occurrences and returns the model resource without a verb. Create merges a
+  dictionary instances over prompt and then skips the image branch, even if image was also
+  supplied; otherwise it consumes image. Flatten nested parameters first and remaining options
+  second, retaining parameters only when nonempty, and append :predictLongRunning. Extract
+  a model from operation path element seven when at least eight components exist, without
+  validating the other components. Edit requires prefetched done=true source data, chooses
+  the first video and prefers gcsUri by key presence over base64, with default video/mp4.
+  Flatten extra_body parameters and build base/model:predictLongRunning; video_file is unused.
+  The vertex_veo_request helper covers resolution_catalog_gate, explicit_nested_resolution,
+  invalid_seconds_omitted, gcs_no_fetch, instances_suppress_image, flat_options_win,
+  edit_gcs_precedence and source_not_done. Budget 340 code, 180 tests and 150 adapters, cap 750.
+scope:
+  paths:
+    - crates/betterlite-vertex/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-vertex/src/{lib,error,vertex_veo_request}.rs
+    - crates/betterlite-vertex/src/vertex_veo_request/**
+    - tools/oracle/src/helpers/{mod,vertex_veo_request}.rs
+    - tools/oracle/helpers/{dispatch,vertex_veo_request}.py
+    - tools/oracle/cases/helpers/vertex-veo-request/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_veo_request*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L105-L420
+    why: Veo option precedence, custom image forms, credential headers and create body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/videos/transformation.py#L723-L781
+    why: Edit consumes prefetched source video records and flattens extra parameters.
+dod:
+  - text: Vertex Veo create/edit requests preserve media acceptance and nested parameter precedence.
+    proof: [veo-request-tests, veo-request-python, oracle]
+  - text: New Veo request fixtures deserialize into the production preparation helper.
+    proof: [veo-request-seeds]
+checks:
+  optional: []
+  commands:
+    - id: veo-request-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_veo_request::/)'
+      why: Tests exercise catalog-gated resolution, consumed file cursors and mutually exclusive instance/image branches.
+    - id: veo-request-python
+      run: test -f tools/oracle/helpers/vertex_veo_request.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Local files and prefetched operation records keep the reference preparation calls pure.
+    - id: veo-request-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_veo_request*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_veo_request::/)'
+      why: Helper decoding must include the new Vertex video request operation.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-veo-request/resolution-catalog-gate.yaml
+  - tools/oracle/cases/helpers/vertex-veo-request/explicit-nested-resolution.yaml
+  - tools/oracle/cases/helpers/vertex-veo-request/invalid-seconds-omitted.yaml
+  - tools/oracle/cases/helpers/vertex-veo-request/gcs-no-fetch.yaml
+  - tools/oracle/cases/helpers/vertex-veo-request/instances-suppress-image.yaml
+  - tools/oracle/cases/helpers/vertex-veo-request/flat-options-win.yaml
+  - tools/oracle/cases/helpers/vertex-veo-request/edit-gcs-precedence.yaml
+  - tools/oracle/cases/helpers/vertex-veo-request/source-not-done.yaml
+deviations: []
+out_of_scope:
+  - B1362 owns _parse_veo_operation, veo_video_count_from_parameters, _build_vertex_video_usage_from_request_data, all response methods, status/content/prefetch requests, unsupported-operation methods and get_error_class.
+  - B093 owns generic video HTTP execution and provider prefetch; B033 exposes this preparation policy without adding video routes.
+pitfalls:
+  - The URL builder does not use the project returned by header authentication to fill a missing configured project.
+  - A full instances dictionary suppresses image conversion but leaves any image option among parameters.
+  - The source video's gcsUri wins by key presence even if its value is empty.
+budget: {max_changed_lines: 750, max_new_expects: 1}
+review_level: security

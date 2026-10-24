@@ -1,0 +1,68 @@
+id: B1313
+title: Gemini response text, signatures and media parts
+description: >-
+  Add gemini_response_parts to betterlite-vertex for L1349-L1628 of
+  vertex_and_google_ai_studio_gemini.py (235 nonblank noncomment lines). Separate thought text
+  from assistant content, preserve signed thinking blocks and the signatures on nonthought
+  parts, and join ordinary text without treating audio data URIs as prose. Nonmedia inlineData
+  becomes a data URI; image parts become detail=auto images, each with index=0. Select the first
+  audio part or audio data URI, with an empty transcript and expiry from an injected clock plus
+  86400 seconds. Convert functionCall arguments with Unicode-preserving JSON; legacy function
+  mode keeps the last call, while tool mode assigns sequential indices and uses the native id
+  when supplied. Delegate signature-bearing ids to B232. Inject generated ids in fixtures.
+  Pair server toolCall/toolResponse records by id, retaining insertion order, overwrite behavior,
+  orphan responses and response_thought_signature. Project chosenCandidates and corresponding
+  topCandidates into logprobs, retaining missing top entries. Expose a typed PartsProjection
+  consumed by both complete and streamed responses; it takes already decoded Google records.
+  Register helper gemini_response_parts and compare mixed_thought_text, signed_tool_call,
+  legacy_last_function, orphan_server_response, repeated_server_id, two_images_zero_index,
+  first_audio_expiry and sparse_logprobs. Budget 260 implementation, 190 assertions and 150
+  oracle plumbing lines; no new byte parser is needed.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,gemini_response_parts}.rs
+    - crates/betterlite-vertex/src/gemini_response_parts/**
+    - tools/oracle/src/helpers/{mod,gemini_response_parts}.rs
+    - tools/oracle/helpers/{dispatch,gemini_response_parts}.py
+    - tools/oracle/cases/helpers/gemini-response-parts/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_response_parts*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L1349-L1628
+    why: Part-level projections shared by candidate assembly and streaming.
+dod:
+  - text: Text, generated media, function calls and server tool pairs retain their distinct output fields.
+    proof: [parts-behavior, parts-python, oracle]
+  - text: The helper dispatcher accepts newly added signed and multimodal part fixtures.
+    proof: [parts-seeds]
+checks:
+  optional: []
+  commands:
+    - id: parts-behavior
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_response_parts::/) - test(replays_)'
+      why: Tests exercise the shared projection with deterministic clocks and ids.
+    - id: parts-python
+      run: test -f tools/oracle/helpers/gemini_response_parts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The adapter calls the pinned part functions without replacing their merge logic.
+    - id: parts-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_response_parts*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_response_parts::/)'
+      why: Fixture deserialization must reach the new call variant.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-response-parts/mixed-thought-text.yaml
+  - tools/oracle/cases/helpers/gemini-response-parts/signed-tool-call.yaml
+  - tools/oracle/cases/helpers/gemini-response-parts/legacy-last-function.yaml
+  - tools/oracle/cases/helpers/gemini-response-parts/orphan-server-response.yaml
+  - tools/oracle/cases/helpers/gemini-response-parts/repeated-server-id.yaml
+  - tools/oracle/cases/helpers/gemini-response-parts/two-images-zero-index.yaml
+  - tools/oracle/cases/helpers/gemini-response-parts/first-audio-expiry.yaml
+  - tools/oracle/cases/helpers/gemini-response-parts/sparse-logprobs.yaml
+deviations: []
+out_of_scope:
+  - B1314 assembles choices; B1322 computes usage; B1323 carries provider metadata; B1326 decodes the response envelope; B1315 reads streamed bytes.
+  - Earlier methods in this shared file belong to B1305 and B1308-B1310, while B1316 owns HTTP execution and environment validation.
+pitfalls:
+  - thoughtSignature without thought=true still belongs in provider-specific signatures.
+  - Replacing every image index with its array position changes the pinned index=0 output.
+  - A toolResponse without an earlier toolCall is retained rather than discarded.
+budget: {max_changed_lines: 625, max_new_expects: 1}
+review_level: standard

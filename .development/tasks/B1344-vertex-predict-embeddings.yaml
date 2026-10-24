@@ -1,0 +1,66 @@
+id: B1344
+title: Execute Vertex text and multimodal embedding predictions
+description: >-
+  Add vertex_embedding_call for every method in vertex_embeddings/embedding_handler.py and
+  multimodal_embeddings/embedding_handler.py (200+168 nonblank noncomment lines). Text calls
+  resolve B1302/B1303 auth, B1304 mode=embedding/PSC targets and headers, then use B1342 records.
+  Their outer async handoff omits the supplied client; direct async calls may use a compatible
+  AsyncHTTPHandler. Text timeout is applied only when truthy, HTTP status failures preserve
+  status, and timeout becomes legacy Vertex 408 without response headers. Decode text prediction
+  JSON through decode_vertex_embedding and add vertex_embedding fuzz/replay. Multimodal calls
+  recognize multimodalembedding and multimodalembedding@001, prepare B1343 records and force
+  its headers before the async handoff. The sync branch posts serialized data and delegates
+  status checking to B1343; the async branch posts JSON, raises HTTP failures first and maps
+  timeout to 408. Multimodal timeout defaults to 300, with sync None resolving to 600 seconds
+  and connect=5 while async passes None. Preserve caller-client forwarding only where source
+  does it. Sanitized logging uses typed request facts, not bearer or credential values.
+  Native plans tests assert text_psc, text_zero_timeout,
+  text_async_client_omitted, multimodal_forced_headers, multimodal_none_timeout and supported_names.
+  Rust transport tests compare text versus multimodal status boundaries, one token acquisition,
+  serialized POST bodies and cancellation. B1395 installs the operations and compares their
+  effects through existing embedding routes; calling either HTTP facade from a helper would
+  cross the pure-function boundary. Budget 330 execution, 310 tests and 100 decoder/fuzz lines,
+  cap 800.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_embedding_call}.rs
+    - crates/betterlite-vertex/src/vertex_embedding_call/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_embedding.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_embedding/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/embedding_handler.py#L21-L226
+    why: Text embedding authentication, PSC selection, client handoff and errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/multimodal_embeddings/embedding_handler.py#L25-L188
+    why: Multimodal preparation order, serialized sync body and distinct async checks.
+dod:
+  - text: Text and multimodal prediction calls retain their client, timeout and header differences.
+    proof: [predict-plans]
+  - text: Real production execution uses one authenticated POST and the appropriate error/response boundary.
+    proof: [predict-execution]
+  - text: New prediction corpus bytes exercise the same decoder used by text embedding execution.
+    proof: [predict-corpus]
+checks:
+  optional: []
+  commands:
+    - id: predict-plans
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_embedding_call::tests::plans/)'
+      why: Family-specific plans must retain explicit-zero and None timeout behavior.
+    - id: predict-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_embedding_call::tests::execution/)'
+      why: Captured transport effects must prove auth count, body encoding and error provenance.
+    - id: predict-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_embedding.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_embedding)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_embedding_corpus)'
+      why: Text, tuned and BGE response JSON must replay through the production decoder.
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B1342 owns text request/reply transformation and B1343 owns multimodal response JSON decoding and projection.
+  - B1395 installs the Vertex embedding operation; B006 keeps its HTTP route factories.
+pitfalls:
+  - Text embedding's async facade drops the supplied client while multimodal embedding forwards it.
+  - Sync multimodal non-200 replies take the transformation's generic error path rather than async HTTPStatusError mapping.
+  - A text timeout of zero does not override the pooled client's timeout because the source tests truthiness.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: security

@@ -1,0 +1,82 @@
+id: B1315
+title: Gemini fragmented stream reader and tool-call continuity
+description: >-
+  Implement GeminiStreamDecoder::push and finish in gemini_stream for ModelResponseIterator,
+  L3073-L3426 of the shared Gemini file (274 nonblank noncomment lines). Decode UTF-8/SSE data
+  fragments with bounded retained storage, using serde_json's incremental value boundary instead
+  of reparsing an ever-growing prefix. Preserve the source's valid_json to accumulated_json
+  transition, strip data prefixes and double newlines in accumulated mode, skip nonobject values
+  there, and drain complete leading objects at EOF even before an incomplete tail. Reuse B1326's
+  record decoder, B1314 candidate projection, B1322 usage and B1323 metadata. Track cumulative
+  tool indices and whether any tool appeared; later stop choices become tool_calls. A metadata-only
+  candidate produces an empty delta even though candidate projection skipped it. Embedded error
+  objects raise their coercible code or 500, with UNKNOWN/Unknown error defaults; a nonobject
+  error is 500. Preserve responseId/modelVersion, prompt filtering, traffic type, per-usage-chunk
+  service tiers and hidden is_finished=false. Cancellation closes both iterator and HTTP response;
+  close failures are diagnostic only. Sync and async public adapters share this state machine.
+  Register pure helper gemini_stream for fragment lists and compare split_after_valid, concatenated,
+  complete_before_truncated_tail, metadata_only, tools_then_stop, embedded_resource_exhausted and
+  prompt_filter_usage. Add vertex_stream fuzz target covering arbitrary fragment boundaries and
+  a replay test. Assert bounded buffering, linear copy growth and cancellation with instrumented
+  owners in Rust. Budget 330 decoder/assembly, 210 tests, 120 adapters and 100 fuzz/wiring lines.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,gemini_stream}.rs
+    - crates/betterlite-vertex/src/gemini_stream/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_stream.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_stream/**
+    - tools/oracle/src/helpers/{mod,gemini_stream}.rs
+    - tools/oracle/helpers/{dispatch,gemini_stream}.py
+    - tools/oracle/cases/helpers/gemini-stream/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_stream*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3073-L3426
+    why: Iterator state, error chunks, trailing drain and resource closure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/json_fragment_accumulator.py#L5-L95
+    why: Cursor-based accumulation semantics used by this provider's decoder.
+dod:
+  - text: Fragmented and concatenated Google replies produce the pinned chunks and finish reasons.
+    proof: [stream-behavior, stream-python, oracle]
+  - text: Decoder storage and connection ownership remain bounded through malformed input and cancellation.
+    proof: [stream-lifetime, stream-corpus]
+  - text: Fragment-list helper seeds are dispatched into the actual streaming state machine.
+    proof: [stream-fixtures]
+checks:
+  optional: []
+  commands:
+    - id: stream-behavior
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_stream::tests::chunks/)'
+      why: Fragment cases must assert complete ordered chunk output, including metadata-only deltas.
+    - id: stream-lifetime
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_stream::tests::ownership/)'
+      why: Cancellation, buffer limits and copy-growth assertions protect long-running streams.
+    - id: stream-python
+      run: test -f tools/oracle/helpers/gemini_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The reference adapter feeds local fragments to ModelResponseIterator without proxy globals.
+    - id: stream-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_stream.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_stream)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_stream_corpus)'
+      why: Every committed fragment corpus input runs through push and EOF draining.
+    - id: stream-fixtures
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_stream*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::gemini_stream::/)'
+      why: The shared corpus parser must recognize stream calls with fragment sequences.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-stream/split-after-valid.yaml
+  - tools/oracle/cases/helpers/gemini-stream/concatenated.yaml
+  - tools/oracle/cases/helpers/gemini-stream/complete-before-truncated-tail.yaml
+  - tools/oracle/cases/helpers/gemini-stream/metadata-only.yaml
+  - tools/oracle/cases/helpers/gemini-stream/tools-then-stop.yaml
+  - tools/oracle/cases/helpers/gemini-stream/embedded-resource-exhausted.yaml
+  - tools/oracle/cases/helpers/gemini-stream/prompt-filter-usage.yaml
+deviations: []
+out_of_scope:
+  - B005 owns the generic CustomStreamWrapper and JSONFragmentAccumulator classes; this task implements the provider caller with a bounded incremental decoder.
+  - B1316 supplies HTTP streams; B1326/B1314/B1313/B1322/B1323 own envelope, candidate, part, usage and metadata transformations.
+  - B1305/B1308-B1310 own request policy methods in the same Gemini file.
+pitfalls:
+  - Fragmentation may begin after several valid JSON chunks, not only on the first chunk.
+  - EOF must drain a complete object ahead of an unfinished value without requiring a closing final byte.
+  - Seeing tool_calls in an earlier chunk changes the finish reason of a later empty STOP chunk.
+budget: {max_changed_lines: 800, max_new_expects: 1}
+review_level: standard

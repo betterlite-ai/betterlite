@@ -1,0 +1,78 @@
+id: B1355
+title: Vertex Gemini native audio transcription and token usage
+description: >-
+  Build vertex_gemini_transcription from the full 201-line adapter and 41 nonblank noncomment
+  type lines. Reuse B1354's supported json/text response-format policy, project validation and
+  auth precedence, but default location to global and construct the v1 publisher Google
+  generateContent URL through B1305's host selection. The model loses one vertex_ai/ prefix.
+  Encode processed local audio into a single user content part with inlineData mimeType/data;
+  generationConfig contains audioTranscriptionConfig, empty unless language is a nonempty
+  string, in which case use an injected B1001 BCP47 normalizer. Do not insert a transcription
+  prompt. Implement decode_vertex_gemini_transcription with the source's optional content,
+  empty tuple and zero count defaults, ignoring unknown fields. Join all truthy text parts
+  across all candidates with spaces and set task=transcribe. Usage exists only when
+  usageMetadata is non-None; count exact uppercase AUDIO input details, subtract audio from
+  prompt count without clamping, and preserve provider total and candidate counts. Unlike
+  native Speech-to-Text, do not attach the raw envelope as hidden metadata or infer language
+  and duration. Non-JSON errors retain the raw response status. Provide the pure helper
+  vertex_gemini_transcription with global_default, language_config_empty, inline_audio_only,
+  all_candidate_text, audio_modality_case, negative_text_tokens and absent_usage. Fuzz the
+  response decoder with sparse candidates, wrong field types and token counts. Budget 245
+  implementation, 165 tests, 120 oracle and 90 fuzz lines, limit 675.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_gemini_transcription}.rs
+    - crates/betterlite-vertex/src/vertex_gemini_transcription/**
+    - crates/betterlite-vertex/fuzz/Cargo.toml
+    - crates/betterlite-vertex/fuzz/fuzz_targets/vertex_gemini_transcription.rs
+    - crates/betterlite-vertex/fuzz/corpus/vertex_gemini_transcription/**
+    - tools/oracle/src/helpers/{mod,vertex_gemini_transcription}.rs
+    - tools/oracle/helpers/{dispatch,vertex_gemini_transcription}.py
+    - tools/oracle/cases/helpers/vertex-gemini-transcription/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_gemini_transcription*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/gemini_transcribe_transformation.py#L45-L216
+    why: Native Gemini audio-only requests and transcript token accounting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/vertex_ai_gemini_transcription.py#L7-L72
+    why: Read-only request fields and permissive response defaults.
+dod:
+  - text: Gemini transcription emits an audio-only request and retains all candidate text and native token details.
+    proof: [gemini-transcription-tests, gemini-transcription-python, oracle]
+  - text: New malformed transcription envelopes replay through the typed Gemini decoder.
+    proof: [gemini-transcription-corpus]
+  - text: The shared oracle parser accepts the Gemini transcription helper inputs.
+    proof: [gemini-transcription-seeds]
+checks:
+  optional: []
+  commands:
+    - id: gemini-transcription-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_gemini_transcription::/) - test(replays_the_vertex_gemini_transcription_corpus)'
+      why: Tests distinguish absent usage from a present zero-count object and preserve negative text counts.
+    - id: gemini-transcription-python
+      run: test -f tools/oracle/helpers/vertex_gemini_transcription.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Reference request and response methods use fixed audio records and credential outputs.
+    - id: gemini-transcription-corpus
+      run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_gemini_transcription.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_gemini_transcription)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_gemini_transcription_corpus)'
+      why: The production decoder is the sole replay entry for provider transcript bytes.
+    - id: gemini-transcription-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_transcription*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_gemini_transcription::/)'
+      why: Added seeds must select vertex_gemini_transcription under call.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-gemini-transcription/global-default.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-transcription/language-config-empty.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-transcription/inline-audio-only.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-transcription/all-candidate-text.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-transcription/audio-modality-case.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-transcription/negative-text-tokens.yaml
+  - tools/oracle/cases/helpers/vertex-gemini-transcription/absent-usage.yaml
+deviations: []
+out_of_scope:
+  - The entire Gemini transcription file and its dedicated types are owned here; B033 supplies file processing and public operation composition.
+  - B1354 owns the reused project/location validators and response-format rejection policy.
+pitfalls:
+  - audioTranscriptionConfig remains present as an empty object when language is omitted.
+  - The text transcript includes every candidate rather than only candidate zero.
+  - Only the literal AUDIO modality contributes audio_tokens in this adapter.
+budget: {max_changed_lines: 675, max_new_expects: 1}
+review_level: security

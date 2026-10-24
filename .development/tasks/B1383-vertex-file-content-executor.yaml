@@ -1,0 +1,87 @@
+id: B1383
+title: Execute the native Vertex GCS file-content path
+description: >-
+  Implement vertex_file_content from files/handler.py, 209 nonblank noncomment lines,
+  using B173 pooled transport, B1303 async auth, B1393 object authorization and B1377
+  buffered output conversion. Both SDK sync and async entry points share this owned async
+  operation; do not nest runtimes. Require truthy file_id. Resolve bucket from deployment
+  gcs_bucket_name or bucket_name only when the chosen value is a string; otherwise use
+  GCS_BATCH_BUCKET_NAME then GCS_BUCKET_NAME from B1393 settings. Credentials prefer
+  deployment vertex_credentials then the argument; serialize a dictionary using Python's
+  JSON formatting, retain a string, otherwise use GCS_PATH_SERVICE_ACCOUNT. Add the latter
+  optional secret environment setting with loader test loads_gcs_path_service_account.
+  Preserve the effective GCSBucketBase read seam: resolve bucket/credential context,
+  authorize the object, obtain an identity-isolated auth instance, build the fixed JSON
+  media GET with the encoded object path, and return bytes only on status 200. A failed
+  download logs the source error and becomes Failed to download file from GCS with the
+  decoded identifier; never print credential contents. Empty downloaded bytes are success.
+  Create status 200 application/octet-stream and content-length metadata around the bytes,
+  with decoded gs:// request identity, then call B1377 using empty litellm_params. The
+  api_base, project, location, timeout and max_retries arguments do not alter this source
+  path. Use existing credential cache partitioning rather than cloning the logging plugin.
+  Pure helper vertex_file_read_settings covers deployment_bucket, nonstring_bucket_fallback,
+  credential_dictionary, explicit_credentials and service_account_fallback by invoking
+  _resolve_read_gcs_config with injected settings. Native execution cases authorize_before_get,
+  credential_partition, missing_file_id, empty_content, failed_download, transformed_output
+  and cancel_read assert ordering, error and resource closure. B034 supplies route oracle
+  coverage; no helper invokes afile_content or the GCS transport. Plan 240 implementation,
+  80 config, 160 execution/settings tests and 90 adapter/seed lines within 625.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/{lib,error,vertex_file_content}.rs
+    - crates/betterlite-vertex/src/vertex_file_content/**
+    - crates/betterlite-config/src/{config,settings,env,providers,tests}.rs
+    - crates/betterlite-config/src/providers/vertex.rs
+    - crates/betterlite-config/src/tests/vertex_file_read_settings.rs
+    - crates/betterlite-config/fuzz/corpus/config_yaml/vertex_file_read*
+    - tools/oracle/src/helpers/{mod,vertex_file_read_settings}.rs
+    - tools/oracle/helpers/{dispatch,vertex_file_read_settings}.py
+    - tools/oracle/cases/helpers/vertex-file-read-settings/**
+    - tools/oracle/fuzz/corpus/helper_case/vertex_file_read_settings*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/handler.py#L1-L239
+    why: Read configuration precedence, native content execution and sync/async dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L138-L250
+    why: The called read seam resolves identity-specific auth and converts download errors to None.
+dod:
+  - text: Native GCS reads authorize the requested object and isolate credentials before download and batch conversion.
+    proof: [file-read-execution]
+  - text: Read-specific bucket and credential precedence matches the pinned resolver, including nonstring fallback.
+    proof: [file-read-settings-tests, file-read-python, oracle]
+  - text: GCS_PATH_SERVICE_ACCOUNT loads as an optional secret and helper fixtures reach their registered operation.
+    proof: [file-read-config, file-read-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: file-read-execution
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_file_content::execution::/)'
+      why: Fixture transports capture authorization order, empty-body success and cancellation.
+    - id: file-read-settings-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_file_content::settings::/)'
+      why: Resolver cases prove its type-sensitive precedence separately from network effects.
+    - id: file-read-config
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/vertex_file_read_settings::loads_gcs_path_service_account/)'
+      why: The loader checks absence, explicit environment value and redacted Debug output.
+    - id: file-read-python
+      run: test -f tools/oracle/helpers/vertex_file_read_settings.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: Resolver fixtures patch source settings without constructing a logging client.
+    - id: file-read-seeds
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_file_read_settings*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex_file_read_settings::/)'
+      why: New seeds decode the call.vertex_file_read_settings variant using B171's shared parser.
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-file-read-settings/deployment-bucket.yaml
+  - tools/oracle/cases/helpers/vertex-file-read-settings/nonstring-bucket-fallback.yaml
+  - tools/oracle/cases/helpers/vertex-file-read-settings/credential-dictionary.yaml
+  - tools/oracle/cases/helpers/vertex-file-read-settings/explicit-credentials.yaml
+  - tools/oracle/cases/helpers/vertex-file-read-settings/service-account-fallback.yaml
+deviations: []
+out_of_scope:
+  - B1374 through B1377 and B1393 own FilesConfig transformations and byte decoders; this executor adds no competing parser.
+  - B115 owns GCS logging/upload/delete callbacks; only their called native download behavior is composed here.
+pitfalls:
+  - A nonstring deployment bucket falls back to environment, unlike the write resolver's truthiness-only selection.
+  - The decoded gs:// identifier becomes response request metadata, never an arbitrary HTTP host to fetch.
+  - Downloading zero bytes must not trigger the None-only failure branch.
+budget: {max_changed_lines: 625, max_new_expects: 1}
+review_level: security
