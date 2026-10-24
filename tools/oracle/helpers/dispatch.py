@@ -7,12 +7,18 @@ from typing import TypeAlias, cast
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
 from catalog_generalizations import run as run_catalog_generalizations
+from dot_paths import run as run_dot_paths
+from provider_base_helpers import run as run_provider_base_helpers
+from provider_message_primitives import run as run_provider_message_primitives
 from secret_codec import run as run_secret_codec
 from url_path import run as run_url_path
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 RUNNERS: dict[str, Callable[[dict[str, Json]], Json]] = {
     "catalog_generalizations": run_catalog_generalizations,
+    "dot_paths": run_dot_paths,
+    "provider_base_helpers": run_provider_base_helpers,
+    "provider_message_primitives": run_provider_message_primitives,
     "secret_codec": run_secret_codec,
     "url_path": run_url_path,
 }

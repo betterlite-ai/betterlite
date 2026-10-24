@@ -1,0 +1,10 @@
+kind: helper
+name: append-tools
+call:
+  provider_base_helpers:
+    append_tools:
+      options: {stream: true, tools: [{type: function, function: {name: a}}]}
+      tools: [{type: function, function: {name: a}}, {type: function, function: {name: b}}]
+env: {}
+compare:
+  ignore: []

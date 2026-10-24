@@ -1,0 +1,9 @@
+kind: helper
+name: fuzz-seed
+call:
+  provider_message_primitives:
+    function: tool_call
+    record: {id: call_1, type: custom, function: null, custom: {name: grep, input: x}}
+env: {}
+compare:
+  ignore: []

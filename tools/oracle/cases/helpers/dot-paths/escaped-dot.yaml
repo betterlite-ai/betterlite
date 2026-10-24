@@ -1,0 +1,11 @@
+kind: helper
+name: escaped-dot
+call:
+  dot_paths:
+    get:
+      data: {"kubernetes.io": {"namespace": "default"}, "kubernetes": {"io": {"namespace": "wrong"}}}
+      key_path: 'metadata.kubernetes\.io.namespace'
+      default: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,9 @@
+kind: helper
+name: chat-id-prefix
+call:
+  provider_message_primitives:
+    function: chat_id
+    uuid: 0f9a6c1e-4b2d-4c3a-9e8f-1a2b3c4d5e6f
+env: {}
+compare:
+  ignore: []

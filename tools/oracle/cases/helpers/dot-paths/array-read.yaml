@@ -1,0 +1,11 @@
+kind: helper
+name: array-read
+call:
+  dot_paths:
+    get:
+      data: {"roles": ["admin", "user"], "groups": {"0": "zero"}}
+      key_path: roles.0
+      default: fallback
+env: {}
+compare:
+  ignore: []

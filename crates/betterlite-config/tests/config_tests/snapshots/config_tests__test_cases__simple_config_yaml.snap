@@ -45,6 +45,8 @@ Ok(
             num_retries: None,
             request_timeout: None,
             drop_params: None,
+            modify_params: false,
+            default_max_tokens: 4096,
         },
         environment_variables: {},
     },

@@ -1,0 +1,15 @@
+kind: helper
+name: base-error-projection
+call:
+  provider_base_helpers:
+    base_error:
+      status_code: 429
+      message: slow down
+      headers: [[retry-after, "1"], [x-request-id, abc]]
+      request: null
+      response: null
+      body: {error: {code: rate_limited}}
+      status_code_is_synthesized: false
+env: {}
+compare:
+  ignore: []

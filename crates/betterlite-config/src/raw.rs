@@ -76,6 +76,7 @@ pub(super) struct RawLiteLlm {
     pub(super) num_retries: Option<RawNumber>,
     pub(super) request_timeout: Option<RawNumber>,
     pub(super) drop_params: Option<bool>,
+    pub(super) modify_params: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
