@@ -1,0 +1,100 @@
+id: B189
+title: Callback registry and configuration validation
+description: >-
+  Add a bounded callback registry and typed registration/config-validation layer in betterlite-logging. Represent
+  compiled callback implementations as an exhaustive enum, initially an injected tracing sink and a test recording
+  sink; registration tracks callback identity and subscribed input/success/failure/stream/service phases. Parse
+  LiteLLM callback-list/config shapes but enable only actually installed adapters, keeping unknown or unavailable
+  names a B002 startup error; do not invent a public callback name for test sinks. Return explicit AlreadyRegistered
+  and Capacity errors rather than silently overwriting registrations. Add pure validation for family-scoped callback
+  credentials, environment references, sampling-rate decimals and integration option enums so later management APIs
+  can reuse it without exposing secrets. Read the pinned registry/config metadata as fixtures rather than dynamically
+  importing providers. Compare effective registration/removal/phase selection and standalone validators through
+  helper cases using synthetic Python CustomLogger objects. Budget 320 registry/validation lines, 100 config wiring
+  and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-logging/Cargo.toml
+  - crates/betterlite-logging/src/lib.rs
+  - crates/betterlite-logging/src/error.rs
+  - crates/betterlite-logging/src/registry.rs
+  - crates/betterlite-logging/src/registry/**
+  - crates/betterlite-logging/src/callback_config.rs
+  - crates/betterlite-logging/src/callback_config/**
+  - crates/betterlite-logging/fuzz/**
+  - crates/betterlite-logging/tests/fixtures/**
+  - crates/betterlite-config/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/callback-registry/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_callback_manager.py#L20-L180
+  why: Callback identity, phase lists and capacity.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/custom_logger_registry.py#L60-L195
+  why: Callback class registry responsibilities.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_config_validation.py#L26-L205
+  why: Family credential and integration option validation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py#L1-L220
+  why: Extension phase surface; native enums implement the core contract.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/callback_configs.json#L1-L100
+  why: Callback metadata is not proof an exporter is installed.
+dod:
+- text: Registration order, effective deduplication, removal, phase selection and standalone config validators match
+    the listed helper cases.
+  proof:
+  - oracle
+- text: Capacity overflow and unknown/uninstalled callback names fail explicitly; conflicting credential-family
+    entries cannot redirect an existing secret.
+  proof:
+  - callback-registry-tests
+- text: The callback-config parser and extended YAML loader replay committed malformed and adversarial corpora.
+  proof:
+  - callback-config-corpus
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: callback-registry-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-logging -p betterlite-config --no-tests=fail -E 'test(/callback_registry|callback_config/)'
+  - id: callback-config-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-logging/fuzz/fuzz_targets/callback_config.rs && test -n "$(ls -A crates/betterlite-logging/fuzz/corpus/callback_config)"
+      && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_callback_config_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/callback-registry/register-remove.yaml
+- tools/oracle/cases/helpers/callback-registry/phase-order.yaml
+- tools/oracle/cases/helpers/callback-registry/duplicate-identity.yaml
+- tools/oracle/cases/helpers/callback-registry/capacity-boundary.yaml
+- tools/oracle/cases/helpers/callback-registry/langfuse-environment.yaml
+- tools/oracle/cases/helpers/callback-registry/span-scope.yaml
+- tools/oracle/cases/helpers/callback-registry/sampling-decimal.yaml
+- tools/oracle/cases/helpers/callback-registry/credential-family-conflict.yaml
+- tools/oracle/cases/helpers/callback-registry/credential-alias.yaml
+deviations: []
+out_of_scope:
+- Real exporters arrive in M5; Python callable discovery and CustomLogger instances arrive in B164-B165.
+- Team/key callback persistence and authorization are M4.
+pitfalls:
+- Known callback metadata must not make an unavailable exporter silently accepted.
+- Treat two aliases for the same credential family as one security boundary.
+- Runtime-only Python callables are not a reason to replace the closed native callback enum with Box<dyn Trait>.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

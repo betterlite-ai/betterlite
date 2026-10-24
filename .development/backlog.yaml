@@ -1957,7 +1957,7 @@ tasks:
     title: Callback registry and configuration validation
     status: todo
     depends_on: [B188]
-    file: null
+    file: tasks/B189-callback-registry.yaml
     covers:
       - "litellm/litellm_core_utils/{logging_callback_manager,custom_logger_registry}.py"
       - "litellm/proxy/common_utils/{callback_utils,callback_config_validation}.py"
