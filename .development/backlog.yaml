@@ -275,6 +275,7 @@ tasks:
     - B338
     - B339
     - B340
+    - B341
     file: null
     covers:
     - router_plugins.json
@@ -2381,4 +2382,16 @@ tasks:
     file: tasks/B340-adaptive-feedback.yaml
     covers:
     - litellm/router_strategy/adaptive_router/{signals,hooks}.py
+    - litellm/router_strategy/adaptive_router/adaptive_router.py
+
+  - id: B341
+    milestone: M2 routing
+    title: Adaptive learning persistence in the existing Postgres schema
+    status: todo
+    depends_on:
+    - B340
+    - B051
+    file: tasks/B341-adaptive-persistence.yaml
+    covers:
+    - litellm/router_strategy/adaptive_router/update_queue.py
     - litellm/router_strategy/adaptive_router/adaptive_router.py
