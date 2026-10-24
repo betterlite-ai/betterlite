@@ -1,0 +1,101 @@
+id: B327
+title: Embedding-based auto routing
+description: Implement the semantic auto_router marker using B014 embedding dispatch and a bounded immutable
+  route index loaded from inline JSON or a configured file. Build the index once per configuration, share
+  an in-progress build across callers and clear a failed build so another call can retry. Retain caller
+  attribution, redaction and parent session metadata on internal embedding calls. Compare fixed embedding
+  vectors and selected route names against the semantic-router version locked by the oracle. Use Decimal
+  or a reviewed library API compatible with the no-floats rule for nonmonetary vector math; the architect
+  must resolve the numeric implementation and precision contract before dispatch, rather than asking a
+  worker to improvise it. Use the existing Rust crate boundaries from B004 and B008; integrate through
+  the server when the provider dispatcher or callbacks live in another core crate. This task's source
+  slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the
+  matching adapters to B301's component runner where state is not observable over HTTP; adapters call
+  production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
+  for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
+  fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
+  full path. Add a cargo-fuzz target semantic_routes under crates/betterlite-router/fuzz and a normal
+  replays_the_semantic_routes_corpus test using the production parser. Keep the implementation, adapters
+  and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/semantic-router/**
+  - tools/oracle/src/router_probes/semantic-router/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/semantic_router.py
+  - tools/oracle/litellm/probes/registry.py
+  - Cargo.toml
+  - deny.toml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L46-L255
+  why: Config loading, initialization sharing, last-user extraction and default route.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/litellm_encoder.py#L16-L153
+  why: Embedding conversion, clamping and metadata forwarding.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/docker/install_auto_router.sh#L1-L4
+  why: The shell script now only documents dependency installation; no runtime subprocess is required.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: The new outside-byte parser has a cargo-fuzz target and committed corpus that the production parser
+    replays.
+  proof:
+  - parser-corpus
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(semantic_router)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the parser fuzz target or seed corpus is missing, or replay fails
+    run: test -f crates/betterlite-router/fuzz/fuzz_targets/semantic_routes.rs && test -n "$(ls -A crates/betterlite-router/fuzz/corpus/semantic_routes)"
+      && cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(replays_the_semantic_routes_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/semantic-router/route-threshold.yaml
+- tools/oracle/cases/routing/semantic-router/no-match-default.yaml
+- tools/oracle/cases/routing/semantic-router/embedding-failure-default.yaml
+- tools/oracle/cases/routing/semantic-router/last-user-text-blocks.yaml
+- tools/oracle/cases/routing/semantic-router/unicode-character-clamp.yaml
+- tools/oracle/cases/routing/semantic-router/query-attribution.yaml
+- tools/oracle/cases/routing/semantic-router/concurrent-single-index-build.yaml
+- tools/oracle/cases/routing/semantic-router/failed-build-retry.yaml
+deviations: []
+out_of_scope:
+- Python package installation at gateway runtime.
+- Semantic response caching (B128).
+pitfalls:
+- The semantic-router dependency version is part of the oracle lock and must not be selected independently.
+- Use synthetic embeddings so tests need no paid model calls.
+- Threshold ties need explicit cases before a numeric precision choice is approved.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

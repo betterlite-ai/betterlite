@@ -259,24 +259,26 @@ tasks:
     milestone: M2 routing
     title: Auto, complexity, adaptive and quality routers
     status: todo
-    depends_on: [B019]
+    depends_on:
+    - B019
+    - B327
     file: null
     covers:
-      - "router_plugins.json"
-      - "litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**"
-      - "litellm/router_strategy/{lar1_routing,savings_baseline}.py"
-      - "litellm/types/lar1.py"
-      - "litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py"
-      - "litellm/proxy/hooks/autorouter_baseline_cache.py"
-      - "litellm/proxy/auth/auto_router_checks.py"
-      - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
-      - "litellm/types/management_endpoints/auto_router_endpoints.py"
-      - "litellm/proxy/management_helpers/auto_router_*.py"
-      - "litellm/proxy/db/autorouter_session_rollup.py"
-      - "litellm/models/autorouter_session.py"
-      - "litellm/repositories/autorouter_session_repository.py"
-      - "litellm/proxy/public_endpoints/autorouter_presets.json"
-      - "docker/install_auto_router.sh"
+    - router_plugins.json
+    - litellm/router_strategy/{auto_router,complexity_router,adaptive_router,quality_router}/**
+    - litellm/router_strategy/{lar1_routing,savings_baseline}.py
+    - litellm/types/lar1.py
+    - litellm/router_utils/{auto_router_model_naming,auto_router_tuning_baseline}.py
+    - litellm/proxy/hooks/autorouter_baseline_cache.py
+    - litellm/proxy/auth/auto_router_checks.py
+    - litellm/proxy/management_endpoints/auto_router_endpoints.py
+    - litellm/types/management_endpoints/auto_router_endpoints.py
+    - litellm/proxy/management_helpers/auto_router_*.py
+    - litellm/proxy/db/autorouter_session_rollup.py
+    - litellm/models/autorouter_session.py
+    - litellm/repositories/autorouter_session_repository.py
+    - litellm/proxy/public_endpoints/autorouter_presets.json
+    - docker/install_auto_router.sh
   - id: B022
     milestone: M2 routing
     title: Request scheduler, priorities and admission control
@@ -2187,3 +2189,17 @@ tasks:
     file: tasks/B326-routing-budget-state.yaml
     covers:
     - litellm/router_strategy/budget_limiter.py
+
+  - id: B327
+    milestone: M2 routing
+    title: Embedding-based auto routing
+    status: todo
+    depends_on:
+    - B019
+    - B014
+    - B012
+    - B006
+    file: tasks/B327-semantic-router.yaml
+    covers:
+    - litellm/router_strategy/auto_router/**
+    - docker/install_auto_router.sh
