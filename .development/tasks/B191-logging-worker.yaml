@@ -1,25 +1,19 @@
 id: B191
 title: Bounded callback worker and batch delivery
 description: >-
-  Add the owned async callback worker and batch-delivery primitive in betterlite-logging. The server will own a
-  TaskTracker or JoinSet, bounded queue and explicit flush/stop handle; no detached retries, atexit cleanup or unbounded
-  task list. Use constructor limits (queue 50000, concurrency 100, callback timeout 20 seconds and shutdown drain
-  30 seconds) and report rejected admissions, timeouts and failures with sanitized typed outcomes. Preserve request
-  context on queued events, avoid locks across await, and isolate a failed observability callback from the model
-  response. Implement ordered batching with retained failed events until the next flush, a 413 split that preserves
-  unsent remainder, and cancellation that retains or explicitly reports undelivered events. Add worker_trace and
-  batch_delivery helper probes with deterministic synthetic callbacks and a mock transport; use paused-clock Rust
-  tests for saturation, cancellation and shutdown.  Seed B171's shared helper_case corpus with every added operation
-  and replay it through the common typed parser. Admission uses try_send and never awaits: on a full queue drop
-  only that event, increment counters and return a sanitized outcome without delaying or changing the model result.
-  B012 resolves LOGGING_WORKER_MAX_QUEUE_SIZE=50000, LOGGING_WORKER_CONCURRENCY=100, LOGGING_WORKER_MAX_TIME_PER_COROUTINE=20.
-  CustomBatchLogger uses batch size 512, flush interval 5 seconds and max_queue_size 50000; failed events stay for
-  the next flush and overflow drops oldest with a warning/count. Probe comparisons use event counts, final status,
-  ordered delivery where defined and the delivered set; elapsed timing is explicitly excluded. Write the behavior
-  rstest functions b191_logging_worker_tests_behavior in adjacent tests.rs files, with a named case for each behavior
-  and failure in the DoD; corpus replay tests have separate names. Register helper operations worker_trace, batch_delivery
-  in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py; each operation has its own Rust and Python
-  adapter file and corpus seed.
+  Implement the bounded owned LoggingWorker in betterlite-logging/worker using B189 callback registration and B256
+  batch delivery. Use TaskTracker or JoinSet, a bounded queue and an explicit flush/stop handle. Preserve request
+  context per event, never hold locks over await, and isolate callback failures from model responses. Admission
+  uses try_send and never awaits: a full queue drops only the rejected event, increments a counter and reports a
+  sanitized outcome. Constructor defaults are queue 50000, concurrency 100, timeout 20 seconds and shutdown drain
+  30 seconds; B012 resolves LOGGING_WORKER_MAX_QUEUE_SIZE, LOGGING_WORKER_CONCURRENCY and LOGGING_WORKER_MAX_TIME_PER_COROUTINE.
+  Own pending, dequeued and running events through cancellation, flush and stop; join or account for each by the
+  deadline. Implement source 27-265 and 448-531 with typed tracing replacing _safe_log; delayed retries/aggressive
+  clears 267-446 are intentionally replaced by bounded admission, and _flush_on_exit is replaced by explicit shutdown.
+  Register worker_trace in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py with separate Rust/Python
+  adapters and a new seed. Compare event counts, final status and delivered set, not elapsed timing. Write b191_logging_worker_tests_behavior
+  rstest cases in adjacent tests.rs, separate from replay. Budget 320 worker, 100 adapters, 290 tests and 60 wiring
+  (770 total).
 scope:
   paths:
   - Cargo.toml
@@ -28,8 +22,6 @@ scope:
   - crates/betterlite-logging/src/error.rs
   - crates/betterlite-logging/src/worker.rs
   - crates/betterlite-logging/src/worker/**
-  - crates/betterlite-logging/src/batch.rs
-  - crates/betterlite-logging/src/batch/**
   - crates/betterlite-logging/tests/fixtures/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/**
@@ -48,20 +40,15 @@ references:
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L455-L531
   why: Stop, flush and queue clearing.
 - url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L26-L93
-  why: Periodic flush and batch callback contract.
-- url: >-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/batch_utils.py#L15-L160
-  why: Retry classification, 413 split and cancellation-safe remainder.
-- url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L633-L635
   why: Worker defaults and environment names.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L47-L48
-  why: Batch size and flush interval.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L533-L653
+  why: Typed logging and explicit shutdown replace Python global teardown.
 dod:
 - text: >-
-    Successful worker traces, callback failures, batch retry classes and 413 remainder handling match the helper
-    probes.
+    Successful worker traces, callback failures and flush accounting match helper probes; batch behavior is proven
+    by B256.
   proof:
   - oracle
   - helper-python
@@ -100,19 +87,13 @@ checks:
     why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
     run: >-
       test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
-      grep -rlq 'worker_trace' tools/oracle/fuzz/corpus/helper_case && grep -rlq 'batch_delivery' tools/oracle/fuzz/corpus/helper_case
-      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      grep -rlq 'worker_trace' tools/oracle/fuzz/corpus/helper_case && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/logging-worker/success-trace.yaml
 - tools/oracle/cases/helpers/logging-worker/failure-trace.yaml
 - tools/oracle/cases/helpers/logging-worker/flush-order.yaml
-- tools/oracle/cases/helpers/logging-worker/retryable-status.yaml
-- tools/oracle/cases/helpers/logging-worker/batch-413.yaml
-- tools/oracle/cases/helpers/logging-worker/single-item-413.yaml
-- tools/oracle/cases/helpers/logging-worker/cancellation-remainder.yaml
-- tools/oracle/cases/helpers/logging-worker/failed-batch-retained.yaml
-- tools/oracle/cases/helpers/logging-worker/oldest-overflow.yaml
 - tools/oracle/cases/helpers/logging-worker/default-limits.yaml
 deviations:
 - what: >-
@@ -124,10 +105,12 @@ deviations:
 out_of_scope:
 - Durable spend/audit writes must use B069's persistence path, not this best-effort observability queue.
 - Concrete HTTP exporters are M5 and reuse this batch primitive.
+- >-
+  CustomBatchLogger and every batch_utils function belong to B256; Python atexit hooks and thread/loop discovery
+  have no caller in the native explicit-shutdown design.
 pitfalls:
 - >-
   A dequeued event waiting for a semaphore still belongs to the worker and must be included in shutdown accounting.
-- Do not retry a 413 batch without reducing it, and do not retry an oversized single item forever.
 - Callback context must be captured before enqueue, not read from whichever task later runs it.
 review_level: standard
 budget:

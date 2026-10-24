@@ -2112,11 +2112,10 @@ tasks:
     status: todo
     depends_on:
     - B189
+    - B256
     file: tasks/B191-logging-worker.yaml
     covers:
     - litellm/litellm_core_utils/logging_worker.py
-    - >-
-      litellm/integrations/{custom_batch_logger,additional_logging_utils,batch_utils,mock_client_factory,test_httpx}.py
     - litellm/integrations/*_mock_client.py
   - id: B192
     milestone: M1 openai data plane
@@ -2798,3 +2797,13 @@ tasks:
     - litellm/litellm_core_utils/mock_functions.py
     - litellm/main.py
     - litellm/utils.py
+  - id: B256
+    milestone: M1 openai data plane
+    title: Bounded callback batch delivery
+    status: todo
+    depends_on:
+    - B189
+    file: tasks/B256-batch-delivery.yaml
+    covers:
+    - litellm/integrations/custom_batch_logger.py
+    - litellm/integrations/batch_utils.py
