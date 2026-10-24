@@ -55,6 +55,28 @@ fn role_problems(folder: &Path, name: &str, role: &Role, runners: &[&str]) -> Ve
     problems
 }
 
+fn writable_problems(agents: &Agents) -> Vec<String> {
+    let mut problems = Vec::new();
+    for entry in &agents.policy.writable {
+        let mut rest = entry.as_str();
+        while let Some((_, after_open)) = rest.split_once('{') {
+            let Some((name, after_close)) = after_open.split_once('}') else {
+                problems.push(format!(
+                    "agents.yaml: the writable entry {entry} has an unclosed placeholder"
+                ));
+                break;
+            };
+            if name != "git_common_dir" && name != "home" {
+                problems.push(format!(
+                    "agents.yaml: the writable entry {entry} may use only {{git_common_dir}} and {{home}}"
+                ));
+            }
+            rest = after_close;
+        }
+    }
+    problems
+}
+
 fn vendor_problems(agents: &Agents) -> Vec<String> {
     let vendor = |runner_id: &str| {
         agents
@@ -109,5 +131,6 @@ pub(crate) fn problems(folder: &Path, agents: &Agents) -> Vec<String> {
     if agents.policy.review_by_other_vendor {
         problems.extend(vendor_problems(agents));
     }
+    problems.extend(writable_problems(agents));
     problems
 }

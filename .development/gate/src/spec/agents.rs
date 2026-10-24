@@ -1,16 +1,18 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-pub(crate) const PLACEHOLDERS: [&str; 9] = [
+pub(crate) const PLACEHOLDERS: [&str; 11] = [
     "model",
     "effort",
     "schema_text",
+    "writable_roots",
     "worktree",
     "schema",
     "output",
     "instructions",
     "git_common_dir",
     "home",
+    "sandbox_settings",
 ];
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -33,7 +35,7 @@ pub(crate) struct Agents {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 #[schemars(
-    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir} and {home}."
+    description = "How to start one agent run. The prompt goes to stdin. Arguments may use {model}, {effort}, {worktree}, {schema}, {schema_text}, {output}, {instructions}, {git_common_dir}, {home}, {writable_roots} (the policy's writable folders as a TOML array) and {sandbox_settings} (a Claude settings file that sandboxes Bash to the worktree and those folders)."
 )]
 pub(crate) struct Runner {
     #[schemars(regex(pattern = "^[a-z][a-z0-9-]*$"))]
@@ -115,4 +117,8 @@ pub(crate) struct Policy {
         description = "Times the Stop hook sends an agent back before it lets the run end red."
     )]
     pub(crate) max_hook_blocks: u32,
+    #[schemars(
+        description = "Folders a worker may write besides its worktree, like the repository's .git folder and tool caches. {git_common_dir} and {home} expand."
+    )]
+    pub(crate) writable: Vec<String>,
 }
