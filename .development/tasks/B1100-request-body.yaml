@@ -1,0 +1,243 @@
+id: B1100
+title: Shared request body decoding
+description: >-
+  Implement the proxy request body cache and JSON/media-type boundary used before auth and again by route extraction.
+  Keep repaired JSON, opaque audio and OTLP branches distinct; pass an immutable RequestFacts value to auth and
+  reuse the same parsed body after it.
+
+
+  Implement crates/betterlite-server/src/api/request_body.rs, crates/betterlite-core/src/api/request_body.rs. Use
+  RequestBodyInput and RequestBodyResult with typed nested records; inject only the clock, repositories, transports
+  and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce ambient
+  environment or duplicate credential resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): http_parsing_utils.py:213 type='invalid_request_error', param='request_body', code=status.HTTP_400_BAD_REQUEST;
+  http_parsing_utils.py:239 type='invalid_request_error', param='request_body', code=status.HTTP_400_BAD_REQUEST;
+  http_parsing_utils.py:262 type='invalid_request_error', param='request_body', code=status.HTTP_400_BAD_REQUEST.
+  Compare the actual source status, error type, param and code; ignore only error wording except in message-extraction
+  tests.
+
+
+  Write adjacent tests.rs behavior functions cached_body_single_read, repair_small_json, repair_over_threshold,
+  opaque_audio_body, otlp_body_preserved, invalid_json_body under api::request_body::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.MAX_REQUEST_BODY_SIZE_TO_REPAIR_MB
+  defaults to 1 MiB. No environment reads occur outside betterlite-config. Test api::request_body::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  The production external-byte decoder is betterlite-server::api::request_body::decode_request_body(bytes: &[u8],
+  limits: &ApiLimits), for Content-Type plus bounded request body bytes, using the shared parsed-body cache. Place
+  its implementation in crates/betterlite-server/src/api/request_body.rs and call it from the actual boundary. The
+  cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/request_body.rs passes arbitrary bounded bytes to
+  that exact decoder; api::request_body::tests::replays_corpus replays newly committed seeds through the same function.
+  Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::RequestBody in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {request_body: <typed input>}; operation is
+  only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and Python
+  invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered diagnostics/effects,
+  never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/common_utils/http_parsing_utils.py: _normalize_media_type (L66-L70); litellm/proxy/common_utils/http_parsing_utils.py:
+  _is_form_content_type (L73-L81); litellm/proxy/common_utils/http_parsing_utils.py: is_json_content_type (L84-L86);
+  litellm/proxy/common_utils/http_parsing_utils.py: _parse_binary_body (L160-L168); litellm/proxy/common_utils/http_parsing_utils.py:
+  is_otlp_trace_request (L171-L172); litellm/proxy/common_utils/http_parsing_utils.py: _read_request_body (L175-L280);
+  litellm/proxy/common_utils/http_parsing_utils.py: is_opaque_audio_pass_through_request (L283-L288); litellm/proxy/common_utils/http_parsing_utils.py:
+  read_raw_json_body (L291-L300); litellm/proxy/common_utils/http_parsing_utils.py: _safe_get_request_parsed_body
+  (L303-L309); litellm/proxy/common_utils/http_parsing_utils.py: get_client_requested_model (L312-L316); litellm/proxy/common_utils/http_parsing_utils.py:
+  _safe_get_request_query_params (L319-L328); litellm/proxy/common_utils/http_parsing_utils.py: _safe_set_request_parsed_body
+  (L331-L340); litellm/proxy/common_utils/http_parsing_utils.py: rewrite_request_model (L343-L358); litellm/proxy/common_utils/http_parsing_utils.py:
+  _safe_get_request_headers (L361-L387). Abstract/protocol declarations map to native types and synchronous/async
+  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
+  above, with typed values passed to the following stage.
+
+
+  Sizing: 164 owned nonblank/non-comment/non-docstring Python lines (190 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 184 implementation,
+  76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
+  and 38 wiring; 553 total within the 560-line cap. The estimate includes tests and adapters, not just production
+  code.
+
+
+  Direct inputs come from B003 (HTTP server, health routes and master key auth), B171 (Direct helper oracle and
+  URL path encoding), B1087 (Api boundaries), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/request_body.rs
+  - crates/betterlite-server/src/api/request_body/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/request_body.rs
+  - crates/betterlite-core/src/api/request_body/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/request_body.rs
+  - crates/betterlite-config/src/api/request_body/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/request-body-*
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/request_body.rs
+  - crates/betterlite-server/fuzz/corpus/request_body/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/request_body.rs
+  - tools/oracle/src/helpers/request_body/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/request_body.py
+  - tools/oracle/helpers/request_body/**
+  - tools/oracle/fuzz/corpus/helper_case/request_body-*
+  - tools/oracle/cases/helpers/request-body/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L66-L88
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L160-L389
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'cached body single read: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cached-body-single-read
+  - oracle
+- text: 'repair small json: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-repair-small-json
+  - oracle
+- text: 'repair over threshold: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-repair-over-threshold
+  - oracle
+- text: 'opaque audio body: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-opaque-audio-body
+  - oracle
+- text: 'otlp body preserved: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-otlp-body-preserved
+  - oracle
+- text: 'invalid json body: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-invalid-json-body
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
+      -E 'test(/^api::request_body::/) - test(/::replays_corpus$/)'
+  - id: case-cached-body-single-read
+    why: the cached-body-single-read behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::cached_body_single_read($|::)/)'
+  - id: case-repair-small-json
+    why: the repair-small-json behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::repair_small_json($|::)/)'
+  - id: case-repair-over-threshold
+    why: the repair-over-threshold behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::repair_over_threshold($|::)/)'
+  - id: case-opaque-audio-body
+    why: the opaque-audio-body behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::opaque_audio_body($|::)/)'
+  - id: case-otlp-body-preserved
+    why: the otlp-body-preserved behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::otlp_body_preserved($|::)/)'
+  - id: case-invalid-json-body
+    why: the invalid-json-body behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::invalid_json_body($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::request_body::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/request-body-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/request_body)"
+      && test -f crates/betterlite-server/fuzz/fuzz_targets/request_body.rs && grep -qF "decode_request_body" crates/betterlite-server/fuzz/fuzz_targets/request_body.rs
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::request_body::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/request_body.py && uv run --locked --project tools/oracle/litellm ruff check
+      tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/request_body-*)"
+      && grep -qE "^[[:space:]]+request_body:" tools/oracle/fuzz/corpus/helper_case/request_body-* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/request-body)"
+oracle_cases:
+- tools/oracle/cases/helpers/request-body/cached-body-single-read.yaml
+- tools/oracle/cases/helpers/request-body/repair-small-json.yaml
+- tools/oracle/cases/helpers/request-body/repair-over-threshold.yaml
+- tools/oracle/cases/helpers/request-body/opaque-audio-body.yaml
+- tools/oracle/cases/helpers/request-body/otlp-body-preserved.yaml
+- tools/oracle/cases/helpers/request-body/invalid-json-body.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/common_utils/http_parsing_utils.py: B1102 owns resolve_inference_model L32-L63, get_tags_from_request_body
+  L618-L651, populate_request_with_path_params L654-L699, _add_vector_store_id_from_path L702-L734.'
+- 'litellm/proxy/common_utils/http_parsing_utils.py: B1101 owns _unqualified L89-L94, _union_members L97-L102, _numeric_form_type
+  L105-L115, numeric_form_fields L118-L131, _numeric_form_value L134-L140, coerce_numeric_form_fields L143-L157,
+  check_file_size_under_limit L390-L450, get_form_data L453-L467, convert_upload_files_to_file_data L470-L512, get_request_body
+  L515-L527, extract_nested_form_metadata L530-L615.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- http_parsing_utils.py:376 emits the diagnostic 'Unexpected cached request headers type - %s'; retain its level
+  and fallback instead of turning it into a hard error.
+- http_parsing_utils.py:327 emits the diagnostic 'Unexpected error reading request query params - %s'; retain its
+  level and fallback instead of turning it into a hard error.
+review_level: security
+budget:
+  max_changed_lines: 560
+  max_new_expects: 1

@@ -1,0 +1,157 @@
+id: B1230
+title: Remove unbacked team model aliases
+description: >-
+  Remove obsolete team model grants only after checking configured and stored sibling deployments. Preserve
+  public-name backing checks and exact alias deletion; return affected teams for cache invalidation. This
+  helper is used by delete_model and team assignment updates, and never calls either HTTP handler.
+
+
+  Build the production team_model_cleanup module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_management_endpoints.py:
+  delete_team_model_alias (L2313-L2347; 31 source lines), _get_team_deployments (L1734-L1766; 28 source
+  lines), _get_team_public_model_names (L1812-L1831; 19 source lines), _remove_unbacked_team_models (L1834-L1907;
+  67 source lines).
+
+
+  Add the team_model_cleanup operation under B856 Management::teams. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-model-cleanup-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 145 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  145 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 382 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_model_cleanup.rs
+    - crates/betterlite-server/src/team_model_cleanup/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/team_model_cleanup.rs
+    - tools/oracle/src/helpers/team_model_cleanup/**
+    - tools/oracle/helpers/team_model_cleanup.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/cases/helpers/team-model-cleanup/**
+    - tools/oracle/fuzz/corpus/helper_case/team-model-cleanup-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L2313-L2347
+    why: Own delete_team_model_alias; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1734-L1766
+    why: Own _get_team_deployments; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1812-L1831
+    why: Own _get_team_public_model_names; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_management_endpoints.py#L1834-L1907
+    why: Own _remove_unbacked_team_models; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: last_sibling_removed,
+      configured_sibling_kept, stored_sibling_kept, alias_delete.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_model_cleanup::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/team_model_cleanup.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-model-cleanup-*")"
+        && grep -rlq "team_model_cleanup" tools/oracle/fuzz/corpus/helper_case/team-model-cleanup-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-model-cleanup/last-sibling-removed.yaml
+  - tools/oracle/cases/helpers/team-model-cleanup/configured-sibling-kept.yaml
+  - tools/oracle/cases/helpers/team-model-cleanup/stored-sibling-kept.yaml
+  - tools/oracle/cases/helpers/team-model-cleanup/alias-delete.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B832 owns _canonical_session_tags
+    (L1985-L1986), ModelManagementAuthChecks.can_user_make_team_model_call (L1995-L2015), ModelManagementAuthChecks.can_user_attach_credential
+    (L2018-L2042), ModelManagementAuthChecks.can_user_set_aws_session_tags (L2045-L2064), ModelManagementAuthChecks.allow_team_model_action
+    (L2067-L2098), ModelManagementAuthChecks.can_user_make_model_call (L2101-L2172).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B833 owns _is_nonzero_rate (L812-L813),
+    _is_nonzero_price (L816-L819), _is_zero_price (L822-L827), _raise_if_ptu_deployment_is_priced (L830-L855),
+    _ptu_zeroed_pricing (L858-L895), _ptu_pricing_delta (L898-L928), _ptu_priced_deployment (L931-L950),
+    _cost_map_entry (L953-L960), _loaded_catalog_entry (L966-L972).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B834 owns _auto_router_capability_slot
+    (L521-L675).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B835 owns update_db_model (L975-L1085),
+    patch_model (L1093-L1320).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B836 owns _add_model_to_db (L1495-L1525),
+    _add_team_model_to_db (L1528-L1580), _update_team_model_in_db (L1583-L1669), _get_public_model_name
+    (L1672-L1715), _setup_new_team_model_assignment (L1718-L1731), delete_team_models (L1769-L1809), _update_existing_team_model_assignment
+    (L1910-L1980).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B838 owns delete_model (L2182-L2310),
+    update_model (L2567-L2780).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B839 owns update_public_model_groups
+    (L2789-L2867), update_useful_links (L2876-L2934).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B840 owns _validated_labeled_tiers
+    (L2937-L2949), _labeled_tiers_from_query (L2952-L2965), preview_auto_router_classifier_prompt (L2989-L3015),
+    get_auto_router_classifier_default_prompt (L3024-L3065).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B841 owns _deduplicate_litellm_router_models
+    (L3068-L3086), model_info_as_mapping (L3089-L3102), _expects_liveness_on_this_pod (L3105-L3111), live_model_ids_snapshot
+    (L3114-L3122), reload_serving_verdict (L3125-L3173), raise_if_reload_degraded_serving (L3176-L3221),
+    clear_cache (L3224-L3331).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B1213 owns _ProxyModelRow.model_id
+    (L179-L179), _ProxyModelRow.model_name (L182-L182), _ProxyModelRow.model_info (L185-L185), _ProxyModelRow.model_dump_json
+    (L187-L187), _ProxyModelTable.find_unique (L191-L191), _ProxyModelTable.find_many (L193-L193), _ProxyModelTable.create
+    (L195-L195), _ProxyModelTable.update (L197-L199), _ProxyModelTable.delete (L201-L201), _ProxyModelTable.delete_many
+    (L203-L203), _TxModelTables.query_raw (L209-L209), _TransactionFactory.__call__ (L214-L214), _ExistingModelRow.litellm_params
+    (L233-L233), _ExistingModelRow.model_dump_json (L235-L235), _TeamRow.models (L240-L240), _TeamRow.model_dump
+    (L242-L242), _TeamLookupTable.find_unique (L246-L246), _TeamTable.update (L250-L252), _proxy_model_table
+    (L255-L256), _repo_team_table (L259-L260), _db_team_table (L263-L264), _model_alias_table (L267-L268),
+    get_db_model (L271-L278), _strategy_router_write_violation (L281-L326), _raise_on_strategy_router_write_violation
+    (L329-L341), _stored_credential_name (L344-L352), _raise_on_invalid_credential_name (L355-L386), _effective_complexity_router_config
+    (L408-L437), _effective_model (L440-L456), _effective_complexity_router_params (L459-L468), _member_auto_router_marker_for_update
+    (L471-L487), _decrypted_model (L490-L496), _tuning_candidate (L499-L505), _raise_on_tuning_quota_violation
+    (L508-L517), _raise_if_rate_limits_required_but_missing (L681-L706), _explicitly_cleared_ptu_fields
+    (L712-L724), _merged_ptu_model_info (L727-L738), _raise_if_ptu_cost_attribution_disabled (L741-L764),
+    _validate_ptu_model_info (L767-L780).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B1214 owns _set_model_blocked_status
+    (L1323-L1428), block_model (L1436-L1457), unblock_model (L1465-L1486).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py: B1215 owns add_new_model (L2357-L2557).'
+  - 'litellm/proxy/management_endpoints/model_management_endpoints.py::update_team: no production caller
+    at the pin; this shim only supports legacy tests patching the symbol, while management calls team_model_add/team_model_delete.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - litellm/proxy/management_endpoints/model_management_endpoints.py::update_team (L161-L166) is an uncalled
+    legacy test shim; live management uses team_model_add/team_model_delete.
+pitfalls:
+  - Preserve public-name backing checks and exact alias deletion; return affected teams for cache invalidation.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,249 @@
+id: B507
+title: OpenAI Responses replay input and tool schemas
+description: >-
+  Add typed ResponsesInput and ResponsesTool with bounded provider extension fields, and prepare replay-safe input
+  without mutating callers. Use the schema helper and an explicit lax reasoning-item representation for the source
+  validation fallback. It is not permission to reject data which Python retains.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/responses/transformation.py:
+  OpenAIResponsesAPIConfig.transform_responses_api_request L283-L311; OpenAIResponsesAPIConfig._prepared_input_and_tools
+  L313-L328; OpenAIResponsesAPIConfig._tools_with_object_parameters L330-L341; OpenAIResponsesAPIConfig._tool_with_object_parameters
+  L343-L359; OpenAIResponsesAPIConfig.remove_cache_control_flag_from_input_and_tools L361-L391; OpenAIResponsesAPIConfig._drop_foreign_tool_call_item_ids
+  L393-L397; OpenAIResponsesAPIConfig._without_foreign_tool_call_item_id L400-L408; OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai
+  L410-L438; OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators L441-L444; OpenAIResponsesAPIConfig._combinator_gate_model
+  L447-L450; OpenAIResponsesAPIConfig._sanitized_tool_entry L453-L477; OpenAIResponsesAPIConfig._sanitized_tools
+  L480-L488; OpenAIResponsesAPIConfig._validate_input_param L490-L518; OpenAIResponsesAPIConfig._handle_reasoning_item
+  L520-L556.
+
+
+  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
+  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
+  and no copied helper algorithm is permitted.
+
+
+  Implement crates/betterlite-openai/src/response_input.rs with adjacent tests under response_input/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation openai_response_input in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function response_input_cases in betterlite-openai with these exact named cases (one per oracle file):
+  string_schema_object, invalid_string_schema, recursive_tool_namespace, foreign_tool_item_id, cache_control_in_input_and_tools,
+  reasoning_summary_and_null, gpt4_schema_combinators, gpt5_keeps_combinators, base_model_gate. Each case exercises
+  its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
+  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_response_input* using HelperCase: kind:
+  helper and the externally tagged openai_response_input variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_openai_response_input that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_response_tool_schema consumes JSON schema strings in Responses tools in crates/betterlite-openai/src/response_input.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/openai_response_input.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-openai/fuzz/corpus/openai_response_input.
+  The adjacent test replays_the_openai_response_input_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 235 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 260 production lines, 126 behavior/config-test lines,
+  91 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 557 planned, 575 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/response_input.rs
+  - crates/betterlite-openai/src/response_input/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_response_input.rs
+  - tools/oracle/src/helpers/openai_response_input/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_response_input.py
+  - tools/oracle/cases/helpers/providers/openai-response-input/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_response_input*
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/openai_response_input.rs
+  - crates/betterlite-openai/fuzz/corpus/openai_response_input/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L283-L556
+  why: >-
+    Own OpenAIResponsesAPIConfig.transform_responses_api_request, OpenAIResponsesAPIConfig._prepared_input_and_tools,
+    OpenAIResponsesAPIConfig._tools_with_object_parameters, OpenAIResponsesAPIConfig._tool_with_object_parameters,
+    OpenAIResponsesAPIConfig.remove_cache_control_flag_from_input_and_tools, OpenAIResponsesAPIConfig._drop_foreign_tool_call_item_ids,
+    OpenAIResponsesAPIConfig._without_foreign_tool_call_item_id, OpenAIResponsesAPIConfig._sanitized_tool_schemas_for_openai,
+    OpenAIResponsesAPIConfig._rejects_top_level_schema_combinators, OpenAIResponsesAPIConfig._combinator_gate_model,
+    OpenAIResponsesAPIConfig._sanitized_tool_entry, OpenAIResponsesAPIConfig._sanitized_tools, OpenAIResponsesAPIConfig._validate_input_param,
+    OpenAIResponsesAPIConfig._handle_reasoning_item. Other functions in this file remain with the owners listed
+    below.
+dod:
+- text: 'string schema object: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/string-schema-object.yaml.'
+  proof:
+  - case-string-schema-object
+  - oracle
+  - helper-python
+- text: 'invalid string schema: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/invalid-string-schema.yaml.'
+  proof:
+  - case-invalid-string-schema
+  - oracle
+  - helper-python
+- text: >-
+    recursive tool namespace: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/recursive-tool-namespace.yaml.
+  proof:
+  - case-recursive-tool-namespace
+  - oracle
+  - helper-python
+- text: 'foreign tool item id: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/foreign-tool-item-id.yaml.'
+  proof:
+  - case-foreign-tool-item-id
+  - oracle
+  - helper-python
+- text: >-
+    cache control in input and tools: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/cache-control-in-input-and-tools.yaml.
+  proof:
+  - case-cache-control-in-input-and-tools
+  - oracle
+  - helper-python
+- text: >-
+    reasoning summary and null: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/reasoning-summary-and-null.yaml.
+  proof:
+  - case-reasoning-summary-and-null
+  - oracle
+  - helper-python
+- text: >-
+    gpt4 schema combinators: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/gpt4-schema-combinators.yaml.
+  proof:
+  - case-gpt4-schema-combinators
+  - oracle
+  - helper-python
+- text: >-
+    gpt5 keeps combinators: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/gpt5-keeps-combinators.yaml.
+  proof:
+  - case-gpt5-keeps-combinators
+  - oracle
+  - helper-python
+- text: 'base model gate: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-response-input/base-model-gate.yaml.'
+  proof:
+  - case-base-model-gate
+  - oracle
+  - helper-python
+- text: New openai_response_input seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_response_tool_schema has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-string-schema-object
+    why: The string-schema-object behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_string_schema_object$/)'
+  - id: case-invalid-string-schema
+    why: The invalid-string-schema behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_invalid_string_schema$/)'
+  - id: case-recursive-tool-namespace
+    why: The recursive-tool-namespace behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_recursive_tool_namespace$/)'
+  - id: case-foreign-tool-item-id
+    why: The foreign-tool-item-id behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_foreign_tool_item_id$/)'
+  - id: case-cache-control-in-input-and-tools
+    why: The cache-control-in-input-and-tools behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_cache_control_in_input_and_tools$/)'
+  - id: case-reasoning-summary-and-null
+    why: The reasoning-summary-and-null behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_reasoning_summary_and_null$/)'
+  - id: case-gpt4-schema-combinators
+    why: The gpt4-schema-combinators behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_gpt4_schema_combinators$/)'
+  - id: case-gpt5-keeps-combinators
+    why: The gpt5-keeps-combinators behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_gpt5_keeps_combinators$/)'
+  - id: case-base-model-gate
+    why: The base-model-gate behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::response_input_cases::case_[0-9]+_base_model_gate$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_response_input.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_response_input*")"
+      && grep -lq 'openai_response_input' tools/oracle/fuzz/corpus/helper_case/openai_response_input* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_response_input$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_response_input)"
+      && grep -q 'decode_response_tool_schema' crates/betterlite-openai/fuzz/fuzz_targets/openai_response_input.rs
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_response_input_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-response-input/string-schema-object.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/invalid-string-schema.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/recursive-tool-namespace.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/foreign-tool-item-id.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/cache-control-in-input-and-tools.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/reasoning-summary-and-null.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/gpt4-schema-combinators.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/gpt5-keeps-combinators.yaml
+- tools/oracle/cases/helpers/providers/openai-response-input/base-model-gate.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_response_api_response L558-L587;
+  OpenAIResponsesAPIConfig.validate_environment L589-L602; OpenAIResponsesAPIConfig.get_complete_url L604-L623;
+  OpenAIResponsesAPIConfig.transform_streaming_response L625-L656; OpenAIResponsesAPIConfig.parse_terminal_event_from_stream_chunks
+  L659-L666; OpenAIResponsesAPIConfig.parse_terminal_response_from_stream_chunks L669-L671; OpenAIResponsesAPIConfig.get_event_model_class
+  L674-L730; OpenAIResponsesAPIConfig.should_fake_stream L732-L752; OpenAIResponsesAPIConfig.supports_native_websocket
+  L754-L756 belong to B508; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/responses/transformation.py: OpenAIResponsesAPIConfig.transform_delete_response_api_request
+  L761-L777; OpenAIResponsesAPIConfig.transform_delete_response_api_response L779-L791; OpenAIResponsesAPIConfig.transform_get_response_api_request
+  L796-L812; OpenAIResponsesAPIConfig.transform_get_response_api_response L814-L832; OpenAIResponsesAPIConfig.transform_list_input_items_request
+  L837-L862; OpenAIResponsesAPIConfig.transform_list_input_items_response L864-L872; OpenAIResponsesAPIConfig.transform_cancel_response_api_request
+  L877-L893; OpenAIResponsesAPIConfig.transform_cancel_response_api_response L895-L914; OpenAIResponsesAPIConfig.transform_compact_response_api_request
+  L919-L951; OpenAIResponsesAPIConfig.transform_compact_response_api_response L953-L984 belong to B509; reuse that
+  implementation or its injected typed boundary.
+- >-
+  litellm/llms/openai/responses/transformation.py: _bundled_openai_reasoning_models L60-L72; _DeleteResponse.json
+  L86-L86; _JsonObjectResponse.json L92-L92; _delete_response_body L95-L97; _json_object_body L100-L102; OpenAIResponsesAPIConfig.custom_llm_provider
+  L107-L108; OpenAIResponsesAPIConfig.supports_native_file_search L110-L111; OpenAIResponsesAPIConfig.supports_encrypted_agent_messages
+  L113-L114; OpenAIResponsesAPIConfig._is_gpt_5_model L117-L126; OpenAIResponsesAPIConfig._model_map_lookup_name
+  L129-L130; OpenAIResponsesAPIConfig._supports_reasoning_effort_none L133-L137; OpenAIResponsesAPIConfig._effort_resolves_to_none
+  L140-L151; OpenAIResponsesAPIConfig._supports_reasoning_param L154-L166; OpenAIResponsesAPIConfig._requests_reasoning_effort
+  L169-L173; OpenAIResponsesAPIConfig._enforce_min_max_output_tokens L176-L186; OpenAIResponsesAPIConfig.get_supported_openai_params
+  L188-L205; OpenAIResponsesAPIConfig.map_openai_params L207-L281 belong to B506; reuse that implementation or its
+  injected typed boundary.
+pitfalls:
+- Reasoning-item validation failure retains a lax item; rejecting it loses the pinned replay fallback.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: standard

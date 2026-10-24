@@ -1,0 +1,263 @@
+id: B572
+title: Anthropic web-search replay flattening
+description: >-
+  Add typed WebReplay projections for unencrypted server-tool/web-search history and expansion of discovered tool
+  references. Preserve encrypted result blocks, correlate tool-use ids and render only the source-supported search
+  result fields; no provider request is executed by this transform.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/common_utils.py:
+  _flattenable_web_search_tool_result L1577-L1588; _replayed_server_tool_use L1591-L1595; _render_web_search_results
+  L1598-L1618; _rewrite_replayed_web_search_block L1621-L1634; _flatten_web_search_results_in_message L1637-L1660;
+  flatten_unencrypted_web_search_results_in_anthropic_messages L1663-L1678; _ReplayedSearchQuery L1529-L1532; _ReplayedWebSearchResult
+  L1535-L1542; _ReplayedWebSearchToolResultError L1545-L1549; _ReplayedWebSearchToolResult L1552-L1557; _ReplayedServerToolUse
+  L1560-L1565; _TextBlock L1568-L1570.
+
+
+  Own the _ReplayedSearchQuery, _ReplayedWebSearchResult, _ReplayedWebSearchToolResultError, _ReplayedWebSearchToolResult,
+  _ReplayedServerToolUse and _TextBlock declarations in common_utils.py:1529-1572, including extra=allow and default
+  query/text fields.
+
+
+  Implement crates/betterlite-anthropic/src/web_replay.rs with adjacent tests under web_replay/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation anthropic_web_replay in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function web_replay_cases in betterlite-anthropic with these exact named cases (one per oracle file):
+  unencrypted_search_result, encrypted_search_preserved, server_tool_correlation, missing_search_title_url. Each
+  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
+  use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_web_replay* using HelperCase: kind:
+  helper and the externally tagged anthropic_web_replay variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_anthropic_web_replay that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 118 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 150 production lines, 81 behavior/config-test lines,
+  71 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 327 planned, 400 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-anthropic/Cargo.toml
+  - crates/betterlite-anthropic/src/lib.rs
+  - crates/betterlite-anthropic/src/error.rs
+  - crates/betterlite-anthropic/src/web_replay.rs
+  - crates/betterlite-anthropic/src/web_replay/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/anthropic_web_replay.rs
+  - tools/oracle/src/helpers/anthropic_web_replay/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/anthropic_web_replay.py
+  - tools/oracle/cases/helpers/providers/anthropic-web-replay/**
+  - tools/oracle/fuzz/corpus/helper_case/anthropic_web_replay*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1529-L1572
+  why: Typed replay models consumed by flattening.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L1529-L1678
+  why: >-
+    Own _ReplayedSearchQuery, _ReplayedWebSearchResult, _ReplayedWebSearchToolResultError, _ReplayedWebSearchToolResult,
+    _ReplayedServerToolUse, _TextBlock, _flattenable_web_search_tool_result, _replayed_server_tool_use, _render_web_search_results,
+    _rewrite_replayed_web_search_block, _flatten_web_search_results_in_message, flatten_unencrypted_web_search_results_in_anthropic_messages.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    unencrypted search result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-web-replay/unencrypted-search-result.yaml.
+  proof:
+  - case-unencrypted-search-result
+  - oracle
+  - helper-python
+- text: >-
+    encrypted search preserved: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-web-replay/encrypted-search-preserved.yaml.
+  proof:
+  - case-encrypted-search-preserved
+  - oracle
+  - helper-python
+- text: >-
+    server tool correlation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-web-replay/server-tool-correlation.yaml.
+  proof:
+  - case-server-tool-correlation
+  - oracle
+  - helper-python
+- text: >-
+    missing search title url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-web-replay/missing-search-title-url.yaml.
+  proof:
+  - case-missing-search-title-url
+  - oracle
+  - helper-python
+- text: New anthropic_web_replay seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-unencrypted-search-result
+    why: The unencrypted-search-result behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::web_replay_cases::case_[0-9]+_unencrypted_search_result$/)'
+  - id: case-encrypted-search-preserved
+    why: The encrypted-search-preserved behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::web_replay_cases::case_[0-9]+_encrypted_search_preserved$/)'
+  - id: case-server-tool-correlation
+    why: The server-tool-correlation behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::web_replay_cases::case_[0-9]+_server_tool_correlation$/)'
+  - id: case-missing-search-title-url
+    why: The missing-search-title-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::web_replay_cases::case_[0-9]+_missing_search_title_url$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_web_replay.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_web_replay*")"
+      && grep -lq 'anthropic_web_replay' tools/oracle/fuzz/corpus/helper_case/anthropic_web_replay* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_web_replay$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/anthropic-web-replay/unencrypted-search-result.yaml
+- tools/oracle/cases/helpers/providers/anthropic-web-replay/encrypted-search-preserved.yaml
+- tools/oracle/cases/helpers/providers/anthropic-web-replay/server-tool-correlation.yaml
+- tools/oracle/cases/helpers/providers/anthropic-web-replay/missing-search-title-url.yaml
+deviations: []
+out_of_scope:
+- B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/anthropic/common_utils.py: requires_native_compaction_beta L88-L106; supports_anthropic_cache_control
+  L109-L121; is_claude_code_user_agent L124-L127; _validated_claude_code_mapping L130-L134; _validated_claude_code_list
+  L137-L141; _claude_code_billing_fields L144-L160; _claude_code_billing_texts L163-L178; _is_claude_code_subagent_billing_system
+  L181-L193; is_claude_code_one_shot_subagent_request L196-L210; eager_input_streaming_flag L297-L306; AnthropicModelInfo.is_cache_control_set
+  L320-L335; AnthropicModelInfo.is_file_id_used L337-L342; AnthropicModelInfo.is_thinking_display_updates_used L344-L347;
+  AnthropicModelInfo.is_mid_conversation_tool_change_used L349-L359; AnthropicModelInfo.is_mid_conversation_output_config_used
+  L361-L365; AnthropicModelInfo.is_mcp_server_used L367-L372; AnthropicModelInfo.is_computer_tool_used L374-L381;
+  AnthropicModelInfo.is_web_search_tool_used L383-L390; AnthropicModelInfo.is_pdf_used L392-L402; AnthropicModelInfo.is_tool_search_used
+  L404-L418; AnthropicModelInfo.is_programmatic_tool_calling_used L420-L444; AnthropicModelInfo.is_input_examples_used
+  L446-L472; AnthropicModelInfo.is_eager_input_streaming_used L474-L475; AnthropicModelInfo.is_code_execution_tool_used
+  L831-L844; AnthropicModelInfo.is_container_with_skills_used L846-L860; AnthropicModelInfo._get_user_anthropic_beta_headers
+  L862-L865; AnthropicModelInfo.get_computer_tool_beta_header L867-L884; AnthropicModelInfo.get_anthropic_beta_list
+  L886-L940 belong to B568; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo._supports_sampling_params L478-L503; AnthropicModelInfo._apply_sampling_param
+  L506-L528; AnthropicModelInfo.forced_tool_use_unsupported L531-L532; AnthropicModelInfo.forced_tool_use_downgraded
+  L535-L552; AnthropicModelInfo._apply_forced_tool_choice L555-L567; AnthropicModelInfo._strip_version_suffix L570-L574;
+  AnthropicModelInfo._model_map_lookup_candidates L577-L614; AnthropicModelInfo._get_model_capability L617-L631;
+  AnthropicModelInfo._get_exact_model_capability L634-L641; AnthropicModelInfo.supports_fast_mode L644-L648; AnthropicModelInfo._get_provider_resolved_capability
+  L651-L668; AnthropicModelInfo._supports_model_capability L671-L693; AnthropicModelInfo._is_adaptive_thinking_model
+  L696-L705; AnthropicModelInfo._is_always_on_thinking_model L708-L714; AnthropicModelInfo._supports_legacy_thinking
+  L717-L724; AnthropicModelInfo.maybe_drop_disabled_thinking L727-L744; AnthropicModelInfo.translate_legacy_thinking_for_adaptive_model
+  L747-L781; AnthropicModelInfo._legacy_budget_to_effort L784-L793; AnthropicModelInfo.is_effort_used L795-L829
+  belong to B688; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/common_utils.py: AnthropicModelInfo.get_anthropic_headers L951-L1046; AnthropicModelInfo.validate_environment
+  L1048-L1120; process_anthropic_headers L1783-L1797; _anthropic_model_entry L1800-L1815; create_anthropic_model_list_response
+  L1818-L1844 belong to B570; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/common_utils.py: strip_advisor_blocks_from_messages L1216-L1299; is_anthropic_invalid_thinking_block_error
+  L1302-L1320; strip_thinking_blocks_from_anthropic_messages L1323-L1346; _without_encrypted_reasoning_blocks L1349-L1360;
+  strip_encrypted_reasoning_blocks_from_anthropic_messages L1363-L1372; strip_thinking_blocks_from_anthropic_messages_request_dict
+  L1375-L1385; strip_empty_content_blocks_from_anthropic_messages L1388-L1428; _is_empty_text_block L1431-L1435;
+  is_empty_thinking_block L1438-L1450; is_empty_unsigned_thinking_block L1453-L1469; normalize_anthropic_tool_use_id
+  L1472-L1482; _sanitize_tool_use_id_content_block L1485-L1501; sanitize_tool_use_ids_in_anthropic_messages L1504-L1526;
+  _without_provider_specific_fields L1681-L1684; _strip_provider_specific_fields_in_message L1687-L1691; strip_provider_specific_fields_from_anthropic_messages
+  L1694-L1697; _normalized_cache_control L1700-L1704; _with_portable_cache_control L1707-L1712; _with_portable_cache_control_in_blocks
+  L1715-L1718; _with_portable_cache_control_in_content_block L1721-L1730; _with_portable_cache_control_in_message
+  L1733-L1742; _with_portable_cache_control_in_messages L1745-L1748; _with_portable_cache_control_in_scoped_value
+  L1751-L1758; normalize_cache_control_in_anthropic_payload L1761-L1780 belong to B571; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/common_utils.py: _strip_bedrock_id_suffixes L213-L222; is_anthropic_oauth_key L225-L231;
+  resolve_used_client_oauth_token L237-L240; _merge_beta_headers L243-L249; optionally_handle_anthropic_oauth L252-L285;
+  AnthropicError.__init__ L310-L316; AnthropicModelInfo._make_api_key_auth_header L943-L949; AnthropicModelInfo.get_api_base
+  L1123-L1131; AnthropicModelInfo.get_api_key L1134-L1137; AnthropicModelInfo.get_auth_token L1140-L1148; AnthropicModelInfo.get_auth_header
+  L1151-L1170; AnthropicModelInfo.get_base_model L1173-L1174; AnthropicModelInfo.get_models L1176-L1200; AnthropicModelInfo.get_token_counter
+  L1202-L1213 belong to B567; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type L172-L181; AnthropicConfig.filter_anthropic_output_schema
+  L530-L665; AnthropicConfig.get_json_schema_from_pydantic_object L667-L670; AnthropicConfig._extract_json_schema_from_response_format
+  L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool
+  L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format L1656-L1682 belong to B574; reuse that
+  implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name L193-L202; _build_anthropic_tool_name_maps
+  L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L1000-L1048; AnthropicConfig._sanitize_tool_names_in_request
+  L1079-L1151 belong to B573; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
+  L393-L396; AnthropicConfig.get_cache_control_headers L672-L678; AnthropicConfig._build_request_tool_name_maps
+  L1051-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165; AnthropicConfig._separate_deferred_tools L1167-L1183;
+  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320; AnthropicConfig.custom_llm_provider
+  L323-L324; AnthropicConfig._resolved_provider L327-L328; AnthropicConfig.get_config L331-L338; AnthropicConfig.get_max_tokens_for_model
+  L341-L354; AnthropicConfig._map_stop_sequences L1230-L1248; AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic
+  L1417-L1471; AnthropicConfig.map_openai_params L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128;
+  _valid_user_id L2795-L2808 belong to B576; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format L357-L384; AnthropicConfig._resolve_json_mode_non_streaming
+  L2130-L2160; AnthropicConfig.extract_response_content L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482;
+  AnthropicConfig._build_code_interpreter_results L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536;
+  AnthropicConfig._build_provider_specific_fields L2538-L2582; AnthropicConfig._convert_tool_response_to_message
+  L2762-L2785 belong to B578; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._map_tool_choice L680-L721; AnthropicConfig._map_tool_helper
+  L723-L922; AnthropicConfig._map_openai_mcp_server_tool L924-L951; AnthropicConfig._map_tools L953-L997 belong
+  to B575; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata L1684-L1691; AnthropicConfig.translate_system_message
+  L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780; AnthropicConfig._ensure_beta_header L1782-L1801;
+  AnthropicConfig._ensure_context_management_beta_header L1803-L1837; AnthropicConfig.update_headers_with_optional_anthropic_beta
+  L1839-L1875; AnthropicConfig.inlines_remote_media L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894;
+  AnthropicConfig.transform_request L1896-L2080 belong to B577; reuse that implementation or its injected typed
+  boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage L2256-L2263; AnthropicConfig._response_has_thinking_block
+  L2266-L2274; AnthropicConfig._build_completion_token_details L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens
+  L2309-L2315; AnthropicConfig.is_anthropic_usage_object L2318-L2330; AnthropicConfig._aggregate_cache_creation_token_details
+  L2333-L2346; AnthropicConfig._resolve_cache_creation_token_details L2349-L2361; AnthropicConfig.calculate_usage
+  L2363-L2467 belong to B579; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response L2584-L2688; AnthropicConfig.get_prefix_prompt
+  L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class L2787-L2792 belong
+  to B580; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level L399-L403; AnthropicConfig._validate_effort_for_model
+  L406-L415; AnthropicConfig._model_supports_effort_param L418-L431; AnthropicConfig._model_supports_speed_param
+  L434-L444; AnthropicConfig._maybe_drop_speed_param L447-L471; AnthropicConfig._raise_invalid_reasoning_effort
+  L474-L494; AnthropicConfig.get_supported_openai_params L496-L527; AnthropicConfig._map_reasoning_effort L1251-L1309;
+  AnthropicConfig.cap_thinking_budget_to_max_tokens L1312-L1326 belong to B569; reuse that implementation or its
+  injected typed boundary.
+pitfalls:
+- >-
+  Preserve encrypted result blocks, correlate tool-use ids and render only the source-supported search result fields;
+  no provider request is executed by this transform.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

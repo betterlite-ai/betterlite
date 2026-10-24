@@ -1,0 +1,297 @@
+id: B767
+title: JWT key mapping management routes
+description: >-
+  Add typed JWT mapping create/update/delete/list/info routes behind shared administrator policy. Use
+  issuer+claim identity and validate the referenced key hash; update/remove both old and new cache identities
+  after commit. Serialize only source response fields, not the raw virtual key.
+
+
+  Build the production jwt_mapping_api module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py:
+  _validated_token_hash (L28-L38; 11 source lines), _token_hash_for_create (L49-L57; 9 source lines),
+  _token_hash_for_update (L60-L68; 9 source lines), _JWTKeyMappingRecord.id (L75-L75; 1 source lines),
+  _JWTKeyMappingRecord.jwt_issuer (L78-L78; 1 source lines), _JWTKeyMappingRecord.jwt_claim_name (L81-L81;
+  1 source lines), _JWTKeyMappingRecord.jwt_claim_value (L84-L84; 1 source lines), _JWTKeyMappingRecord.description
+  (L87-L87; 1 source lines), _JWTKeyMappingRecord.is_active (L90-L90; 1 source lines), _JWTKeyMappingRecord.created_at
+  (L93-L93; 1 source lines), _JWTKeyMappingRecord.updated_at (L96-L96; 1 source lines), _JWTKeyMappingRecord.created_by
+  (L99-L99; 1 source lines), _JWTKeyMappingRecord.updated_by (L102-L102; 1 source lines), _JWTKeyMappingTable.create
+  (L108-L108; 1 source lines), _JWTKeyMappingTable.find_unique (L110-L110; 1 source lines), _JWTKeyMappingTable.update
+  (L112-L112; 1 source lines), _JWTKeyMappingTable.delete (L114-L114; 1 source lines), _JWTKeyMappingTable.find_many
+  (L116-L116; 1 source lines), _JWTKeyMappingTable.count (L118-L118; 1 source lines), _mapping_table (L121-L123;
+  3 source lines), _to_response (L126-L139; 14 source lines), create_jwt_key_mapping (L147-L195; 43 source
+  lines), update_jwt_key_mapping (L203-L263; 47 source lines), delete_jwt_key_mapping (L267-L298; 23 source
+  lines), list_jwt_key_mappings (L305-L336; 28 source lines), info_jwt_key_mapping (L344-L365; 18 source
+  lines). litellm/proxy/_types.py: CreateJWTKeyMappingRequest (L4908-L4914; 7 source lines), UpdateJWTKeyMappingRequest
+  (L4917-L4923; 7 source lines), DeleteJWTKeyMappingRequest (L4926-L4927; 2 source lines), JWTKeyMappingResponse
+  (L4930-L4940; 11 source lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /jwt/key/mapping/new -> create_jwt_key_mapping;
+  POST /jwt/key/mapping/update -> update_jwt_key_mapping; POST /jwt/key/mapping/delete -> delete_jwt_key_mapping;
+  GET /jwt/key/mapping/list -> list_jwt_key_mappings; GET /jwt/key/mapping/info -> info_jwt_key_mapping.
+  For each route send a typed successful request, an invalid or missing target, and a caller lacking that
+  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
+  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
+  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
+  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
+  management error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This task owns the outside-byte boundary jwt_mapping_api::decode_jwt_mapping_request(&[u8]) -> Result<TypedValue,DecodeError>
+  for mapping HTTP request JSON and token hash syntax. Production calls this decoder before its typed
+  policy functions; the cargo-fuzz target jwt_mapping_api calls that same function. Seed valid, truncated,
+  malformed, duplicate-field and limit-boundary inputs and add jwt_mapping_api::tests::replays_the_jwt_mapping_api_corpus.
+  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
+  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
+  fetching URLs. B770 owns crates/betterlite-server/fuzz; depend on it and register this decoder target
+  without recreating the workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 248 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  248 production, 157 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 515 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/jwt_mapping_api.rs
+    - crates/betterlite-server/src/jwt_mapping_api/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/jwt-mapping-api/**
+    - crates/betterlite-server/src/jwt_mapping_api/fixtures/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/jwt_mapping_api.rs
+    - crates/betterlite-server/fuzz/corpus/jwt_mapping_api/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L1-L365
+    why: Pinned implementation and exact ownership boundary for jwt_mapping_api.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4908-L4914
+    why: Own CreateJWTKeyMappingRequest; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4917-L4923
+    why: Own UpdateJWTKeyMappingRequest; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4926-L4927
+    why: Own DeleteJWTKeyMappingRequest; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5465
+    why: JWT settings declaration; only the fields consumed by this task are enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L28-L38
+    why: Own _validated_token_hash; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L49-L57
+    why: Own _token_hash_for_create; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L60-L68
+    why: Own _token_hash_for_update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L75-L75
+    why: Own _JWTKeyMappingRecord.id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L78-L78
+    why: Own _JWTKeyMappingRecord.jwt_issuer; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L81-L81
+    why: Own _JWTKeyMappingRecord.jwt_claim_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L84-L84
+    why: Own _JWTKeyMappingRecord.jwt_claim_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L87-L87
+    why: Own _JWTKeyMappingRecord.description; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L90-L90
+    why: Own _JWTKeyMappingRecord.is_active; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L93-L93
+    why: Own _JWTKeyMappingRecord.created_at; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L96-L96
+    why: Own _JWTKeyMappingRecord.updated_at; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L99-L99
+    why: Own _JWTKeyMappingRecord.created_by; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L102-L102
+    why: Own _JWTKeyMappingRecord.updated_by; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L108-L108
+    why: Own _JWTKeyMappingTable.create; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L110-L110
+    why: Own _JWTKeyMappingTable.find_unique; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L112-L112
+    why: Own _JWTKeyMappingTable.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L114-L114
+    why: Own _JWTKeyMappingTable.delete; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L116-L116
+    why: Own _JWTKeyMappingTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L118-L118
+    why: Own _JWTKeyMappingTable.count; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L121-L123
+    why: Own _mapping_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L126-L139
+    why: Own _to_response; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L147-L195
+    why: Own create_jwt_key_mapping; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L203-L263
+    why: Own update_jwt_key_mapping; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L267-L298
+    why: Own delete_jwt_key_mapping; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L305-L336
+    why: Own list_jwt_key_mappings; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L344-L365
+    why: Own info_jwt_key_mapping; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4930-L4940
+    why: Own JWTKeyMappingResponse; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: create_mapping, duplicate_issuer_claim,
+      update_invalidates_old, delete_mapping, paginated_list, non_admin_denied, unknown_key, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: The production decode_jwt_mapping_request decoder is used by the service and its fuzz target
+      and rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^jwt_mapping_api::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/jwt_mapping_api::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/jwt_mapping_api::tests::postgres_failure_effects$/)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/jwt_mapping_api.rs && grep -q "jwt_mapping_api"
+        crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-server/fuzz/corpus/jwt_mapping_api)" && cargo nextest run --locked -p betterlite-server
+        --no-tests=fail -E 'test(replays_the_jwt_mapping_api_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-new-success.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-new-invalid-target.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-new-unauthorized-caller.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-update-success.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-update-invalid-target.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-update-unauthorized-caller.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-delete-success.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-delete-invalid-target.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/post--jwt-key-mapping-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-list-success.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-list-invalid-target.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-list-unauthorized-caller.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-info-success.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-info-invalid-target.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/get--jwt-key-mapping-info-unauthorized-caller.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/create-mapping.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/duplicate-issuer-claim.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/update-invalidates-old.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/delete-mapping.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/paginated-list.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/non-admin-denied.yaml
+  - tools/oracle/cases/management/jwt-mapping-api/unknown-key.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/jwt_key_mapping_endpoints.py#L28-L38
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
+    GenerateKeyResponse (L1399-L1438), UpdateKeyRequest (L1441-L1484).'
+  - 'litellm/proxy/_types.py: B866 owns LiteLLMRoutes.openai_routes (L339-L490), LiteLLMRoutes.anthropic_routes
+    (L551-L561), LiteLLMRoutes.llm_api_routes (L648-L659).'
+  - 'litellm/proxy/_types.py: B867 owns LiteLLMRoutes.mcp_management_routes (L583-L587), LiteLLMRoutes.agent_management_routes
+    (L606-L612), LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
+    (L694-L719), LiteLLMRoutes.team_service_account_key_routes (L721-L724), LiteLLMRoutes.management_routes
+    (L726-L782), LiteLLMRoutes.spend_tracking_routes (L784-L805), LiteLLMRoutes.global_spend_tracking_routes
+    (L807-L821), LiteLLMRoutes.internal_user_routes (L885-L913), LiteLLMRoutes.internal_user_view_only_routes
+    (L915-L929), LiteLLMRoutes.org_admin_only_routes (L1024-L1036), LiteLLMRoutes.admin_viewer_routes
+    (L1050-L1126), LiteLLMRoutes.org_admin_allowed_routes (L1129-L1129).'
+  - 'litellm/proxy/_types.py: B868 owns LiteLLMRoutes.openai_route_names (L329-L338), LiteLLMRoutes.mapped_pass_through_routes
+    (L492-L521), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527), LiteLLMRoutes.litellm_native_routes
+    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_routes (L591-L591),
+    LiteLLMRoutes.agent_inference_routes (L594-L601), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
+    (L618-L636), LiteLLMRoutes.apply_guardrail_routes (L638-L640), LiteLLMRoutes.model_info_routes (L642-L646),
+    LiteLLMRoutes.info_routes (L660-L685), LiteLLMRoutes.public_routes (L823-L844), LiteLLMRoutes.ui_routes
+    (L849-L871), LiteLLMRoutes.compliance_check_routes (L875-L878), LiteLLMRoutes.self_managed_routes
+    (L931-L1019).'
+  - 'litellm/proxy/_types.py: B869 owns LiteLLM_JWTAuth (L5331-L5576), JWTLiteLLMRoleMap (L5198-L5200),
+    JWTRoutingOverride (L5211-L5232), UnregisteredJWTClientBehavior (L5235-L5251), JWTIssuerConfig (L5254-L5325).'
+  - 'litellm/proxy/_types.py: B1231 owns NewTeamRequest (L2164-L2210), UpdateTeamRequest (L2219-L2281).'
+  - 'litellm/proxy/_types.py: B124 owns the remaining functions SupportedDBObjectType.__str__ (L142-L143),
+    LitellmUserRoles.__str__ (L191-L192), LitellmUserRoles.values (L194-L195), LitellmUserRoles.description
+    (L197-L210), LitellmUserRoles.ui_label (L212-L225), LitellmUserRoles.is_internal_user_role (L227-L233),
+    hash_token (L278-L284), LiteLLMPromptInjectionParams.check_llm_api_params (L1144-L1155), ModelInfo.set_model_info
+    (L1226-L1241), ModelParams.set_model_info (L1260-L1265), GenerateRequestBase.check_max_budget (L1327-L1332),
+    ResetSpendRequest.reject_bool_reset_to (L1501-L1509), KeyRequest.validate_at_least_one (L1516-L1521),
+    _dcr_bridge_auth_type_error (L1554-L1559), _per_server_oauth_discovery_error (L1562-L1566), is_per_server_oauth_discovery_eligible
+    (L1569-L1572), _reject_unsupported_per_server_oauth_discovery (L1575-L1588), _validate_mcp_transport_fields
+    (L1591-L1612), NewMCPServerRequest.validate_transport_fields (L1678-L1682), NewMCPServerRequest.validate_credentials_requirements
+    (L1684-L1693), NewMCPServerRequest.validate_dcr_bridge_auth_type (L1695-L1703), NewMCPServerRequest.validate_per_server_oauth_discovery_auth_type
+    (L1705-L1709), UpdateMCPServerRequest.validate_transport_fields (L1761-L1765), UpdateMCPServerRequest.validate_dcr_bridge_auth_type
+    (L1767-L1780), UpdateMCPServerRequest.validate_per_server_oauth_discovery_auth_type (L1782-L1786),
+    NewUserRequest.password_not_supported (L1959-L1967), UpdateUserRequest.check_user_info (L2013-L2018),
+    NewCustomerRequest.check_user_info (L2109-L2115), DeleteTeamRequest.distinct_team_ids (L2314-L2318),
+    AddTeamCallback.validate_callback_vars (L2338-L2352), TeamCallbackMetadata.validate_callback_vars
+    (L2374-L2402), CoordinationRedisParams.has_connection_target (L2661-L2662), LiteLLM_VerificationTokenView.__init__
+    (L3331-L3353), UserAPIKeyAuth.check_api_key (L3445-L3473), UserAPIKeyAuth._safe_hash_litellm_api_key
+    (L3475-L3492), UserAPIKeyAuth.get_litellm_internal_health_check_user_api_key_auth (L3494-L3508), UserAPIKeyAuth.get_litellm_cli_user_api_key_auth
+    (L3510-L3524), UserAPIKeyAuth.get_litellm_internal_jobs_user_api_key_auth (L3526-L3542), UserAPIKeyAuth.is_team_service_account
+    (L3544-L3551), user_api_key_has_admin_view (L3554-L3564), LiteLLM_OrganizationTableUpdate.set_model_info
+    (L3621-L3631), NewProjectRequest.set_model_info (L3714-L3726), UpdateProjectRequest.set_model_info
+    (L3749-L3761), LiteLLM_AuditLogs.cast_changed_by_to_str (L3826-L3831), LiteLLM_AuditLogs.mask_api_keys
+    (L3833-L3861), ProxyException.__init__ (L4328-L4359), ProxyException.to_dict (L4361-L4371), ModelAccessDeniedProxyException.__init__
+    (L4375-L4384), ModelAccessDeniedProxyException.sanitized_internal_message (L4386-L4387), ProxyErrorTypes.get_model_access_error_type_for_object
+    (L4527-L4545), ProxyErrorTypes.get_vector_store_access_error_type_for_object (L4547-L4559), MemberAddRequest.__init__
+    (L4611-L4624), OrgMemberAddRequest.__init__ (L4630-L4646), MemberDeleteRequest.check_user_info (L4664-L4669),
+    TeamMemberUpdateRequest.validate_temp_budget (L4738-L4743), OrganizationMemberUpdateRequest.validate_role
+    (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
+    (L5766-L5772).'
+pitfalls:
+  - Changing a JWT mapping evicts both old and new issuer/claim cache identities.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: security

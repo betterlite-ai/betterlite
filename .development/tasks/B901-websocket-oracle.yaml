@@ -1,0 +1,184 @@
+id: B901
+title: Websocket oracle
+description: >-
+  Extend the oracle with independently executed WebSocket transcripts, preserving gateway startup, bounded transport
+  and existing HTTP/helper dispatch.
+
+
+  Use kind: websocket and tools/oracle/cases/websocket/<domain>/*.yaml. Transcript fields: handshake (path, headers,
+  requested subprotocols, expected HTTP status and negotiated subprotocol), frames (direction client_to_provider
+  or provider_to_client, action send or expect, text or binary fixture, optional barrier), and close (initiator,
+  code, reason). Scripts drive sends while observations are compared per direction; do not impose a single total
+  order on concurrent relays. A barrier gates the next send until named observations occur. Capture pre-accept refusal
+  as HTTP 403, not an accepted close frame. Fixtures live only under tools/oracle/fixtures/websocket-oracle/; cap
+  frames at 1024, each frame at 1 MiB, total capture at 16 MiB and execution at 120 seconds. decode_ws_case reads
+  bounded transcript YAML; the sole replay test is websocket_oracle::tests::replays_corpus. Self-check also runs
+  existing health/chat HTTP cases.
+
+
+  The default driver is gateway and always boots both proxies. A separate service driver is an externally tagged
+  ServiceCall with typed arguments and scripted client frames: native_responses_relay, managed_responses_turns or
+  realtime_probe. It invokes only the pinned native service entry point, never a FastAPI route; the Rust driver
+  invokes the corresponding production service. Both independently connect to the scripted B901 upstream WebSocket
+  server, capture handshake/frames/close, and receive a bounded scripted client sink. This makes lower service tasks
+  testable without depending on a route that calls them. Service adapters are registered by the service-owning tasks;
+  gateway route/auth cases may not select this driver.
+
+
+  Implement tools/oracle/src/websocket_oracle.rs. Use WebsocketOracleInput and WebsocketOracleResult with typed
+  nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
+  constructors. Define OracleLimits for the concrete harness caps above; product ApiLimits is not a tooling dependency.
+
+
+  Write adjacent tests.rs behavior functions per_direction_order, barrier_gates_send, preaccept_http_status, service_driver_isolation,
+  rejects_unknown_field, rejects_duplicate_field, detects_changed_peer, rejects_oversize_input, preserves_legacy_cases
+  under websocket_oracle::tests. Each named function drives production code and asserts its case result; use named
+  rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-oracle::websocket_oracle::decode_ws_case(bytes: &[u8], limits:
+  &OracleLimits), for bounded transcript YAML. Place its implementation in tools/oracle/src/websocket_oracle.rs
+  and call it from the actual boundary. The cargo-fuzz target tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs
+  passes arbitrary bounded bytes to that exact decoder; websocket_oracle::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  This task owns the declarative types/tooling boundary named above, not additional LiteLLM callables. Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 0 owned nonblank/non-comment/non-docstring Python lines (0 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 320 implementation,
+  94 behavior tests, 80 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 584 total within the 590-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding). These are callable/type/config owners,
+  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/lib.rs
+  - tools/oracle/src/error.rs
+  - tools/oracle/src/websocket_oracle.rs
+  - tools/oracle/src/websocket_oracle/**
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/fuzz/Cargo.toml
+  - tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs
+  - tools/oracle/fuzz/corpus/websocket_oracle/**
+  - tools/oracle/src/case.rs
+  - tools/oracle/src/case/**
+  - tools/oracle/src/runner.rs
+  - tools/oracle/src/runner/**
+  - tools/oracle/src/mock.rs
+  - tools/oracle/src/mock/**
+  - tools/oracle/src/compare.rs
+  - tools/oracle/src/compare/**
+  - tools/oracle/src/main.rs
+  - tools/oracle/cases/harness/websocket-oracle/**
+  - tools/oracle/fixtures/websocket-oracle/**
+  - tools/oracle/src/websocket_driver.rs
+  - tools/oracle/src/websocket_driver/**
+  - tools/oracle/helpers/websocket_dispatch.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12856-L13045
+  why: Pinned HTTP/protocol contract used by this tooling extension.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/handler.py#L85-L170
+  why: Pinned HTTP/protocol contract used by this tooling extension.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L676-L707
+  why: Pinned HTTP/protocol contract used by this tooling extension.
+dod:
+- text: 'per direction order: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-per-direction-order
+- text: 'barrier gates send: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-barrier-gates-send
+- text: 'preaccept http status: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-preaccept-http-status
+- text: 'service driver isolation: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-service-driver-isolation
+- text: 'rejects unknown field: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-unknown-field
+- text: 'rejects duplicate field: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-duplicate-field
+- text: 'detects changed peer: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-detects-changed-peer
+- text: 'rejects oversize input: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-rejects-oversize-input
+- text: 'preserves legacy cases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-preserves-legacy-cases
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: Independent harness runs include deliberate comparator mismatches and preserve existing chat/health cases.
+  proof:
+  - behavior-tests
+  - harness-self-check
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::/) - test(/::replays_corpus$/)'
+  - id: case-per-direction-order
+    why: the per-direction-order behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::per_direction_order($|::)/)'
+  - id: case-barrier-gates-send
+    why: the barrier-gates-send behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::barrier_gates_send($|::)/)'
+  - id: case-preaccept-http-status
+    why: the preaccept-http-status behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::preaccept_http_status($|::)/)'
+  - id: case-service-driver-isolation
+    why: the service-driver-isolation behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::service_driver_isolation($|::)/)'
+  - id: case-rejects-unknown-field
+    why: the rejects-unknown-field behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::rejects_unknown_field($|::)/)'
+  - id: case-rejects-duplicate-field
+    why: the rejects-duplicate-field behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::rejects_duplicate_field($|::)/)'
+  - id: case-detects-changed-peer
+    why: the detects-changed-peer behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::detects_changed_peer($|::)/)'
+  - id: case-rejects-oversize-input
+    why: the rejects-oversize-input behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::rejects_oversize_input($|::)/)'
+  - id: case-preserves-legacy-cases
+    why: the preserves-legacy-cases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::preserves_legacy_cases($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/websocket_oracle)"
+      && test -f tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs && grep -qF "decode_ws_case" tools/oracle/fuzz/fuzz_targets/websocket_oracle.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^websocket_oracle::tests::replays_corpus$/)'
+  - id: harness-self-check
+    why: new harness fixtures or backwards-compatible HTTP modes fail
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/harness/websocket-oracle)"
+      && cargo run --locked --quiet -p betterlite-oracle -- --self-check tools/oracle/cases/harness/websocket-oracle
+      tools/oracle/cases/chat tools/oracle/cases/health
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- Realtime OpenAI forces upstream /v1/realtime and rewrites http:// to ws://.
+- OpenAI-Beta is forwarded only if the client sent it; the first requested subprotocol is echoed.
+- WebSocket credentials may arrive through Authorization, api-key or an openai-insecure-api-key. subprotocol.
+review_level: standard
+budget:
+  max_changed_lines: 590
+  max_new_expects: 0

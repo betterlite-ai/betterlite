@@ -1,0 +1,195 @@
+id: B991
+title: Claude plugin access
+description: >-
+  Define Claude marketplace/plugin records, source URL validation, marketplace projection and skill grant predicates
+  using B052 principals and B051 records. URLs are manifest metadata only; validate HTTPS/git source forms without
+  fetching them and require proxy-admin authority for plugin mutation.
+
+
+  Pure policy/helper parity stays here; the consuming route tasks own HTTP auth/status/header integration. Do not
+  call a FastAPI handler from a helper adapter or add a dependency on the later family composer.
+
+
+  Implement crates/betterlite-server/src/api/claude_plugin_access.rs, crates/betterlite-core/src/api/claude_plugin_access.rs.
+  Use ClaudePluginAccessInput and ClaudePluginAccessResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: GET /claude-code/marketplace.json. Each alias is exercised through
+  the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without re-registering
+  their methods/paths.
+
+
+  Extraction uses the typed path/query/body records named by the owned handler signatures.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): claude_code_marketplace.py:171 status_code=500, exception_detail=FastAPI detail object. Compare
+  the actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions marketplace_enabled_plugins, route_aliases, auth_missing, auth_invalid
+  under api::claude_plugin_access::tests. Each named function drives production code and asserts its case result;
+  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-server::api::claude_plugin_access::decode_claude_plugin_access(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input plugin.manifest_json or '{}' at litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py:129.
+  Place its implementation in crates/betterlite-server/src/api/claude_plugin_access.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/claude_plugin_access.rs passes arbitrary
+  bounded bytes to that exact decoder; api::claude_plugin_access::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: get_marketplace
+  (L91-L174). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 59 owned nonblank/non-comment/non-docstring Python lines (76 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 79 implementation,
+  64 behavior tests, 48 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 289 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B726 (Managed
+  resources and transaction repositories), B858 (Typed managed-resource and analytics rows), B732 (Typed authentication
+  principals and grant resolution), B855 (Authenticated request admission and budget handoff), B756 (Authentication
+  header selection and mode dispatch), B1018 (MIT resource owner compatibility), B1140 (Claude plugin and skill
+  policy), B003 (HTTP server, health routes and master key auth), B1139 (Stateful HTTP oracle scenarios), B856 (Management
+  oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/claude_plugin_access.rs
+  - crates/betterlite-server/src/api/claude_plugin_access/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/claude_plugin_access.rs
+  - crates/betterlite-core/src/api/claude_plugin_access/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/claude_plugin_access.rs
+  - crates/betterlite-server/fuzz/corpus/claude_plugin_access/**
+  - tools/oracle/cases/api/claude-plugin-access/**
+  - tools/oracle/fixtures/claude-plugin-access/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L85-L184
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'marketplace enabled plugins: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-marketplace-enabled-plugins
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::claude_plugin_access::/)
+      - test(/::replays_corpus$/)'
+  - id: case-marketplace-enabled-plugins
+    why: the marketplace-enabled-plugins behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_plugin_access::tests::marketplace_enabled_plugins($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_plugin_access::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_plugin_access::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_plugin_access::tests::auth_invalid($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/claude_plugin_access)"
+      && test -f crates/betterlite-server/fuzz/fuzz_targets/claude_plugin_access.rs && grep -qF "decode_claude_plugin_access"
+      crates/betterlite-server/fuzz/fuzz_targets/claude_plugin_access.rs && cargo nextest run --locked -p betterlite-server
+      --no-tests=fail -E 'test(/^api::claude_plugin_access::tests::replays_corpus$/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/claude-plugin-access)"
+oracle_cases:
+- tools/oracle/cases/api/claude-plugin-access/marketplace-enabled-plugins.yaml
+- tools/oracle/cases/api/claude-plugin-access/route-aliases.yaml
+- tools/oracle/cases/api/claude-plugin-access/auth-missing.yaml
+- tools/oracle/cases/api/claude-plugin-access/auth-invalid.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: B1140 owns _get_prisma_client
+  L75-L84, _is_https_url_with_host L185-L190, _validate_plugin_source L193-L246, _build_plugin_manifest L249-L252,
+  _error_response L255-L256, _name_conflict_error L259-L262, _require_proxy_admin L265-L274.'
+- 'litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: B992 owns register_plugin
+  L283-L388, update_plugin L533-L626, enable_plugin L634-L675, disable_plugin L683-L724, delete_plugin L732-L770.'
+- 'litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: B993 owns list_plugins L397-L459,
+  get_plugin L467-L524.'
+- 'litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py: B1140 owns _skills_of L22-L23,
+  granted_skills L26-L40, SkillVisibility.allows L48-L49, SkillVisibility.where L51-L56, skill_visibility L62-L67.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- claude_code_marketplace.py:136 emits the diagnostic 'Plugin %s has no source field, skipping'; retain its level
+  and fallback instead of turning it into a hard error.
+- claude_code_marketplace.py:131 emits the diagnostic 'Plugin %s has invalid manifest JSON, skipping'; retain its
+  level and fallback instead of turning it into a hard error.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0

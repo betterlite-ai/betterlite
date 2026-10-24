@@ -1,0 +1,253 @@
+id: B1041
+title: Batch managed records
+description: >-
+  Keep the MIT batch-file mapping readers and the absent-managed-hook behavior. resolve_input_file_id_to_unified
+  and resolve_output_file_ids_to_unified may replace raw IDs from pre-existing ManagedFileRepository rows; lookup
+  failures are silently ignored. ensure_batch_response_managed_file_ids performs those two lookups before its absent-hook
+  return. get_batch_from_database returns (None, None) without any database read when managed_files_obj is None;
+  update_batch_in_database returns before any lookup, normalization or write. batch_cost_poller_is_active is false
+  with the OSS scheduler because check_batch_cost_job is not registered, including when PROXY_BATCH_POLLING_ENABLED
+  defaults true. Never fabricate a hook or schedule that enterprise job.
+
+
+  The review's completed-to-complete update, safe-retirement, unchanged-status and missing-column retry branches
+  lie after the absent-hook guard at common_utils.py:1478-1479. They are context only, not live implementation/tests
+  under the decided OSS-only policy. Preserve pre-existing file-row lookup helpers and B726 repositories; no managed-object
+  creation or status write is introduced.
+
+
+  Implement crates/betterlite-core/src/api/batch_managed_records.rs. Use BatchManagedRecordsInput and BatchManagedRecordsResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs functions existing_input_id_mapping, existing_output_error_id__5d60, lookup_failure_keeps_raw_id,
+  ensure_no_hook_stops_afte_1794, database_get_no_hook_no_query, database_update_no_hook_n_99fb, poller_job_absent
+  under api::batch_managed_records::tests; each independently drives the production result and effects described
+  here. HelperCase replay remains in B171.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.PROXY_BATCH_POLLING_ENABLED
+  defaults to true (only case-insensitive true enables), but absent enterprise check_batch_cost_job keeps the poller
+  inactive. No environment reads occur outside betterlite-config. Test api::batch_managed_records::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This MIT slice consumes typed rows and responses. The JSON decoder at L1368 is behind the absent-hook return and
+  is out of scope, so add no decoder or fuzz target here.
+
+
+  Register HelperCall::BatchManagedRecords in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_managed_records: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership in litellm/proxy/openai_files_endpoints/common_utils.py: resolve_input_file_id_to_unified L1200-L1219;
+  resolve_output_file_ids_to_unified L1222-L1241; ensure_batch_response_managed_file_ids L1272-L1286; get_batch_from_database
+  L1324-L1351; batch_cost_poller_is_active L1396-L1425; update_batch_in_database L1444-L1479. These ranges stop
+  at the absent-hook guards; excluded continuations are listed below.
+
+
+  Sizing: 85 owned nonblank/non-comment/non-docstring Python lines (139 nonblank/non-comment physical lines including
+  docstrings), counted over the disjoint ranges above. Estimate 105 implementation, 82 behavior tests, 84 oracle
+  fixtures, 90 Rust/Python adapters, 33 config tests/seeds and 30 wiring: 424 total within the 430-line cap. No
+  owned decoder/fuzz work is required.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1019 (File routing ids), B1035 (Batch
+  records), B1087 (Api boundaries), B726 (Managed resources and transaction repositories), B858 (Typed managed-resource
+  and analytics rows), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners,
+  not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_managed_records.rs
+  - crates/betterlite-core/src/api/batch_managed_records/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/batch_managed_records.rs
+  - crates/betterlite-config/src/api/batch_managed_records/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/batch-managed-records-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_managed_records.rs
+  - tools/oracle/src/helpers/batch_managed_records/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_managed_records.py
+  - tools/oracle/helpers/batch_managed_records/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_managed_records-*
+  - tools/oracle/cases/helpers/batch-managed-records/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1829-L1830
+  why: Setting env.PROXY_BATCH_POLLING_ENABLED and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1138-L1243
+  why: Full source context; the explicit callable list owns only MIT-reachable branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1260-L1261
+  why: Full source context; the explicit callable list owns only MIT-reachable branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1270-L1549
+  why: Full source context; the explicit callable list owns only MIT-reachable branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1150-L1170
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1200-L1241
+  why: Owned MIT-reachable slice without the enterprise hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1272-L1286
+  why: Owned MIT-reachable slice without the enterprise hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1324-L1351
+  why: Owned MIT-reachable slice without the enterprise hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1396-L1425
+  why: Owned MIT-reachable slice without the enterprise hook.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1444-L1479
+  why: Owned MIT-reachable slice without the enterprise hook.
+dod:
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: 'existing input id mapping: assert the source result and ordered effects specified above.'
+  proof:
+  - case-existing-input-id-mapping
+  - oracle
+- text: 'existing output error id mapping: assert the source result and ordered effects specified above.'
+  proof:
+  - case-existing-output-error-id-mapping
+  - oracle
+- text: 'lookup failure keeps raw id: assert the source result and ordered effects specified above.'
+  proof:
+  - case-lookup-failure-keeps-raw-id
+  - oracle
+- text: 'ensure no hook stops after lookups: assert the source result and ordered effects specified above.'
+  proof:
+  - case-ensure-no-hook-stops-after-lookups
+  - oracle
+- text: 'database get no hook no query: assert the source result and ordered effects specified above.'
+  proof:
+  - case-database-get-no-hook-no-query
+  - oracle
+- text: 'database update no hook no write: assert the source result and ordered effects specified above.'
+  proof:
+  - case-database-update-no-hook-no-write
+  - oracle
+- text: 'poller job absent: assert the source result and ordered effects specified above.'
+  proof:
+  - case-poller-job-absent
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::batch_managed_records::/)
+      - test(/::replays_corpus$/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::batch_managed_records::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/batch-managed-records-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_managed_records.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_managed_records-*)"
+      && grep -qE "^[[:space:]]+batch_managed_records:" tools/oracle/fuzz/corpus/helper_case/batch_managed_records-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-managed-records)"
+  - id: case-existing-input-id-mapping
+    why: the existing-input-id-mapping source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::existing_input_id_mapping($|::)/)'
+  - id: case-existing-output-error-id-mapping
+    why: the existing-output-error-id-mapping source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::existing_output_error_id__5d60($|::)/)'
+  - id: case-lookup-failure-keeps-raw-id
+    why: the lookup-failure-keeps-raw-id source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::lookup_failure_keeps_raw_id($|::)/)'
+  - id: case-ensure-no-hook-stops-after-lookups
+    why: the ensure-no-hook-stops-after-lookups source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::ensure_no_hook_stops_afte_1794($|::)/)'
+  - id: case-database-get-no-hook-no-query
+    why: the database-get-no-hook-no-query source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::database_get_no_hook_no_query($|::)/)'
+  - id: case-database-update-no-hook-no-write
+    why: the database-update-no-hook-no-write source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::database_update_no_hook_n_99fb($|::)/)'
+  - id: case-poller-job-absent
+    why: the poller-job-absent source behavior is not independently tested
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_managed_records::tests::poller_job_absent($|::)/)'
+oracle_cases:
+- tools/oracle/cases/helpers/batch-managed-records/existing-input-id-mapping.yaml
+- tools/oracle/cases/helpers/batch-managed-records/existing-output-error-id-mapping.yaml
+- tools/oracle/cases/helpers/batch-managed-records/lookup-failure-keeps-raw-id.yaml
+- tools/oracle/cases/helpers/batch-managed-records/ensure-no-hook-stops-after-lookups.yaml
+- tools/oracle/cases/helpers/batch-managed-records/database-get-no-hook-no-query.yaml
+- tools/oracle/cases/helpers/batch-managed-records/database-update-no-hook-no-write.yaml
+- tools/oracle/cases/helpers/batch-managed-records/poller-job-absent.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1019 owns validate_file_list_limit L44-L59, ManagedResourceAccessChecker.can_user_call_unified_file_id
+  L85-L89, ManagedResourceAccessChecker.can_user_call_unified_object_id L91-L95, _is_base64_encoded_unified_file_id
+  L98-L112, convert_b64_uid_to_unified_uid L115-L120, resolve_managed_output_file_model_name L123-L131, get_models_from_unified_file_id
+  L134-L152, get_model_id_from_unified_batch_id L155-L168, get_batch_id_from_unified_batch_id L171-L180, is_litellm_executed_batch
+  L183-L185, encode_file_id_with_model L188-L229, encode_batch_response_ids L232-L243, decode_model_from_file_id
+  L246-L272, get_original_file_id L275-L302, is_model_embedded_id L305-L309.'
+- 'litellm/proxy/openai_files_endpoints/common_utils.py: validate_file_list_purpose L62-L80, is_gemini_supported_mime_type
+  L824-L846, get_content_type_from_file_object L849-L882, map_raw_file_ids_to_unified L1244-L1259, apply_unified_file_ids
+  L1262-L1269 are out of scope: no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1020 owns extract_model_from_sources L317-L348, get_credentials_for_model
+  L351-L391, authorize_model_for_key L394-L418, get_authorized_credentials_for_model L421-L433, get_team_provider_credentials
+  L436-L553, apply_team_provider_credentials L556-L575, add_internal_model_credentials L578-L600, add_deployment_model_info
+  L603-L619, prepare_data_with_credentials L622-L644, handle_model_based_routing L647-L709.'
+- 'litellm/proxy/openai_files_endpoints/common_utils.py: B1021 owns detect_content_type_from_filename L772-L793,
+  normalize_mime_type_for_provider L796-L821, FileCreationParams.__post_init__ L905-L915, extract_file_creation_params
+  L918-L956, _extract_target_storage_simple L959-L971, _extract_target_model_names_simple L974-L989, _is_target_model_names_key
+  L992-L993, _extract_target_model_names_from_form L996-L1019, validate_managed_files_requirement L1022-L1059, validate_managed_id_requirement
+  L1062-L1118, _extract_model_param L1121-L1130.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+- 'common_utils.py L1138-L1197, L1288-L1321, L1353-L1393, L1428-L1441 and L1481-L1559: model/owner synthesis, hook
+  ID creation, managed-object reads/writes and retirement only run behind the unavailable managed_files hook; no
+  reachable OSS caller, so do not implement or test them.'
+pitfalls:
+- ensure_batch_response_managed_file_ids resolves existing input/output/error file mappings before checking for
+  a missing hook; its two MIT reads remain live.
+- get_batch_from_database and update_batch_in_database check the hook first, so neither may read or write a managed-object
+  row in the OSS oracle.
+- PROXY_BATCH_POLLING_ENABLED=true does not imply an active poller when check_batch_cost_job is absent.
+review_level: security
+budget:
+  max_changed_lines: 430
+  max_new_expects: 1

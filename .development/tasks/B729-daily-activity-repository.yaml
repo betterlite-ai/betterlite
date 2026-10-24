@@ -1,0 +1,219 @@
+id: B729
+title: Execute daily activity reports and recover key metadata
+description: >-
+  Implement DailyActivityRepository using the two query-builder services and typed rows. Recover active/deleted
+  key aliases and metadata tags, expose date rollups and cursor pages, and preserve missing/deleted-key
+  behavior. Query counts are bounded and tenant filters reach every query.
+
+
+  Build the production daily_activity_repository module in betterlite-db; reuse the typed dependencies
+  listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
+  with adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/daily_activity_repository.py:
+  _QueryRaw.__call__ (L58-L58; 1 source lines), _DailyActivityDatabase.litellm_dailyuserspend (L67-L67;
+  1 source lines), _DailyActivityDatabase.litellm_dailyteamspend (L70-L70; 1 source lines), _DailyActivityDatabase.litellm_dailytagspend
+  (L73-L73; 1 source lines), _DailyActivityDatabase.litellm_dailyorganizationspend (L76-L76; 1 source
+  lines), _DailyActivityDatabase.litellm_dailyenduserspend (L79-L79; 1 source lines), _DailyActivityDatabase.litellm_dailyagentspend
+  (L82-L82; 1 source lines), DailyActivityDatabase.db (L87-L87; 1 source lines), _metadata_tags (L98-L105;
+  8 source lines), _daily_rows_table (L108-L124; 17 source lines), _next_export_cursor (L127-L138; 12
+  source lines), DailyActivityRepository.__init__ (L142-L144; 3 source lines), DailyActivityRepository._query
+  (L146-L152; 7 source lines), DailyActivityRepository.aggregated (L154-L174; 21 source lines), DailyActivityRepository.search_keys
+  (L176-L181; 6 source lines), DailyActivityRepository.key_page (L183-L191; 9 source lines), DailyActivityRepository.model_top_keys
+  (L193-L204; 12 source lines), DailyActivityRepository.cache_leakage_keys (L206-L210; 5 source lines),
+  DailyActivityRepository.export_rows (L212-L223; 12 source lines), DailyActivityRepository._active_token_rows
+  (L225-L226; 2 source lines), DailyActivityRepository._deleted_token_rows (L228-L233; 6 source lines),
+  DailyActivityRepository.key_metadata (L235-L262; 28 source lines), DailyActivityRepository._metadata_row
+  (L265-L275; 11 source lines), DailyActivityRepository.daily_rows (L277-L311; 35 source lines).
+
+
+  Add the daily_activity_repository operation under B856 Management::database. Python calls only the owned
+  MIT helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the
+  expected algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a daily-activity-repository-* seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This task owns the outside-byte boundary daily_activity_repository::decode_daily_activity_cursor(&[u8])
+  -> Result<TypedValue,DecodeError> for untrusted export cursor and JSON metadata tags. Production calls
+  this decoder before its typed policy functions; the cargo-fuzz target daily_activity_repository calls
+  that same function. Seed valid, truncated, malformed, duplicate-field and limit-boundary inputs and
+  add daily_activity_repository::tests::replays_the_daily_activity_repository_corpus. Reuse B002 limits
+  for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap bytes
+  at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs. B710
+  owns crates/betterlite-db/fuzz; depend on it and register this decoder target without recreating the
+  workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 202 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  202 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 496 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-db/src/daily_activity_repository.rs
+    - crates/betterlite-db/src/daily_activity_repository/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/daily_activity_repository/fixtures/**
+    - tools/oracle/src/helpers/daily_activity_repository.rs
+    - tools/oracle/src/helpers/daily_activity_repository/**
+    - tools/oracle/helpers/daily_activity_repository.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/daily-activity-repository/**
+    - tools/oracle/fuzz/corpus/helper_case/daily-activity-repository-*
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/daily_activity_repository.rs
+    - crates/betterlite-db/fuzz/corpus/daily_activity_repository/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L1-L311
+    why: Pinned implementation and exact ownership boundary for daily_activity_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L58-L58
+    why: Own _QueryRaw.__call__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L67-L67
+    why: Own _DailyActivityDatabase.litellm_dailyuserspend; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L70-L70
+    why: Own _DailyActivityDatabase.litellm_dailyteamspend; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L73-L73
+    why: Own _DailyActivityDatabase.litellm_dailytagspend; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L76-L76
+    why: Own _DailyActivityDatabase.litellm_dailyorganizationspend; preserve caller-visible values and
+      failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L79-L79
+    why: Own _DailyActivityDatabase.litellm_dailyenduserspend; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L82-L82
+    why: Own _DailyActivityDatabase.litellm_dailyagentspend; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L87-L87
+    why: Own DailyActivityDatabase.db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L98-L105
+    why: Own _metadata_tags; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L108-L124
+    why: Own _daily_rows_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L127-L138
+    why: Own _next_export_cursor; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L142-L144
+    why: Own DailyActivityRepository.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L146-L152
+    why: Own DailyActivityRepository._query; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L154-L174
+    why: Own DailyActivityRepository.aggregated; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L176-L181
+    why: Own DailyActivityRepository.search_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L183-L191
+    why: Own DailyActivityRepository.key_page; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L193-L204
+    why: Own DailyActivityRepository.model_top_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L206-L210
+    why: Own DailyActivityRepository.cache_leakage_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L212-L223
+    why: Own DailyActivityRepository.export_rows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L225-L226
+    why: Own DailyActivityRepository._active_token_rows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L228-L233
+    why: Own DailyActivityRepository._deleted_token_rows; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L235-L262
+    why: Own DailyActivityRepository.key_metadata; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L265-L275
+    why: Own DailyActivityRepository._metadata_row; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L277-L311
+    why: Own DailyActivityRepository.daily_rows; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: active_key_metadata,
+      deleted_key_metadata, next_export_cursor, entity_daily_rows, missing_key, cross_tenant_isolation,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: The production decode_daily_activity_cursor decoder is used by the service and its fuzz target
+      and rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_repository::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/daily_activity_repository.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-repository-*")"
+        && grep -rlq "daily_activity_repository" tools/oracle/fuzz/corpus/helper_case/daily-activity-repository-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/daily_activity_repository::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/daily_activity_repository::tests::postgres_failure_effects$/)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-db/fuzz/fuzz_targets/daily_activity_repository.rs && grep -q "daily_activity_repository"
+        crates/betterlite-db/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-db/fuzz/corpus/daily_activity_repository)" && cargo nextest run --locked
+        -p betterlite-db --no-tests=fail -E 'test(replays_the_daily_activity_repository_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/daily-activity-repository/active-key-metadata.yaml
+  - tools/oracle/cases/helpers/daily-activity-repository/deleted-key-metadata.yaml
+  - tools/oracle/cases/helpers/daily-activity-repository/next-export-cursor.yaml
+  - tools/oracle/cases/helpers/daily-activity-repository/entity-daily-rows.yaml
+  - tools/oracle/cases/helpers/daily-activity-repository/missing-key.yaml
+  - tools/oracle/cases/helpers/daily-activity-repository/cross-tenant-isolation.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L58-L58
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+pitfalls:
+  - Archived key metadata remains available for spend rows after the active key is deleted.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

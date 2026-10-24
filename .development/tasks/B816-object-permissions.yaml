@@ -1,0 +1,181 @@
+id: B816
+title: Object permission writes and cache coherence
+description: >-
+  Implement ObjectPermissionPatch and object-permission attach/upsert/update helpers over ObjectPermissionRepository.
+  Preserve explicit field deletion, absent nested object behavior and shared cache invalidation across
+  key/user/team/org objects. Grant-specific validators are separate services.
+
+
+  Build the production object_permissions module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/object_permission_utils.py:
+  attach_object_permission_to_dict (L35-L73; 33 source lines), prepare_object_permission_upsert (L82-L129;
+  46 source lines), handle_update_object_permission_common (L132-L183; 43 source lines), invalidate_cached_object_permissions
+  (L186-L199; 13 source lines), _set_object_permission (L202-L237; 28 source lines), _mcp_tool_permission_entries
+  (L324-L332; 9 source lines), reject_ambiguous_mcp_tool_permission_keys (L335-L371; 36 source lines).
+
+
+  Add the object_permissions operation under B856 Management::models. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a object-permissions-* seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This task owns the outside-byte boundary object_permissions::decode_object_permission(&[u8]) -> Result<TypedValue,DecodeError>
+  for stored/request object permission JSON. Production calls this decoder before its typed policy functions;
+  the cargo-fuzz target object_permissions calls that same function. Seed valid, truncated, malformed,
+  duplicate-field and limit-boundary inputs and add object_permissions::tests::replays_the_object_permissions_corpus.
+  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
+  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
+  fetching URLs. B770 owns crates/betterlite-server/fuzz; depend on it and register this decoder target
+  without recreating the workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 208 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  208 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 502 changed lines estimated within a 525-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/object_permissions.rs
+    - crates/betterlite-server/src/object_permissions/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/object_permissions.rs
+    - tools/oracle/src/helpers/object_permissions/**
+    - tools/oracle/helpers/object_permissions.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/object-permissions/**
+    - tools/oracle/fuzz/corpus/helper_case/object-permissions-*
+    - crates/betterlite-server/src/object_permissions/fixtures/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/object_permissions.rs
+    - crates/betterlite-server/fuzz/corpus/object_permissions/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/object_permission.py#L1-L26
+    why: Pinned implementation and exact ownership boundary for object_permissions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L35-L237
+    why: Pinned implementation and exact ownership boundary for object_permissions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L35-L73
+    why: Own attach_object_permission_to_dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L82-L129
+    why: Own prepare_object_permission_upsert; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L132-L183
+    why: Own handle_update_object_permission_common; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L186-L199
+    why: Own invalidate_cached_object_permissions; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L202-L237
+    why: Own _set_object_permission; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L324-L332
+    why: Own _mcp_tool_permission_entries; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L335-L371
+    why: Own reject_ambiguous_mcp_tool_permission_keys; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: attach_existing, nested_upsert,
+      explicit_clear, absent_preserved, cache_eviction, db_failure, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: The production decode_object_permission decoder is used by the service and its fuzz target and
+      rejects malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^object_permissions::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/object_permissions.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/object-permissions-*")"
+        && grep -rlq "object_permissions" tools/oracle/fuzz/corpus/helper_case/object-permissions-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/object_permissions::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/object_permissions::tests::postgres_failure_effects$/)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/object_permissions.rs && grep -q "object_permissions"
+        crates/betterlite-server/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE"
+        -- crates/betterlite-server/fuzz/corpus/object_permissions)" && cargo nextest run --locked -p
+        betterlite-server --no-tests=fail -E 'test(replays_the_object_permissions_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/object-permissions/attach-existing.yaml
+  - tools/oracle/cases/helpers/object-permissions/nested-upsert.yaml
+  - tools/oracle/cases/helpers/object-permissions/explicit-clear.yaml
+  - tools/oracle/cases/helpers/object-permissions/absent-preserved.yaml
+  - tools/oracle/cases/helpers/object-permissions/cache-eviction.yaml
+  - tools/oracle/cases/helpers/object-permissions/db-failure.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/object_permission_utils.py#L35-L73
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B817 owns _dedupe_preserving_order (L240-L248),
+    _mcp_server_identifier_matches (L251-L257), _get_db_mcp_servers_by_identifiers (L260-L276), _resolve_mcp_server_identifiers_to_ids
+    (L279-L318), _drop_stale_object_permission_mcp_servers (L374-L390), _drop_stale_object_permission_mcp_tool_permissions
+    (L393-L405), _drop_stale_object_permission_mcp_identifiers (L408-L422), _flatten_resolved_mcp_server_ids
+    (L425-L428), _resolve_team_allowed_mcp_servers (L431-L463), _get_allow_all_keys_server_ids (L466-L472),
+    _get_all_mcp_server_ids (L475-L481), _existing_object_permission_mcp_servers (L484-L495).'
+  - 'litellm/proxy/management_helpers/object_permission_utils.py: B818 owns enforce_all_proxy_mcp_servers_grant_is_admin_only
+    (L498-L528), _get_grandfathered_key_mcp_server_ids (L531-L558), _get_team_allowed_mcp_servers (L561-L599),
+    _extract_requested_mcp_server_ids (L602-L625), _extract_requested_mcp_access_groups (L628-L638), _extract_requested_mcp_toolsets
+    (L641-L651), validate_key_mcp_servers_against_team (L654-L794), _validate_requested_toolsets (L797-L839),
+    _extract_requested_vector_stores (L842-L851), validate_key_vector_stores_against_team (L854-L879),
+    _extract_requested_search_tools (L882-L891), validate_key_search_tools_against_team (L894-L941).'
+pitfalls:
+  - Explicit permission clear is different from an omitted nested permission object.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: security

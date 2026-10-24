@@ -1,0 +1,198 @@
+id: B813
+title: Scoped team list and UI search routes
+description: >-
+  Implement /team/list, /v2/team/list and /team/filter/ui with organization/admin/member scoping, typed
+  filters/sort and batched key counts/access-group expansion. Preserve source pagination defaults and
+  visibility for callers with multiple organizations.
+
+
+  Build the production team_lists module in betterlite-server; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_endpoints.py:
+  list_team_v2 (L5598-L5780; 154 source lines), list_team (L5859-L5931; 62 source lines), get_paginated_teams
+  (L5934-L5965; 26 source lines), ui_view_teams (L5977-L6035; 45 source lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: GET /v2/team/list -> list_team_v2; GET /team/list
+  -> list_team; GET /team/filter/ui -> ui_view_teams. For each route send a typed successful request,
+  an invalid or missing target, and a caller lacking that route permission through B001 HttpCase against
+  the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
+  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
+  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
+  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
+  partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 287 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  287 production, 139 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 491 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
+  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_lists.rs
+    - crates/betterlite-server/src/team_lists/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/team-lists/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5291-L6035
+    why: Pinned implementation and exact ownership boundary for team_lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5598-L5780
+    why: Own list_team_v2; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5859-L5931
+    why: Own list_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5934-L5965
+    why: Own get_paginated_teams; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L5977-L6035
+    why: Own ui_view_teams; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: v2_pagination, ui_search,
+      empty_page.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_lists::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/team-lists/get--v2-team-list-success.yaml
+  - tools/oracle/cases/management/team-lists/get--v2-team-list-invalid-target.yaml
+  - tools/oracle/cases/management/team-lists/get--v2-team-list-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-lists/get--team-list-success.yaml
+  - tools/oracle/cases/management/team-lists/get--team-list-invalid-target.yaml
+  - tools/oracle/cases/management/team-lists/get--team-list-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-lists/get--team-filter-ui-success.yaml
+  - tools/oracle/cases/management/team-lists/get--team-filter-ui-invalid-target.yaml
+  - tools/oracle/cases/management/team-lists/get--team-filter-ui-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-lists/v2-pagination.yaml
+  - tools/oracle/cases/management/team-lists/ui-search.yaml
+  - tools/oracle/cases/management/team-lists/empty-page.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B801 owns _as_object (L238-L239), _as_list
+    (L242-L245), _UserIdRow.user_id (L250-L250), _user_id_rows_db (L253-L254), _ModelDumpRow.model_dump
+    (L258-L258), _TeamIdRow.team_id (L263-L263), _ObjectPermissionRow.object_permission_id (L271-L271),
+    _TeamAliasBudgetRow.team_alias (L276-L276), _TeamAliasBudgetRow.budget_duration (L279-L279), _AuditableTeamRow.json
+    (L287-L287), _RawTeamRow.members_with_roles (L292-L294), _RawTeamRow.organization_id (L297-L297),
+    _RawTeamRow.max_budget (L300-L300), _RawTeamRow.soft_budget (L303-L303), _RawTeamRow.model_id (L306-L306),
+    _raw_team_db (L309-L312), _BudgetIdRow.budget_id (L317-L317), _BudgetWriteCall.__call__ (L321-L321),
+    _as_budget_write (L324-L325), _TeamCreateTx.litellm_teamtable (L362-L362), _MemberDeleteTx.litellm_usertable
+    (L374-L374), _MemberDeleteTx.litellm_verificationtoken (L377-L377), _TeamDeleteTx.execute_raw (L381-L381),
+    _TeamDeleteTx.litellm_teamtable (L384-L384), _TeamDeleteTx.litellm_teammembership (L387-L387), _team_db
+    (L397-L398), _team_tx_db (L401-L404), _team_membership_db (L407-L408), _user_db (L411-L412), _model_db
+    (L415-L416), _org_db (L419-L420), _org_membership_db (L423-L426), _budget_db (L429-L430), _deleted_team_db
+    (L433-L434), _access_group_db (L437-L438), _tokens_db (L441-L442), _sanitize_for_log (L445-L451),
+    _refresh_cached_team (L454-L478), _general_settings (L484-L487), _caller_edit_access (L490-L505).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B802 owns TeamMemberBudgetHandler.strip_system_managed_metadata_keys
+    (L516-L521), TeamMemberBudgetHandler.should_create_budget (L524-L538), TeamMemberBudgetHandler.create_team_member_budget_table
+    (L541-L598), TeamMemberBudgetHandler.upsert_team_member_budget_table (L601-L669), TeamMemberBudgetHandler._clean_team_member_fields
+    (L672-L677), TeamMemberBudgetHandler.clear_team_member_budget_fields (L680-L713), TeamMemberBudgetHandler.backfill_team_member_budget_entries
+    (L716-L780).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B803 owns _get_default_team_param (L783-L802),
+    _is_available_team (L805-L810), get_all_team_memberships (L813-L835), _check_team_budget_update_authority
+    (L1188-L1229), _write_team_update (L1243-L1259), _existing_model_cap (L1262-L1266), _check_team_model_budget_update_authority
+    (L1269-L1315), _should_auto_add_team_creator (L1318-L1326).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B804 owns new_team (L1337-L1791).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B805 owns _create_team_update_audit_log (L1794-L1840),
+    _update_model_table (L1843-L1874), _auto_add_team_members_to_organization (L1877-L1913), fetch_and_validate_organization
+    (L1916-L1968), validate_team_org_change (L1971-L2071), _member_user_ids (L2074-L2080), _evict_created_membership_caches
+    (L2083-L2104).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B806 owns update_team (L2109-L2565).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B807 owns _check_team_member_admin_add (L2690-L2703),
+    team_call_validation_checks (L2706-L2726), team_member_add_duplication_check (L2729-L2780), _validate_team_member_add_permissions
+    (L2783-L2856), _update_team_members_list (L2956-L2972), _add_team_members_to_team (L2975-L3028), _update_team_member_role
+    (L3031-L3060), _emit_team_members_metric (L3063-L3075), _members_audit_value (L3156-L3167), _schedule_team_membership_audit_log
+    (L3170-L3197), _schedule_team_member_add_audit_logs (L3200-L3242).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B808 owns team_member_add (L3356-L3505), team_member_update
+    (L3763-L3915).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B809 owns _check_not_resetting_own_spend (L3918-L3928),
+    _raise_reset_spend_error (L3931-L3933), _validate_team_member_reset_spend_value (L3936-L3961), reset_team_member_spend_fn
+    (L3970-L4033), _team_default_budget_id (L4040-L4043), _existing_team_default_budget_id (L4046-L4053),
+    _member_budget_source (L4056-L4059), reset_team_member_budget_fn (L4069-L4123).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B810 owns _create_results_from_response (L4126-L4162),
+    bulk_team_member_add (L4172-L4308), team_member_permissions (L6256-L6313), update_team_member_permissions
+    (L6321-L6374), bulk_update_team_member_permissions (L6384-L6436), _compute_and_batch_updates (L6439-L6460),
+    _append_permissions_to_specific_teams (L6463-L6479), _append_permissions_to_all_teams (L6482-L6509).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B811 owns delete_team (L4313-L4510), _sweep_deleted_team_references
+    (L4513-L4532), _sweep_deleted_team_references_tx (L4535-L4542), _invalidate_deleted_key_cache (L4545-L4561),
+    _invalidate_deleted_team_cache (L4564-L4579), _invalidate_deleted_team_member_cache (L4582-L4591),
+    _evict_deleted_team_member_cache (L4594-L4609), _resolve_deleted_team_member_user_ids (L4612-L4619),
+    _deleted_team_member_user_ids (L4622-L4636), _transform_teams_to_deleted_records (L4639-L4684), _save_deleted_team_records
+    (L4687-L4694), _persist_deleted_team_records (L4697-L4712).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B812 owns validate_membership (L4715-L4753),
+    _add_team_member_budget_table (L4756-L4769), _hydrate_member_user_details (L4772-L4792), _parent_organization_models
+    (L4803-L4806), _resolve_team_access_group_resources (L4809-L4838), team_info (L4843-L5009).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B814 owns team_model_add (L6057-L6112), append_team_models
+    (L6115-L6164), team_model_delete (L6173-L6247).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B815 owns _daily_activity_error (L6512-L6515),
+    resolve_team_daily_activity_scope (L6525-L6623), get_team_daily_activity (L6631-L6689), aggregated_date_range_error
+    (L6695-L6705), _team_user_spend_sql (L6708-L6731), get_team_spend_by_user (L6753-L6821), _team_alias_or_none
+    (L6824-L6826).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1204 owns _check_team_model_specific_limits
+    (L838-L906), _check_team_rpm_tpm_limits (L909-L944), check_org_team_model_specific_limits (L947-L978),
+    check_org_team_rpm_tpm_limits (L981-L1003), _check_org_team_limits (L1006-L1106), _check_user_team_limits
+    (L1109-L1178).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1205 owns patch_team (L2574-L2642), _set_budget_reset_at
+    (L2645-L2663), handle_update_object_permission (L2666-L2687).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1206 owns _process_team_members (L2859-L2913),
+    _resolve_member_identity (L2916-L2945), _member_already_in_team (L2948-L2953), _resolve_existing_member_user_ids
+    (L3078-L3094), _pre_existing_user_ids (L3097-L3114), _validate_member_user_id_provisioning (L3120-L3153),
+    _validate_and_populate_member_user_info (L3245-L3346).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1207 owns _is_member_addressed_by (L3508-L3511),
+    _cleanup_members_with_roles (L3514-L3528), team_member_delete (L3537-L3575), _team_member_delete (L3578-L3753).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1208 owns team_member_me (L5019-L5123), block_team
+    (L5128-L5178), unblock_team (L5183-L5227), get_team_metadata_schema (L5236-L5245), list_available_teams
+    (L5249-L5288).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py: B1209 owns _get_org_admin_org_ids (L5291-L5322),
+    _get_user_team_ids_from_db (L5325-L5342), _build_team_list_where_conditions (L5345-L5436), _batch_resolve_access_group_resources
+    (L5439-L5455), _convert_teams_to_response_models (L5458-L5488), _get_keys_count_by_team (L5491-L5513),
+    _enforce_list_team_v2_access (L5516-L5588), _authorize_and_filter_teams (L5783-L5854).'
+  - 'litellm/proxy/management_endpoints/team_endpoints.py::add_new_models_to_team: no production caller
+    at the pinned commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Organization administrators see only teams in their administered scope even on v2 list aliases.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

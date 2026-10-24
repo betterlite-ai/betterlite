@@ -1,0 +1,173 @@
+id: B946
+title: Responses file search tools
+description: >-
+  Define file_search function-tool replacement, result/citation shaping and query extraction using typed vector-search
+  results from B090. Preserve include selection and file_citation indexes while keeping provider response assembly
+  independent from retrieval execution.
+
+
+  should_use_emulated_file_search (litellm/responses/file_search/emulated_handler.py:L47-L57) has no MIT runtime
+  caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior case
+  exercises that unused entry point.
+
+
+  Implement crates/betterlite-core/src/api/responses_file_search_tools.rs. Use ResponsesFileSearchTooInput and ResponsesFileSearchTooResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions file_search_tool_replacement, include_search_results, file_citation_offsets,
+  multiple_queries under api::responses_file_search_tools::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ResponsesFileSearchTools in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
+  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_file_search_tools: <typed
+  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
+  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
+  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
+  route tasks.
+
+
+  Callable ownership: litellm/responses/file_search/emulated_handler.py: _build_function_tool (L65-L105); litellm/responses/file_search/emulated_handler.py:
+  _replace_file_search_tools (L108-L132); litellm/responses/file_search/emulated_handler.py: _get_field (L186-L190);
+  litellm/responses/file_search/emulated_handler.py: _joined_content_text (L193-L197); litellm/responses/file_search/emulated_handler.py:
+  _format_search_results_as_tool_output (L200-L225); litellm/responses/file_search/emulated_handler.py: _build_search_results_for_include
+  (L228-L252); litellm/responses/file_search/emulated_handler.py: _build_file_search_call_output (L255-L279); litellm/responses/file_search/emulated_handler.py:
+  _build_file_citation_annotations (L282-L309); litellm/responses/file_search/emulated_handler.py: _build_message_output
+  (L312-L328); litellm/responses/file_search/emulated_handler.py: _extract_text_from_responses_output (L331-L342);
+  litellm/responses/file_search/emulated_handler.py: _synthesize_responses_api_response (L345-L384); litellm/responses/file_search/emulated_handler.py:
+  _prepare_emulated_file_search_call (L398-L413); litellm/responses/file_search/emulated_handler.py: _extract_tool_call_fields
+  (L416-L425); litellm/responses/file_search/emulated_handler.py: _resolve_queries_from_args (L428-L437). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 219 owned nonblank/non-comment/non-docstring Python lines (267 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 239 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 471 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B090 (Vector stores), B171 (Direct helper oracle and URL path encoding), B902 (Responses
+  shapes), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external
+  B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_file_search_tools.rs
+  - crates/betterlite-core/src/api/responses_file_search_tools/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_file_search_tools.rs
+  - tools/oracle/src/helpers/responses_file_search_tools/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_file_search_tools.py
+  - tools/oracle/helpers/responses_file_search_tools/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*
+  - tools/oracle/cases/helpers/responses-file-search-tools/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L58-L132
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L186-L384
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/file_search/emulated_handler.py#L398-L437
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'file search tool replacement: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-file-search-tool-replacement
+  - oracle
+- text: 'include search results: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-include-search-results
+  - oracle
+- text: 'file citation offsets: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-file-citation-offsets
+  - oracle
+- text: 'multiple queries: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-multiple-queries
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::/)
+      - test(/::replays_corpus$/)'
+  - id: case-file-search-tool-replacement
+    why: the file-search-tool-replacement behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::file_search_tool_replacement($|::)/)'
+  - id: case-include-search-results
+    why: the include-search-results behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::include_search_results($|::)/)'
+  - id: case-file-citation-offsets
+    why: the file-citation-offsets behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::file_citation_offsets($|::)/)'
+  - id: case-multiple-queries
+    why: the multiple-queries behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_file_search_tools::tests::multiple_queries($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_file_search_tools.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*)"
+      && grep -qE "^[[:space:]]+responses_file_search_tools:" tools/oracle/fuzz/corpus/helper_case/responses_file_search_tools-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-file-search-tools)"
+oracle_cases:
+- tools/oracle/cases/helpers/responses-file-search-tools/file-search-tool-replacement.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/include-search-results.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/file-citation-offsets.yaml
+- tools/oracle/cases/helpers/responses-file-search-tools/multiple-queries.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/file_search/emulated_handler.py: should_use_emulated_file_search L47-L57 are out of scope:
+  no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/responses/file_search/emulated_handler.py: B947 owns _run_vector_searches L140-L178, _call_aresponses
+  L392-L395, _execute_file_search_tool_calls L440-L486, _build_follow_up_input L489-L512, aresponses_with_emulated_file_search
+  L515-L629.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- emulated_handler.py:408 emits the diagnostic 'Streaming is not yet supported for emulated file_search. Disabling
+  stream for this request.'; retain its level and fallback instead of turning it into a hard error.
+- _replace_file_search_tools uses tool.get('type'); retain its missing-value behavior and field spelling in the
+  typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 480
+  max_new_expects: 1

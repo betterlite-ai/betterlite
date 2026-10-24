@@ -1,0 +1,205 @@
+id: B726
+title: Managed resources and transaction repositories
+description: >-
+  Expose typed TableRepository handles only for the enumerated tables, ManagedBatchRepository compare-and-set,
+  ManagedFileContentRepository, AutoRouterSessionRepository and UserBannerRepository. Implement spend-reset
+  and budget-cascade units of work over the same DbSession transaction, retaining omission versus zero.
+  Register repository exports without a dynamic table-name execution API.
+
+
+  Build the production auxiliary_repository module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/table_repositories.py:
+  PrismaTableRepository.__init__ (L24-L26; 3 source lines), PrismaTableRepository.prisma_client (L29-L32;
+  4 source lines), PrismaTableRepository.table (L35-L39; 5 source lines). litellm/repositories/managed_batch_repository.py:
+  _batch_of (L11-L12; 2 source lines), ManagedBatchRepository.load_batch (L18-L20; 3 source lines), ManagedBatchRepository.load_status
+  (L22-L24; 3 source lines), ManagedBatchRepository.compare_and_set (L26-L37; 12 source lines), ManagedBatchRepository.touch
+  (L39-L43; 5 source lines), ManagedBatchRepository._find_row (L45-L46; 2 source lines). litellm/repositories/managed_file_content_repository.py:
+  ManagedFileContentRepository.store (L12-L16; 4 source lines), ManagedFileContentRepository.load (L18-L22;
+  5 source lines), ManagedFileContentRepository.delete (L24-L30; 6 source lines). litellm/repositories/autorouter_session_repository.py:
+  AutoRouterSessionRepository.table (L17-L18; 2 source lines), AutoRouterSessionRepository.model_class
+  (L21-L22; 2 source lines), AutoRouterSessionRepository.find_latest_for_key (L24-L34; 10 source lines).
+  litellm/repositories/user_banner_repository.py: UserBannerRepository.get_raw_settings (L14-L16; 3 source
+  lines), UserBannerRepository.upsert_settings (L18-L23; 6 source lines). litellm/repositories/unit_of_work.py:
+  _spend_reset_data (L27-L29; 3 source lines), KeySpendResetWrites.queue_spend_reset (L36-L40; 5 source
+  lines), UserSpendResetWrites.queue_spend_reset (L47-L51; 5 source lines), TeamSpendResetWrites.queue_spend_reset
+  (L58-L62; 5 source lines), LinkedSpendResetWrites.queue_spend_zero (L69-L70; 2 source lines), LinkedSpendResetWrites.queue_spend_decrement
+  (L72-L78; 7 source lines), BudgetWindowWrites.queue_window_advance (L85-L88; 4 source lines), spend_reset_unit_of_work
+  (L118-L125; 8 source lines), budget_cascade_unit_of_work (L129-L143; 15 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Add the auxiliary_repository operation under B856 Management::database. Python calls only the owned
+  MIT helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the
+  expected algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a auxiliary-repository-* seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 131 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  131 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 380 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/auxiliary_repository.rs
+    - crates/betterlite-db/src/auxiliary_repository/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/auxiliary_repository/fixtures/**
+    - tools/oracle/src/helpers/auxiliary_repository.rs
+    - tools/oracle/src/helpers/auxiliary_repository/**
+    - tools/oracle/helpers/auxiliary_repository.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/auxiliary-repository/**
+    - tools/oracle/fuzz/corpus/helper_case/auxiliary-repository-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/table_repositories.py#L1-L271
+    why: Pinned implementation and exact ownership boundary for auxiliary_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L1-L46
+    why: Pinned implementation and exact ownership boundary for auxiliary_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_file_content_repository.py#L1-L30
+    why: Pinned implementation and exact ownership boundary for auxiliary_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/autorouter_session_repository.py#L1-L34
+    why: Pinned implementation and exact ownership boundary for auxiliary_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_banner_repository.py#L1-L23
+    why: Pinned implementation and exact ownership boundary for auxiliary_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L1-L143
+    why: Pinned implementation and exact ownership boundary for auxiliary_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/__init__.py#L1-L167
+    why: Pinned implementation and exact ownership boundary for auxiliary_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/table_repositories.py#L24-L26
+    why: Own PrismaTableRepository.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/table_repositories.py#L29-L32
+    why: Own PrismaTableRepository.prisma_client; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/table_repositories.py#L35-L39
+    why: Own PrismaTableRepository.table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L11-L12
+    why: Own _batch_of; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L18-L20
+    why: Own ManagedBatchRepository.load_batch; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L22-L24
+    why: Own ManagedBatchRepository.load_status; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L26-L37
+    why: Own ManagedBatchRepository.compare_and_set; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L39-L43
+    why: Own ManagedBatchRepository.touch; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L45-L46
+    why: Own ManagedBatchRepository._find_row; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_file_content_repository.py#L12-L16
+    why: Own ManagedFileContentRepository.store; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_file_content_repository.py#L18-L22
+    why: Own ManagedFileContentRepository.load; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_file_content_repository.py#L24-L30
+    why: Own ManagedFileContentRepository.delete; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/autorouter_session_repository.py#L17-L18
+    why: Own AutoRouterSessionRepository.table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/autorouter_session_repository.py#L21-L22
+    why: Own AutoRouterSessionRepository.model_class; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/autorouter_session_repository.py#L24-L34
+    why: Own AutoRouterSessionRepository.find_latest_for_key; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_banner_repository.py#L14-L16
+    why: Own UserBannerRepository.get_raw_settings; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/user_banner_repository.py#L18-L23
+    why: Own UserBannerRepository.upsert_settings; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L27-L29
+    why: Own _spend_reset_data; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L36-L40
+    why: Own KeySpendResetWrites.queue_spend_reset; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L47-L51
+    why: Own UserSpendResetWrites.queue_spend_reset; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L58-L62
+    why: Own TeamSpendResetWrites.queue_spend_reset; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L69-L70
+    why: Own LinkedSpendResetWrites.queue_spend_zero; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L72-L78
+    why: Own LinkedSpendResetWrites.queue_spend_decrement; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L85-L88
+    why: Own BudgetWindowWrites.queue_window_advance; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L118-L125
+    why: Own spend_reset_unit_of_work; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/unit_of_work.py#L129-L143
+    why: Own budget_cascade_unit_of_work; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: batch_compare_and_set,
+      file_content_replacement, latest_key_session, banner_upsert, reset_transaction_rollback, budget_cascade,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^auxiliary_repository::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/auxiliary_repository.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auxiliary-repository-*")"
+        && grep -rlq "auxiliary_repository" tools/oracle/fuzz/corpus/helper_case/auxiliary-repository-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/auxiliary_repository::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/auxiliary_repository::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/auxiliary-repository/batch-compare-and-set.yaml
+  - tools/oracle/cases/helpers/auxiliary-repository/file-content-replacement.yaml
+  - tools/oracle/cases/helpers/auxiliary-repository/latest-key-session.yaml
+  - tools/oracle/cases/helpers/auxiliary-repository/banner-upsert.yaml
+  - tools/oracle/cases/helpers/auxiliary-repository/reset-transaction-rollback.yaml
+  - tools/oracle/cases/helpers/auxiliary-repository/budget-cascade.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - ManagedBatch compare-and-set must match the previous status inside the UPDATE predicate.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,166 @@
+id: B715
+title: Database outage classification and bounded lookup
+description: >-
+  Implement bounded database lookup and a single reconnect-and-retry for idempotent reads over DbFault.
+  Preserve PROXY_DB_LOOKUP_DEADLINE_SECONDS=10, reconnect timeout 2 seconds and lock timeout 0.1 seconds.
+  Cancellation releases permits and owned abandoned lookups; metrics carry safe operation metadata without
+  SQL parameters.
+
+
+  Build the production database_failures module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/db_lookup_gate.py:
+  LoopBoundSemaphore.__init__ (L17-L20; 4 source lines), LoopBoundSemaphore.current (L22-L27; 6 source
+  lines), DBLookupDeadlineExceeded.__init__ (L31-L34; 4 source lines), DBLookupStallTracker.__init__ (L40-L42;
+  3 source lines), DBLookupStallTracker.record_hit (L44-L45; 2 source lines), DBLookupStallTracker.clear
+  (L47-L48; 2 source lines), DBLookupStallTracker.stalled_within (L50-L53; 4 source lines), _consume_abandoned_lookup
+  (L60-L62; 3 source lines), bounded_db_lookup (L65-L90; 26 source lines). litellm/proxy/db/log_db_metrics.py:
+  _safe_db_event_metadata (L17-L25; 8 source lines), log_db_metrics (L28-L103; 61 source lines), _is_exception_related_to_db
+  (L106-L114; 7 source lines), _handle_logging_db_exception (L117-L140; 21 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): PROXY_DB_LOOKUP_DEADLINE_SECONDS='10'.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::database_failures::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 151 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  151 production, 145 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 376 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/database_failures.rs
+    - crates/betterlite-db/src/database_failures/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/database_failures/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/database_failures.rs
+    - crates/betterlite-config/src/database_failures/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L1-L590
+    why: Pinned implementation and exact ownership boundary for database_failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L1-L90
+    why: Pinned implementation and exact ownership boundary for database_failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L1-L140
+    why: Pinned implementation and exact ownership boundary for database_failures.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L17-L20
+    why: Own LoopBoundSemaphore.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L22-L27
+    why: Own LoopBoundSemaphore.current; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L31-L34
+    why: Own DBLookupDeadlineExceeded.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L40-L42
+    why: Own DBLookupStallTracker.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L44-L45
+    why: Own DBLookupStallTracker.record_hit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L47-L48
+    why: Own DBLookupStallTracker.clear; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L50-L53
+    why: Own DBLookupStallTracker.stalled_within; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L60-L62
+    why: Own _consume_abandoned_lookup; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L65-L90
+    why: Own bounded_db_lookup; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L17-L25
+    why: Own _safe_db_event_metadata; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L28-L103
+    why: Own log_db_metrics; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L106-L114
+    why: Own _is_exception_related_to_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L117-L140
+    why: Own _handle_logging_db_exception; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1811-L1816
+    why: PROXY_DB_LOOKUP_DEADLINE_SECONDS default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: transport_one_retry,
+      lookup_deadline, cancel_releases_permit, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_failures::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_failures::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_failures::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*")"
+        && grep -rlq "PROXY_DB_LOOKUP_DEADLINE_SECONDS" crates/betterlite-config/fuzz/corpus/config_yaml/database-failures-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/db/exception_handler.py: B872 owns _batch_postgres_sqlstate (L47-L51), PrismaDBExceptionHandler.is_database_connection_error
+    (L85-L112), PrismaDBExceptionHandler.is_database_infrastructure_error (L115-L149), PrismaDBExceptionHandler.is_prisma_data_error
+    (L152-L172), PrismaDBExceptionHandler.is_database_transport_error (L175-L215), PrismaDBExceptionHandler.is_prisma_error
+    (L218-L221), PrismaDBExceptionHandler.is_deadlock_error (L224-L237), PrismaDBExceptionHandler.postgres_sqlstate
+    (L240-L251), PrismaDBExceptionHandler.is_read_only_transaction_error (L254-L263), PrismaDBExceptionHandler.is_prisma_engine_internal_error
+    (L266-L292), PrismaDBExceptionHandler.is_permanent_database_fault (L352-L365), _coerce_timeout (L445-L451),
+    _DBReconnectClient.attempt_db_reconnect (L460-L466), call_with_db_reconnect_retry (L469-L590), _exception_types
+    (L54-L62).'
+  - 'litellm/proxy/db/exception_handler.py: B1217 owns _exception_chain (L29-L36), _database_service_unavailable_errors
+    (L39-L44), PrismaDBExceptionHandler.should_allow_request_on_db_unavailable (L71-L82), PrismaDBExceptionHandler.is_database_service_unavailable_error
+    (L295-L349), PrismaDBExceptionHandler.database_unavailable_message (L368-L381), PrismaDBExceptionHandler.service_unavailable_proxy_exception
+    (L384-L390), PrismaDBExceptionHandler.find_database_service_unavailable_error_in_chain (L393-L403),
+    PrismaDBExceptionHandler.is_database_service_unavailable_error_in_chain (L406-L419), PrismaDBExceptionHandler.handle_db_exception
+    (L422-L435).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - The reconnect retry applies to a read whose first failure is classified as transport failure, not
+    to an uncertain write.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

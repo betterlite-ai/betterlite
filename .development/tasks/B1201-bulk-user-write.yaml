@@ -1,0 +1,152 @@
+id: B1201
+title: Bulk user insert and locked team roster writes
+description: >-
+  Execute prevalidated bulk user inserts and locked team roster assignments with bounded batches and typed
+  per-row results. Preserve source failure compensation and detached failed assignments; never promise
+  one transaction for the complete bulk request. Return ordered write outcomes to B793 for per-user key/org
+  follow-up.
+
+
+  Build the production bulk_user_write module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/bulk_user_creation.py:
+  _user_table (L260-L261; 2 source lines), _user_create_payload (L375-L408; 34 source lines), _bounded
+  (L411-L418; 6 source lines), _insert_users (L421-L469; 48 source lines), _assignments_by_team (L472-L484;
+  13 source lines), _default_member_budget_id (L501-L510; 10 source lines), _team_tx_db (L513-L514; 2
+  source lines), _membership_tx_db (L517-L518; 2 source lines), _write_team_roster (L521-L581; 61 source
+  lines), _detach_failed_teams (L584-L601; 18 source lines), _publish_team_writes (L604-L630; 27 source
+  lines), _error_message (L185-L192; 8 source lines), _row_teams (L735-L745; 11 source lines).
+
+
+  Add the bulk_user_write operation under B856 Management::users. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a bulk-user-write-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 242 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  242 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 482 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/bulk_user_write.rs
+    - crates/betterlite-server/src/bulk_user_write/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/bulk_user_write.rs
+    - tools/oracle/src/helpers/bulk_user_write/**
+    - tools/oracle/helpers/bulk_user_write.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/users.rs
+    - tools/oracle/helpers/management/users.py
+    - tools/oracle/cases/helpers/bulk-user-write/**
+    - tools/oracle/fuzz/corpus/helper_case/bulk-user-write-*
+    - crates/betterlite-server/src/bulk_user_write/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L260-L261
+    why: Own _user_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L375-L408
+    why: Own _user_create_payload; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L411-L418
+    why: Own _bounded; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L421-L469
+    why: Own _insert_users; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L472-L484
+    why: Own _assignments_by_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L501-L510
+    why: Own _default_member_budget_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L513-L514
+    why: Own _team_tx_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L517-L518
+    why: Own _membership_tx_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L521-L581
+    why: Own _write_team_roster; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L584-L601
+    why: Own _detach_failed_teams; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L604-L630
+    why: Own _publish_team_writes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L185-L192
+    why: Own _error_message; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/bulk_user_creation.py#L735-L745
+    why: Own _row_teams; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: partial_insert, roster_transaction,
+      failed_team_detached, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bulk_user_write::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/bulk_user_write.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bulk-user-write-*")"
+        && grep -rlq "bulk_user_write" tools/oracle/fuzz/corpus/helper_case/bulk-user-write-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/bulk_user_write::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/bulk_user_write::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/bulk-user-write/partial-insert.yaml
+  - tools/oracle/cases/helpers/bulk-user-write/roster-transaction.yaml
+  - tools/oracle/cases/helpers/bulk-user-write/failed-team-detached.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/bulk_user_creation.py: B793 owns _requested_teams (L195-L201), _row_error
+    (L204-L218), _normalized_email (L221-L222), _partition_rows (L225-L257), _existing_user_conflicts
+    (L264-L280), _load_teams (L283-L287), _team_permission_error (L290-L293), _unusable_teams (L296-L315),
+    _db_failure (L318-L334), _prepare_user (L337-L348), _generate_key (L669-L675), _add_to_organizations
+    (L678-L689), _run_per_user (L692-L699), _write_audit_logs (L702-L732), _to_result (L748-L756), _failure_result
+    (L759-L760), bulk_create_users (L763-L863).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Preserve source failure compensation and detached failed assignments; never promise one transaction
+    for the complete bulk request.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

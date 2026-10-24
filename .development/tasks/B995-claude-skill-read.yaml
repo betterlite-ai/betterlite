@@ -1,0 +1,211 @@
+id: B995
+title: Claude skill read
+description: >-
+  Implement local skill list/get with the same user/team/object-permission predicates as skill writes, including
+  source search and pagination. Preserve tenant filtering in the repository query rather than filtering a public
+  page after retrieval.
+
+
+  Implement crates/betterlite-server/src/api/claude_skill_read.rs, crates/betterlite-core/src/api/claude_skill_read.rs.
+  Use ClaudeSkillReadInput and ClaudeSkillReadResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: GET /v1/skills; GET /v1/skills/{skill_id}. Each alias is exercised
+  through the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without
+  re-registering their methods/paths.
+
+
+  Route input projections: data.model (absent None); request.query_params.model (absent None); request.headers.x-litellm-model
+  (absent None).
+
+
+  Write adjacent tests.rs behavior functions skill_list_grants, skill_team_visibility, skill_get_denied, skill_list_search,
+  skill_pagination, route_aliases, auth_missing, auth_invalid under api::claude_skill_read::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  The production external-byte decoder is betterlite-server::api::claude_skill_read::decode_claude_skill_read(bytes:
+  &[u8], limits: &ApiLimits), for orjson.loads input body at litellm/proxy/anthropic_endpoints/skills_endpoints.py:262;
+  orjson.loads input body at litellm/proxy/anthropic_endpoints/skills_endpoints.py:364. Place its implementation
+  in crates/betterlite-server/src/api/claude_skill_read.rs and call it from the actual boundary. The cargo-fuzz
+  target crates/betterlite-server/fuzz/fuzz_targets/claude_skill_read.rs passes arbitrary bounded bytes to that
+  exact decoder; api::claude_skill_read::tests::replays_corpus replays newly committed seeds through the same function.
+  Transform-only helpers reuse the already decoded records.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/anthropic_endpoints/skills_endpoints.py: list_skills (L187-L308); litellm/proxy/anthropic_endpoints/skills_endpoints.py:
+  get_skill (L317-L405). Abstract/protocol declarations map to native types and synchronous/async wrappers share
+  one implementation; a partial function span is the explicit preparation/transition stage described above, with
+  typed values passed to the following stage.
+
+
+  Sizing: 147 owned nonblank/non-comment/non-docstring Python lines (187 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 167 implementation,
+  88 behavior tests, 96 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 449 total within the 450-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries), B726 (Managed
+  resources and transaction repositories), B858 (Typed managed-resource and analytics rows), B994 (Claude skill
+  write), B1140 (Claude plugin and skill policy), B003 (HTTP server, health routes and master key auth), B756 (Authentication
+  header selection and mode dispatch), B1139 (Stateful HTTP oracle scenarios), B856 (Management oracle namespaces
+  and Postgres test fixture). These are callable/type/config owners, not provider-family umbrellas; the external
+  B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/claude_skill_read.rs
+  - crates/betterlite-server/src/api/claude_skill_read/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/claude_skill_read.rs
+  - crates/betterlite-core/src/api/claude_skill_read/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/claude_skill_read.rs
+  - crates/betterlite-server/fuzz/corpus/claude_skill_read/**
+  - tools/oracle/cases/api/claude-skill-read/**
+  - tools/oracle/fixtures/claude-skill-read/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/skills_endpoints.py#L181-L405
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'skill list grants: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-skill-list-grants
+  - oracle
+- text: 'skill team visibility: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-skill-team-visibility
+  - oracle
+- text: 'skill get denied: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-skill-get-denied
+  - oracle
+- text: 'skill list search: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-skill-list-search
+  - oracle
+- text: 'skill pagination: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-skill-pagination
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::claude_skill_read::/)
+      - test(/::replays_corpus$/)'
+  - id: case-skill-list-grants
+    why: the skill-list-grants behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::skill_list_grants($|::)/)'
+  - id: case-skill-team-visibility
+    why: the skill-team-visibility behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::skill_team_visibility($|::)/)'
+  - id: case-skill-get-denied
+    why: the skill-get-denied behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::skill_get_denied($|::)/)'
+  - id: case-skill-list-search
+    why: the skill-list-search behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::skill_list_search($|::)/)'
+  - id: case-skill-pagination
+    why: the skill-pagination behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::skill_pagination($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::claude_skill_read::tests::auth_invalid($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/claude_skill_read)"
+      && test -f crates/betterlite-server/fuzz/fuzz_targets/claude_skill_read.rs && grep -qF "decode_claude_skill_read"
+      crates/betterlite-server/fuzz/fuzz_targets/claude_skill_read.rs && cargo nextest run --locked -p betterlite-server
+      --no-tests=fail -E 'test(/^api::claude_skill_read::tests::replays_corpus$/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/claude-skill-read)"
+oracle_cases:
+- tools/oracle/cases/api/claude-skill-read/skill-list-grants.yaml
+- tools/oracle/cases/api/claude-skill-read/skill-team-visibility.yaml
+- tools/oracle/cases/api/claude-skill-read/skill-get-denied.yaml
+- tools/oracle/cases/api/claude-skill-read/skill-list-search.yaml
+- tools/oracle/cases/api/claude-skill-read/skill-pagination.yaml
+- tools/oracle/cases/api/claude-skill-read/route-aliases.yaml
+- tools/oracle/cases/api/claude-skill-read/auth-missing.yaml
+- tools/oracle/cases/api/claude-skill-read/auth-invalid.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/anthropic_endpoints/skills_endpoints.py: B994 owns _skill_search_error L43-L45, _search_skills
+  L48-L80, create_skill L89-L178, delete_skill L414-L504.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- data reads 'model' with default None; omission and an explicit value must not collapse into one case.
+- Within list_skills\'s query is not None branch, preserve return await _search_skills(custom_llm_provider=custom_llm_provider,
+  query=query, top_k=top_k, user_api_key_dict=user_api_key_dict) and its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0

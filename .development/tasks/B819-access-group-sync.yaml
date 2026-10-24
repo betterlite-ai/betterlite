@@ -1,0 +1,168 @@
+id: B819
+title: Reconcile access-group key and team membership
+description: >-
+  Implement AccessGroupMembershipSync with parameterized writer-transaction SQL for key/team create/update/regeneration
+  and removal. Preserve bidirectional assignment arrays and invalidate both moved-from and moved-to group
+  identities after commit. Key regeneration swaps hashes consistently with deprecated key overlap.
+
+
+  Build the production access_group_sync module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/access_group_key_sync.py:
+  _RawExecutor.query_raw (L50-L50; 1 source lines), _raw_executor (L75-L78; 4 source lines), _invalidate_access_group_cache
+  (L81-L94; 12 source lines), _invalidate_moved_groups (L97-L99; 3 source lines), _write_membership (L102-L108;
+  7 source lines), sync_key_access_group_membership (L111-L122; 11 source lines), sync_key_update_access_group_membership
+  (L125-L146; 21 source lines), sync_key_regeneration_access_group_membership (L149-L175; 26 source lines).
+  litellm/proxy/management_helpers/access_group_team_sync.py: AccessGroupSyncTx.query_raw (L73-L73; 1
+  source lines), _Transaction.__aenter__ (L77-L77; 1 source lines), _Transaction.__aexit__ (L79-L79; 1
+  source lines), _PrismaDb.tx (L83-L83; 1 source lines), _PrismaClient.db (L88-L88; 1 source lines), invalidate_access_group_cache
+  (L91-L104; 12 source lines), invalidate_access_group_caches (L107-L120; 13 source lines), reconcile_team_access_group_membership
+  (L123-L149; 24 source lines), sync_team_access_group_membership (L152-L157; 5 source lines).
+
+
+  Add the access_group_sync operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a access-group-sync-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 144 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  144 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 393 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/access_group_sync.rs
+    - crates/betterlite-server/src/access_group_sync/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/access_group_sync.rs
+    - tools/oracle/src/helpers/access_group_sync/**
+    - tools/oracle/helpers/access_group_sync.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/access-group-sync/**
+    - tools/oracle/fuzz/corpus/helper_case/access-group-sync-*
+    - crates/betterlite-server/src/access_group_sync/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L1-L175
+    why: Pinned implementation and exact ownership boundary for access_group_sync.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L1-L157
+    why: Pinned implementation and exact ownership boundary for access_group_sync.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441-L1484
+    why: UpdateKeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487-L1495
+    why: RegenerateKeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L50-L50
+    why: Own _RawExecutor.query_raw; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L75-L78
+    why: Own _raw_executor; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L81-L94
+    why: Own _invalidate_access_group_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L97-L99
+    why: Own _invalidate_moved_groups; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L102-L108
+    why: Own _write_membership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L111-L122
+    why: Own sync_key_access_group_membership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L125-L146
+    why: Own sync_key_update_access_group_membership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_key_sync.py#L149-L175
+    why: Own sync_key_regeneration_access_group_membership; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L73-L73
+    why: Own AccessGroupSyncTx.query_raw; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L77-L77
+    why: Own _Transaction.__aenter__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L79-L79
+    why: Own _Transaction.__aexit__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L83-L83
+    why: Own _PrismaDb.tx; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L88-L88
+    why: Own _PrismaClient.db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L91-L104
+    why: Own invalidate_access_group_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L107-L120
+    why: Own invalidate_access_group_caches; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L123-L149
+    why: Own reconcile_team_access_group_membership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/access_group_team_sync.py#L152-L157
+    why: Own sync_team_access_group_membership; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: key_add_group, key_remove_group,
+      regenerated_key_hash, team_group_reconcile, moved_groups_evicted, rollback, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^access_group_sync::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/access_group_sync.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/access-group-sync-*")"
+        && grep -rlq "access_group_sync" tools/oracle/fuzz/corpus/helper_case/access-group-sync-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_sync::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_sync::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/access-group-sync/key-add-group.yaml
+  - tools/oracle/cases/helpers/access-group-sync/key-remove-group.yaml
+  - tools/oracle/cases/helpers/access-group-sync/regenerated-key-hash.yaml
+  - tools/oracle/cases/helpers/access-group-sync/team-group-reconcile.yaml
+  - tools/oracle/cases/helpers/access-group-sync/moved-groups-evicted.yaml
+  - tools/oracle/cases/helpers/access-group-sync/rollback.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A key-hash regeneration updates both directions of access-group assignment.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,184 @@
+id: B558
+title: Foundry Azure AI Search vector queries
+description: >-
+  Add AzureSearchStoreRequest/Reply for endpoint-by-store-type resolution, search payload options, vectorQueries
+  and retrieval results. Supply any query embedding as an injected existing embedding executor rather than importing
+  an upper pipeline into the leaf provider. Preserve source citations/document metadata and unsupported create behavior.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/vector_stores/transformation.py:
+  AzureAIVectorStoreConfig.__init__ L41-L42; AzureAIVectorStoreConfig.get_vector_store_endpoints_by_type L44-L71;
+  AzureAIVectorStoreConfig.get_auth_credentials L73-L82; AzureAIVectorStoreConfig.validate_environment L84-L87;
+  AzureAIVectorStoreConfig.get_complete_url L89-L112; AzureAIVectorStoreConfig.transform_search_vector_store_request
+  L114-L135; AzureAIVectorStoreConfig.atransform_search_vector_store_request L137-L158; AzureAIVectorStoreConfig._search_request
+  L161-L180; AzureAIVectorStoreConfig.transform_search_vector_store_response L182-L259; AzureAIVectorStoreConfig.transform_create_vector_store_request
+  L261-L266; AzureAIVectorStoreConfig.transform_create_vector_store_response L268-L269.
+
+
+  Implement crates/betterlite-foundry/src/vector_stores.rs with adjacent tests under vector_stores/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation foundry_vector_stores in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function vector_stores_cases in betterlite-foundry with these exact named cases (one per oracle file):
+  store_type_endpoints, auth_credentials, search_query_fields, vector_query_with_embedding, document_score_citation,
+  unsupported_store_create. Each case exercises its named outcome independently; use stable supplied clocks/IDs
+  and fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream
+  request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores* using HelperCase: kind:
+  helper and the externally tagged foundry_vector_stores variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_foundry_vector_stores that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  Outside-byte boundary: decode_azure_search_reply consumes Azure AI Search JSON response bytes in crates/betterlite-foundry/src/vector_stores.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-foundry/fuzz/fuzz_targets/foundry_vector_stores.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores.
+  The adjacent test replays_the_foundry_vector_stores_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 188 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 215 production lines, 99 behavior/config-test lines,
+  79 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 473 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/vector_stores.rs
+  - crates/betterlite-foundry/src/vector_stores/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_vector_stores.rs
+  - tools/oracle/src/helpers/foundry_vector_stores/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_vector_stores.py
+  - tools/oracle/cases/helpers/providers/foundry-vector-stores/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores*
+  - crates/betterlite-foundry/fuzz/Cargo.toml
+  - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_vector_stores.rs
+  - crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/vector_stores/transformation.py#L41-L269
+  why: >-
+    Own AzureAIVectorStoreConfig.__init__, AzureAIVectorStoreConfig.get_vector_store_endpoints_by_type, AzureAIVectorStoreConfig.get_auth_credentials,
+    AzureAIVectorStoreConfig.validate_environment, AzureAIVectorStoreConfig.get_complete_url, AzureAIVectorStoreConfig.transform_search_vector_store_request,
+    AzureAIVectorStoreConfig.atransform_search_vector_store_request, AzureAIVectorStoreConfig._search_request, AzureAIVectorStoreConfig.transform_search_vector_store_response,
+    AzureAIVectorStoreConfig.transform_create_vector_store_request, AzureAIVectorStoreConfig.transform_create_vector_store_response.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: 'store type endpoints: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/store-type-endpoints.yaml.'
+  proof:
+  - case-store-type-endpoints
+  - oracle
+  - helper-python
+- text: 'auth credentials: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/auth-credentials.yaml.'
+  proof:
+  - case-auth-credentials
+  - oracle
+  - helper-python
+- text: 'search query fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/search-query-fields.yaml.'
+  proof:
+  - case-search-query-fields
+  - oracle
+  - helper-python
+- text: >-
+    vector query with embedding: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/vector-query-with-embedding.yaml.
+  proof:
+  - case-vector-query-with-embedding
+  - oracle
+  - helper-python
+- text: >-
+    document score citation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/document-score-citation.yaml.
+  proof:
+  - case-document-score-citation
+  - oracle
+  - helper-python
+- text: >-
+    unsupported store create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-vector-stores/unsupported-store-create.yaml.
+  proof:
+  - case-unsupported-store-create
+  - oracle
+  - helper-python
+- text: New foundry_vector_stores seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_azure_search_reply has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-store-type-endpoints
+    why: The store-type-endpoints behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_store_type_endpoints$/)'
+  - id: case-auth-credentials
+    why: The auth-credentials behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_auth_credentials$/)'
+  - id: case-search-query-fields
+    why: The search-query-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_search_query_fields$/)'
+  - id: case-vector-query-with-embedding
+    why: The vector-query-with-embedding behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_vector_query_with_embedding$/)'
+  - id: case-document-score-citation
+    why: The document-score-citation behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_document_score_citation$/)'
+  - id: case-unsupported-store-create
+    why: The unsupported-store-create behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_unsupported_store_create$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_vector_stores.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores*")"
+      && grep -lq 'foundry_vector_stores' tools/oracle/fuzz/corpus/helper_case/foundry_vector_stores* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_vector_stores$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores)"
+      && grep -q 'decode_azure_search_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_vector_stores.rs
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_vector_stores_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-vector-stores/store-type-endpoints.yaml
+- tools/oracle/cases/helpers/providers/foundry-vector-stores/auth-credentials.yaml
+- tools/oracle/cases/helpers/providers/foundry-vector-stores/search-query-fields.yaml
+- tools/oracle/cases/helpers/providers/foundry-vector-stores/vector-query-with-embedding.yaml
+- tools/oracle/cases/helpers/providers/foundry-vector-stores/document-score-citation.yaml
+- tools/oracle/cases/helpers/providers/foundry-vector-stores/unsupported-store-create.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve source citations/document metadata and unsupported create behavior.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,256 @@
+id: B052
+title: Wire virtual key authentication into the server
+description: >-
+  Replace B003 master-key middleware with AuthenticationPipeline composed from credential extraction,
+  pre-DB RequestSafety, installed backend dispatch, cached-session/admin stage and master-key/database
+  validation. Preserve public and development no-master-key branches. Register existing typed stages once,
+  wire model-list visibility, and never dispatch an unauthorized request. Master authentication substitutes
+  LITELLM_PROXY_MASTER_KEY_ALIAS before spend logs, metrics and audit so neither the master key nor its
+  hash becomes a downstream identity. Keep pass_through_endpoints rejected until B102 registers its lookup
+  port.
+
+
+  HTTP failures: missing and malformed key -> 401 auth_error; /user/auth with allow_user_auth=false ->
+  403; master_key_only_routes with non-master credential -> 401 auth_error; no database -> 400 no_db_connection
+  param null; non-sk- credential -> 401 with the JWT-disabled hint in betterlite wording. Cached expired
+  admin -> 401 expired_key in B876; SCIM inactive and managed-agent mapping failures are covered in B875.
+  Pin status, /error/type, /error/param and /error/code through the real server, not Python exception
+  names.
+
+
+  Injected port instead of a reverse dependency on B054: AuthBackend::custom(RequestContext,SecretString)->Result<AuthContext,AuthError>;
+  B054 implements it after B165 is available. A configured but unregistered implementation is a named
+  startup error, never a success stub.
+
+
+  Build the production virtual_key_auth module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/user_api_key_auth.py:
+  user_api_key_auth (L3433-L3529; 63 source lines), authorize_internal_virtual_key (L3938-L3977; 39 source
+  lines), _user_api_key_auth_builder.preflight (L1475-L1602; 105 source lines), _user_api_key_auth_builder.credential_gate
+  (L1858-L1895; 34 source lines), _user_api_key_auth_builder.master_and_database (L2078-L2208; 110 source
+  lines), user_api_key_auth_websocket_for_model (L648-L707; 44 source lines), user_api_key_auth_websocket
+  (L644-L645; 2 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.pass_through_endpoints=None;
+  general_settings.litellm_key_header_name=None; general_settings.allow_user_auth=False; pass_through_endpoints=None;
+  litellm_key_header_name=None; enable_jwt_auth=False; allow_user_auth=False.
+
+
+  general_settings.litellm_key_header_name=None and allow_user_auth=false are accepted at this stage;
+  uninstalled JWT/OAuth/custom/pass-through modes still fail startup by name. general_settings.master_key
+  retains B003 binding.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::virtual_key_auth::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 397 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  397 production, 178 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 690 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/virtual_key_auth.rs
+    - crates/betterlite-server/src/virtual_key_auth/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/virtual-key-auth/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/virtual_key_auth.rs
+    - crates/betterlite-config/src/virtual_key_auth/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-auth-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1475-L2208
+    why: Pinned implementation and exact ownership boundary for virtual_key_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2747-L2751
+    why: Pinned implementation and exact ownership boundary for virtual_key_auth.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3433-L3529
+    why: Own user_api_key_auth; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3938-L3977
+    why: Own authorize_internal_virtual_key; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1475-L1602
+    why: Own _user_api_key_auth_builder.preflight; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1858-L1895
+    why: Own _user_api_key_auth_builder.credential_gate; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2078-L2208
+    why: Own _user_api_key_auth_builder.master_and_database; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L648-L707
+    why: Own user_api_key_auth_websocket_for_model; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L644-L645
+    why: Own user_api_key_auth_websocket; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1519-L1524
+    why: general_settings.pass_through_endpoints default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1533-L1538
+    why: general_settings.litellm_key_header_name default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1890-L1895
+    why: general_settings.allow_user_auth default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1-L6
+    why: allow_user_auth default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: concurrent_request_isolation,
+      master_alias_no_secret, unauthorized_never_dispatches, master_key, virtual_key_success, invalid_key,
+      public_route, no_master_dev_mode, revoked_key_no_dispatch, internal_key_auth, missing_key, malformed_key,
+      user_auth_disabled, master_only_denied, no_database, non_sk_jwt_disabled.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^virtual_key_auth::tests::/)
+        - test(/replays_the_/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^virtual_key_auth::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-auth-*")"
+        && grep -rlq "pass_through_endpoints" crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-auth-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/auth/virtual-key-auth/master-key.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/virtual-key-success.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/invalid-key.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/public-route.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/no-master-dev-mode.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/revoked-key-no-dispatch.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/internal-key-auth.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/missing-key.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/malformed-key.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/user-auth-disabled.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/master-only-denied.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/no-database.yaml
+  - tools/oracle/cases/auth/virtual-key-auth/non-sk-jwt-disabled.yaml
+  - tools/oracle/cases/health/liveliness.yaml
+  - tools/oracle/cases/auth/missing-key.yaml
+  - tools/oracle/cases/auth/wrong-key.yaml
+  - tools/oracle/cases/auth/unknown-route.yaml
+  - tools/oracle/cases/auth/header-authorization.yaml
+  - tools/oracle/cases/auth/header-api-key.yaml
+  - tools/oracle/cases/auth/header-x-api-key.yaml
+  - tools/oracle/cases/auth/header-x-goog-api-key.yaml
+  - tools/oracle/cases/auth/header-ocp-apim-subscription-key.yaml
+  - tools/oracle/cases/auth/header-x-litellm-api-key.yaml
+deviations:
+  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
+      entitlement.
+    why: README Decisions specifies no paid tier and no user/team cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L1475-L2208
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/auth/user_api_key_auth.py: B054 owns _run_post_custom_auth_checks (L3769-L3935).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B735 owns _identity_cache_keys (L3364-L3376), _prefetch_referenced_auth_objects
+    (L3379-L3392).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B738 owns _refresh_session_token_grants (L1409-L1452), _resolve_object_permission_for_unresolvable_team
+    (L1455-L1472).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B751 owns _get_temp_budget_increase (L3615-L3623), _update_key_budget_with_temp_budget_increase
+    (L3626-L3634).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B753 owns _KeyModelBudgetLimiter.is_key_within_model_budget
+    (L307-L307), _KeyModelBudgetLimiter.get_fallback_model_within_budget (L309-L309), _UserModelBudgetLimiter.is_user_within_model_budget
+    (L313-L315), _TeamModelBudgetLimiter.is_team_within_model_budget (L319-L325), _TokenTeamModels.team_models
+    (L330-L330), _RawCacheRead.async_get_cache (L334-L334), _raw_cache (L337-L341), _token_team_models
+    (L344-L345), _read_user_model_max_budget (L348-L374), _check_user_model_budget (L377-L395), _check_team_model_budget
+    (L398-L414), _check_key_model_budget_with_fallback (L417-L488), _apply_budget_limits_to_end_user_params
+    (L613-L641), update_valid_token_with_end_user_params (L710-L726), _fetch_global_spend_with_event_coordination
+    (L733-L757), get_global_proxy_spend (L760-L790).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B755 owns validate_resolved_virtual_key (L2211-L2622).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B756 owns _normalize_public_auth_route (L160-L163), _route_requires_auth_despite_public
+    (L166-L171), _get_bearer_token_or_received_api_key (L491-L511), _routing_selector_matches_claim (L514-L552),
+    _matches_routing_override (L555-L565), _should_route_jwt_to_oauth2_override (L568-L582), _get_bearer_token
+    (L585-L610), get_rbac_role (L793-L798), get_api_key (L801-L858), check_api_key_for_custom_headers_or_pass_through_endpoints
+    (L861-L905), get_api_key_from_custom_header (L3580-L3612), is_no_auth_dev_mode (L2747-L2751).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B757 owns _ensure_litellm_received_at_on_request_state (L1310-L1327),
+    _ensure_parent_otel_span_on_request_state (L1330-L1359), _read_request_body_deferring_parse_failure
+    (L1362-L1381), _record_unparsable_body_failure (L1384-L1406).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B766 owns _auto_register_jwt_mapping (L942-L1081), _lookup_jwt_mapping_token_hash
+    (L1084-L1118), _resolve_jwt_to_virtual_key (L1121-L1307).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B855 owns _resolve_request_principal (L3224-L3245), _authorize_authenticated_request
+    (L3248-L3355), _spend_counter_redis_cache (L3358-L3361), _seed_request_destinations (L3395-L3429).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B875 owns _user_api_key_auth_builder.backend_dispatch (L1603-L1856).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B876 owns _user_api_key_auth_builder.cached_session (L1897-L2076).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B881 owns _get_model_from_request_context (L206-L221), _normalize_claude_model
+    (L230-L255), _resolve_router_settings_model_group_alias (L258-L293), _get_model_names_for_budget_checks
+    (L296-L303).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B888 owns _safe_fetch (L2625-L2651), _team_obj_from_token
+    (L2654-L2673), _token_can_vouch_for_team (L2676-L2703), _inherit_org_identity (L2706-L2744).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B889 owns _return_user_api_key_auth_obj (L3532-L3577), _lookup_end_user_and_apply_budget
+    (L3637-L3696), _enforce_key_and_fallback_model_access (L3699-L3756), _fallback_target_model_name (L3759-L3766).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B1221 owns _run_centralized_common_checks (L2755-L3110).'
+  - 'litellm/proxy/auth/user_api_key_auth.py: B1225 owns _noop_none (L3113-L3116), _apply_key_end_user_default_budget_to_token
+    (L3119-L3156), _reserve_budget_after_common_checks (L3159-L3202), _should_skip_budget_checks (L3205-L3221).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - The master-key alias substitution must happen before any spend or metric label is formed.
+  - An absent key and an empty malformed bearer key take distinct branches before DB lookup.
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0
+review_level: security

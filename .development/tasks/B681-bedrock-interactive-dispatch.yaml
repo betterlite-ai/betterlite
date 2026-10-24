@@ -1,0 +1,239 @@
+id: B681
+title: Bedrock Responses search vector and realtime composition
+description: >-
+  Install Bedrock Responses, native passthrough, AgentCore search, knowledge-base vector retrieval and realtime
+  bridge operations. Each fixture uses the actual native dispatcher and captures its leaf transport or websocket
+  seam.
+
+
+  This slice adds native composition or ports the SDK protocol called by the parent; it owns no additional LiteLLM
+  function body. The references and concrete operations below bound that work.
+
+
+  Add a separate Rust-only unsupported_operation case against the executable dispatcher; do not invent a Python
+  oracle operation for it.
+
+
+  Install these completed leaf operations: B657 Bedrock Responses and inline-image policy; B658 Bedrock passthrough
+  and typed logging collectors; B659 Bedrock AgentCore MCP web search; B660 Bedrock Knowledge Bases vector retrieval;
+  B667 Bedrock realtime client and provider event pumping. Each dispatch fixture must reach its leaf with a fake
+  transport and assert the resulting request or reply; accept already normalized settings and reuse leaf errors.
+
+
+  Implement crates/betterlite-provider/src/bedrock_interactive_dispatch.rs with adjacent tests under bedrock_interactive_dispatch/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_interactive_dispatch in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function bedrock_interactive_dispatch_cases in betterlite-provider with these exact named cases (one
+  per oracle file): responses, passthrough, search, vector_retrieve, realtime_bridge. Each case exercises its named
+  outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy
+  and assert both client response and captured upstream request. Existing API tasks retain route registration; this
+  task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_interactive_dispatch* using HelperCase:
+  kind: helper and the externally tagged bedrock_interactive_dispatch variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_interactive_dispatch that parses
+  every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds;
+  then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Write standalone bedrock_interactive_dispatch_unsupported_operation in betterlite-provider for this Rust-specific
+  invariant; it is not a Python oracle case.
+
+
+  Budget from 0 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and docstrings;
+  SDK overloads share an async implementation): 145 production lines, 105 behavior/config-test lines, 105 combined
+  Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 395 planned, 400 maximum changed lines. Composition has no new Python algorithm; its allowance is
+  native operation wiring plus fixture calls.
+scope:
+  paths:
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-provider/src/bedrock_interactive_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_interactive_dispatch/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_interactive_dispatch.rs
+  - tools/oracle/src/helpers/bedrock_interactive_dispatch/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_interactive_dispatch.py
+  - tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_interactive_dispatch*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L80-L81
+  why: Operation contract delegated to B657; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L28-L39
+  why: Operation contract delegated to B658; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L85-L86
+  why: Operation contract delegated to B659; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L40-L42
+  why: Operation contract delegated to B660; only native dispatcher wiring is added here.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L459-L511
+  why: Operation contract delegated to B667; only native dispatcher wiring is added here.
+dod:
+- text: 'responses: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/responses.yaml.'
+  proof:
+  - case-responses
+  - oracle
+  - helper-python
+- text: 'passthrough: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/passthrough.yaml.'
+  proof:
+  - case-passthrough
+  - oracle
+  - helper-python
+- text: 'search: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/search.yaml.'
+  proof:
+  - case-search
+  - oracle
+  - helper-python
+- text: 'vector retrieve: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/vector-retrieve.yaml.'
+  proof:
+  - case-vector-retrieve
+  - oracle
+  - helper-python
+- text: 'realtime bridge: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/realtime-bridge.yaml.'
+  proof:
+  - case-realtime-bridge
+  - oracle
+  - helper-python
+- text: New bedrock_interactive_dispatch seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: unsupported operation holds at this task’s owned boundary.
+  proof:
+  - unsupported-operation
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-responses
+    why: The responses behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_interactive_dispatch_cases::case_[0-9]+_responses$/)'
+  - id: case-passthrough
+    why: The passthrough behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_interactive_dispatch_cases::case_[0-9]+_passthrough$/)'
+  - id: case-search
+    why: The search behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_interactive_dispatch_cases::case_[0-9]+_search$/)'
+  - id: case-vector-retrieve
+    why: The vector-retrieve behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_interactive_dispatch_cases::case_[0-9]+_vector_retrieve$/)'
+  - id: case-realtime-bridge
+    why: The realtime-bridge behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_interactive_dispatch_cases::case_[0-9]+_realtime_bridge$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_interactive_dispatch.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_interactive_dispatch*")"
+      && grep -lq 'bedrock_interactive_dispatch' tools/oracle/fuzz/corpus/helper_case/bedrock_interactive_dispatch*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_interactive_dispatch$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: unsupported-operation
+    why: The unsupported operation invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_interactive_dispatch_unsupported_operation$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/responses.yaml
+- tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/passthrough.yaml
+- tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/search.yaml
+- tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/vector-retrieve.yaml
+- tools/oracle/cases/helpers/providers/bedrock-interactive-dispatch/realtime-bridge.yaml
+deviations: []
+out_of_scope:
+- >-
+  litellm/llms/bedrock/realtime/handler.py: BedrockRealtime.async_realtime L242-L346; BedrockRealtime._run_session
+  L348-L411; BedrockRealtime._bridge L413-L457 belong to B666; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/realtime/handler.py: BedrockRealtime._forward_client_to_bedrock L459-L511; BedrockRealtime._forward_bedrock_to_client
+  L513-L589 belong to B667; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/realtime/handler.py: _as_bedrock_error L63-L67; _json_dict L70-L71; _json_str L74-L75; _should_log_event
+  L78-L86; RealtimeClientWebSocket.receive_text L94-L94; RealtimeClientWebSocket.send_text L96-L96; RealtimeClientWebSocket.close
+  L98-L98; BedrockInputStream.send L102-L102; BedrockInputStream.close L104-L104; BedrockPayloadPart.bytes_ L109-L109;
+  BedrockOutputChunk.value L114-L114; BedrockOutputStream.receive L118-L118; BedrockBidirectionalStream.input_stream
+  L123-L123; BedrockBidirectionalStream.await_output L125-L125; ClosableBedrockRuntimeClient.close L130-L130; _installed_sdk_version
+  L133-L137; _sdk_import_error L140-L149; _close_bedrock_client L152-L157; _client_messages L167-L175; _pending_session_update
+  L178-L190; _raise_provider_failure L193-L198; _parse_client_message L201-L205; _ack_session_update L208-L232;
+  BedrockRealtime.__init__ L238-L240 belong to B665; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/responses/transformation.py: _without_chat_completions_route L80-L81; resolve_bedrock_bearer_token
+  L84-L85; _remote_image_url L88-L94; _blocks_under L97-L102; _image_blocks L105-L109; collect_remote_image_urls
+  L112-L120; _inline_block L123-L127; _inline_value L130-L133; _inline_item L136-L144; inline_remote_image_urls
+  L147-L154; BedrockOpenAIResponsesConfig.__init__ L160-L167; BedrockOpenAIResponsesConfig.for_model L170-L184;
+  BedrockOpenAIResponsesConfig.custom_llm_provider L187-L188; BedrockOpenAIResponsesConfig.get_error_class L190-L194;
+  BedrockOpenAIResponsesConfig.get_complete_url L196-L216; BedrockOpenAIResponsesConfig.supports_native_file_search
+  L218-L219; BedrockOpenAIResponsesConfig.validate_environment L221-L231; BedrockOpenAIResponsesConfig.sign_request
+  L233-L256; BedrockOpenAIResponsesConfig.map_openai_params L258-L288; BedrockOpenAIResponsesConfig.transform_responses_api_request
+  L290-L305; BedrockOpenAIResponsesConfig.async_transform_responses_api_request L307-L323; BedrockOpenAIResponsesConfig._transform_inlined_request
+  L325-L345 belong to B657; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/passthrough/transformation.py: _plain_text_delta L28-L39; _CoalescedChunks.__init__ L46-L48;
+  _CoalescedChunks.add L50-L58; _CoalescedChunks._seal_text_run L60-L63; _CoalescedChunks.chunks L65-L67; _translate_message
+  L70-L82; _build_logged_response L85-L92; BedrockEventStreamCollector.__init__ L98-L108; BedrockEventStreamCollector.add
+  L110-L115; BedrockEventStreamCollector._add_event L117-L121; BedrockEventStreamCollector.build_logged_response
+  L123-L124; BedrockPassthroughConfig.get_error_class L128-L134; BedrockPassthroughConfig.is_streaming_request L136-L137;
+  BedrockPassthroughConfig._encode_model_id_for_endpoint L139-L169; BedrockPassthroughConfig.get_complete_url L171-L210;
+  BedrockPassthroughConfig.get_bedrock_bearer_token L212-L213; BedrockPassthroughConfig.sign_request L215-L232;
+  BedrockPassthroughConfig.logging_non_streaming_response L234-L275; BedrockPassthroughConfig.create_stream_collector
+  L277-L283; BedrockPassthroughConfig._get_event_stream_decoder L285-L305 belong to B658; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/search/transformation.py: _gateway_host_match L85-L86; _credential_safe_transport L92-L94;
+  _string_field L97-L101; _to_search_result L104-L111; _result_items L114-L118; _parse_result_items L121-L134; _iter_sse_events
+  L137-L154; AgentCoreSearchConfig.__init__ L158-L160; AgentCoreSearchConfig.ui_friendly_name L163-L164; AgentCoreSearchConfig.validate_environment
+  L166-L187; AgentCoreSearchConfig.get_complete_url L189-L203; AgentCoreSearchConfig.transform_search_request L205-L248;
+  AgentCoreSearchConfig.sign_request L250-L321; AgentCoreSearchConfig._is_configured_gateway L324-L328; AgentCoreSearchConfig._signing_region
+  L331-L358; AgentCoreSearchConfig.transform_search_response L360-L403; AgentCoreSearchConfig._tool_error_message
+  L405-L409; AgentCoreSearchConfig._text_blocks L412-L417; AgentCoreSearchConfig._parse_mcp_body L420-L445; AgentCoreSearchConfig.get_error_class
+  L447-L457 belong to B659; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/vector_stores/transformation.py: BedrockVectorStoreConfig.__init__ L40-L42; BedrockVectorStoreConfig.get_error_class
+  L44-L50; BedrockVectorStoreConfig.get_auth_credentials L52-L53; BedrockVectorStoreConfig.get_vector_store_endpoints_by_type
+  L55-L59; BedrockVectorStoreConfig.get_supported_openai_params L61-L62; BedrockVectorStoreConfig._map_operator_to_aws
+  L64-L92; BedrockVectorStoreConfig._map_operator_filter L94-L107; BedrockVectorStoreConfig._map_and_or_filters
+  L109-L153; BedrockVectorStoreConfig.map_openai_params L155-L184; BedrockVectorStoreConfig.validate_environment
+  L186-L189; BedrockVectorStoreConfig.get_complete_url L191-L199; BedrockVectorStoreConfig.transform_search_vector_store_request
+  L201-L252; BedrockVectorStoreConfig._user_context L255-L268; BedrockVectorStoreConfig.sign_request L270-L285;
+  BedrockVectorStoreConfig._get_file_id_from_metadata L287-L297; BedrockVectorStoreConfig._get_filename_from_metadata
+  L299-L319; BedrockVectorStoreConfig._get_attributes_from_metadata L321-L328; BedrockVectorStoreConfig.transform_search_vector_store_response
+  L330-L367; BedrockVectorStoreConfig.transform_create_vector_store_request L370-L375; BedrockVectorStoreConfig.transform_create_vector_store_response
+  L377-L378 belong to B660; reuse that implementation or its injected typed boundary.
+pitfalls:
+- The realtime operation passes an owned duplex connection, not a buffered response body.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: standard

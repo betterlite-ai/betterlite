@@ -1,0 +1,170 @@
+id: B1043
+title: Batch enqueued refund
+description: >-
+  Persist and consume batch enqueued-token reservations, canonicalize provider IDs and refund exactly once across
+  the source terminal statuses including cancelling. Keep Redis/local backend ownership, tombstone TTL and concurrent
+  duplicate-poll behavior in typed records. Refund statuses are completed, complete, failed, expired, cancelled
+  and cancelling; reuse the 691200-second reservation TTL.
+
+
+  Implement crates/betterlite-core/src/api/batch_enqueued_refund.rs. Use BatchEnqueuedRefundInput and BatchEnqueuedRefundResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions terminal_refund_once, cancelling_refund, reservation_tombstone, local_backend_refund,
+  duplicate_refund_race under api::batch_enqueued_refund::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::BatchEnqueuedRefund in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {batch_enqueued_refund: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore.refund (L328-L350);
+  litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._refund_redis_reservation (L352-L364); litellm/proxy/hooks/batch_enqueued_tokens.py:
+  BatchEnqueuedTokenStore.save_reservation (L366-L396); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore.pop_reservation
+  (L398-L421); litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._pop_redis_record (L423-L438);
+  litellm/proxy/hooks/batch_enqueued_tokens.py: BatchEnqueuedTokenStore._pop_local_record (L440-L450). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 115 owned nonblank/non-comment/non-docstring Python lines (115 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 135 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 385 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B126 (Redis, Redis Cluster and Valkey), B171 (Direct helper oracle and URL path encoding),
+  B1042 (Batch enqueued reserve), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/batch_enqueued_refund.rs
+  - crates/betterlite-core/src/api/batch_enqueued_refund/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/batch_enqueued_refund.rs
+  - tools/oracle/src/helpers/batch_enqueued_refund/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/batch_enqueued_refund.py
+  - tools/oracle/helpers/batch_enqueued_refund/**
+  - tools/oracle/fuzz/corpus/helper_case/batch_enqueued_refund-*
+  - tools/oracle/cases/helpers/batch-enqueued-refund/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L328-L451
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/batch_enqueued_tokens.py#L459-L459
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'terminal refund once: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-terminal-refund-once
+  - oracle
+- text: 'cancelling refund: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cancelling-refund
+  - oracle
+- text: 'reservation tombstone: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-reservation-tombstone
+  - oracle
+- text: 'local backend refund: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-local-backend-refund
+  - oracle
+- text: 'duplicate refund race: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-duplicate-refund-race
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_refund::/)
+      - test(/::replays_corpus$/)'
+  - id: case-terminal-refund-once
+    why: the terminal-refund-once behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_refund::tests::terminal_refund_once($|::)/)'
+  - id: case-cancelling-refund
+    why: the cancelling-refund behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_refund::tests::cancelling_refund($|::)/)'
+  - id: case-reservation-tombstone
+    why: the reservation-tombstone behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_refund::tests::reservation_tombstone($|::)/)'
+  - id: case-local-backend-refund
+    why: the local-backend-refund behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_refund::tests::local_backend_refund($|::)/)'
+  - id: case-duplicate-refund-race
+    why: the duplicate-refund-race behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::batch_enqueued_refund::tests::duplicate_refund_race($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/batch_enqueued_refund.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/batch_enqueued_refund-*)"
+      && grep -qE "^[[:space:]]+batch_enqueued_refund:" tools/oracle/fuzz/corpus/helper_case/batch_enqueued_refund-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/batch-enqueued-refund)"
+oracle_cases:
+- tools/oracle/cases/helpers/batch-enqueued-refund/terminal-refund-once.yaml
+- tools/oracle/cases/helpers/batch-enqueued-refund/cancelling-refund.yaml
+- tools/oracle/cases/helpers/batch-enqueued-refund/reservation-tombstone.yaml
+- tools/oracle/cases/helpers/batch-enqueued-refund/local-backend-refund.yaml
+- tools/oracle/cases/helpers/batch-enqueued-refund/duplicate-refund-race.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/hooks/batch_enqueued_tokens.py: B1042 owns _ScriptRunner.__call__ L111-L111, _read_metadata_limit
+  L114-L128, resolve_batch_enqueued_token_scopes L131-L144, canonical_provider_batch_id L147-L159, batch_response_view
+  L170-L174, BatchEnqueuedTokenStore.__init__ L193-L214, BatchEnqueuedTokenStore._counter_key L217-L218, BatchEnqueuedTokenStore._record_key
+  L221-L222, BatchEnqueuedTokenStore.reserve L224-L244, BatchEnqueuedTokenStore._reserve_via_redis L246-L267, BatchEnqueuedTokenStore._run_reserve_script
+  L269-L285, BatchEnqueuedTokenStore._rollback_partial_reserve L287-L299, BatchEnqueuedTokenStore._refund_via_redis
+  L301-L308, BatchEnqueuedTokenStore._reserve_in_memory L310-L326, BatchEnqueuedTokenStore._get_local_counter L452-L458,
+  BatchEnqueuedTokenStore._set_local_counter L460-L467.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- batch_enqueued_tokens.py:339 emits the diagnostic "Skipping enqueued-token refund granted in another worker's
+  memory; its counters expire with the TTL"; retain its level and fallback instead of turning it into a hard error.
+- batch_enqueued_tokens.py:355 emits the diagnostic 'No Redis client for a Redis-granted enqueued-token refund;
+  leaked increments expire with the TTL'; retain its level and fallback instead of turning it into a hard error.
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

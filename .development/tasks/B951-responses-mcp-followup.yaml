@@ -1,0 +1,187 @@
+id: B951
+title: Responses mcp followup
+description: >-
+  Build chat and Responses follow-up inputs, tool-execution events and final MCP output composition using responses-mcp-execute
+  results. Respect persistence-disabled history, preserve output order and expose typed pending-followup plans rather
+  than recursively invoking an endpoint.
+
+
+  Implement crates/betterlite-core/src/api/responses_mcp_followup.rs. Use ResponsesMcpFollowupInput and ResponsesMcpFollowupResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions persistence_disabled_history, mcp_output_item_order, followup_tool_results,
+  failure_event_fields, parent_request_tags under api::responses_mcp_followup::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ResponsesMcpFollowup in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_mcp_followup: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
+  (L975-L1017); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._is_persistence_disabled
+  (L1020-L1022); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_follow_up_input
+  (L1025-L1101); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._make_follow_up_call
+  (L1104-L1118); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
+  (L1146-L1188); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._build_request_params
+  (L1191-L1222); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._create_tool_execution_events
+  (L1225-L1272); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._prepare_initial_call_params
+  (L1275-L1288); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._prepare_follow_up_call_params
+  (L1291-L1308); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._add_mcp_output_elements_to_response
+  (L1311-L1357). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 247 owned nonblank/non-comment/non-docstring Python lines (282 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 267 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 517 total within the 520-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B012 (Logging pipeline, callback registry and redaction), B171 (Direct helper oracle and
+  URL path encoding), B902 (Responses shapes), B950 (Responses mcp execute), B1087 (Api boundaries), B932 (Responses
+  create call), B952 (Responses mcp events). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_mcp_followup.rs
+  - crates/betterlite-core/src/api/responses_mcp_followup/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_mcp_followup.rs
+  - tools/oracle/src/helpers/responses_mcp_followup/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_mcp_followup.py
+  - tools/oracle/helpers/responses_mcp_followup/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*
+  - tools/oracle/cases/helpers/responses-mcp-followup/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L975-L1119
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1144-L1357
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'persistence disabled history: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-persistence-disabled-history
+  - oracle
+- text: 'mcp output item order: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-mcp-output-item-order
+  - oracle
+- text: 'followup tool results: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-followup-tool-results
+  - oracle
+- text: 'failure event fields: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-failure-event-fields
+  - oracle
+- text: 'parent request tags: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-parent-request-tags
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::/)
+      - test(/::replays_corpus$/)'
+  - id: case-persistence-disabled-history
+    why: the persistence-disabled-history behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::persistence_disabled_history($|::)/)'
+  - id: case-mcp-output-item-order
+    why: the mcp-output-item-order behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::mcp_output_item_order($|::)/)'
+  - id: case-followup-tool-results
+    why: the followup-tool-results behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::followup_tool_results($|::)/)'
+  - id: case-failure-event-fields
+    why: the failure-event-fields behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::failure_event_fields($|::)/)'
+  - id: case-parent-request-tags
+    why: the parent-request-tags behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_followup::tests::parent_request_tags($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_mcp_followup.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*)"
+      && grep -qE "^[[:space:]]+responses_mcp_followup:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-followup)"
+oracle_cases:
+- tools/oracle/cases/helpers/responses-mcp-followup/persistence-disabled-history.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/mcp-output-item-order.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/followup-tool-results.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/failure-event-fields.yaml
+- tools/oracle/cases/helpers/responses-mcp-followup/parent-request-tags.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B948 owns _mcp_server_url L66-L70, _names_gateway_explicitly
+  L73-L74, _proxy_path_mcp_name L77-L80, _registered_mcp_servers L83-L88, _registry_serves L91-L97, _toolset_exists
+  L100-L112, _gateway_served_names L115-L121, _served_mcp_path_names L124-L128, LiteLLM_Proxy_MCP_Handler._get_parent_request_tags
+  L139-L150, LiteLLM_Proxy_MCP_Handler._should_use_litellm_mcp_gateway L153-L156, LiteLLM_Proxy_MCP_Handler._parse_mcp_tools
+  L159-L163, LiteLLM_Proxy_MCP_Handler._split_mcp_tools L166-L179, LiteLLM_Proxy_MCP_Handler.routes_through_gateway
+  L182-L188, LiteLLM_Proxy_MCP_Handler._apply_toolset_permissions L191-L232, LiteLLM_Proxy_MCP_Handler._deduplicate_mcp_tools
+  L355-L386, LiteLLM_Proxy_MCP_Handler._filter_mcp_tools_by_allowed_tools L389-L414.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B949 owns LiteLLM_Proxy_MCP_Handler._get_mcp_tools_from_manager
+  L235-L352, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_to_openai_format L417-L447, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_without_openai_transform
+  L450-L503, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L507-L510, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai
+  L514-L517, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L520-L537.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B950 owns LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
+  L540-L563, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response L566-L577, LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response
+  L580-L601, LiteLLM_Proxy_MCP_Handler._extract_tool_call_details L604-L635, LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
+  L638-L648, LiteLLM_Proxy_MCP_Handler._parse_mcp_result L651-L684, LiteLLM_Proxy_MCP_Handler._execute_tool_calls
+  L687-L972, LiteLLM_Proxy_MCP_Handler._log_mcp_tool_failure L1121-L1143.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat uses message_to_append.get('tool_calls'); retain
+  its missing-value behavior and field spelling in the typed projection.
+- LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat uses tool_result.get('tool_call_id'); retain its
+  missing-value behavior and field spelling in the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 520
+  max_new_expects: 1

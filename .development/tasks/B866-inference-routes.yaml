@@ -1,0 +1,159 @@
+id: B866
+title: Inference route permission tables
+description: >-
+  Define typed permission-route constants for openai_routes, anthropic_routes, llm_api_routes. Preserve
+  every pinned literal, alias, template and enum expansion; these are policy data, not HTTP route registrations.
+  Serve the named groups to route matching and role policy without importing endpoint modules. B207 still
+  owns call-type mapping; B124 no longer owns these table entries. No URL is fetched and no caller string
+  can create a new enum group.
+
+
+  Build the production inference_routes module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/_types.py:
+  LiteLLMRoutes.openai_routes (L339-L490; 129 source lines), LiteLLMRoutes.anthropic_routes (L551-L561;
+  11 source lines), LiteLLMRoutes.llm_api_routes (L648-L659; 12 source lines).
+
+
+  Add the inference_routes operation under B856 Management::auth. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a inference-routes-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 152 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  152 production, 142 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 389 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-auth/src/inference_routes.rs
+    - crates/betterlite-auth/src/inference_routes/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/inference_routes.rs
+    - tools/oracle/src/helpers/inference_routes/**
+    - tools/oracle/helpers/inference_routes.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/inference-routes/**
+    - tools/oracle/fuzz/corpus/helper_case/inference-routes-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L339-L490
+    why: Own LiteLLMRoutes.openai_routes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L551-L561
+    why: Own LiteLLMRoutes.anthropic_routes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L648-L659
+    why: Own LiteLLMRoutes.llm_api_routes; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: literal_membership,
+      alias_membership, group_expansion, unknown_group.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^inference_routes::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/inference_routes.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/inference-routes-*")"
+        && grep -rlq "inference_routes" tools/oracle/fuzz/corpus/helper_case/inference-routes-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/inference-routes/literal-membership.yaml
+  - tools/oracle/cases/helpers/inference-routes/alias-membership.yaml
+  - tools/oracle/cases/helpers/inference-routes/group-expansion.yaml
+  - tools/oracle/cases/helpers/inference-routes/unknown-group.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
+    (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
+  - 'litellm/proxy/_types.py: B770 owns KeyRequestBase (L1340-L1362), GenerateKeyRequest (L1376-L1396),
+    GenerateKeyResponse (L1399-L1438), UpdateKeyRequest (L1441-L1484).'
+  - 'litellm/proxy/_types.py: B867 owns LiteLLMRoutes.mcp_management_routes (L583-L587), LiteLLMRoutes.agent_management_routes
+    (L606-L612), LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
+    (L694-L719), LiteLLMRoutes.team_service_account_key_routes (L721-L724), LiteLLMRoutes.management_routes
+    (L726-L782), LiteLLMRoutes.spend_tracking_routes (L784-L805), LiteLLMRoutes.global_spend_tracking_routes
+    (L807-L821), LiteLLMRoutes.internal_user_routes (L885-L913), LiteLLMRoutes.internal_user_view_only_routes
+    (L915-L929), LiteLLMRoutes.org_admin_only_routes (L1024-L1036), LiteLLMRoutes.admin_viewer_routes
+    (L1050-L1126), LiteLLMRoutes.org_admin_allowed_routes (L1129-L1129).'
+  - 'litellm/proxy/_types.py: B868 owns LiteLLMRoutes.openai_route_names (L329-L338), LiteLLMRoutes.mapped_pass_through_routes
+    (L492-L521), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527), LiteLLMRoutes.litellm_native_routes
+    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_routes (L591-L591),
+    LiteLLMRoutes.agent_inference_routes (L594-L601), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
+    (L618-L636), LiteLLMRoutes.apply_guardrail_routes (L638-L640), LiteLLMRoutes.model_info_routes (L642-L646),
+    LiteLLMRoutes.info_routes (L660-L685), LiteLLMRoutes.public_routes (L823-L844), LiteLLMRoutes.ui_routes
+    (L849-L871), LiteLLMRoutes.compliance_check_routes (L875-L878), LiteLLMRoutes.self_managed_routes
+    (L931-L1019).'
+  - 'litellm/proxy/_types.py: B869 owns LiteLLM_JWTAuth (L5331-L5576), JWTLiteLLMRoleMap (L5198-L5200),
+    JWTRoutingOverride (L5211-L5232), UnregisteredJWTClientBehavior (L5235-L5251), JWTIssuerConfig (L5254-L5325).'
+  - 'litellm/proxy/_types.py: B1231 owns NewTeamRequest (L2164-L2210), UpdateTeamRequest (L2219-L2281).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - 'litellm/proxy/_types.py: B124 owns the remaining functions SupportedDBObjectType.__str__ (L142-L143),
+    LitellmUserRoles.__str__ (L191-L192), LitellmUserRoles.values (L194-L195), LitellmUserRoles.description
+    (L197-L210), LitellmUserRoles.ui_label (L212-L225), LitellmUserRoles.is_internal_user_role (L227-L233),
+    hash_token (L278-L284), LiteLLMPromptInjectionParams.check_llm_api_params (L1144-L1155), ModelInfo.set_model_info
+    (L1226-L1241), ModelParams.set_model_info (L1260-L1265), GenerateRequestBase.check_max_budget (L1327-L1332),
+    ResetSpendRequest.reject_bool_reset_to (L1501-L1509), KeyRequest.validate_at_least_one (L1516-L1521),
+    _dcr_bridge_auth_type_error (L1554-L1559), _per_server_oauth_discovery_error (L1562-L1566), is_per_server_oauth_discovery_eligible
+    (L1569-L1572), _reject_unsupported_per_server_oauth_discovery (L1575-L1588), _validate_mcp_transport_fields
+    (L1591-L1612), NewMCPServerRequest.validate_transport_fields (L1678-L1682), NewMCPServerRequest.validate_credentials_requirements
+    (L1684-L1693), NewMCPServerRequest.validate_dcr_bridge_auth_type (L1695-L1703), NewMCPServerRequest.validate_per_server_oauth_discovery_auth_type
+    (L1705-L1709), UpdateMCPServerRequest.validate_transport_fields (L1761-L1765), UpdateMCPServerRequest.validate_dcr_bridge_auth_type
+    (L1767-L1780), UpdateMCPServerRequest.validate_per_server_oauth_discovery_auth_type (L1782-L1786),
+    NewUserRequest.password_not_supported (L1959-L1967), UpdateUserRequest.check_user_info (L2013-L2018),
+    NewCustomerRequest.check_user_info (L2109-L2115), DeleteTeamRequest.distinct_team_ids (L2314-L2318),
+    AddTeamCallback.validate_callback_vars (L2338-L2352), TeamCallbackMetadata.validate_callback_vars
+    (L2374-L2402), CoordinationRedisParams.has_connection_target (L2661-L2662), LiteLLM_VerificationTokenView.__init__
+    (L3331-L3353), UserAPIKeyAuth.check_api_key (L3445-L3473), UserAPIKeyAuth._safe_hash_litellm_api_key
+    (L3475-L3492), UserAPIKeyAuth.get_litellm_internal_health_check_user_api_key_auth (L3494-L3508), UserAPIKeyAuth.get_litellm_cli_user_api_key_auth
+    (L3510-L3524), UserAPIKeyAuth.get_litellm_internal_jobs_user_api_key_auth (L3526-L3542), UserAPIKeyAuth.is_team_service_account
+    (L3544-L3551), user_api_key_has_admin_view (L3554-L3564), LiteLLM_OrganizationTableUpdate.set_model_info
+    (L3621-L3631), NewProjectRequest.set_model_info (L3714-L3726), UpdateProjectRequest.set_model_info
+    (L3749-L3761), LiteLLM_AuditLogs.cast_changed_by_to_str (L3826-L3831), LiteLLM_AuditLogs.mask_api_keys
+    (L3833-L3861), ProxyException.__init__ (L4328-L4359), ProxyException.to_dict (L4361-L4371), ModelAccessDeniedProxyException.__init__
+    (L4375-L4384), ModelAccessDeniedProxyException.sanitized_internal_message (L4386-L4387), ProxyErrorTypes.get_model_access_error_type_for_object
+    (L4527-L4545), ProxyErrorTypes.get_vector_store_access_error_type_for_object (L4547-L4559), MemberAddRequest.__init__
+    (L4611-L4624), OrgMemberAddRequest.__init__ (L4630-L4646), MemberDeleteRequest.check_user_info (L4664-L4669),
+    TeamMemberUpdateRequest.validate_temp_budget (L4738-L4743), OrganizationMemberUpdateRequest.validate_role
+    (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
+    (L5766-L5772).'
+pitfalls:
+  - Preserve every pinned literal, alias, template and enum expansion; these are policy data, not HTTP
+    route registrations.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

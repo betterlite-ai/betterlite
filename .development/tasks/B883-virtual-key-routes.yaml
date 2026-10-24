@@ -1,0 +1,229 @@
+id: B883
+title: Virtual-key route grants and pass-through policy
+description: >-
+  Authorize virtual-key allowed_routes and pass-through route grants with method-aware RouteMatch. Inject
+  PassThroughRegistry::lookup(&RouteIdentity,Method)->Option<RegisteredRoute>; B102 supplies registrations
+  later. A route without a configured auth key defaults to protected. Drop should_call_route premium-user
+  rejection while preserving every route denial. Do not depend on the B102 umbrella, whose endpoint installation
+  requires auth.
+
+
+  Build the production virtual_key_routes module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/route_checks.py:
+  RouteChecks.should_call_route (L72-L91; 17 source lines), RouteChecks.is_virtual_key_allowed_to_call_route
+  (L94-L210; 80 source lines), RouteChecks.is_auth_enforced_pass_through_route (L669-L684; 14 source lines),
+  RouteChecks._auth_pass_through_denied_exception (L687-L694; 8 source lines), RouteChecks.jwt_team_routes_grant_pass_through
+  (L697-L707; 11 source lines), RouteChecks._jwt_team_allowed_routes (L710-L717; 6 source lines), RouteChecks._require_auth_pass_through_access
+  (L720-L733; 14 source lines), RouteChecks.check_passthrough_route_access (L736-L762; 23 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.team_allowed_routes=['openai_routes',
+  'info_routes', 'mcp_routes', '/v1/messages', '/v1/messages/count_tokens'].
+
+
+  Add the virtual_key_routes operation under B856 Management::auth. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a virtual-key-routes-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::virtual_key_routes::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 173 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  173 production, 145 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 498 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_should_call_route_does_not_require_a_premium_license.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+
+
+  Server wiring tests live under betterlite-server::auth::virtual_key_routes::tests: stage_is_registered
+  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
+  called. These tests are part of the behavior-test allowance already budgeted above.
+
+
+  PassThroughRegistry grant/registration scenarios remain direct MIT helper cases with an injected registry.
+  General pass_through_endpoints configuration stays rejected until B102 installs its concrete registry
+  and routes; B102 owns those enabled-route HTTP cases. This task pins its static virtual-route denial
+  through real HTTP before downstream dispatch.
+scope:
+  paths:
+    - crates/betterlite-auth/src/virtual_key_routes.rs
+    - crates/betterlite-auth/src/virtual_key_routes/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/virtual_key_routes.rs
+    - tools/oracle/src/helpers/virtual_key_routes/**
+    - tools/oracle/helpers/virtual_key_routes.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/virtual-key-routes/**
+    - tools/oracle/fuzz/corpus/helper_case/virtual-key-routes-*
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/virtual-key-routes/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/virtual_key_routes.rs
+    - crates/betterlite-config/src/virtual_key_routes/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-routes-*
+    - crates/betterlite-server/src/auth/virtual_key_routes.rs
+    - crates/betterlite-server/src/auth/virtual_key_routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L72-L91
+    why: Own RouteChecks.should_call_route; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L94-L210
+    why: Own RouteChecks.is_virtual_key_allowed_to_call_route; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L669-L684
+    why: Own RouteChecks.is_auth_enforced_pass_through_route; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L687-L694
+    why: Own RouteChecks._auth_pass_through_denied_exception; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L697-L707
+    why: Own RouteChecks.jwt_team_routes_grant_pass_through; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L710-L717
+    why: Own RouteChecks._jwt_team_allowed_routes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L720-L733
+    why: Own RouteChecks._require_auth_pass_through_access; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L736-L762
+    why: Own RouteChecks.check_passthrough_route_access; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L1-L6
+    why: litellm_jwtauth.team_allowed_routes default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: route_grants_without_license,
+      team_pass_through_grant, mcp_discovery_get, virtual_route_denied, registered_protected_route.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_should_call_route_does_not_require_a_premium_license.'
+    proof:
+      - behavior-tests
+  - text: The real server constructor invokes the production auth stage and its failures stop downstream
+      execution.
+    proof:
+      - stage-wiring-tests
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^virtual_key_routes::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/virtual_key_routes.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/virtual-key-routes-*")"
+        && grep -rlq "virtual_key_routes" tools/oracle/fuzz/corpus/helper_case/virtual-key-routes-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^virtual_key_routes::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-routes-*")"
+        && grep -rlq "team_allowed_routes" crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-routes-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: stage-wiring-tests
+      why: The server does not register this production auth stage or discards its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::virtual_key_routes::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/virtual-key-routes/team-pass-through-grant.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/mcp-discovery-get.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/virtual-route-denied.yaml
+  - tools/oracle/cases/helpers/virtual-key-routes/registered-protected-route.yaml
+  - tools/oracle/cases/auth/virtual-key-routes/virtual-route-denied.yaml
+deviations:
+  - what: should_call_route does not require a premium license.
+    why: The architect removed the license guard, not virtual-key route permission checks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L72-L91
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/auth/route_checks.py: B742 owns RouteChecks._mask_user_id (L213-L231), RouteChecks._raise_admin_only_route_exception
+    (L234-L257), RouteChecks.non_proxy_admin_allowed_routes_check (L260-L365), RouteChecks.custom_admin_only_route_check
+    (L368-L382), RouteChecks._check_proxy_admin_viewer_access (L835-L951).'
+  - 'litellm/proxy/auth/route_checks.py: B882 owns RouteChecks.is_llm_api_route (L385-L447), RouteChecks._is_get_mcp_server_discovery_route
+    (L450-L470), RouteChecks.is_management_route (L473-L477), RouteChecks.is_info_route (L480-L484), RouteChecks._is_azure_openai_route
+    (L487-L503), RouteChecks._route_matches_pattern (L506-L548), RouteChecks._is_wildcard_pattern (L551-L555),
+    RouteChecks.route_matches_wildcard_pattern (L558-L584), RouteChecks._route_matches_allowed_route (L587-L610),
+    RouteChecks.check_route_access (L613-L652), RouteChecks._is_assistants_api_request (L765-L781), RouteChecks.is_generate_content_route
+    (L784-L794), RouteChecks._get_request_method (L655-L666).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Inject PassThroughRegistry::lookup(&RouteIdentity,Method)->Option<RegisteredRoute>; B102 supplies
+    registrations later.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

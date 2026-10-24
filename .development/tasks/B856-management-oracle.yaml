@@ -1,0 +1,81 @@
+id: B856
+title: Management oracle namespaces and Postgres test fixture
+description: >-
+  Extend B171 HelperCall with the closed Management namespace and typed domain operation enums under helpers/management.
+  Keep the existing HelperCase parser and helper_case fuzz target; register a management PostgresProbe
+  operation whose Python side executes SELECT 1 through asyncpg in the isolated fixture supplied by B860.
+  B001 remains the sole HTTP comparator. A helper adapter may call only a referenced MIT helper, never
+  a route function; the Python adapter must not implement an expected algorithm. Reject unknown fields/operations
+  and compare ordered warnings and typed effects. Add asyncpg as a locked dev dependency only if the pinned
+  environment lacks it; never install or import enterprise code.
+
+
+  B860 owns the Postgres fixture and HttpCase schema/runner extension. This task only extends the existing
+  HelperCase decoder, with a new management seed and the existing replay test; no management_case target
+  or second fixture crate is created.
+
+
+  Write helpers::management::tests::{detects_changed_result,rejects_unknown_operation,redacts_secret_effect};
+  comparison must fail for altered effect order and secrets. Estimate 180 protocol/dispatch, 150 tests,
+  100 Python and 70 registration/corpus lines, 500 total. The only decoder is B171 HelperCase; extend
+  its existing helper_case seed/replay, not a new target.
+scope:
+  paths:
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/mod.rs
+    - tools/oracle/src/helpers/management.rs
+    - tools/oracle/src/helpers/management/**
+    - tools/oracle/helpers/dispatch.py
+    - tools/oracle/helpers/management/**
+    - tools/oracle/litellm/pyproject.toml
+    - tools/oracle/litellm/uv.lock
+    - tools/oracle/fuzz/corpus/helper_case/management-*
+    - tools/oracle/cases/helpers/management/**
+  lint_tables: false
+references:
+  - url: https://docs.rs/sqlx/latest/sqlx/postgres/index.html
+    why: Isolated Postgres connections and schema/transaction facts.
+  - url: https://docs.rs/testcontainers/latest/testcontainers/
+    why: Test-owned Postgres lifecycle, cancellation and teardown.
+dod:
+  - text: Typed Management dispatch invokes separate Rust/Python operations and detects altered results,
+      effects and secrets.
+    proof:
+      - behavior-tests
+      - helper-python
+      - oracle
+  - text: The existing HelperCase production parser accepts the new management operation and rejects unknown
+      fields.
+    proof:
+      - behavior-tests
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: Management dispatch comparison tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::management::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The management dispatcher is missing or fails strict Python checks.
+      run: test -f tools/oracle/helpers/management/__init__.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The extended production HelperCase decoder rejects its new management seed.
+      run: grep -rlq management tools/oracle/fuzz/corpus/helper_case/management-* && cargo nextest run
+        --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management/postgres-probe.yaml
+deviations: []
+out_of_scope:
+  - Product Postgres repositories and migration behavior belong to B700 and the other database tasks.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - HelperCall remains a closed typed enum, so adding a management operation requires both dispatchers
+    and a new helper_case seed.
+  - Calling a FastAPI endpoint directly bypasses route dependencies and cannot prove an HTTP contract.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,184 @@
+id: B1140
+title: Claude plugin and skill policy
+description: >-
+  Validate plugin source metadata and admin/skill visibility predicates with typed Claude records; no URL is downloaded
+  and no route is registered here.
+
+
+  Implement crates/betterlite-core/src/api/claude_plugin_policy.rs. Use ClaudePluginPolicyInput and ClaudePluginPolicyResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): claude_code_marketplace.py:256 status_code=status_code, exception_detail=FastAPI detail object;
+  claude_code_marketplace.py:271 status_code=403, exception_detail=FastAPI detail object; claude_code_marketplace.py:198
+  status_code=400, exception_detail=FastAPI detail object; claude_code_marketplace.py:204 status_code=400, exception_detail=FastAPI
+  detail object; claude_code_marketplace.py:210 status_code=400, exception_detail=FastAPI detail object; claude_code_marketplace.py:217
+  status_code=400, exception_detail=FastAPI detail object; claude_code_marketplace.py:222 status_code=400, exception_detail=FastAPI
+  detail object; claude_code_marketplace.py:243 status_code=400, exception_detail=FastAPI detail object; claude_code_marketplace.py:230
+  status_code=400, exception_detail=FastAPI detail object; claude_code_marketplace.py:238 status_code=400, exception_detail=FastAPI
+  detail object; claude_code_marketplace.py:80 status_code=500, exception_detail=FastAPI detail object. Compare
+  the actual source status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions plugin_https_source, invalid_plugin_source, skill_object_permission,
+  nonadmin_plugin_denied under api::claude_plugin_policy::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ClaudePluginPolicy in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {claude_plugin_policy: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: _get_prisma_client
+  (L75-L84); litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: _is_https_url_with_host
+  (L185-L190); litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: _validate_plugin_source
+  (L193-L246); litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: _build_plugin_manifest
+  (L249-L252); litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: _error_response
+  (L255-L256); litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: _name_conflict_error
+  (L259-L262); litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: _require_proxy_admin
+  (L265-L274); litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py: _skills_of (L22-L23);
+  litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py: granted_skills (L26-L40);
+  litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py: SkillVisibility.allows (L48-L49);
+  litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py: SkillVisibility.where (L51-L56);
+  litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py: skill_visibility (L62-L67).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 199 owned nonblank/non-comment/non-docstring Python lines (243 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 219 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 451 total within the 460-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B732 (Typed authentication principals and grant resolution), B171 (Direct helper oracle
+  and URL path encoding), B1087 (Api boundaries), B1018 (MIT resource owner compatibility). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/claude_plugin_policy.rs
+  - crates/betterlite-core/src/api/claude_plugin_policy/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/claude_plugin_policy.rs
+  - tools/oracle/src/helpers/claude_plugin_policy/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/claude_plugin_policy.py
+  - tools/oracle/helpers/claude_plugin_policy/**
+  - tools/oracle/fuzz/corpus/helper_case/claude_plugin_policy-*
+  - tools/oracle/cases/helpers/claude-plugin-policy/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L75-L84
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py#L185-L274
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_skill_access.py#L1-L67
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/claude_code_endpoints.py#L1-L142
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'plugin https source: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-plugin-https-source
+  - oracle
+- text: 'invalid plugin source: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-invalid-plugin-source
+  - oracle
+- text: 'skill object permission: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-skill-object-permission
+  - oracle
+- text: 'nonadmin plugin denied: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-nonadmin-plugin-denied
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::claude_plugin_policy::/)
+      - test(/::replays_corpus$/)'
+  - id: case-plugin-https-source
+    why: the plugin-https-source behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::claude_plugin_policy::tests::plugin_https_source($|::)/)'
+  - id: case-invalid-plugin-source
+    why: the invalid-plugin-source behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::claude_plugin_policy::tests::invalid_plugin_source($|::)/)'
+  - id: case-skill-object-permission
+    why: the skill-object-permission behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::claude_plugin_policy::tests::skill_object_permission($|::)/)'
+  - id: case-nonadmin-plugin-denied
+    why: the nonadmin-plugin-denied behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::claude_plugin_policy::tests::nonadmin_plugin_denied($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/claude_plugin_policy.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/claude_plugin_policy-*)"
+      && grep -qE "^[[:space:]]+claude_plugin_policy:" tools/oracle/fuzz/corpus/helper_case/claude_plugin_policy-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/claude-plugin-policy)"
+oracle_cases:
+- tools/oracle/cases/helpers/claude-plugin-policy/plugin-https-source.yaml
+- tools/oracle/cases/helpers/claude-plugin-policy/invalid-plugin-source.yaml
+- tools/oracle/cases/helpers/claude-plugin-policy/skill-object-permission.yaml
+- tools/oracle/cases/helpers/claude-plugin-policy/nonadmin-plugin-denied.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: B991 owns get_marketplace
+  L91-L174.'
+- 'litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: B992 owns register_plugin
+  L283-L388, update_plugin L533-L626, enable_plugin L634-L675, disable_plugin L683-L724, delete_plugin L732-L770.'
+- 'litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py: B993 owns list_plugins L397-L459,
+  get_plugin L467-L524.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'claude_code_marketplace.py:256 uses status_code=status_code, detail={''error'': message}; preserve this envelope
+  rather than a family-wide error default.'
+- 'Within _validate_plugin_source\''s source_type == ''github'' branch, preserve raise HTTPException(status_code=400,
+  detail={''error'': "GitHub source must include ''repo'' field (e.g., ''org/repo'')"}) and its nested guards.'
+review_level: standard
+budget:
+  max_changed_lines: 460
+  max_new_expects: 1

@@ -1,0 +1,199 @@
+id: B523
+title: OpenAI evals and eval runs
+description: >-
+  Add typed EvalDefinition/EvalRun and provider operations for eval create/list/get/update/delete/cancel and run
+  create/list/get/cancel/delete. Keep data-source/testing criteria in explicitly named bounded extension fields
+  where the pinned SDK permits arbitrary schemas; lifecycle paths and pagination are typed.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/evals/transformation.py:
+  _parsed_response_json L35-L36; OpenAIEvalsConfig.custom_llm_provider L43-L44; OpenAIEvalsConfig.validate_environment
+  L46-L65; OpenAIEvalsConfig.get_complete_url L67-L80; OpenAIEvalsConfig.transform_create_eval_request L82-L94;
+  OpenAIEvalsConfig.transform_create_eval_response L96-L105; OpenAIEvalsConfig.transform_list_evals_request L107-L138;
+  OpenAIEvalsConfig.transform_list_evals_response L140-L149; OpenAIEvalsConfig.transform_get_eval_request L151-L163;
+  OpenAIEvalsConfig.transform_get_eval_response L165-L174; OpenAIEvalsConfig.transform_update_eval_request L176-L192;
+  OpenAIEvalsConfig.transform_update_eval_response L194-L203; OpenAIEvalsConfig.transform_delete_eval_request L205-L217;
+  OpenAIEvalsConfig.transform_delete_eval_response L219-L228; OpenAIEvalsConfig.transform_cancel_eval_request L230-L245;
+  OpenAIEvalsConfig.transform_cancel_eval_response L247-L256; OpenAIEvalsConfig.transform_create_run_request L259-L279;
+  OpenAIEvalsConfig.transform_create_run_response L281-L290; OpenAIEvalsConfig.transform_list_runs_request L292-L323;
+  OpenAIEvalsConfig.transform_list_runs_response L325-L334; OpenAIEvalsConfig.transform_get_run_request L336-L351;
+  OpenAIEvalsConfig.transform_get_run_response L353-L362; OpenAIEvalsConfig.transform_cancel_run_request L364-L382;
+  OpenAIEvalsConfig.transform_cancel_run_response L384-L393; OpenAIEvalsConfig.transform_delete_run_request L395-L413;
+  OpenAIEvalsConfig.transform_delete_run_response L415-L424.
+
+
+  Implement crates/betterlite-openai/src/evals.rs with adjacent tests under evals/. Keep each Rust module at most
+  300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation openai_evals in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function evals_cases in betterlite-openai with these exact named cases (one per oracle file): eval_create_update,
+  eval_list_pagination, eval_get_delete_cancel, run_create_data_source, run_list_pagination, run_get_cancel_delete,
+  malformed_json_error. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_evals* using HelperCase: kind: helper
+  and the externally tagged openai_evals variant inside call. Do not put the Python stdin operation field in a HelperCase.
+  Add oracle test helper_seeds_select_openai_evals that parses every prefixed seed with the production HelperCase
+  parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_eval_reply consumes eval/run JSON response bytes in crates/betterlite-openai/src/evals.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-openai/fuzz/fuzz_targets/openai_evals.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-openai/fuzz/corpus/openai_evals.
+  The adjacent test replays_the_openai_evals_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 300 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 320 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 591 planned, 600 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/evals.rs
+  - crates/betterlite-openai/src/evals/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_evals.rs
+  - tools/oracle/src/helpers/openai_evals/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_evals.py
+  - tools/oracle/cases/helpers/providers/openai-evals/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_evals*
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/openai_evals.rs
+  - crates/betterlite-openai/fuzz/corpus/openai_evals/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/evals/transformation.py#L35-L424
+  why: >-
+    Own _parsed_response_json, OpenAIEvalsConfig.custom_llm_provider, OpenAIEvalsConfig.validate_environment, OpenAIEvalsConfig.get_complete_url,
+    OpenAIEvalsConfig.transform_create_eval_request, OpenAIEvalsConfig.transform_create_eval_response, OpenAIEvalsConfig.transform_list_evals_request,
+    OpenAIEvalsConfig.transform_list_evals_response, OpenAIEvalsConfig.transform_get_eval_request, OpenAIEvalsConfig.transform_get_eval_response,
+    OpenAIEvalsConfig.transform_update_eval_request, OpenAIEvalsConfig.transform_update_eval_response, OpenAIEvalsConfig.transform_delete_eval_request,
+    OpenAIEvalsConfig.transform_delete_eval_response, OpenAIEvalsConfig.transform_cancel_eval_request, OpenAIEvalsConfig.transform_cancel_eval_response,
+    OpenAIEvalsConfig.transform_create_run_request, OpenAIEvalsConfig.transform_create_run_response, OpenAIEvalsConfig.transform_list_runs_request,
+    OpenAIEvalsConfig.transform_list_runs_response, OpenAIEvalsConfig.transform_get_run_request, OpenAIEvalsConfig.transform_get_run_response,
+    OpenAIEvalsConfig.transform_cancel_run_request, OpenAIEvalsConfig.transform_cancel_run_response, OpenAIEvalsConfig.transform_delete_run_request,
+    OpenAIEvalsConfig.transform_delete_run_response. Other functions in this file remain with the owners listed
+    below.
+dod:
+- text: 'eval create update: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/eval-create-update.yaml.'
+  proof:
+  - case-eval-create-update
+  - oracle
+  - helper-python
+- text: 'eval list pagination: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/eval-list-pagination.yaml.'
+  proof:
+  - case-eval-list-pagination
+  - oracle
+  - helper-python
+- text: 'eval get delete cancel: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/eval-get-delete-cancel.yaml.'
+  proof:
+  - case-eval-get-delete-cancel
+  - oracle
+  - helper-python
+- text: 'run create data source: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/run-create-data-source.yaml.'
+  proof:
+  - case-run-create-data-source
+  - oracle
+  - helper-python
+- text: 'run list pagination: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/run-list-pagination.yaml.'
+  proof:
+  - case-run-list-pagination
+  - oracle
+  - helper-python
+- text: 'run get cancel delete: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/run-get-cancel-delete.yaml.'
+  proof:
+  - case-run-get-cancel-delete
+  - oracle
+  - helper-python
+- text: 'malformed json error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-evals/malformed-json-error.yaml.'
+  proof:
+  - case-malformed-json-error
+  - oracle
+  - helper-python
+- text: New openai_evals seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_eval_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-eval-create-update
+    why: The eval-create-update behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_create_update$/)'
+  - id: case-eval-list-pagination
+    why: The eval-list-pagination behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_list_pagination$/)'
+  - id: case-eval-get-delete-cancel
+    why: The eval-get-delete-cancel behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_eval_get_delete_cancel$/)'
+  - id: case-run-create-data-source
+    why: The run-create-data-source behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_run_create_data_source$/)'
+  - id: case-run-list-pagination
+    why: The run-list-pagination behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_run_list_pagination$/)'
+  - id: case-run-get-cancel-delete
+    why: The run-get-cancel-delete behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_run_get_cancel_delete$/)'
+  - id: case-malformed-json-error
+    why: The malformed-json-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::evals_cases::case_[0-9]+_malformed_json_error$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_evals.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_evals*")"
+      && grep -lq 'openai_evals' tools/oracle/fuzz/corpus/helper_case/openai_evals* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_evals$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/openai_evals)"
+      && grep -q 'decode_eval_reply' crates/betterlite-openai/fuzz/fuzz_targets/openai_evals.rs && cargo nextest
+      run --locked -p betterlite-openai --no-tests=fail -E 'test(/::replays_the_openai_evals_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-evals/eval-create-update.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/eval-list-pagination.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/eval-get-delete-cancel.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/run-create-data-source.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/run-list-pagination.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/run-get-cancel-delete.yaml
+- tools/oracle/cases/helpers/providers/openai-evals/malformed-json-error.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Eval definition and run cancellation have distinct resource paths and response shapes.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard

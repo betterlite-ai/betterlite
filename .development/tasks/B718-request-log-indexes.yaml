@@ -1,0 +1,141 @@
+id: B718
+title: Partition-safe request log indexes
+description: >-
+  Implement RequestLogIndexes and replica identity updates on configured tables using parameterized pg_catalog
+  reads and safely quoted known identifiers. Preserve bounded locks, adoption of equivalent indexes, invalid
+  leaf repair, parent attachment and duplicate-index diagnostics; build concurrently where upstream requires
+  it. Bounded background work is owned by the server and a migration-job invocation waits for completion.
+
+
+  Build the production request_log_indexes module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py:
+  RequestLogIndex.columns (L38-L39; 2 source lines), RequestLogIndex.partition_index_name (L41-L50; 10
+  source lines), filter_request_log_index_diff (L125-L131; 7 source lines), _creates_one_of (L134-L136;
+  3 source lines), _without_comments (L139-L140; 2 source lines), _connect (L143-L146; 3 source lines),
+  ensure_request_log_indexes (L149-L173; 24 source lines), _under_migration_lock (L176-L183; 8 source
+  lines), _with_bounded_lock (L186-L209; 23 source lines), _ensure_index (L212-L222; 10 source lines),
+  _regclass_name (L225-L228; 3 source lines), _create_index_statement (L231-L234; 4 source lines), _index_state
+  (L237-L241; 4 source lines), _equivalent_indexes (L244-L261; 17 source lines), _adopt_equivalent_index
+  (L264-L287; 23 source lines), _report_second_copies (L290-L311; 21 source lines), _children_without_the_index
+  (L314-L325; 11 source lines), _build_leaf_index (L328-L372; 43 source lines), build_index_on_partitioned_table
+  (L375-L415; 40 source lines), _create_parent_index (L418-L433; 15 source lines), _attach_child_index
+  (L436-L463; 25 source lines). litellm-proxy-extras/litellm_proxy_extras/replica_identity.py: apply_replica_identity_full
+  (L49-L104; 53 source lines).
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 351 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  351 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 535 changed lines estimated within a 550-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/request_log_indexes.rs
+    - crates/betterlite-db/src/request_log_indexes/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/request_log_indexes/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L1-L463
+    why: Pinned implementation and exact ownership boundary for request_log_indexes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/replica_identity.py#L1-L104
+    why: Pinned implementation and exact ownership boundary for request_log_indexes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L38-L39
+    why: Own RequestLogIndex.columns; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L41-L50
+    why: Own RequestLogIndex.partition_index_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L125-L131
+    why: Own filter_request_log_index_diff; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L134-L136
+    why: Own _creates_one_of; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L139-L140
+    why: Own _without_comments; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L143-L146
+    why: Own _connect; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L149-L173
+    why: Own ensure_request_log_indexes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L176-L183
+    why: Own _under_migration_lock; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L186-L209
+    why: Own _with_bounded_lock; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L212-L222
+    why: Own _ensure_index; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L225-L228
+    why: Own _regclass_name; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L231-L234
+    why: Own _create_index_statement; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L237-L241
+    why: Own _index_state; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L244-L261
+    why: Own _equivalent_indexes; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L264-L287
+    why: Own _adopt_equivalent_index; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L290-L311
+    why: Own _report_second_copies; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L314-L325
+    why: Own _children_without_the_index; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L328-L372
+    why: Own _build_leaf_index; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L375-L415
+    why: Own build_index_on_partitioned_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L418-L433
+    why: Own _create_parent_index; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/request_log_indexes.py#L436-L463
+    why: Own _attach_child_index; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/replica_identity.py#L49-L104
+    why: Own apply_replica_identity_full; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: adopt_equivalent_index,
+      partition_leaf_concurrent_build, invalid_leaf_rebuild, parent_attach, lock_timeout, replica_identity_full_idempotent,
+      postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^request_log_indexes::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/request_log_indexes::tests::postgres_failure_effects$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Preserve bounded locks, adoption of equivalent indexes, invalid leaf repair, parent attachment and
+    duplicate-index diagnostics; build concurrently where upstream requires it.
+budget:
+  max_changed_lines: 550
+  max_new_expects: 0
+review_level: standard

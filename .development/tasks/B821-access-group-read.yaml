@@ -1,0 +1,245 @@
+id: B821
+title: Access-group response projections and lookups
+description: >-
+  Implement typed access-group responses, batched attached-team/key labels and read routes for /v1/access_group.
+  Preserve admin-viewer versus write authority, missing-reference errors and exact assignment identifiers;
+  never expose raw keys in labels.
+
+
+  Also own GET /v1/unified_access_group and GET /v1/unified_access_group/{access_group_id}; register aliases
+  exactly once.
+
+
+  Build the production access_group_read module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/access_group_endpoints.py:
+  _AccessGroupRecord.access_group_id (L49-L49; 1 source lines), _AccessGroupRecord.access_mcp_server_ids
+  (L52-L52; 1 source lines), _AccessGroupRecord.access_agent_ids (L55-L55; 1 source lines), _AccessGroupRecord.assigned_team_ids
+  (L58-L58; 1 source lines), _AccessGroupRecord.assigned_key_ids (L61-L61; 1 source lines), _AccessGroupRecord.dict
+  (L63-L63; 1 source lines), _TeamRecord.team_id (L68-L68; 1 source lines), _TeamRecord.team_alias (L71-L71;
+  1 source lines), _TeamRecord.access_group_ids (L74-L74; 1 source lines), _KeyRecord.token (L79-L79;
+  1 source lines), _KeyRecord.access_group_ids (L82-L82; 1 source lines), _AccessGroupTable.find_unique
+  (L86-L86; 1 source lines), _AccessGroupTable.find_many (L88-L88; 1 source lines), _AccessGroupTable.create
+  (L90-L90; 1 source lines), _AccessGroupTable.update (L92-L92; 1 source lines), _AccessGroupTable.delete
+  (L94-L94; 1 source lines), _TeamTable.find_unique (L98-L98; 1 source lines), _TeamTable.find_many (L100-L100;
+  1 source lines), _TeamTable.update (L102-L102; 1 source lines), _KeyTable.find_unique (L106-L106; 1
+  source lines), _KeyTable.find_many (L108-L108; 1 source lines), _KeyTable.update (L110-L110; 1 source
+  lines), _AgentRecord.agent_id (L115-L115; 1 source lines), _AgentRecord.access_group_ids (L118-L118;
+  1 source lines), _AgentTable.find_many (L122-L122; 1 source lines), _AgentTable.update (L124-L124; 1
+  source lines), _AccessGroupTx.litellm_accessgrouptable (L145-L145; 1 source lines), _AccessGroupTx.litellm_teamtable
+  (L148-L148; 1 source lines), _AccessGroupTx.litellm_verificationtoken (L151-L151; 1 source lines), _AccessGroupTx.litellm_agentstable
+  (L154-L154; 1 source lines), _require_proxy_admin (L157-L162; 6 source lines), _require_admin_view (L165-L173;
+  8 source lines), _label (L184-L185; 2 source lines), _record_to_response (L188-L201; 14 source lines),
+  _ids_across (L204-L207; 4 source lines), _responses_for (L210-L237; 28 source lines), _response_for
+  (L240-L242; 3 source lines), _attached_team_ids_by_group (L245-L256; 10 source lines), _teams_touching
+  (L259-L265; 7 source lines), _attached_team_ids_for (L268-L273; 6 source lines), _require_teams_exist
+  (L276-L286; 11 source lines), _record_to_access_group_table (L289-L291; 3 source lines), _cache_access_group_record
+  (L294-L309; 14 source lines), list_access_groups (L584-L592; 8 source lines), get_access_group (L599-L613;
+  14 source lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: GET /v1/access_group -> list_access_groups;
+  GET /v1/unified_access_group -> list_access_groups; GET /v1/access_group/{access_group_id} -> get_access_group;
+  GET /v1/unified_access_group/{access_group_id} -> get_access_group. For each route send a typed successful
+  request, an invalid or missing target, and a caller lacking that route permission through B001 HttpCase
+  against the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
+  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
+  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
+  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
+  partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 168 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  168 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 381 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/access_group_read.rs
+    - crates/betterlite-server/src/access_group_read/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/access-group-read/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/access_group.py#L1-L49
+    why: AccessGroupCreateRequest and AccessGroupResponse fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L49-L309
+    why: Pinned implementation and exact ownership boundary for access_group_read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L584-L613
+    why: Pinned implementation and exact ownership boundary for access_group_read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L49-L49
+    why: Own _AccessGroupRecord.access_group_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L52-L52
+    why: Own _AccessGroupRecord.access_mcp_server_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L55-L55
+    why: Own _AccessGroupRecord.access_agent_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L58-L58
+    why: Own _AccessGroupRecord.assigned_team_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L61-L61
+    why: Own _AccessGroupRecord.assigned_key_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L63-L63
+    why: Own _AccessGroupRecord.dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L68-L68
+    why: Own _TeamRecord.team_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L71-L71
+    why: Own _TeamRecord.team_alias; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L74-L74
+    why: Own _TeamRecord.access_group_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L79-L79
+    why: Own _KeyRecord.token; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L82-L82
+    why: Own _KeyRecord.access_group_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L86-L86
+    why: Own _AccessGroupTable.find_unique; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L88-L88
+    why: Own _AccessGroupTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L90-L90
+    why: Own _AccessGroupTable.create; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L92-L92
+    why: Own _AccessGroupTable.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L94-L94
+    why: Own _AccessGroupTable.delete; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L98-L98
+    why: Own _TeamTable.find_unique; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L100-L100
+    why: Own _TeamTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L102-L102
+    why: Own _TeamTable.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L106-L106
+    why: Own _KeyTable.find_unique; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L108-L108
+    why: Own _KeyTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L110-L110
+    why: Own _KeyTable.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L115-L115
+    why: Own _AgentRecord.agent_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L118-L118
+    why: Own _AgentRecord.access_group_ids; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L122-L122
+    why: Own _AgentTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L124-L124
+    why: Own _AgentTable.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L145-L145
+    why: Own _AccessGroupTx.litellm_accessgrouptable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L148-L148
+    why: Own _AccessGroupTx.litellm_teamtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L151-L151
+    why: Own _AccessGroupTx.litellm_verificationtoken; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L154-L154
+    why: Own _AccessGroupTx.litellm_agentstable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L157-L162
+    why: Own _require_proxy_admin; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L165-L173
+    why: Own _require_admin_view; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L184-L185
+    why: Own _label; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L188-L201
+    why: Own _record_to_response; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L204-L207
+    why: Own _ids_across; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L210-L237
+    why: Own _responses_for; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L240-L242
+    why: Own _response_for; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L245-L256
+    why: Own _attached_team_ids_by_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L259-L265
+    why: Own _teams_touching; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L268-L273
+    why: Own _attached_team_ids_for; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L276-L286
+    why: Own _require_teams_exist; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L289-L291
+    why: Own _record_to_access_group_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L294-L309
+    why: Own _cache_access_group_record; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L584-L592
+    why: Own list_access_groups; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L599-L613
+    why: Own get_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L815-L847
+    why: Unified-access-group aliases use the same handlers and response statuses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: list_access_groups,
+      group_by_id, missing_group, admin_viewer_read, non_admin_denied, team_label_batch.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^access_group_read::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/access-group-read/get--v1-access-group-success.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-access-group-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-access-group-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-success.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-access-group-access-group-id-success.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-access-group-access-group-id-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-access-group-access-group-id-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-access-group-id-success.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-access-group-id-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-read/get--v1-unified-access-group-access-group-id-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-read/list-access-groups.yaml
+  - tools/oracle/cases/management/access-group-read/group-by-id.yaml
+  - tools/oracle/cases/management/access-group-read/missing-group.yaml
+  - tools/oracle/cases/management/access-group-read/admin-viewer-read.yaml
+  - tools/oracle/cases/management/access-group-read/non-admin-denied.yaml
+  - tools/oracle/cases/management/access-group-read/team-label-batch.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/access_group_endpoints.py: B822 owns _sync_add_access_group_to_teams
+    (L317-L325), _sync_remove_access_group_from_teams (L328-L336), _sync_add_access_group_to_keys (L339-L347),
+    _sync_remove_access_group_from_keys (L350-L358), _without_access_group (L361-L362), _detach_access_group_from_agents
+    (L365-L376), _detach_access_group_from_agent_registry (L379-L393), _patch_team_caches_add_access_group
+    (L401-L427), _patch_team_caches_remove_access_group (L430-L450), _patch_key_caches_add_access_group
+    (L453-L478), _patch_key_caches_remove_access_group (L481-L500), create_access_group (L513-L577), update_access_group
+    (L620-L710), delete_access_group (L717-L813).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Unified-access-group GET aliases share exactly the same viewer permissions as the original routes.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

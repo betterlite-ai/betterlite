@@ -1,0 +1,291 @@
+id: B1083
+title: Speech call plan
+description: >-
+  Prepare the native speech operation from main.py: resolve model/provider, optional voice/input/format/speed, extra
+  body and configured credentials into a typed SpeechPlan. Select native speech versus the speech-chat-bridge without
+  executing either branch, retaining source parameter support/errors.
+
+
+  Implement crates/betterlite-core/src/api/speech_call_plan.rs. Use SpeechCallPlanInput and SpeechCallPlanResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions speech_voice_input, speech_native_plan, speech_chat_plan, speech_format_speed,
+  speech_unsupported_parameter under api::speech_call_plan::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.num_retries
+  defaults to None; litellm_settings.api_base defaults to None; env.OPENAI_BASE_URL defaults to unset (None); env.OPENAI_API_BASE
+  defaults to unset (None); litellm_settings.api_key defaults to None; litellm_settings.openai_key defaults to None;
+  env.OPENAI_API_KEY defaults to unset (None); litellm_settings.organization defaults to None; env.OPENAI_ORGANIZATION
+  defaults to unset (None); litellm_settings.project defaults to None; env.OPENAI_PROJECT defaults to unset (None);
+  litellm_settings.headers defaults to None; env.AZURE_API_BASE defaults to unset (None); litellm_settings.api_version
+  defaults to None; env.AZURE_API_VERSION defaults to unset (None); litellm_settings.azure_key defaults to None;
+  env.AZURE_OPENAI_API_KEY defaults to unset (None); env.AZURE_API_KEY defaults to unset (None); env.AZURE_AD_TOKEN
+  defaults to unset (None). No environment reads occur outside betterlite-config. Test api::speech_call_plan::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::SpeechCallPlan in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {speech_call_plan: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/main.py: aspeech (L8199-L8234); litellm/main.py: speech (L8238-L8452). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 216 owned nonblank/non-comment/non-docstring Python lines (219 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 236 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 87 config tests/seeds and
+  30 wiring; 573 total within the 580-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
+  oracle and URL path encoding), B174 (Provider identity and model resolution), B1003 (Speech chat bridge), B1087
+  (Api boundaries), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not
+  provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/speech_call_plan.rs
+  - crates/betterlite-core/src/api/speech_call_plan/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/speech_call_plan.rs
+  - crates/betterlite-config/src/api/speech_call_plan/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-plan-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/speech_call_plan.rs
+  - tools/oracle/src/helpers/speech_call_plan/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/speech_call_plan.py
+  - tools/oracle/helpers/speech_call_plan/**
+  - tools/oracle/fuzz/corpus/helper_case/speech_call_plan-*
+  - tools/oracle/cases/helpers/speech-call-plan/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L539-L539
+  why: Setting litellm_settings.num_retries and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
+  why: Setting litellm_settings.api_base and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8348-L8348
+  why: Setting env.OPENAI_BASE_URL and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8349-L8349
+  why: Setting env.OPENAI_API_BASE and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
+  why: Setting litellm_settings.api_key and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L277-L277
+  why: Setting litellm_settings.openai_key and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8357-L8357
+  why: Setting env.OPENAI_API_KEY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L595-L595
+  why: Setting litellm_settings.organization and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8363-L8363
+  why: Setting env.OPENAI_ORGANIZATION and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L596-L596
+  why: Setting litellm_settings.project and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8370-L8370
+  why: Setting env.OPENAI_PROJECT and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L593-L593
+  why: Setting litellm_settings.headers and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8433-L8433
+  why: Setting env.AZURE_API_BASE and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L594-L594
+  why: Setting litellm_settings.api_version and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8435-L8435
+  why: Setting env.AZURE_API_VERSION and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L283-L283
+  why: Setting litellm_settings.azure_key and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8441-L8441
+  why: Setting env.AZURE_OPENAI_API_KEY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8442-L8442
+  why: Setting env.AZURE_API_KEY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8447-L8447
+  why: Setting env.AZURE_AD_TOKEN and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8199-L8452
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+dod:
+- text: 'speech voice input: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-voice-input
+  - oracle
+- text: 'speech native plan: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-native-plan
+  - oracle
+- text: 'speech chat plan: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-chat-plan
+  - oracle
+- text: 'speech format speed: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-speech-format-speed
+  - oracle
+- text: 'speech unsupported parameter: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-speech-unsupported-parameter
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::speech_call_plan::/)
+      - test(/::replays_corpus$/)'
+  - id: case-speech-voice-input
+    why: the speech-voice-input behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call_plan::tests::speech_voice_input($|::)/)'
+  - id: case-speech-native-plan
+    why: the speech-native-plan behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call_plan::tests::speech_native_plan($|::)/)'
+  - id: case-speech-chat-plan
+    why: the speech-chat-plan behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call_plan::tests::speech_chat_plan($|::)/)'
+  - id: case-speech-format-speed
+    why: the speech-format-speed behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call_plan::tests::speech_format_speed($|::)/)'
+  - id: case-speech-unsupported-parameter
+    why: the speech-unsupported-parameter behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::speech_call_plan::tests::speech_unsupported_parameter($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::speech_call_plan::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-plan-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/speech_call_plan.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/speech_call_plan-*)"
+      && grep -qE "^[[:space:]]+speech_call_plan:" tools/oracle/fuzz/corpus/helper_case/speech_call_plan-* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/speech-call-plan)"
+oracle_cases:
+- tools/oracle/cases/helpers/speech-call-plan/speech-voice-input.yaml
+- tools/oracle/cases/helpers/speech-call-plan/speech-native-plan.yaml
+- tools/oracle/cases/helpers/speech-call-plan/speech-chat-plan.yaml
+- tools/oracle/cases/helpers/speech-call-plan/speech-format-speed.yaml
+- tools/oracle/cases/helpers/speech-call-plan/speech-unsupported-parameter.yaml
+deviations: []
+out_of_scope:
+- 'litellm/main.py: B158 owns _resolve_control_options L347-L357, LiteLLM.__init__ L364-L375, Chat.__init__ L379-L385,
+  Completions.__init__ L389-L391, Completions.create L393-L401, AsyncCompletions.__init__ L405-L407, AsyncCompletions.create
+  L409-L417, acompletion L422-L740, _resolve_dispatched_chat_response L743-L746, _model_response_from_cached_dict
+  L749-L750, _transcription_response_from_cached_dict L753-L754, _async_streaming L757-L771, _handle_mock_potential_exceptions
+  L774-L814, _handle_mock_timeout L817-L828, _handle_mock_timeout_async L831-L842, _sleep_for_timeout L845-L851,
+  _sleep_for_timeout_async L854-L860, admission_input_tokens L871-L883, admitted_prompt_token_counter L886-L889,
+  mock_completion L892-L1057, _is_openai_backed_api_base L1064-L1066, _resolve_openai_api_base L1069-L1080, responses_api_bridge_check
+  L1083-L1194, _is_claude_tool_target L1200-L1208, _without_anthropic_only_tool_keys L1211-L1219, _drop_anthropic_only_tool_keys
+  L1222-L1225, _ProxyAuthHeadersProvider.get_auth_headers L1229-L1229, _proxy_auth_headers L1232-L1233, _provider_config_items
+  L1236-L1237, _locals_snapshot L1240-L1241, _build_custom_pricing_entry L1244-L1267, _get_router_deployment_id
+  L1270-L1281, _register_custom_pricing_for_request L1284-L1317, _dispatch_metadata L1320-L1321, _dispatch_client_http
+  L1324-L1325, _dispatch_client_azure L1328-L1331, _dispatch_client_openai L1334-L1335, _custom_api_first_output
+  L4909-L4910, completion L5145-L6084, completion_with_retries L6087-L6110, acompletion_with_retries L6113-L6136,
+  responses_with_retries L6139-L6164, aresponses_with_retries L6167-L6191, aembedding L6196-L6250, embedding L6257-L6278,
+  embedding L6283-L6304, embedding L6310-L7371, _resolve_dispatched_text_completion_response L7375-L7382, _resolve_pending_chat_response
+  L7385-L7386, atext_completion L7390-L7456, text_completion L7460-L7692, aadapter_completion L7698-L7726, aadapter_generate_content
+  L7729-L7738, adapter_completion L7741-L7761, moderation L7767-L7789, amoderation L7793-L7864, ahealth_check L8725-L8831,
+  print_verbose L8836-L8842, config_completion L8845-L8853, stream_chunk_builder_text_completion L8856-L8907, _reported_cost_is_priced_by_calculator
+  L8913-L8917, _stream_builder_response_cost L8920-L8932, _joined_streamed_citations L8935-L8938, _stream_builder_model_map_cost
+  L8941-L8950, _set_stream_builder_response_cost L8953-L8958, _stamp_streaming_usage_cost L8961-L8968, _stream_choice_delta
+  L8983-L8989, _delta_carries_more_than_text L8992-L8993, _simple_text_part L8996-L9001, stream_chunk_builder L9004-L9271,
+  acount_tokens L9277-L9372, _load_module_encoding L9379-L9382, _get_encoding L9385-L9391, _load_default_encoding
+  L9394-L9397, __getattr__ L9400-L9411.'
+- 'litellm/main.py: B025 owns _complete_azure L1338-L1469, _complete_azure_text L1472-L1563.'
+- 'litellm/main.py: B038 owns _complete_deepseek L1566-L1614, _complete_text_completion_inception L4045-L4106.'
+- 'litellm/main.py: B026 owns _complete_azure_ai L1617-L1768.'
+- 'litellm/main.py: B024 owns _complete_text_completion_openai L1771-L1850, _complete_custom_openai L2590-L2728.'
+- 'litellm/main.py: B041 owns _complete_fireworks_ai L1853-L1907, _complete_together_ai L1910-L1957, _complete_groq
+  L2111-L2170, _complete_cometapi L2451-L2497, _complete_replicate L2773-L2824, _complete_huggingface L3181-L3221,
+  _complete_openrouter L3444-L3518, _complete_vercel_ai_gateway L3548-L3623, _complete_edenai L3626-L3649, _complete_predibase
+  L3936-L3992, _complete_cloudflare L4576-L4612, _complete_bytez L4782-L4819.'
+- 'litellm/main.py: B042 owns _complete_heroku L1960-L2007, _complete_sap L2344-L2387, _complete_oci L3224-L3256,
+  _complete_databricks L3335-L3404, _complete_datarobot L3407-L3441, _complete_sagemaker_chat L4109-L4143, _complete_sagemaker
+  L4146-L4171, _complete_watsonx L4307-L4341, _complete_watsonx_text L4344-L4418, _complete_snowflake L4655-L4705,
+  _complete_gdc L4743-L4779, _complete_ovhcloud L4862-L4906.'
+- 'litellm/main.py: B049 owns _complete_ragflow L2010-L2057.'
+- 'litellm/main.py: B036 owns _complete_xai L2060-L2108, _complete_mistral L2731-L2770, _complete_text_completion_codestral
+  L3995-L4042.'
+- 'litellm/main.py: B028 owns _complete_bedrock_mantle L2173-L2216, _complete_amazon_nova L3145-L3178, _complete_bedrock
+  L4178-L4304.'
+- 'litellm/main.py: B050 owns _complete_a2a L2219-L2279, _complete_langgraph L5045-L5091, _complete_langflow L5094-L5140.'
+- 'litellm/main.py: B043 owns _complete_gigachat L2282-L2341, _complete_nlp_cloud L2948-L2995, _complete_aleph_alpha
+  L2998-L3044, _complete_maritalk L3112-L3142, _complete_compactifai L3259-L3298, _complete_nadir L3521-L3545, _complete_gradient_ai
+  L4708-L4740.'
+- 'litellm/main.py: B044 owns _complete_aiohttp_openai L2390-L2448, _complete_custom L4913-L4979, _complete_custom_providers
+  L4982-L5042.'
+- 'litellm/main.py: B039 owns _complete_minimax L2500-L2543.'
+- 'litellm/main.py: B040 owns _complete_hosted_vllm L2546-L2587, _complete_oobabooga L3301-L3332, _complete_vllm
+  L4421-L4455, _complete_ollama L4458-L4495, _complete_ollama_chat L4498-L4537, _complete_triton L4540-L4573, _complete_petals
+  L4615-L4652, _complete_lemonade L4822-L4859.'
+- 'litellm/main.py: B027 owns _complete_anthropic_text L2827-L2879, _complete_anthropic L2882-L2945.'
+- 'litellm/main.py: B037 owns _complete_cohere_chat L3047-L3109.'
+- 'litellm/main.py: B046 owns _complete_fal_ai L3652-L3680.'
+- 'litellm/main.py: B031 owns _complete_vertex_ai_beta L3683-L3748, _complete_vertex_ai L3751-L3933.'
+- 'litellm/main.py: B1082 owns atranscription L7871-L7929, transcription L7933-L8195.'
+- 'litellm/main.py: B1084 owns speech L8453-L8719 stage.'
+- 'litellm/llms/base_llm/text_to_speech/transformation.py: B1135 owns BaseTextToSpeechConfig.__init__ L38-L39, BaseTextToSpeechConfig.get_config
+  L42-L58, BaseTextToSpeechConfig.get_supported_openai_params L61-L64, BaseTextToSpeechConfig.map_openai_params
+  L67-L77, BaseTextToSpeechConfig.validate_environment L80-L90, BaseTextToSpeechConfig.get_complete_url L93-L104,
+  BaseTextToSpeechConfig.transform_text_to_speech_request L107-L123, BaseTextToSpeechConfig.transform_text_to_speech_response
+  L126-L134, BaseTextToSpeechConfig.get_error_class L136-L143.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- aspeech uses kwargs.get('custom_llm_provider', None); retain its missing-value behavior and field spelling in
+  the typed projection.
+- aspeech uses kwargs.get('api_base', None); retain its missing-value behavior and field spelling in the typed projection.
+review_level: security
+budget:
+  max_changed_lines: 580
+  max_new_expects: 1

@@ -1,0 +1,166 @@
+id: B691
+title: Bedrock Invoke and Converse streaming HTTP helpers
+description: >-
+  Port raw Invoke make_call/make_sync_call and Converse make_sync_call as reusable asynchronous HTTP opening/stream
+  ownership helpers. Reuse B599 AWS frame decoding and B173 pooling; the Converse/Invoke caller injects its response
+  projection.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/converse_handler.py:
+  make_sync_call L26-L85. litellm/llms/bedrock/chat/invoke_handler.py: make_call L185-L271; make_sync_call L274-L360.
+
+
+  Implement crates/betterlite-bedrock/src/bedrock_http_stream.rs with adjacent tests under bedrock_http_stream/.
+  Keep each Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml;
+  a provider leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust
+  implementation used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_http_stream in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function bedrock_http_stream_cases in betterlite-bedrock with these exact named cases (one per oracle
+  file): invoke_stream_url, http_error_before_frame, converse_stream_headers, cancel_body. Each case exercises its
+  named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted
+  proxy and assert both client response and captured upstream request. Existing API tasks retain route registration;
+  this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream* using HelperCase: kind:
+  helper and the externally tagged bedrock_http_stream variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_http_stream that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 216 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 240 production lines, 81 behavior/config-test lines,
+  71 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
+  wiring lines; 432 planned, 450 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/bedrock_http_stream.rs
+  - crates/betterlite-bedrock/src/bedrock_http_stream/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_http_stream.rs
+  - tools/oracle/src/helpers/bedrock_http_stream/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_http_stream.py
+  - tools/oracle/cases/helpers/providers/bedrock-http-stream/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_handler.py#L26-L85
+  why: Own make_sync_call. Other functions in this file remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L185-L360
+  why: Own make_call, make_sync_call. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'invoke stream url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/invoke-stream-url.yaml.'
+  proof:
+  - case-invoke-stream-url
+  - oracle
+  - helper-python
+- text: >-
+    http error before frame: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/http-error-before-frame.yaml.
+  proof:
+  - case-http-error-before-frame
+  - oracle
+  - helper-python
+- text: >-
+    converse stream headers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/converse-stream-headers.yaml.
+  proof:
+  - case-converse-stream-headers
+  - oracle
+  - helper-python
+- text: 'cancel body: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-http-stream/cancel-body.yaml.'
+  proof:
+  - case-cancel-body
+  - oracle
+  - helper-python
+- text: New bedrock_http_stream seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-invoke-stream-url
+    why: The invoke-stream-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_invoke_stream_url$/)'
+  - id: case-http-error-before-frame
+    why: The http-error-before-frame behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_http_error_before_frame$/)'
+  - id: case-converse-stream-headers
+    why: The converse-stream-headers behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_converse_stream_headers$/)'
+  - id: case-cancel-body
+    why: The cancel-body behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::bedrock_http_stream_cases::case_[0-9]+_cancel_body$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_http_stream.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream*")"
+      && grep -lq 'bedrock_http_stream' tools/oracle/fuzz/corpus/helper_case/bedrock_http_stream* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_http_stream$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-http-stream/invoke-stream-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-http-stream/http-error-before-frame.yaml
+- tools/oracle/cases/helpers/providers/bedrock-http-stream/converse-stream-headers.yaml
+- tools/oracle/cases/helpers/providers/bedrock-http-stream/cancel-body.yaml
+deviations: []
+out_of_scope:
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: AmazonCohereChatConfig.__init__ L90-L110; AmazonCohereChatConfig.get_config
+  L113-L128; AmazonCohereChatConfig.get_supported_openai_params L130-L144; AmazonCohereChatConfig.map_openai_params
+  L146-L166 belong to B611; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: AWSEventStreamDecoder.__init__ L407-L418; AWSEventStreamDecoder.check_empty_tool_call_args
+  L420-L440; AWSEventStreamDecoder.extract_reasoning_content_str L442-L447; AWSEventStreamDecoder.translate_thinking_blocks
+  L449-L472; AWSEventStreamDecoder._initialize_converse_response_id L474-L483; AWSEventStreamDecoder._handle_converse_start_event
+  L485-L528; AWSEventStreamDecoder._handle_converse_delta_event L530-L585; AWSEventStreamDecoder._handle_converse_stop_event
+  L587-L609; AWSEventStreamDecoder.converse_chunk_parser L611-L688; AWSEventStreamDecoder._chunk_parser L690-L743
+  belong to B608; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: AmazonAnthropicClaudeStreamDecoder.__init__ L817-L833; AmazonAnthropicClaudeStreamDecoder._chunk_parser
+  L835-L836; AmazonDeepSeekR1StreamDecoder.__init__ L840-L853; AmazonDeepSeekR1StreamDecoder._chunk_parser L855-L856;
+  AmazonOpenAICompatibleStreamDecoder.__init__ L860-L871; AmazonOpenAICompatibleStreamDecoder._chunk_parser L873-L874;
+  MockResponseIterator.__init__ L878-L881; MockResponseIterator.__iter__ L884-L885; MockResponseIterator._handle_json_mode_chunk
+  L887-L913; MockResponseIterator._chunk_parser L915-L953; MockResponseIterator.__next__ L955-L959; MockResponseIterator.__aiter__
+  L962-L963; MockResponseIterator.__anext__ L965-L969 belong to B609; reuse that implementation or its injected
+  typed boundary.
+- >-
+  litellm/llms/bedrock/chat/invoke_handler.py: _stream_decoder L169-L182; _response_header L363-L364; _EventStreamTally.__init__
+  L368-L372; _EventStreamTally.add_chunk L374-L377; _EventStreamTally.add_event L379-L381; _EventStreamTally.undecoded_stream_error
+  L383-L403; AWSEventStreamDecoder.iter_bytes L745-L765; AWSEventStreamDecoder.aiter_bytes L767-L786; AWSEventStreamDecoder._parse_message_from_event
+  L788-L813 belong to B599; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/bedrock/chat/converse_handler.py: BedrockConverseLLM.__init__ L89-L90; BedrockConverseLLM.async_streaming
+  L92-L163; BedrockConverseLLM.async_completion L165-L262; BedrockConverseLLM.completion L264-L504 belong to B610;
+  reuse that implementation or its injected typed boundary.
+pitfalls:
+- Streaming HTTP ownership remains with the returned stream until close or cancellation.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: standard

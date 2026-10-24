@@ -1,0 +1,204 @@
+id: B822
+title: Create, update and delete access groups
+description: >-
+  Implement /v1/access_group create/put/delete using typed inputs and transaction-scoped membership synchronization.
+  Keep agent detachment, registry/cache patching and source 201/204 response behavior; registered-agent
+  mutations are injected and tested without duplicating B142.
+
+
+  Also own POST /v1/unified_access_group and PUT/DELETE /v1/unified_access_group/{access_group_id}; preserve
+  201 create and 204 delete status, AccessGroupCreateRequest and AccessGroupResponse. Agent registry mutation
+  port belongs to B141, not B142.
+
+
+  Build the production access_group_write module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/access_group_endpoints.py:
+  _sync_add_access_group_to_teams (L317-L325; 9 source lines), _sync_remove_access_group_from_teams (L328-L336;
+  9 source lines), _sync_add_access_group_to_keys (L339-L347; 9 source lines), _sync_remove_access_group_from_keys
+  (L350-L358; 9 source lines), _without_access_group (L361-L362; 2 source lines), _detach_access_group_from_agents
+  (L365-L376; 12 source lines), _detach_access_group_from_agent_registry (L379-L393; 15 source lines),
+  _patch_team_caches_add_access_group (L401-L427; 27 source lines), _patch_team_caches_remove_access_group
+  (L430-L450; 21 source lines), _patch_key_caches_add_access_group (L453-L478; 26 source lines), _patch_key_caches_remove_access_group
+  (L481-L500; 20 source lines), create_access_group (L513-L577; 57 source lines), update_access_group
+  (L620-L710; 76 source lines), delete_access_group (L717-L813; 78 source lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /v1/access_group -> create_access_group;
+  POST /v1/unified_access_group -> create_access_group; PUT /v1/access_group/{access_group_id} -> update_access_group;
+  PUT /v1/unified_access_group/{access_group_id} -> update_access_group; DELETE /v1/access_group/{access_group_id}
+  -> delete_access_group; DELETE /v1/unified_access_group/{access_group_id} -> delete_access_group. For
+  each route send a typed successful request, an invalid or missing target, and a caller lacking that
+  route permission through B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session
+  routes instead prove bad credentials or invalid/expired codes. Compare status, response model including
+  null/absent fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by
+  where read. Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls
+  management error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 370 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  370 production, 157 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 592 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/access_group_write.rs
+    - crates/betterlite-server/src/access_group_write/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/access-group-write/**
+    - crates/betterlite-server/src/access_group_write/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L317-L577
+    why: Pinned implementation and exact ownership boundary for access_group_write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L620-L813
+    why: Pinned implementation and exact ownership boundary for access_group_write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L317-L325
+    why: Own _sync_add_access_group_to_teams; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L328-L336
+    why: Own _sync_remove_access_group_from_teams; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L339-L347
+    why: Own _sync_add_access_group_to_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L350-L358
+    why: Own _sync_remove_access_group_from_keys; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L361-L362
+    why: Own _without_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L365-L376
+    why: Own _detach_access_group_from_agents; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L379-L393
+    why: Own _detach_access_group_from_agent_registry; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L401-L427
+    why: Own _patch_team_caches_add_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L430-L450
+    why: Own _patch_team_caches_remove_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L453-L478
+    why: Own _patch_key_caches_add_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L481-L500
+    why: Own _patch_key_caches_remove_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L513-L577
+    why: Own create_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L620-L710
+    why: Own update_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L717-L813
+    why: Own delete_access_group; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/access_group.py#L1-L49
+    why: AccessGroupCreateRequest and AccessGroupResponse fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/access_group_endpoints.py#L815-L847
+    why: Unified-access-group aliases use the same handlers and response statuses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: create_201, update_assignments,
+      unknown_team, delete_detaches_agent, delete_204, transaction_rollback, non_admin_write_denied, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^access_group_write::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_write::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/access_group_write::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/management/access-group-write/post--v1-access-group-success.yaml
+  - tools/oracle/cases/management/access-group-write/post--v1-access-group-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-write/post--v1-access-group-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-write/post--v1-unified-access-group-success.yaml
+  - tools/oracle/cases/management/access-group-write/post--v1-unified-access-group-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-write/post--v1-unified-access-group-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-write/put--v1-access-group-access-group-id-success.yaml
+  - tools/oracle/cases/management/access-group-write/put--v1-access-group-access-group-id-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-write/put--v1-access-group-access-group-id-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-write/put--v1-unified-access-group-access-group-id-success.yaml
+  - tools/oracle/cases/management/access-group-write/put--v1-unified-access-group-access-group-id-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-write/put--v1-unified-access-group-access-group-id-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-write/delete--v1-access-group-access-group-id-success.yaml
+  - tools/oracle/cases/management/access-group-write/delete--v1-access-group-access-group-id-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-write/delete--v1-access-group-access-group-id-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-write/delete--v1-unified-access-group-access-group-id-success.yaml
+  - tools/oracle/cases/management/access-group-write/delete--v1-unified-access-group-access-group-id-invalid-target.yaml
+  - tools/oracle/cases/management/access-group-write/delete--v1-unified-access-group-access-group-id-unauthorized-caller.yaml
+  - tools/oracle/cases/management/access-group-write/create-201.yaml
+  - tools/oracle/cases/management/access-group-write/update-assignments.yaml
+  - tools/oracle/cases/management/access-group-write/unknown-team.yaml
+  - tools/oracle/cases/management/access-group-write/delete-detaches-agent.yaml
+  - tools/oracle/cases/management/access-group-write/delete-204.yaml
+  - tools/oracle/cases/management/access-group-write/transaction-rollback.yaml
+  - tools/oracle/cases/management/access-group-write/non-admin-write-denied.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/access_group_endpoints.py: B821 owns _AccessGroupRecord.access_group_id
+    (L49-L49), _AccessGroupRecord.access_mcp_server_ids (L52-L52), _AccessGroupRecord.access_agent_ids
+    (L55-L55), _AccessGroupRecord.assigned_team_ids (L58-L58), _AccessGroupRecord.assigned_key_ids (L61-L61),
+    _AccessGroupRecord.dict (L63-L63), _TeamRecord.team_id (L68-L68), _TeamRecord.team_alias (L71-L71),
+    _TeamRecord.access_group_ids (L74-L74), _KeyRecord.token (L79-L79), _KeyRecord.access_group_ids (L82-L82),
+    _AccessGroupTable.find_unique (L86-L86), _AccessGroupTable.find_many (L88-L88), _AccessGroupTable.create
+    (L90-L90), _AccessGroupTable.update (L92-L92), _AccessGroupTable.delete (L94-L94), _TeamTable.find_unique
+    (L98-L98), _TeamTable.find_many (L100-L100), _TeamTable.update (L102-L102), _KeyTable.find_unique
+    (L106-L106), _KeyTable.find_many (L108-L108), _KeyTable.update (L110-L110), _AgentRecord.agent_id
+    (L115-L115), _AgentRecord.access_group_ids (L118-L118), _AgentTable.find_many (L122-L122), _AgentTable.update
+    (L124-L124), _AccessGroupTx.litellm_accessgrouptable (L145-L145), _AccessGroupTx.litellm_teamtable
+    (L148-L148), _AccessGroupTx.litellm_verificationtoken (L151-L151), _AccessGroupTx.litellm_agentstable
+    (L154-L154), _require_proxy_admin (L157-L162), _require_admin_view (L165-L173), _label (L184-L185),
+    _record_to_response (L188-L201), _ids_across (L204-L207), _responses_for (L210-L237), _response_for
+    (L240-L242), _attached_team_ids_by_group (L245-L256), _teams_touching (L259-L265), _attached_team_ids_for
+    (L268-L273), _require_teams_exist (L276-L286), _record_to_access_group_table (L289-L291), _cache_access_group_record
+    (L294-L309), list_access_groups (L584-L592), get_access_group (L599-L613).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - DELETE success is 204 with no JSON response body.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: security

@@ -26,8 +26,21 @@ jobs:
       pull-requests: read # a merge queue run looks up the queued PR's branch to find its task
     container:
       image: rust:1.98.0-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
+    services:
+      postgres:
+        image: postgres:16.6@sha256:557fea37a744d5f4c8faab304b0a90858b53ab119735a88c131fd19dab802f36
+        env:
+          POSTGRES_USER: betterlite
+          POSTGRES_PASSWORD: betterlite
+          POSTGRES_DB: betterlite
+        options: >-
+          --health-cmd "pg_isready -U betterlite"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       CARGO_TERM_COLOR: never
+      POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
     steps:
       - name: Install system packages
         run: apt-get update && apt-get install --yes --no-install-recommends ca-certificates curl git jq

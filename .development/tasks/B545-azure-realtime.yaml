@@ -1,0 +1,266 @@
+id: B545
+title: Azure realtime protocol and HTTP sessions
+description: >-
+  Add AzureRealtimeConnect and GA/beta protocol selection, configured region/deployment URLs and HTTP session/call/transcription-session
+  preparation. Expose a provider event-normalizer seam for B084; its websocket pump owns forward_messages scheduling.
+  Preserve Azure authentication/header shape and exception-close mapping.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure/realtime/handler.py:
+  azure_realtime_protocol_for_client L42-L52; _ProxyClientWebSocket.send_text L58-L58; _ProxyClientWebSocket.close
+  L60-L60; AzureOpenAIRealtime.get_auth_headers L65-L77; AzureOpenAIRealtime._construct_url L79-L131; AzureOpenAIRealtime.async_realtime
+  L133-L202. litellm/llms/azure/realtime/http_transformation.py: AzureRealtimeHTTPConfig.get_api_base L11-L12; AzureRealtimeHTTPConfig.get_api_key
+  L14-L15; AzureRealtimeHTTPConfig.get_complete_url L17-L20; AzureRealtimeHTTPConfig.validate_environment L22-L32;
+  AzureRealtimeHTTPConfig.get_realtime_calls_url L34-L37; AzureRealtimeHTTPConfig.get_transcription_session_url
+  L39-L42; AzureRealtimeHTTPConfig.get_realtime_calls_headers L44-L47.
+
+
+  Use B1004 close_after_upstream_handshake_refusal and BaseRealtimeHTTPConfig, B1005 client_sent_openai_beta_realtime_header
+  and B1006/B1008/B1009 RealTimeStreaming state/relays. HTTP api-version defaults to 2024-12-17.
+
+
+  Test the default-cap 1009 outcome as a Rust-only deviation case; oracle frame fixtures below the cap still compare
+  directly.
+
+
+  API-family helpers are prerequisites by their plan/B080 part IDs; expose their pure records/functions below betterlite-core
+  or inject a typed preparation/projection callback at provider composition. Provider leaves must never import betterlite-core,
+  and no copied helper algorithm is permitted.
+
+
+  Add the Rust-only message_cap_closes_1009 case for the documented 16 MiB default and the explicit environment
+  override.
+
+
+  Implement crates/betterlite-azure/src/realtime.rs with adjacent tests under realtime/. Keep each Rust module at
+  most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation azure_realtime in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function realtime_cases in betterlite-azure with these exact named cases (one per oracle file): beta_realtime_deployment_query,
+  ga_realtime_url, api_version_query, api_key_versus_token, client_beta_protocol, calls_and_transcription_headers,
+  handshake_error, http_version_2024_12_17. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/azure_realtime* using HelperCase: kind: helper
+  and the externally tagged azure_realtime variant inside call. Do not put the Python stdin operation field in a
+  HelperCase. Add oracle test helper_seeds_select_azure_realtime that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/azure/realtime.rs
+  and its loader wiring: REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES. Module-level settings enter litellm_settings;
+  deployment settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified
+  above and in the linked branches; existing key owners remain unchanged. Write config rstest azure_realtime_config_cases
+  with named cases loads_realtime_websocket_max_message_size_bytes, plus rejects_unrelated_key. Each loads case
+  calls the real config loader with that key and asserts the resolved value, default, precedence and secret redaction
+  where applicable. Seed B002 config_yaml with new azure_realtime* files for every key; reuse its parser/fuzz target.
+
+
+  Write standalone azure_realtime_message_cap_closes_1009 in betterlite-azure for this Rust-specific invariant;
+  it is not a Python oracle case.
+
+
+  Budget from 165 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 195 production lines, 139 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 28 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 474 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-azure/Cargo.toml
+  - crates/betterlite-azure/src/lib.rs
+  - crates/betterlite-azure/src/error.rs
+  - crates/betterlite-azure/src/realtime.rs
+  - crates/betterlite-azure/src/realtime/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/azure_realtime.rs
+  - tools/oracle/src/helpers/azure_realtime/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/azure_realtime.py
+  - tools/oracle/cases/helpers/providers/azure-realtime/**
+  - tools/oracle/fuzz/corpus/helper_case/azure_realtime*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/azure.rs
+  - crates/betterlite-config/src/providers/azure/realtime.rs
+  - crates/betterlite-config/src/providers/azure/realtime/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/azure_realtime_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/azure_realtime*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/handler.py#L42-L202
+  why: >-
+    Own azure_realtime_protocol_for_client, _ProxyClientWebSocket.send_text, _ProxyClientWebSocket.close, AzureOpenAIRealtime.get_auth_headers,
+    AzureOpenAIRealtime._construct_url, AzureOpenAIRealtime.async_realtime. Other functions in this file remain
+    with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/realtime/http_transformation.py#L11-L47
+  why: >-
+    Own AzureRealtimeHTTPConfig.get_api_base, AzureRealtimeHTTPConfig.get_api_key, AzureRealtimeHTTPConfig.get_complete_url,
+    AzureRealtimeHTTPConfig.validate_environment, AzureRealtimeHTTPConfig.get_realtime_calls_url, AzureRealtimeHTTPConfig.get_transcription_session_url,
+    AzureRealtimeHTTPConfig.get_realtime_calls_headers. Other functions in this file remain with the owners listed
+    below.
+dod:
+- text: >-
+    beta realtime deployment query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/beta-realtime-deployment-query.yaml.
+  proof:
+  - case-beta-realtime-deployment-query
+  - oracle
+  - helper-python
+- text: 'ga realtime url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/ga-realtime-url.yaml.'
+  proof:
+  - case-ga-realtime-url
+  - oracle
+  - helper-python
+- text: 'api version query: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/api-version-query.yaml.'
+  proof:
+  - case-api-version-query
+  - oracle
+  - helper-python
+- text: 'api key versus token: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/api-key-versus-token.yaml.'
+  proof:
+  - case-api-key-versus-token
+  - oracle
+  - helper-python
+- text: 'client beta protocol: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/client-beta-protocol.yaml.'
+  proof:
+  - case-client-beta-protocol
+  - oracle
+  - helper-python
+- text: >-
+    calls and transcription headers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/calls-and-transcription-headers.yaml.
+  proof:
+  - case-calls-and-transcription-headers
+  - oracle
+  - helper-python
+- text: 'handshake error: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/handshake-error.yaml.'
+  proof:
+  - case-handshake-error
+  - oracle
+  - helper-python
+- text: 'http version 2024 12 17: the production result, omission or failure matches tools/oracle/cases/helpers/providers/azure-realtime/http-version-2024-12-17.yaml.'
+  proof:
+  - case-http-version-2024-12-17
+  - oracle
+  - helper-python
+- text: New azure_realtime seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+- text: REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES is accepted by the config loader with the documented default and
+    precedence.
+  proof:
+  - config-realtime-websocket-max-message-size-bytes
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+- text: message cap closes 1009 holds at this task’s owned boundary.
+  proof:
+  - message-cap-closes-1009
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-beta-realtime-deployment-query
+    why: The beta-realtime-deployment-query behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_beta_realtime_deployment_query$/)'
+  - id: case-ga-realtime-url
+    why: The ga-realtime-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_ga_realtime_url$/)'
+  - id: case-api-version-query
+    why: The api-version-query behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_api_version_query$/)'
+  - id: case-api-key-versus-token
+    why: The api-key-versus-token behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_api_key_versus_token$/)'
+  - id: case-client-beta-protocol
+    why: The client-beta-protocol behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_client_beta_protocol$/)'
+  - id: case-calls-and-transcription-headers
+    why: The calls-and-transcription-headers behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_calls_and_transcription_headers$/)'
+  - id: case-handshake-error
+    why: The handshake-error behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_handshake_error$/)'
+  - id: case-http-version-2024-12-17
+    why: The http-version-2024-12-17 behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::realtime_cases::case_[0-9]+_http_version_2024_12_17$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/azure_realtime.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_realtime*")"
+      && grep -lq 'azure_realtime' tools/oracle/fuzz/corpus/helper_case/azure_realtime* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_realtime$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-realtime-websocket-max-message-size-bytes
+    why: The REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_realtime_config_cases::case_[0-9]+_loads_realtime_websocket_max_message_size_bytes$/)'
+      && grep -lq 'REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES' crates/betterlite-config/fuzz/corpus/config_yaml/azure_realtime*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::azure_realtime_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/azure_realtime*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: message-cap-closes-1009
+    why: The message cap closes 1009 invariant has no passing production test.
+    run: cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::azure_realtime_message_cap_closes_1009$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/azure-realtime/beta-realtime-deployment-query.yaml
+- tools/oracle/cases/helpers/providers/azure-realtime/ga-realtime-url.yaml
+- tools/oracle/cases/helpers/providers/azure-realtime/api-version-query.yaml
+- tools/oracle/cases/helpers/providers/azure-realtime/api-key-versus-token.yaml
+- tools/oracle/cases/helpers/providers/azure-realtime/client-beta-protocol.yaml
+- tools/oracle/cases/helpers/providers/azure-realtime/calls-and-transcription-headers.yaml
+- tools/oracle/cases/helpers/providers/azure-realtime/handshake-error.yaml
+- tools/oracle/cases/helpers/providers/azure-realtime/http-version-2024-12-17.yaml
+deviations:
+- what: >-
+    Websocket messages are capped at 16 MiB by default; REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES overrides the
+    cap. LiteLLM defaults this variable to None, allowing unlimited frames; excess messages close with websocket
+    code 1009.
+  why: Bounded external buffers are required; this names the visible default difference rather than assuming LiteLLM
+    already caps messages.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L336-L339
+out_of_scope:
+- B025 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- 'litellm/llms/azure/realtime/handler.py: forward_messages L31-L39 have no caller at the pin; do not port them.'
+pitfalls:
+- Preserve Azure authentication/header shape and exception-close mapping.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

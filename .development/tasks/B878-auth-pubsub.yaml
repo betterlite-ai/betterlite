@@ -1,0 +1,169 @@
+id: B878
+title: Publish and consume auth cache invalidations
+description: >-
+  Implement bounded typed auth invalidation message encoding/decoding, Redis publication and the owned
+  subscriber lifecycle. decode_invalidation(&[u8]) feeds the production message decoder in the fuzz target.
+  Inject LocalEviction::apply(Invalidation)->Result<(),CacheError>; B734 supplies the concrete entity-key
+  eviction actions. Preserve local eviction before publication and warning-only transport failure without
+  a dependency back to mutation endpoints.
+
+
+  Build the production auth_pubsub module in betterlite-auth; reuse the typed dependencies listed in the
+  backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py:
+  auth_cache_invalidation_channel (L29-L32; 4 source lines), _cache_invalidation_message_json (L42-L44;
+  3 source lines), _finite_number_or_none (L47-L50; 4 source lines), _message_from_data (L53-L71; 19 source
+  lines), _publish_to_redis (L74-L80; 7 source lines), publish_auth_cache_invalidation (L83-L123; 39 source
+  lines), evict_and_broadcast (L126-L144; 18 source lines), AuthCacheInvalidationSubscriber.__init__ (L150-L159;
+  10 source lines), AuthCacheInvalidationSubscriber.start (L161-L164; 4 source lines), AuthCacheInvalidationSubscriber.stop
+  (L166-L175; 10 source lines), AuthCacheInvalidationSubscriber._run (L177-L198; 22 source lines), AuthCacheInvalidationSubscriber._consume
+  (L200-L205; 6 source lines), AuthCacheInvalidationSubscriber._apply_message (L207-L218; 12 source lines),
+  AuthCacheInvalidationSubscriber._close_pubsub (L221-L225; 5 source lines).
+
+
+  Add the auth_pubsub operation under B856 Management::auth. Python calls only the owned MIT helper with
+  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a auth-pubsub-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This task owns the outside-byte boundary auth_pubsub::decode_invalidation(&[u8]) -> Result<TypedValue,DecodeError>
+  for Redis invalidation message bytes. Production calls this decoder before its typed policy functions;
+  the cargo-fuzz target auth_pubsub calls that same function. Seed valid, truncated, malformed, duplicate-field
+  and limit-boundary inputs and add auth_pubsub::tests::replays_the_auth_pubsub_corpus. Reuse B002 limits
+  for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string decoder cap bytes
+  at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or fetching URLs. B733
+  owns crates/betterlite-auth/fuzz; depend on it and register this decoder target without recreating the
+  workspace.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 163 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  163 production, 145 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 448 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-auth/src/auth_pubsub.rs
+    - crates/betterlite-auth/src/auth_pubsub/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/auth_pubsub.rs
+    - tools/oracle/src/helpers/auth_pubsub/**
+    - tools/oracle/helpers/auth_pubsub.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/auth.rs
+    - tools/oracle/helpers/management/auth.py
+    - tools/oracle/cases/helpers/auth-pubsub/**
+    - tools/oracle/fuzz/corpus/helper_case/auth-pubsub-*
+    - crates/betterlite-auth/fuzz/Cargo.toml
+    - crates/betterlite-auth/fuzz/fuzz_targets/auth_pubsub.rs
+    - crates/betterlite-auth/fuzz/corpus/auth_pubsub/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L29-L32
+    why: Own auth_cache_invalidation_channel; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L42-L44
+    why: Own _cache_invalidation_message_json; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L47-L50
+    why: Own _finite_number_or_none; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L53-L71
+    why: Own _message_from_data; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L74-L80
+    why: Own _publish_to_redis; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L83-L123
+    why: Own publish_auth_cache_invalidation; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L126-L144
+    why: Own evict_and_broadcast; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L150-L159
+    why: Own AuthCacheInvalidationSubscriber.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L161-L164
+    why: Own AuthCacheInvalidationSubscriber.start; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L166-L175
+    why: Own AuthCacheInvalidationSubscriber.stop; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L177-L198
+    why: Own AuthCacheInvalidationSubscriber._run; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L200-L205
+    why: Own AuthCacheInvalidationSubscriber._consume; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L207-L218
+    why: Own AuthCacheInvalidationSubscriber._apply_message; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L221-L225
+    why: Own AuthCacheInvalidationSubscriber._close_pubsub; preserve caller-visible values and failure
+      ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: local_eviction_before_publish,
+      redis_outage_warning, spend_floor_message, malformed_message, shutdown_unsubscribe.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The production decode_invalidation decoder is used by the service and its fuzz target and rejects
+      malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^auth_pubsub::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/auth_pubsub.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-pubsub-*")"
+        && grep -rlq "auth_pubsub" tools/oracle/fuzz/corpus/helper_case/auth-pubsub-* && cargo nextest
+        run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-auth/fuzz/fuzz_targets/auth_pubsub.rs && grep -q "auth_pubsub" crates/betterlite-auth/fuzz/Cargo.toml
+        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-auth/fuzz/corpus/auth_pubsub)"
+        && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(replays_the_auth_pubsub_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/auth-pubsub/local-eviction-before-publish.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/redis-outage-warning.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/spend-floor-message.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/malformed-message.yaml
+  - tools/oracle/cases/helpers/auth-pubsub/shutdown-unsubscribe.yaml
+deviations:
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/auth_cache_invalidation_pubsub.py#L29-L32
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+pitfalls:
+  - decode_invalidation(&[u8]) feeds the production message decoder in the fuzz target.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: security

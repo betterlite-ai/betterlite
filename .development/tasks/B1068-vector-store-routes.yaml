@@ -1,0 +1,244 @@
+id: B1068
+title: Vector store routes
+description: >-
+  Install vector store retrieve/list/update/delete routes using the typed native operations and managed registry/permission
+  services. Preserve configured model routing and source list scope without leaking stored credentials.
+
+
+  GET/POST/DELETE /v1/vector_stores/{vector_store_id} and /vector_stores/{vector_store_id}, plus GET list aliases.
+  List defaults limit=20/order=desc and is not filtered by visibility. Retrieve/update/delete check access only
+  for registry stores; unregistered IDs pass. The pin uses the body vector_store_id on update after authorizing
+  the path id; betterlite rejects a mismatching body id with 400 invalid_request_error, param vector_store_id, code
+  mismatched_resource_id and uses the path id for auth, credentials and execution.
+
+
+  Implement crates/betterlite-server/src/api/vector_store_routes.rs, crates/betterlite-core/src/api/vector_store_routes.rs.
+  Use VectorStoreRoutesInput and VectorStoreRoutesResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: GET /v1/vector_stores/{vector_store_id}; GET /vector_stores/{vector_store_id};
+  GET /v1/vector_stores; GET /vector_stores; POST /v1/vector_stores/{vector_store_id}; POST /vector_stores/{vector_store_id};
+  DELETE /v1/vector_stores/{vector_store_id}; DELETE /vector_stores/{vector_store_id}. Each alias is exercised through
+  the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without re-registering
+  their methods/paths.
+
+
+  Extraction uses the typed path/query/body records named by the owned handler signatures.
+
+
+  Write adjacent tests.rs behavior functions vector_retrieve_route, vector_list_route, vector_update_route, vector_delete_route,
+  vector_route_denied, vector_list_unfiltered, unregistered_vector_id, vector_update_id_match, route_aliases, auth_missing,
+  auth_invalid under api::vector_store_routes::tests. Each named function drives production code and asserts its
+  case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Implement tests::compatibility_deviations with one named rstest case per deviation below, asserting the exact
+  current betterlite result and the pinned contrast. These cases are not disguised as differential equality; oracle
+  inputs for unchanged behavior remain comparable.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  All oracle cases here are HTTP cases against both booted proxies, using B1139 isolated Postgres/Redis fixtures
+  when state is required. Capture client status/body/headers and ordered provider requests. Route aliases are separate
+  named steps in route-aliases.yaml, one request per listed alias, sharing only setup/config. No helper adapter
+  may import or call these FastAPI handlers. The oracle environment must not install litellm-enterprise.
+
+
+  Callable ownership: litellm/proxy/vector_store_endpoints/endpoints.py: vector_store_retrieve (L288-L346); litellm/proxy/vector_store_endpoints/endpoints.py:
+  vector_store_list (L351-L416); litellm/proxy/vector_store_endpoints/endpoints.py: vector_store_update (L421-L482);
+  litellm/proxy/vector_store_endpoints/endpoints.py: vector_store_delete (L487-L545). Abstract/protocol declarations
+  map to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
+  preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 219 owned nonblank/non-comment/non-docstring Python lines (239 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 239 implementation,
+  106 behavior tests, 132 oracle fixtures, 0 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  38 wiring; 515 total within the 520-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1061 (Vector endpoint access), B1062
+  (Vector store registry), B1065 (Vector store read), B1066 (Vector store write), B1087 (Api boundaries), B1100
+  (Shared request body decoding), B1067 (Vector search routes), B732 (Typed authentication principals and grant
+  resolution), B855 (Authenticated request admission and budget handoff), B756 (Authentication header selection
+  and mode dispatch), B003 (HTTP server, health routes and master key auth), B1139 (Stateful HTTP oracle scenarios),
+  B856 (Management oracle namespaces and Postgres test fixture). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/vector_store_routes.rs
+  - crates/betterlite-server/src/api/vector_store_routes/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_store_routes.rs
+  - crates/betterlite-core/src/api/vector_store_routes/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/cases/api/vector-store-routes/**
+  - tools/oracle/fixtures/vector-store-routes/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L286-L545
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'vector retrieve route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-retrieve-route
+  - oracle
+- text: 'vector list route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-list-route
+  - oracle
+- text: 'vector update route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-update-route
+  - oracle
+- text: 'vector delete route: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-delete-route
+  - oracle
+- text: 'vector route denied: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-route-denied
+  - oracle
+- text: 'vector list unfiltered: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-list-unfiltered
+  - oracle
+- text: 'unregistered vector id: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unregistered-vector-id
+  - oracle
+- text: 'vector update id match: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-update-id-match
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: Every explicit deviation has a native test for its documented status/code or fallback.
+  proof:
+  - deviation-tests
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core --no-tests=fail -E 'test(/^api::vector_store_routes::/)
+      - test(/::replays_corpus$/)'
+  - id: case-vector-retrieve-route
+    why: the vector-retrieve-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::vector_retrieve_route($|::)/)'
+  - id: case-vector-list-route
+    why: the vector-list-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::vector_list_route($|::)/)'
+  - id: case-vector-update-route
+    why: the vector-update-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::vector_update_route($|::)/)'
+  - id: case-vector-delete-route
+    why: the vector-delete-route behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::vector_delete_route($|::)/)'
+  - id: case-vector-route-denied
+    why: the vector-route-denied behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::vector_route_denied($|::)/)'
+  - id: case-vector-list-unfiltered
+    why: the vector-list-unfiltered behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::vector_list_unfiltered($|::)/)'
+  - id: case-unregistered-vector-id
+    why: the unregistered-vector-id behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::unregistered_vector_id($|::)/)'
+  - id: case-vector-update-id-match
+    why: the vector-update-id-match behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::vector_update_id_match($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::auth_invalid($|::)/)'
+  - id: deviation-tests
+    why: the documented compatibility difference lacks a native assertion
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::vector_store_routes::tests::compatibility_deviations($|::)/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/vector-store-routes)"
+oracle_cases:
+- tools/oracle/cases/api/vector-store-routes/vector-retrieve-route.yaml
+- tools/oracle/cases/api/vector-store-routes/vector-list-route.yaml
+- tools/oracle/cases/api/vector-store-routes/vector-update-route.yaml
+- tools/oracle/cases/api/vector-store-routes/vector-delete-route.yaml
+- tools/oracle/cases/api/vector-store-routes/vector-route-denied.yaml
+- tools/oracle/cases/api/vector-store-routes/vector-list-unfiltered.yaml
+- tools/oracle/cases/api/vector-store-routes/unregistered-vector-id.yaml
+- tools/oracle/cases/api/vector-store-routes/vector-update-id-match.yaml
+- tools/oracle/cases/api/vector-store-routes/route-aliases.yaml
+- tools/oracle/cases/api/vector-store-routes/auth-missing.yaml
+- tools/oracle/cases/api/vector-store-routes/auth-invalid.yaml
+deviations:
+- what: 'Vector-store update rejects a body vector_store_id different from the path: HTTP 400, type invalid_request_error,
+    param vector_store_id, code mismatched_resource_id.'
+  why: 'ARCHITECT DECISION: authorization, credentials and mutation must address the same path resource.'
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L421-L482
+out_of_scope:
+- 'litellm/proxy/vector_store_endpoints/endpoints.py: B1067 owns reject_caller_embedding_selection_params L40-L49,
+  build_request_data_from_managed_vector_store L57-L68, _update_request_data_with_litellm_managed_vector_store_registry
+  L71-L97, vector_store_search L108-L176, vector_store_create L181-L283, index_create L552-L609, index_list L617-L642.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- vector_store_list uses router.get('/v1/vector_stores', dependencies=[Depends(user_api_key_auth)]); retain its
+  missing-value behavior and field spelling in the typed projection.
+- vector_store_list uses router.get('/vector_stores', dependencies=[Depends(user_api_key_auth)]); retain its missing-value
+  behavior and field spelling in the typed projection.
+review_level: security
+budget:
+  max_changed_lines: 520
+  max_new_expects: 0

@@ -1,0 +1,296 @@
+id: B503
+title: OpenAI chat media and tool sanitation
+description: >-
+  Implement immutable ChatContent normalization and request assembly using the existing typed chat model and prompt
+  helpers. Preserve configured openai_system_messages_first (default false) as an injected flag, provider-specific
+  cache-control handling, bounded schema sanitation, and missing-file errors. A supplied filename remains metadata.
+  Existing chat parsing owns the public shape; this module accepts and returns that typed value.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/chat/gpt_transformation.py:
+  OpenAIGPTConfig.contains_pdf_url L233-L238; OpenAIGPTConfig._handle_pdf_url L240-L248; OpenAIGPTConfig._async_handle_pdf_url
+  L250-L257; OpenAIGPTConfig._common_file_data_check L259-L264; OpenAIGPTConfig._apply_common_transform_content_item
+  L266-L296; OpenAIGPTConfig._transform_content_item L298-L313; OpenAIGPTConfig._async_transform_content_item L315-L329;
+  OpenAIGPTConfig._transform_messages L334-L337; OpenAIGPTConfig._transform_messages L340-L346; OpenAIGPTConfig._transform_messages
+  L350-L382; OpenAIGPTConfig.remove_cache_control_flag_from_messages_and_tools L384-L406; OpenAIGPTConfig._targets_openai_hosted_endpoint
+  L408-L421; OpenAIGPTConfig._should_preserve_cache_control_for_endpoint L423-L436; OpenAIGPTConfig._sanitized_tools_update_for_openai
+  L438-L465; OpenAIGPTConfig._prompt_cache_ordered_messages L467-L474; OpenAIGPTConfig.transform_request L476-L511;
+  OpenAIGPTConfig.async_transform_request L513-L548.
+
+
+  remote-url-current-rejection supplies an http:// image or PDF URL requiring local bytes and expects ImageFetchError
+  status 400 before transport under the current open request-download decision; inject the same failed-download
+  seam into the pinned helper. Inline bytes continue to compare normally; provider-forwardable URL descriptors remain
+  unchanged where the source forwards them.
+
+
+  Implement crates/betterlite-openai/src/chat_content.rs with adjacent tests under chat_content/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation openai_chat_content in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function chat_content_cases in betterlite-openai with these exact named cases (one per oracle file):
+  string_image_url, file_data_default_filename, file_block_without_file, inline_pdf, custom_base_cache_control,
+  hosted_cache_control_removal, schema_combinators_and_regex, tool_choice_without_tools, sync_async_max_retries,
+  system_messages_first, remote_url_current_rejection. Each case exercises its named outcome independently; use
+  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
+  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_chat_content* using HelperCase: kind:
+  helper and the externally tagged openai_chat_content variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_openai_chat_content that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Resolve only these newly owned config/environment inputs in crates/betterlite-config/src/providers/openai/chat_content.rs
+  and its loader wiring: openai_system_messages_first. Module-level settings enter litellm_settings; deployment
+  settings enter litellm_params; environment lookup is injected. Keep the defaults and precedence specified above
+  and in the linked branches; existing key owners remain unchanged. Write config rstest openai_chat_content_config_cases
+  with named cases loads_openai_system_messages_first, plus rejects_unrelated_key. Each loads case calls the real
+  config loader with that key and asserts the resolved value, default, precedence and secret redaction where applicable.
+  Seed B002 config_yaml with new openai_chat_content* files for every key; reuse its parser/fuzz target.
+
+
+  Budget from 285 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 305 production lines, 151 behavior/config-test lines,
+  99 combined Rust/Python adapter lines, 0 parser target/replay lines, 28 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 608 planned, 625 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/chat_content.rs
+  - crates/betterlite-openai/src/chat_content/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_chat_content.rs
+  - tools/oracle/src/helpers/openai_chat_content/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_chat_content.py
+  - tools/oracle/cases/helpers/providers/openai-chat-content/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_chat_content*
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/settings.rs
+  - crates/betterlite-config/src/model.rs
+  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/providers.rs
+  - crates/betterlite-config/src/providers/openai.rs
+  - crates/betterlite-config/src/providers/openai/chat_content.rs
+  - crates/betterlite-config/src/providers/openai/chat_content/**
+  - crates/betterlite-config/src/tests.rs
+  - crates/betterlite-config/src/tests/openai_chat_content_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/openai_chat_content*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L233-L548
+  why: >-
+    Own OpenAIGPTConfig.contains_pdf_url, OpenAIGPTConfig._handle_pdf_url, OpenAIGPTConfig._async_handle_pdf_url,
+    OpenAIGPTConfig._common_file_data_check, OpenAIGPTConfig._apply_common_transform_content_item, OpenAIGPTConfig._transform_content_item,
+    OpenAIGPTConfig._async_transform_content_item, OpenAIGPTConfig._transform_messages, OpenAIGPTConfig._transform_messages,
+    OpenAIGPTConfig._transform_messages, OpenAIGPTConfig.remove_cache_control_flag_from_messages_and_tools, OpenAIGPTConfig._targets_openai_hosted_endpoint,
+    OpenAIGPTConfig._should_preserve_cache_control_for_endpoint, OpenAIGPTConfig._sanitized_tools_update_for_openai,
+    OpenAIGPTConfig._prompt_cache_ordered_messages, OpenAIGPTConfig.transform_request, OpenAIGPTConfig.async_transform_request.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: 'string image url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/string-image-url.yaml.'
+  proof:
+  - case-string-image-url
+  - oracle
+  - helper-python
+- text: >-
+    file data default filename: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/file-data-default-filename.yaml.
+  proof:
+  - case-file-data-default-filename
+  - oracle
+  - helper-python
+- text: >-
+    file block without file: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/file-block-without-file.yaml.
+  proof:
+  - case-file-block-without-file
+  - oracle
+  - helper-python
+- text: 'inline pdf: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/inline-pdf.yaml.'
+  proof:
+  - case-inline-pdf
+  - oracle
+  - helper-python
+- text: >-
+    custom base cache control: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/custom-base-cache-control.yaml.
+  proof:
+  - case-custom-base-cache-control
+  - oracle
+  - helper-python
+- text: >-
+    hosted cache control removal: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/hosted-cache-control-removal.yaml.
+  proof:
+  - case-hosted-cache-control-removal
+  - oracle
+  - helper-python
+- text: >-
+    schema combinators and regex: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/schema-combinators-and-regex.yaml.
+  proof:
+  - case-schema-combinators-and-regex
+  - oracle
+  - helper-python
+- text: >-
+    tool choice without tools: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/tool-choice-without-tools.yaml.
+  proof:
+  - case-tool-choice-without-tools
+  - oracle
+  - helper-python
+- text: 'sync async max retries: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/sync-async-max-retries.yaml.'
+  proof:
+  - case-sync-async-max-retries
+  - oracle
+  - helper-python
+- text: 'system messages first: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/system-messages-first.yaml.'
+  proof:
+  - case-system-messages-first
+  - oracle
+  - helper-python
+- text: >-
+    remote url current rejection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-chat-content/remote-url-current-rejection.yaml.
+  proof:
+  - case-remote-url-current-rejection
+  - oracle
+  - helper-python
+- text: New openai_chat_content seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: openai_system_messages_first is accepted by the config loader with the documented default and precedence.
+  proof:
+  - config-openai-system-messages-first
+  - config-corpus
+- text: Unrelated unsupported config still fails with its complete field path.
+  proof:
+  - config-unknown-key
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-string-image-url
+    why: The string-image-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_string_image_url$/)'
+  - id: case-file-data-default-filename
+    why: The file-data-default-filename behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_file_data_default_filename$/)'
+  - id: case-file-block-without-file
+    why: The file-block-without-file behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_file_block_without_file$/)'
+  - id: case-inline-pdf
+    why: The inline-pdf behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_inline_pdf$/)'
+  - id: case-custom-base-cache-control
+    why: The custom-base-cache-control behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_custom_base_cache_control$/)'
+  - id: case-hosted-cache-control-removal
+    why: The hosted-cache-control-removal behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_hosted_cache_control_removal$/)'
+  - id: case-schema-combinators-and-regex
+    why: The schema-combinators-and-regex behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_schema_combinators_and_regex$/)'
+  - id: case-tool-choice-without-tools
+    why: The tool-choice-without-tools behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_tool_choice_without_tools$/)'
+  - id: case-sync-async-max-retries
+    why: The sync-async-max-retries behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_sync_async_max_retries$/)'
+  - id: case-system-messages-first
+    why: The system-messages-first behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_system_messages_first$/)'
+  - id: case-remote-url-current-rejection
+    why: The remote-url-current-rejection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::chat_content_cases::case_[0-9]+_remote_url_current_rejection$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_chat_content.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_chat_content*")"
+      && grep -lq 'openai_chat_content' tools/oracle/fuzz/corpus/helper_case/openai_chat_content* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_chat_content$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-openai-system-messages-first
+    why: The openai_system_messages_first setting is not loaded with its required defaults and precedence.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_chat_content_config_cases::case_[0-9]+_loads_openai_system_messages_first$/)'
+      && grep -lq 'openai_system_messages_first' crates/betterlite-config/fuzz/corpus/config_yaml/openai_chat_content*
+  - id: config-unknown-key
+    why: The extension silently accepts unrelated unsupported configuration.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/::openai_chat_content_config_cases::case_[0-9]+_rejects_unrelated_key$/)'
+  - id: config-corpus
+    why: New operation-specific config seeds are absent or do not replay through B002.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/openai_chat_content*")"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-chat-content/string-image-url.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/file-data-default-filename.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/file-block-without-file.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/inline-pdf.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/custom-base-cache-control.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/hosted-cache-control-removal.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/schema-combinators-and-regex.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/tool-choice-without-tools.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/sync-async-max-retries.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/system-messages-first.yaml
+- tools/oracle/cases/helpers/providers/openai-chat-content/remote-url-current-rejection.yaml
+deviations:
+- what: >-
+    Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled request-URL
+    downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local bytes are required;
+    only supplied bytes or already authorized local file handles may be read.
+  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
+    feature that depends on fetching.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L233-L548
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig._passed_in_tools L550-L551; OpenAIGPTConfig._check_and_fix_if_content_is_tool_call
+  L553-L580; OpenAIGPTConfig._get_finish_reason L582-L586; OpenAIGPTConfig._transform_choices L588-L659; OpenAIGPTConfig.transform_response
+  L661-L708; OpenAIGPTConfig.get_error_class L710-L715; OpenAIGPTConfig.get_complete_url L717-L743; OpenAIGPTConfig.validate_environment
+  L745-L762; OpenAIGPTConfig.get_models L764-L789; OpenAIGPTConfig.get_api_key L792-L793; OpenAIGPTConfig.get_api_base
+  L796-L803; OpenAIGPTConfig.get_base_model L806-L807; OpenAIGPTConfig.get_token_counter L809-L814; OpenAIGPTConfig.get_model_response_iterator
+  L816-L826; OpenAIChatCompletionStreamingHandler._map_reasoning_to_reasoning_content L838-L855; OpenAIChatCompletionStreamingHandler._extract_error_from_chunk
+  L858-L870; OpenAIChatCompletionStreamingHandler.chunk_parser L872-L898 belong to B504; reuse that implementation
+  or its injected typed boundary.
+- >-
+  litellm/llms/openai/chat/gpt_transformation.py: OpenAIGPTConfig.__init__ L118-L137; OpenAIGPTConfig.get_config
+  L140-L141; OpenAIGPTConfig.get_supported_openai_params L143-L185; OpenAIGPTConfig.is_openai_catalog_model L188-L193;
+  OpenAIGPTConfig._map_openai_params L195-L217; OpenAIGPTConfig.map_openai_params L219-L231; OpenAIUnknownModelConfig.get_supported_openai_params
+  L833-L834 belong to B668; reuse that implementation or its injected typed boundary.
+pitfalls:
+- >-
+  Preserve configured openai_system_messages_first (default false) as an injected flag, provider-specific cache-control
+  handling, bounded schema sanitation, and missing-file errors.
+budget:
+  max_changed_lines: 625
+  max_new_expects: 0
+review_level: standard

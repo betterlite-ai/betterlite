@@ -1,0 +1,311 @@
+id: B941
+title: Responses ws auth
+description: >-
+  Install the two Responses WebSocket routes with the pinned query-model and first-frame auth behavior. Hand off
+  the authenticated session to the native or managed WebSocket service.
+
+
+  Paths are WebSocket /v1/responses and /responses. ?model= supplies the query model and skips the first-frame model-auth
+  branch; otherwise read the first response.create frame with a 30-second timeout (close 1008). Echo the first requested
+  Sec-WebSocket-Protocol. Invalid JSON/non-response.create sends invalid_request_error and closes 1008; receive/internal
+  errors close 1011. First-frame auth is skipped without master key and without enable_jwt_auth/enable_oauth2_auth/enable_oauth2_proxy_auth,
+  or for custom auth when custom_auth_run_common_checks=false. Upstream failure frame types are rate_limit_exceeded
+  for 429, invalid_request_error for other 4xx and server_error otherwise.
+
+
+  Implement crates/betterlite-server/src/api/responses_ws_auth.rs, crates/betterlite-core/src/api/responses_ws_auth.rs.
+  Use ResponsesWsAuthInput and ResponsesWsAuthResult with typed nested records; inject only the clock, repositories,
+  transports and resolved settings this slice uses through constructors. Reuse ApiLimits from B1087; do not introduce
+  ambient environment or duplicate credential resolution.
+
+
+  Register exactly these routes in this task: WEBSOCKET /v1/responses; WEBSOCKET /responses. Each alias is exercised
+  through the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without
+  re-registering their methods/paths.
+
+
+  Extraction uses the typed path/query/body records named by the owned handler signatures.
+
+
+  Write adjacent tests.rs behavior functions model_in_first_frame, missing_model_close, unauthorized_first_frame,
+  route_hints_retained, malformed_first_frame, query_model_skips_first_auth, first_frame_timeout, first_frame_wrong_type,
+  upstream_failure_frame, first_subprotocol_echo, route_aliases, auth_missing, auth_invalid under api::responses_ws_auth::tests.
+  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
+  Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): general_settings.custom_auth_run_common_checks
+  defaults to False; general_settings.enable_jwt_auth defaults to False; general_settings.enable_oauth2_auth defaults
+  to False; general_settings.enable_oauth2_proxy_auth defaults to False. No environment reads occur outside betterlite-config.
+  Test api::responses_ws_auth::tests::loads_settings uses the production Config loader and an injected environment
+  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
+  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
+  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
+  parser.
+
+
+  The production external-byte decoder is betterlite-server::api::responses_ws_auth::decode_responses_ws_auth(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input first_message at litellm/proxy/response_api_endpoints/endpoints.py:1337;
+  _ResponseCreateRoutingHints.model_validate_json input first_message at litellm/proxy/response_api_endpoints/endpoints.py:1409.
+  Place its implementation in crates/betterlite-server/src/api/responses_ws_auth.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs passes arbitrary
+  bounded bytes to that exact decoder; api::responses_ws_auth::tests::replays_corpus replays newly committed seeds
+  through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Use B901 kind: websocket transcripts with the default gateway driver against both booted proxies, comparing upstream
+  handshake status, negotiated subprotocol, per-direction frame ordering and close code/reason. Route gateway cases
+  also compare pre-accept HTTP status. No helper calls a WebSocket route function.
+
+
+  Callable ownership: litellm/proxy/response_api_endpoints/endpoints.py: _read_ws_model_from_first_frame (L1316-L1384);
+  litellm/proxy/response_api_endpoints/endpoints.py: _extract_model_from_first_ws_event (L1387-L1396); litellm/proxy/response_api_endpoints/endpoints.py:
+  _routing_hints_from_first_ws_frame (L1407-L1419); litellm/proxy/response_api_endpoints/endpoints.py: _responses_ws_failure_frame
+  (L1422-L1428); litellm/proxy/response_api_endpoints/endpoints.py: _enforce_responses_ws_first_frame_model_auth
+  (L1431-L1471); litellm/proxy/response_api_endpoints/endpoints.py: responses_websocket_endpoint (L1476-L1620).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 252 owned nonblank/non-comment/non-docstring Python lines (268 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 272 implementation,
+  118 behavior tests, 156 oracle fixtures, 0 Rust/Python adapters, 60 decoder fuzz/replay, 42 config tests/seeds
+  and 38 wiring; 686 total within the 690-line cap. The estimate includes tests and adapters, not just production
+  code.
+
+
+  Direct inputs come from B003 (HTTP server, health routes and master key auth), B171 (Direct helper oracle and
+  URL path encoding), B901 (Websocket oracle), B943 (Responses ws native), B945 (Responses ws managed), B1087 (Api
+  boundaries), B754 (Shared authenticated request policy ordering), B748 (Combine key, team, user and organization
+  model grants), B756 (Authentication header selection and mode dispatch), B732 (Typed authentication principals
+  and grant resolution), B855 (Authenticated request admission and budget handoff), B1139 (Stateful HTTP oracle
+  scenarios), B856 (Management oracle namespaces and Postgres test fixture), B002 (Load LiteLLM config.yaml into
+  typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids
+  retain ownership on the provider and keys/data branches.
+
+
+  Authenticated route fixtures explicitly configure a fixed non-secret test master key and seed ordinary virtual
+  keys through B856/B1139; missing/invalid-auth cases omit or replace those credentials while keeping every other
+  input valid. Disabled-auth and intentionally unauthenticated routes have separate explicit configurations. Do
+  not rely on an absent master key to exercise an authentication failure.
+
+
+  For an exception that finally becomes ProxyException, proxy_server.openai_exception_handler uses exc.to_dict():
+  error.code is the stringified status code, and the separately stored openai_code is not emitted. Preserve source
+  constructor type/param values, including literal "None" where that route passes it. An uncaught HTTPException
+  still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
+  those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
+  reaches the client unchanged.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/error.rs
+  - crates/betterlite-server/src/api/responses_ws_auth.rs
+  - crates/betterlite-server/src/api/responses_ws_auth/**
+  - crates/betterlite-server/src/api.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_ws_auth.rs
+  - crates/betterlite-core/src/api/responses_ws_auth/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/responses_ws_auth.rs
+  - crates/betterlite-config/src/api/responses_ws_auth/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-auth-*
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs
+  - crates/betterlite-server/fuzz/corpus/responses_ws_auth/**
+  - tools/oracle/cases/websocket/responses-ws-auth/**
+  - tools/oracle/fixtures/responses-ws-auth/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1456-L1456
+  why: Setting general_settings.custom_auth_run_common_checks and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1451-L1451
+  why: Setting general_settings.enable_jwt_auth and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1452-L1452
+  why: Setting general_settings.enable_oauth2_auth and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1453-L1453
+  why: Setting general_settings.enable_oauth2_proxy_auth and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L1316-L1620
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4373
+  why: ProxyException stores openai_code separately but to_dict emits string code.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1892-L1919
+  why: Final HTTP envelope uses ProxyException.to_dict; uncaught HTTP exceptions retain FastAPI detail.
+dod:
+- text: 'model in first frame: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-model-in-first-frame
+  - oracle
+- text: 'missing model close: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-missing-model-close
+  - oracle
+- text: 'unauthorized first frame: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unauthorized-first-frame
+  - oracle
+- text: 'route hints retained: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-hints-retained
+  - oracle
+- text: 'malformed first frame: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-malformed-first-frame
+  - oracle
+- text: 'query model skips first auth: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-query-model-skips-first-auth
+  - oracle
+- text: 'first frame timeout: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-first-frame-timeout
+  - oracle
+- text: 'first frame wrong type: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-first-frame-wrong-type
+  - oracle
+- text: 'upstream failure frame: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-upstream-failure-frame
+  - oracle
+- text: 'first subprotocol echo: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-first-subprotocol-echo
+  - oracle
+- text: 'route aliases: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-route-aliases
+  - oracle
+- text: 'auth missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-missing
+  - oracle
+- text: 'auth invalid: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-auth-invalid
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-server -p betterlite-core -p betterlite-config --no-tests=fail
+      -E 'test(/^api::responses_ws_auth::/) - test(/::replays_corpus$/)'
+  - id: case-model-in-first-frame
+    why: the model-in-first-frame behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::model_in_first_frame($|::)/)'
+  - id: case-missing-model-close
+    why: the missing-model-close behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::missing_model_close($|::)/)'
+  - id: case-unauthorized-first-frame
+    why: the unauthorized-first-frame behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::unauthorized_first_frame($|::)/)'
+  - id: case-route-hints-retained
+    why: the route-hints-retained behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::route_hints_retained($|::)/)'
+  - id: case-malformed-first-frame
+    why: the malformed-first-frame behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::malformed_first_frame($|::)/)'
+  - id: case-query-model-skips-first-auth
+    why: the query-model-skips-first-auth behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::query_model_skips_first_auth($|::)/)'
+  - id: case-first-frame-timeout
+    why: the first-frame-timeout behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::first_frame_timeout($|::)/)'
+  - id: case-first-frame-wrong-type
+    why: the first-frame-wrong-type behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::first_frame_wrong_type($|::)/)'
+  - id: case-upstream-failure-frame
+    why: the upstream-failure-frame behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::upstream_failure_frame($|::)/)'
+  - id: case-first-subprotocol-echo
+    why: the first-subprotocol-echo behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::first_subprotocol_echo($|::)/)'
+  - id: case-route-aliases
+    why: the route-aliases behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::route_aliases($|::)/)'
+  - id: case-auth-missing
+    why: the auth-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::auth_missing($|::)/)'
+  - id: case-auth-invalid
+    why: the auth-invalid behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::auth_invalid($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-ws-auth-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/responses_ws_auth)"
+      && test -f crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs && grep -qF "decode_responses_ws_auth"
+      crates/betterlite-server/fuzz/fuzz_targets/responses_ws_auth.rs && cargo nextest run --locked -p betterlite-server
+      --no-tests=fail -E 'test(/^api::responses_ws_auth::tests::replays_corpus$/)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/websocket/responses-ws-auth)"
+oracle_cases:
+- tools/oracle/cases/websocket/responses-ws-auth/model-in-first-frame.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/missing-model-close.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/unauthorized-first-frame.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/route-hints-retained.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/malformed-first-frame.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/query-model-skips-first-auth.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/first-frame-timeout.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/first-frame-wrong-type.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/upstream-failure-frame.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/first-subprotocol-echo.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/route-aliases.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/auth-missing.yaml
+- tools/oracle/cases/websocket/responses-ws-auth/auth-invalid.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope
+  L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant
+  L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth
+  L182-L191, cursor_model_list L471-L485, cursor_chat_completions L496-L674.'
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B080 owns responses_api L212-L458.'
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B938 owns get_response L695-L790, delete_response L811-L899,
+  get_response_input_items L920-L970, cancel_response L1216-L1313.'
+- 'litellm/proxy/response_api_endpoints/endpoints.py: B939 owns compact_response L988-L1052, _TokenCounter.__call__
+  L1078-L1078, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response
+  L1102-L1107, _responses_input_as_token_count_messages L1110-L1125, responses_input_tokens L1143-L1198.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+pitfalls:
+- Within _read_ws_model_from_first_frame\'s not isinstance(first_event, dict) or first_event.get('type') != 'response.create'
+  branch, preserve return None and its nested guards.
+- Within _read_ws_model_from_first_frame\'s not model branch, preserve return None and its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 690
+  max_new_expects: 0

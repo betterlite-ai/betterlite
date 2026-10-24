@@ -1,0 +1,218 @@
+id: B613
+title: Bedrock classic model parameter maps
+description: >-
+  Add compact typed configuration/mapping tables for AI21 Jurassic, Cohere command, Llama, Mistral, Titan and Claude2.
+  Reuse existing base request/reply transport and prompt services; constructors/get_config become explicit immutable
+  settings rather than Python class mutation. Preserve family token/stop/sampling parameter renames and legacy model
+  list.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py:
+  AmazonAI21Config.__init__ L39-L54; AmazonAI21Config.get_config L57-L73; AmazonAI21Config.get_supported_openai_params
+  L75-L81; AmazonAI21Config.map_openai_params L83-L99. litellm/llms/bedrock/chat/invoke_transformations/amazon_cohere_transformation.py:
+  AmazonCohereConfig.__init__ L24-L35; AmazonCohereConfig.get_config L38-L54; AmazonCohereConfig.get_supported_openai_params
+  L56-L58; AmazonCohereConfig.map_openai_params L60-L73. litellm/llms/bedrock/chat/invoke_transformations/amazon_llama_transformation.py:
+  AmazonLlamaConfig.__init__ L25-L35; AmazonLlamaConfig.get_config L38-L54; AmazonLlamaConfig.get_supported_openai_params
+  L56-L62; AmazonLlamaConfig.map_openai_params L64-L80. litellm/llms/bedrock/chat/invoke_transformations/amazon_mistral_transformation.py:
+  AmazonMistralConfig.__init__ L32-L45; AmazonMistralConfig.get_config L48-L64; AmazonMistralConfig.get_supported_openai_params
+  L66-L67; AmazonMistralConfig.map_openai_params L69-L87; AmazonMistralConfig.get_outputText L90-L111. litellm/llms/bedrock/chat/invoke_transformations/amazon_titan_transformation.py:
+  AmazonTitanConfig.__init__ L29-L41; AmazonTitanConfig.get_config L44-L60; AmazonTitanConfig._map_and_modify_arg
+  L62-L83; AmazonTitanConfig.get_supported_openai_params L85-L93; AmazonTitanConfig.map_openai_params L95-L114.
+  litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py: AmazonAnthropicConfig.__init__
+  L30-L42; AmazonAnthropicConfig.get_config L45-L60; AmazonAnthropicConfig.get_legacy_anthropic_model_names L63-L68;
+  AmazonAnthropicConfig.get_supported_openai_params L70-L78; AmazonAnthropicConfig.map_openai_params L80-L98.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse AmazonInvokeConfig.__init__ from B611 (litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py);
+  its implementation remains with that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/legacy_models.rs with adjacent tests under legacy_models/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_legacy_models in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function legacy_models_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  ai21_penalties, cohere_max_tokens, llama_generation_length, mistral_max_tokens, titan_text_generation_config,
+  claude2_legacy_names, mistral_output_text. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models* using HelperCase: kind:
+  helper and the externally tagged bedrock_legacy_models variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_bedrock_legacy_models that parses every prefixed seed
+  with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared
+  corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 364 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 380 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 596 planned, 600 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/legacy_models.rs
+  - crates/betterlite-bedrock/src/legacy_models/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_legacy_models.rs
+  - tools/oracle/src/helpers/bedrock_legacy_models/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_legacy_models.py
+  - tools/oracle/cases/helpers/providers/bedrock-legacy-models/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models*
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_ai21_transformation.py#L39-L99
+  why: >-
+    Own AmazonAI21Config.__init__, AmazonAI21Config.get_config, AmazonAI21Config.get_supported_openai_params, AmazonAI21Config.map_openai_params.
+    Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_cohere_transformation.py#L24-L73
+  why: >-
+    Own AmazonCohereConfig.__init__, AmazonCohereConfig.get_config, AmazonCohereConfig.get_supported_openai_params,
+    AmazonCohereConfig.map_openai_params. Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_llama_transformation.py#L25-L80
+  why: >-
+    Own AmazonLlamaConfig.__init__, AmazonLlamaConfig.get_config, AmazonLlamaConfig.get_supported_openai_params,
+    AmazonLlamaConfig.map_openai_params. Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_mistral_transformation.py#L32-L111
+  why: >-
+    Own AmazonMistralConfig.__init__, AmazonMistralConfig.get_config, AmazonMistralConfig.get_supported_openai_params,
+    AmazonMistralConfig.map_openai_params, AmazonMistralConfig.get_outputText. Other functions in this file remain
+    with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_titan_transformation.py#L29-L114
+  why: >-
+    Own AmazonTitanConfig.__init__, AmazonTitanConfig.get_config, AmazonTitanConfig._map_and_modify_arg, AmazonTitanConfig.get_supported_openai_params,
+    AmazonTitanConfig.map_openai_params. Other functions in this file remain with the owners listed below.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py#L30-L98
+  why: >-
+    Own AmazonAnthropicConfig.__init__, AmazonAnthropicConfig.get_config, AmazonAnthropicConfig.get_legacy_anthropic_model_names,
+    AmazonAnthropicConfig.get_supported_openai_params, AmazonAnthropicConfig.map_openai_params. Other functions
+    in this file remain with the owners listed below.
+dod:
+- text: 'ai21 penalties: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/ai21-penalties.yaml.'
+  proof:
+  - case-ai21-penalties
+  - oracle
+  - helper-python
+- text: 'cohere max tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/cohere-max-tokens.yaml.'
+  proof:
+  - case-cohere-max-tokens
+  - oracle
+  - helper-python
+- text: >-
+    llama generation length: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/llama-generation-length.yaml.
+  proof:
+  - case-llama-generation-length
+  - oracle
+  - helper-python
+- text: 'mistral max tokens: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-max-tokens.yaml.'
+  proof:
+  - case-mistral-max-tokens
+  - oracle
+  - helper-python
+- text: >-
+    titan text generation config: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/titan-text-generation-config.yaml.
+  proof:
+  - case-titan-text-generation-config
+  - oracle
+  - helper-python
+- text: 'claude2 legacy names: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/claude2-legacy-names.yaml.'
+  proof:
+  - case-claude2-legacy-names
+  - oracle
+  - helper-python
+- text: 'mistral output text: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-output-text.yaml.'
+  proof:
+  - case-mistral-output-text
+  - oracle
+  - helper-python
+- text: New bedrock_legacy_models seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-ai21-penalties
+    why: The ai21-penalties behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_ai21_penalties$/)'
+  - id: case-cohere-max-tokens
+    why: The cohere-max-tokens behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_cohere_max_tokens$/)'
+  - id: case-llama-generation-length
+    why: The llama-generation-length behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_llama_generation_length$/)'
+  - id: case-mistral-max-tokens
+    why: The mistral-max-tokens behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_mistral_max_tokens$/)'
+  - id: case-titan-text-generation-config
+    why: The titan-text-generation-config behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_titan_text_generation_config$/)'
+  - id: case-claude2-legacy-names
+    why: The claude2-legacy-names behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_claude2_legacy_names$/)'
+  - id: case-mistral-output-text
+    why: The mistral-output-text behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::legacy_models_cases::case_[0-9]+_mistral_output_text$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_legacy_models.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models*")"
+      && grep -lq 'bedrock_legacy_models' tools/oracle/fuzz/corpus/helper_case/bedrock_legacy_models* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_legacy_models$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/ai21-penalties.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/cohere-max-tokens.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/llama-generation-length.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-max-tokens.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/titan-text-generation-config.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/claude2-legacy-names.yaml
+- tools/oracle/cases/helpers/providers/bedrock-legacy-models/mistral-output-text.yaml
+deviations: []
+out_of_scope:
+- B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve family token/stop/sampling parameter renames and legacy model list.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard

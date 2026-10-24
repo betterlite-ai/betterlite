@@ -1,0 +1,182 @@
+id: B1061
+title: Vector endpoint access
+description: >-
+  Resolve managed vector stores and authorize vector-store and file endpoint paths against the source permission
+  map. Apply path suffix and operation-specific rules before data lookup or credential resolution, reusing vector-store-access
+  decisions.
+
+
+  Pure policy/helper parity stays here; the consuming route tasks own HTTP auth/status/header integration. Do not
+  call a FastAPI handler from a helper adapter or add a dependency on the later family composer.
+
+
+  Implement crates/betterlite-core/src/api/vector_endpoint_access.rs. Use VectorEndpointAccessInput and VectorEndpointAccessResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Exception-constructor branches to exercise (these are inputs to the final handler mapper, not automatically the
+  HTTP wire envelope): utils.py:331 status_code=403, exception_detail=FastAPI detail string; utils.py:479 status_code=403,
+  exception_detail=FastAPI detail string; utils.py:497 status_code=403, exception_detail=FastAPI detail string;
+  utils.py:554 status_code=403, exception_detail=FastAPI detail string; utils.py:318 status_code=500, exception_detail=FastAPI
+  detail string; utils.py:286 status_code=500, exception_detail=FastAPI detail string. Compare the actual source
+  status, error type, param and code; ignore only error wording except in message-extraction tests.
+
+
+  Write adjacent tests.rs behavior functions vector_search_permission, vector_file_write_permission, unknown_endpoint_rule,
+  managed_store_not_found, suffix_boundary under api::vector_endpoint_access::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::VectorEndpointAccess in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_endpoint_access: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/vector_store_endpoints/utils.py: get_litellm_managed_vector_store (L260-L321);
+  litellm/proxy/vector_store_endpoints/utils.py: assert_user_can_access_vector_store (L324-L331); litellm/proxy/vector_store_endpoints/utils.py:
+  assert_user_can_access_vector_store_id (L334-L351); litellm/proxy/vector_store_endpoints/utils.py: _does_endpoint_match
+  (L354-L361); litellm/proxy/vector_store_endpoints/utils.py: check_vector_store_permission (L364-L411); litellm/proxy/vector_store_endpoints/utils.py:
+  is_allowed_to_call_vector_store_endpoint (L414-L502); litellm/proxy/vector_store_endpoints/utils.py: is_allowed_to_call_vector_store_files_endpoint
+  (L505-L559). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 208 owned nonblank/non-comment/non-docstring Python lines (244 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 228 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 478 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B207 (Route and call-type metadata
+  matching), B1060 (Vector store access), B1087 (Api boundaries), B726 (Managed resources and transaction repositories),
+  B858 (Typed managed-resource and analytics rows), B002 (Load LiteLLM config.yaml into typed config). These are
+  callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the
+  provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_endpoint_access.rs
+  - crates/betterlite-core/src/api/vector_endpoint_access/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/vector_endpoint_access.rs
+  - tools/oracle/src/helpers/vector_endpoint_access/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_endpoint_access.py
+  - tools/oracle/helpers/vector_endpoint_access/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_endpoint_access-*
+  - tools/oracle/cases/helpers/vector-endpoint-access/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/utils.py#L260-L559
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'vector search permission: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-search-permission
+  - oracle
+- text: 'vector file write permission: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-vector-file-write-permission
+  - oracle
+- text: 'unknown endpoint rule: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unknown-endpoint-rule
+  - oracle
+- text: 'managed store not found: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-managed-store-not-found
+  - oracle
+- text: 'suffix boundary: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-suffix-boundary
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_endpoint_access::/)
+      - test(/::replays_corpus$/)'
+  - id: case-vector-search-permission
+    why: the vector-search-permission behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_endpoint_access::tests::vector_search_permission($|::)/)'
+  - id: case-vector-file-write-permission
+    why: the vector-file-write-permission behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_endpoint_access::tests::vector_file_write_permission($|::)/)'
+  - id: case-unknown-endpoint-rule
+    why: the unknown-endpoint-rule behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_endpoint_access::tests::unknown_endpoint_rule($|::)/)'
+  - id: case-managed-store-not-found
+    why: the managed-store-not-found behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_endpoint_access::tests::managed_store_not_found($|::)/)'
+  - id: case-suffix-boundary
+    why: the suffix-boundary behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_endpoint_access::tests::suffix_boundary($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/vector_endpoint_access.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_endpoint_access-*)"
+      && grep -qE "^[[:space:]]+vector_endpoint_access:" tools/oracle/fuzz/corpus/helper_case/vector_endpoint_access-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-endpoint-access)"
+oracle_cases:
+- tools/oracle/cases/helpers/vector-endpoint-access/vector-search-permission.yaml
+- tools/oracle/cases/helpers/vector-endpoint-access/vector-file-write-permission.yaml
+- tools/oracle/cases/helpers/vector-endpoint-access/unknown-endpoint-rule.yaml
+- tools/oracle/cases/helpers/vector-endpoint-access/managed-store-not-found.yaml
+- tools/oracle/cases/helpers/vector-endpoint-access/suffix-boundary.yaml
+deviations: []
+out_of_scope:
+- 'litellm/proxy/vector_store_endpoints/utils.py: B1060 owns _normalize_litellm_params L25-L37, _is_proxy_admin
+  L40-L44, assert_proxy_admin_for_vector_store_index_management L47-L58, _suffix_after_index_name L61-L66, _is_vector_store_index_lifecycle_request
+  L69-L99, _object_permission_allows_vector_store L102-L112, _get_object_permission_for_id L115-L145, can_user_access_vector_store
+  L148-L175, _is_vector_store_granted L178-L196, _team_auth_context L199-L222, _vector_store_auth_contexts L225-L235,
+  _is_vector_store_granted_to_any L238-L245, filter_listable_vector_stores L248-L257.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'utils.py:313 emits the diagnostic ''Failed to resolve vector store id=%s from shared cache: %s''; retain its
+  level and fallback instead of turning it into a hard error.'
+- 'utils.py:281 emits the diagnostic ''Failed to resolve vector store id=%s from registry: %s''; retain its level
+  and fallback instead of turning it into a hard error.'
+review_level: security
+budget:
+  max_changed_lines: 480
+  max_new_expects: 1

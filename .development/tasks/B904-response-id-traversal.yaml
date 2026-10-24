@@ -1,0 +1,195 @@
+id: B904
+title: Response id traversal
+description: >-
+  Compose response-id-codecs over typed response outputs, annotations, code-interpreter containers and inbound reasoning
+  items. Export rewrite, restore, collect-container-IDs and strip-encrypted-reasoning operations; preserve readable
+  reasoning text and do not double-encode already managed response IDs.
+
+
+  Implement crates/betterlite-core/src/api/response_id_traversal.rs. Use ResponseIdTraversalInput and ResponseIdTraversalResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions nested_container_annotations, encrypted_item_without_id, restore_wrapped_reasoning,
+  already_encoded_response, strip_keeps_readable_text under api::response_id_traversal::tests. Each named function
+  drives production code and asserts its case result; use named rstest inputs for related values. Corpus replay
+  has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ResponseIdTraversal in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {response_id_traversal: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/responses/utils.py: ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
+  (L312-L317); litellm/responses/utils.py: ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
+  (L321-L326); litellm/responses/utils.py: ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id
+  (L331-L382); litellm/responses/utils.py: ResponsesAPIRequestUtils._update_encrypted_content_item_ids_in_response
+  (L467-L523); litellm/responses/utils.py: ResponsesAPIRequestUtils._restore_encrypted_content_item_ids_in_input
+  (L526-L556); litellm/responses/utils.py: ResponsesAPIRequestUtils.strip_encrypted_reasoning_from_input (L559-L578);
+  litellm/responses/utils.py: ResponsesAPIRequestUtils._without_encrypted_reasoning (L581-L595); litellm/responses/utils.py:
+  ResponsesAPIRequestUtils._has_readable_text (L598-L608); litellm/responses/utils.py: ResponsesAPIRequestUtils._encode_container_ids_in_annotations
+  (L800-L813); litellm/responses/utils.py: ResponsesAPIRequestUtils._encode_container_ids_in_message_content (L816-L837);
+  litellm/responses/utils.py: ResponsesAPIRequestUtils._encode_container_id_on_output_item (L840-L914); litellm/responses/utils.py:
+  ResponsesAPIRequestUtils._collect_container_ids_from_annotations (L917-L924); litellm/responses/utils.py: ResponsesAPIRequestUtils._collect_container_ids_from_message_content
+  (L927-L944); litellm/responses/utils.py: ResponsesAPIRequestUtils._collect_container_ids_from_output_item (L947-L983);
+  litellm/responses/utils.py: ResponsesAPIRequestUtils.collect_container_ids_from_responses_response (L986-L1000);
+  litellm/responses/utils.py: ResponsesAPIRequestUtils._update_container_ids_in_response (L1003-L1033). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 344 owned nonblank/non-comment/non-docstring Python lines (383 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 364 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 614 total within the 620-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B902 (Responses shapes), B903 (Response
+  id codecs), B1087 (Api boundaries), B905 (Responses parameters). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/response_id_traversal.rs
+  - crates/betterlite-core/src/api/response_id_traversal/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/response_id_traversal.rs
+  - tools/oracle/src/helpers/response_id_traversal/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/response_id_traversal.py
+  - tools/oracle/helpers/response_id_traversal/**
+  - tools/oracle/fuzz/corpus/helper_case/response_id_traversal-*
+  - tools/oracle/cases/helpers/response-id-traversal/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L312-L382
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L467-L608
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L800-L1033
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'nested container annotations: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-nested-container-annotations
+  - oracle
+- text: 'encrypted item without id: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-encrypted-item-without-id
+  - oracle
+- text: 'restore wrapped reasoning: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-restore-wrapped-reasoning
+  - oracle
+- text: 'already encoded response: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-already-encoded-response
+  - oracle
+- text: 'strip keeps readable text: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-strip-keeps-readable-text
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_traversal::/)
+      - test(/::replays_corpus$/)'
+  - id: case-nested-container-annotations
+    why: the nested-container-annotations behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_traversal::tests::nested_container_annotations($|::)/)'
+  - id: case-encrypted-item-without-id
+    why: the encrypted-item-without-id behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_traversal::tests::encrypted_item_without_id($|::)/)'
+  - id: case-restore-wrapped-reasoning
+    why: the restore-wrapped-reasoning behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_traversal::tests::restore_wrapped_reasoning($|::)/)'
+  - id: case-already-encoded-response
+    why: the already-encoded-response behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_traversal::tests::already_encoded_response($|::)/)'
+  - id: case-strip-keeps-readable-text
+    why: the strip-keeps-readable-text behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_id_traversal::tests::strip_keeps_readable_text($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/response_id_traversal.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/response_id_traversal-*)"
+      && grep -qE "^[[:space:]]+response_id_traversal:" tools/oracle/fuzz/corpus/helper_case/response_id_traversal-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/response-id-traversal)"
+oracle_cases:
+- tools/oracle/cases/helpers/response-id-traversal/nested-container-annotations.yaml
+- tools/oracle/cases/helpers/response-id-traversal/encrypted-item-without-id.yaml
+- tools/oracle/cases/helpers/response-id-traversal/restore-wrapped-reasoning.yaml
+- tools/oracle/cases/helpers/response-id-traversal/already-encoded-response.yaml
+- tools/oracle/cases/helpers/response-id-traversal/strip-keeps-readable-text.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/utils.py: B905 owns _apply_nested_drop_params L34-L36, _output_token_detail L39-L41, _is_object_sequence
+  L44-L45, _is_object_dict L48-L51, normalize_responses_api_stream_options L54-L62, _is_chat_text_part L65-L66,
+  _as_input_text_part L69-L72, ResponsesAPIRequestUtils.shape_prompt_managed_message_for_responses L82-L89, ResponsesAPIRequestUtils.responses_input_to_chat_messages
+  L92-L99, ResponsesAPIRequestUtils.merge_prompt_management_input L102-L151, ResponsesAPIRequestUtils.merge_client_forwarded_headers
+  L154-L173, ResponsesAPIRequestUtils._check_valid_arg L176-L196, ResponsesAPIRequestUtils.get_optional_params_responses_api
+  L199-L253, ResponsesAPIRequestUtils.get_requested_response_api_optional_param L256-L307, ResponsesAPIRequestUtils.convert_text_format_to_text_param
+  L1036-L1067, ResponsesAPIRequestUtils.extract_mcp_headers_from_request L1070-L1137.'
+- 'litellm/responses/utils.py: B903 owns ResponsesAPIRequestUtils._build_encrypted_item_id L385-L392, ResponsesAPIRequestUtils._decode_encrypted_item_id
+  L395-L418, ResponsesAPIRequestUtils._wrap_encrypted_content_with_model_id L421-L431, ResponsesAPIRequestUtils._unwrap_encrypted_content_with_model_id
+  L434-L464, ResponsesAPIRequestUtils._build_responses_api_response_id L611-L621, ResponsesAPIRequestUtils._decode_responses_api_response_id
+  L624-L674, ResponsesAPIRequestUtils._is_litellm_encoded_response_id L677-L682, ResponsesAPIRequestUtils.get_model_id_from_response_id
+  L685-L690, ResponsesAPIRequestUtils.decode_previous_response_id_to_original_previous_response_id L693-L710, ResponsesAPIRequestUtils._build_container_id
+  L713-L727, ResponsesAPIRequestUtils._decode_container_id L730-L787.'
+- 'litellm/responses/utils.py: ResponsesAPIRequestUtils.decode_container_id_to_original L790-L797 are out of scope:
+  no MIT runtime caller at the pin; unused entry point is not rebuilt.'
+- 'litellm/responses/utils.py: B906 owns ResponseAPILoggingUtils._is_response_api_usage L1142-L1148, ResponseAPILoggingUtils._transform_response_api_usage_to_chat_usage
+  L1151-L1263.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- utils.py:896 emits the diagnostic 'Could not set container_id on streaming output item'; retain its level and
+  fallback instead of turning it into a hard error.
+- Within ResponsesAPIRequestUtils._update_responses_api_response_id_with_model_id\'s response_id is None branch,
+  preserve return responses_api_response and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 620
+  max_new_expects: 1

@@ -1,0 +1,220 @@
+id: B1227
+title: Shared user and membership row writes
+description: >-
+  Implement add_new_member and native typed user/membership row operations using the caller-owned writer
+  transaction when supplied. Preserve email lookup, upsert-on-conflict semantics, append-team-if-absent
+  and existing-user defaults. B862 provides shared/default member budget selection; do not check out another
+  pool connection while the caller holds the roster lock.
+
+
+  Build the production member_row_write module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/utils.py:
+  _user_table (L112-L113; 2 source lines), _budget_table (L116-L117; 2 source lines), _team_membership_table
+  (L120-L121; 2 source lines), _find_users_by_email (L124-L134; 11 source lines), _upsert_user_row (L137-L150;
+  13 source lines), _create_user_row (L153-L158; 6 source lines), get_new_internal_user_defaults (L161-L177;
+  15 source lines), _append_team_id_if_absent (L393-L408; 15 source lines), add_new_member (L411-L500;
+  76 source lines), _PrismaRecord.model_dump (L47-L47; 1 source lines), _PrismaUserRecord.model_dump (L55-L55;
+  1 source lines), _PrismaBudgetRecord.model_dump (L63-L63; 1 source lines), _PrismaBudgetTable.create
+  (L69-L69; 1 source lines), _PrismaBudgetTable.find_unique (L71-L71; 1 source lines), _PrismaUserTable.update_many
+  (L77-L77; 1 source lines), _PrismaUserTable.upsert (L79-L81; 3 source lines), _PrismaUserTable.find_many
+  (L83-L83; 1 source lines), _PrismaTeamMembershipTable.upsert (L89-L91; 3 source lines), MemberWriteTx.litellm_usertable
+  (L102-L103; 2 source lines), MemberWriteTx.litellm_budgettable (L105-L106; 2 source lines), MemberWriteTx.litellm_teammembership
+  (L108-L109; 2 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.default_internal_user_params=None;
+  litellm_settings.max_internal_user_budget=None; litellm_settings.internal_user_budget_duration=None.
+
+
+  Add the member_row_write operation under B856 Management::models. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a member-row-write-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::member_row_write::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 161 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  161 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 457 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/member_row_write.rs
+    - crates/betterlite-server/src/member_row_write/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/member_row_write.rs
+    - tools/oracle/src/helpers/member_row_write/**
+    - tools/oracle/helpers/member_row_write.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/member-row-write/**
+    - tools/oracle/fuzz/corpus/helper_case/member-row-write-*
+    - crates/betterlite-server/src/member_row_write/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/member_row_write.rs
+    - crates/betterlite-config/src/member_row_write/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/member-row-write-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L112-L113
+    why: Own _user_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L116-L117
+    why: Own _budget_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L120-L121
+    why: Own _team_membership_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L124-L134
+    why: Own _find_users_by_email; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L137-L150
+    why: Own _upsert_user_row; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L153-L158
+    why: Own _create_user_row; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L161-L177
+    why: Own get_new_internal_user_defaults; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L393-L408
+    why: Own _append_team_id_if_absent; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L411-L500
+    why: Own add_new_member; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L47-L47
+    why: Own _PrismaRecord.model_dump; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L55-L55
+    why: Own _PrismaUserRecord.model_dump; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L63-L63
+    why: Own _PrismaBudgetRecord.model_dump; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L69-L69
+    why: Own _PrismaBudgetTable.create; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L71-L71
+    why: Own _PrismaBudgetTable.find_unique; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L77-L77
+    why: Own _PrismaUserTable.update_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L79-L81
+    why: Own _PrismaUserTable.upsert; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L83-L83
+    why: Own _PrismaUserTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L89-L91
+    why: Own _PrismaTeamMembershipTable.upsert; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L102-L103
+    why: Own MemberWriteTx.litellm_usertable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L105-L106
+    why: Own MemberWriteTx.litellm_budgettable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L108-L109
+    why: Own MemberWriteTx.litellm_teammembership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L457-L462
+    why: litellm_settings.default_internal_user_params default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L462-L467
+    why: litellm_settings.max_internal_user_budget default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L466-L471
+    why: litellm_settings.internal_user_budget_duration default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: existing_user_kept,
+      new_user_defaults, same_transaction, email_membership, append_team_once, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^member_row_write::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/member_row_write.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/member-row-write-*")"
+        && grep -rlq "member_row_write" tools/oracle/fuzz/corpus/helper_case/member-row-write-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/member_row_write::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/member_row_write::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^member_row_write::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/member-row-write-*")"
+        && grep -rlq "default_internal_user_params" crates/betterlite-config/fuzz/corpus/config_yaml/member-row-write-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/member-row-write/existing-user-kept.yaml
+  - tools/oracle/cases/helpers/member-row-write/new-user-defaults.yaml
+  - tools/oracle/cases/helpers/member-row-write/same-transaction.yaml
+  - tools/oracle/cases/helpers/member-row-write/email-membership.yaml
+  - tools/oracle/cases/helpers/member-row-write/append-team-once.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/utils.py: B862 owns handle_budget_for_entity (L180-L264), _clone_team_default_budget_for_member
+    (L283-L333), _resolve_member_budget_id (L336-L390).'
+  - 'litellm/proxy/management_helpers/utils.py: B865 owns _delete_user_id_from_cache (L503-L514), _delete_api_key_from_cache
+    (L517-L528), _delete_team_id_from_cache (L531-L542), _delete_customer_id_from_cache (L545-L556), management_endpoint_wrapper
+    (L755-L823).'
+  - 'litellm/proxy/management_helpers/utils.py: B1228 owns _object_mapping (L609-L611), _object_list (L614-L616),
+    _redacted_env_var (L619-L626), _redact_record_env_vars (L629-L647), _redact_env_var_values (L650-L666).'
+  - 'litellm/proxy/management_helpers/utils.py: B1228 owns send_management_endpoint_alert (L559-L606)
+    and _emit_management_endpoint_otel_span (L669-L752) as typed event/payload projections. B116 and B110
+    implement the injected alert and OTel transports.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Preserve email lookup, upsert-on-conflict semantics, append-team-if-absent and existing-user defaults.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

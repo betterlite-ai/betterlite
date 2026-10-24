@@ -1,0 +1,209 @@
+id: B550
+title: Foundry chat request and response mapping
+description: >-
+  Add FoundryChatOptions and prepare/parse stages over existing OpenAI wire records. Preserve model-family capability
+  queries, the exact deep-copy message transformation, extra_body precedence, model response prefixes and services.ai.azure.com
+  route handling. Resolve Azure OpenAI redirects as a typed provider-selection result for the dispatcher; this leaf
+  crate does not import betterlite-provider.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/chat/transformation.py:
+  AzureAIGPT5Config._model_map_lookup_name L50-L63; AzureAIStudioConfig.get_supported_openai_params L70-L90; AzureAIStudioConfig.map_openai_params
+  L92-L111; AzureAIStudioConfig._supports_stop_reason L113-L121; AzureAIStudioConfig.validate_environment L123-L145;
+  AzureAIStudioConfig._should_use_api_key_header L147-L151; AzureAIStudioConfig.get_complete_url L153-L203; AzureAIStudioConfig.get_required_params
+  L205-L220; AzureAIStudioConfig._transform_messages L222-L254; AzureAIStudioConfig._is_foundry_model_inference_base
+  L256-L257; AzureAIStudioConfig._is_azure_openai_model L259-L267; AzureAIStudioConfig._get_openai_compatible_provider_info
+  L269-L282; AzureAIStudioConfig.transform_request L284-L296; AzureAIStudioConfig.transform_response L298-L325.
+
+
+  Reuse BaseAzureLLM._base_validate_azure_environment from B531 (litellm/llms/azure/common_utils.py); its implementation
+  remains with that prerequisite.
+
+
+  Reuse api_key_header_for_base from B549 (litellm/llms/azure_ai/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Reuse is_foundry_model_inference_base from B549 (litellm/llms/azure_ai/common_utils.py); its implementation remains
+  with that prerequisite.
+
+
+  Implement crates/betterlite-foundry/src/chat.rs with adjacent tests under chat/. Keep each Rust module at most
+  300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation foundry_chat in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function chat_cases in betterlite-foundry with these exact named cases (one per oracle file): models_chat_completions_route,
+  api_version_url_precedence, strip_non_openai_message_fields, text_list_copy_behavior, extra_body_precedence, gpt5_capability_selection,
+  azure_openai_model_redirect, azure_ai_response_model. Each case exercises its named outcome independently; use
+  stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response
+  and captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_chat* using HelperCase: kind: helper
+  and the externally tagged foundry_chat variant inside call. Do not put the Python stdin operation field in a HelperCase.
+  Add oracle test helper_seeds_select_foundry_chat that parses every prefixed seed with the production HelperCase
+  parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 232 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 255 production lines, 117 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 484 planned, 500 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/chat.rs
+  - crates/betterlite-foundry/src/chat/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_chat.rs
+  - tools/oracle/src/helpers/foundry_chat/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_chat.py
+  - tools/oracle/cases/helpers/providers/foundry-chat/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_chat*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/chat/transformation.py#L50-L325
+  why: >-
+    Own AzureAIGPT5Config._model_map_lookup_name, AzureAIStudioConfig.get_supported_openai_params, AzureAIStudioConfig.map_openai_params,
+    AzureAIStudioConfig._supports_stop_reason, AzureAIStudioConfig.validate_environment, AzureAIStudioConfig._should_use_api_key_header,
+    AzureAIStudioConfig.get_complete_url, AzureAIStudioConfig.get_required_params, AzureAIStudioConfig._transform_messages,
+    AzureAIStudioConfig._is_foundry_model_inference_base, AzureAIStudioConfig._is_azure_openai_model, AzureAIStudioConfig._get_openai_compatible_provider_info,
+    AzureAIStudioConfig.transform_request, AzureAIStudioConfig.transform_response. Other functions in this file
+    remain with the owners listed below.
+dod:
+- text: >-
+    models chat completions route: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/models-chat-completions-route.yaml.
+  proof:
+  - case-models-chat-completions-route
+  - oracle
+  - helper-python
+- text: >-
+    api version url precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/api-version-url-precedence.yaml.
+  proof:
+  - case-api-version-url-precedence
+  - oracle
+  - helper-python
+- text: >-
+    strip non openai message fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/strip-non-openai-message-fields.yaml.
+  proof:
+  - case-strip-non-openai-message-fields
+  - oracle
+  - helper-python
+- text: 'text list copy behavior: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/text-list-copy-behavior.yaml.'
+  proof:
+  - case-text-list-copy-behavior
+  - oracle
+  - helper-python
+- text: 'extra body precedence: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/extra-body-precedence.yaml.'
+  proof:
+  - case-extra-body-precedence
+  - oracle
+  - helper-python
+- text: 'gpt5 capability selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/gpt5-capability-selection.yaml.'
+  proof:
+  - case-gpt5-capability-selection
+  - oracle
+  - helper-python
+- text: >-
+    azure openai model redirect: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/azure-openai-model-redirect.yaml.
+  proof:
+  - case-azure-openai-model-redirect
+  - oracle
+  - helper-python
+- text: 'azure ai response model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-chat/azure-ai-response-model.yaml.'
+  proof:
+  - case-azure-ai-response-model
+  - oracle
+  - helper-python
+- text: New foundry_chat seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-models-chat-completions-route
+    why: The models-chat-completions-route behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_models_chat_completions_route$/)'
+  - id: case-api-version-url-precedence
+    why: The api-version-url-precedence behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_api_version_url_precedence$/)'
+  - id: case-strip-non-openai-message-fields
+    why: The strip-non-openai-message-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_strip_non_openai_message_fields$/)'
+  - id: case-text-list-copy-behavior
+    why: The text-list-copy-behavior behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_text_list_copy_behavior$/)'
+  - id: case-extra-body-precedence
+    why: The extra-body-precedence behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_extra_body_precedence$/)'
+  - id: case-gpt5-capability-selection
+    why: The gpt5-capability-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_gpt5_capability_selection$/)'
+  - id: case-azure-openai-model-redirect
+    why: The azure-openai-model-redirect behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_azure_openai_model_redirect$/)'
+  - id: case-azure-ai-response-model
+    why: The azure-ai-response-model behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::chat_cases::case_[0-9]+_azure_ai_response_model$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_chat.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_chat*")"
+      && grep -lq 'foundry_chat' tools/oracle/fuzz/corpus/helper_case/foundry_chat* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_chat$/)' && cargo nextest run
+      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-chat/models-chat-completions-route.yaml
+- tools/oracle/cases/helpers/providers/foundry-chat/api-version-url-precedence.yaml
+- tools/oracle/cases/helpers/providers/foundry-chat/strip-non-openai-message-fields.yaml
+- tools/oracle/cases/helpers/providers/foundry-chat/text-list-copy-behavior.yaml
+- tools/oracle/cases/helpers/providers/foundry-chat/extra-body-precedence.yaml
+- tools/oracle/cases/helpers/providers/foundry-chat/gpt5-capability-selection.yaml
+- tools/oracle/cases/helpers/providers/foundry-chat/azure-openai-model-redirect.yaml
+- tools/oracle/cases/helpers/providers/foundry-chat/azure-ai-response-model.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/azure_ai/chat/transformation.py: AzureAIStudioConfig.should_retry_llm_api_inside_llm_translation_on_http_error
+  L327-L340; AzureAIStudioConfig._error_has_tool_level_extra_fields L342-L343; AzureAIStudioConfig.max_retry_on_unprocessable_entity_error
+  L346-L347; AzureAIStudioConfig.transform_request_on_unprocessable_entity_error L349-L361; AzureAIStudioConfig._drop_tool_level_extra_fields
+  L363-L371; AzureAIStudioConfig._drop_extra_params_from_request_data L373-L379; AzureAIStudioConfig._extract_params_to_drop_from_error_text
+  L381-L398 belong to B551; reuse that implementation or its injected typed boundary.
+pitfalls:
+- >-
+  Preserve model-family capability queries, the exact deep-copy message transformation, extra_body precedence, model
+  response prefixes and services.ai.azure.com route handling.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,185 @@
+id: B1073
+title: Vector file read
+description: >-
+  Implement vector-store file retrieve/content with typed page/content records and source provider errors. Use prepared
+  configured requests and preserve file identifiers independently from vector-store IDs.
+
+
+  Implement crates/betterlite-core/src/api/vector_file_read.rs. Use VectorFileReadInput and VectorFileReadResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions vector_file_retrieve, vector_file_content, vector_file_content_page,
+  vector_file_missing under api::vector_file_read::tests. Each named function drives production code and asserts
+  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.REQUEST_TIMEOUT
+  defaults to 6000 seconds. No environment reads occur outside betterlite-config. Test api::vector_file_read::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::VectorFileRead in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_file_read: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/vector_store_files/main.py: aretrieve (L307-L346); litellm/vector_store_files/main.py:
+  retrieve (L350-L412); litellm/vector_store_files/main.py: aretrieve_content (L416-L454); litellm/vector_store_files/main.py:
+  retrieve_content (L458-L520). Abstract/protocol declarations map to native types and synchronous/async wrappers
+  share one implementation; a partial function span is the explicit preparation/transition stage described above,
+  with typed values passed to the following stage.
+
+
+  Sizing: 193 owned nonblank/non-comment/non-docstring Python lines (193 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 213 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 33 config tests/seeds and
+  30 wiring; 478 total within the 480-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
+  oracle and URL path encoding), B1071 (Vector file contracts), B1087 (Api boundaries), B527 (OpenAI vector stores
+  and attached files), B1111 (Vector file provider selection), B002 (Load LiteLLM config.yaml into typed config).
+  These are callable/type/config owners, not provider-family umbrellas; the external B500-B859 ids retain ownership
+  on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_file_read.rs
+  - crates/betterlite-core/src/api/vector_file_read/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/vector_file_read.rs
+  - crates/betterlite-config/src/api/vector_file_read/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-read-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/vector_file_read.rs
+  - tools/oracle/src/helpers/vector_file_read/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_file_read.py
+  - tools/oracle/helpers/vector_file_read/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_file_read-*
+  - tools/oracle/cases/helpers/vector-file-read/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L576
+  why: Setting env.REQUEST_TIMEOUT and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_store_files/main.py#L307-L520
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'vector file retrieve: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-file-retrieve
+  - oracle
+- text: 'vector file content: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-file-content
+  - oracle
+- text: 'vector file content page: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-file-content-page
+  - oracle
+- text: 'vector file missing: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-file-missing
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_read::/)
+      - test(/::replays_corpus$/)'
+  - id: case-vector-file-retrieve
+    why: the vector-file-retrieve behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_read::tests::vector_file_retrieve($|::)/)'
+  - id: case-vector-file-content
+    why: the vector-file-content behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_read::tests::vector_file_content($|::)/)'
+  - id: case-vector-file-content-page
+    why: the vector-file-content-page behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_read::tests::vector_file_content_page($|::)/)'
+  - id: case-vector-file-missing
+    why: the vector-file-missing behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_read::tests::vector_file_missing($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_read::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-read-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/vector_file_read.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_file_read-*)"
+      && grep -qE "^[[:space:]]+vector_file_read:" tools/oracle/fuzz/corpus/helper_case/vector_file_read-* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-file-read)"
+oracle_cases:
+- tools/oracle/cases/helpers/vector-file-read/vector-file-retrieve.yaml
+- tools/oracle/cases/helpers/vector-file-read/vector-file-content.yaml
+- tools/oracle/cases/helpers/vector-file-read/vector-file-content-page.yaml
+- tools/oracle/cases/helpers/vector-file-read/vector-file-missing.yaml
+deviations: []
+out_of_scope:
+- 'litellm/vector_store_files/main.py: B1111 owns _ensure_provider L35-L36, _prepare_registry_credentials L39-L51.'
+- 'litellm/vector_store_files/main.py: B1072 owns acreate L55-L103, create L107-L178, alist L182-L231, list L235-L303.'
+- 'litellm/vector_store_files/main.py: B1074 owns aupdate L524-L566, update L570-L641, adelete L645-L683, delete
+  L687-L749.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within retrieve\'s provider_config is None branch, preserve raise ValueError(f'Vector store file retrieve is not
+  supported for {custom_llm_provider}') and its nested guards.
+- retrieve uses kwargs.get('litellm_logging_obj'); retain its missing-value behavior and field spelling in the typed
+  projection.
+review_level: standard
+budget:
+  max_changed_lines: 480
+  max_new_expects: 1

@@ -1,0 +1,161 @@
+id: B825
+title: Model access-group budget management routes
+description: >-
+  Implement get/put/delete /access_group/{access_group}/budget with typed Decimal budget patches, reset
+  time calculation and linked budget lifecycle. Invalidate both registry and group spend/auth caches after
+  commit; no budget reset scheduler is introduced.
+
+
+  Build the production model_group_budget module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/model_access_group_management_endpoints.py:
+  get_access_group_budget (L1093-L1120; 23 source lines), set_access_group_budget (L1128-L1198; 63 source
+  lines), delete_access_group_budget (L1206-L1244; 34 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Register these actual HTTP routes and aliases exactly once: GET /access_group/{access_group}/budget
+  -> get_access_group_budget; PUT /access_group/{access_group}/budget -> set_access_group_budget; DELETE
+  /access_group/{access_group}/budget -> delete_access_group_budget. For each route send a typed successful
+  request, an invalid or missing target, and a caller lacking that route permission through B001 HttpCase
+  against the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
+  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
+  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
+  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
+  partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 120 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  120 production, 154 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 339 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
+  decorator unless its owned source function has one.
+scope:
+  paths:
+    - crates/betterlite-server/src/model_group_budget.rs
+    - crates/betterlite-server/src/model_group_budget/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/model-group-budget/**
+    - crates/betterlite-server/src/model_group_budget/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L1093-L1244
+    why: Pinned implementation and exact ownership boundary for model_group_budget.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L1093-L1120
+    why: Own get_access_group_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L1128-L1198
+    why: Own set_access_group_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/model_access_group_management_endpoints.py#L1206-L1244
+    why: Own delete_access_group_budget; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: get_group_budget, set_budget,
+      patch_duration, delete_budget, missing_group_404, registry_eviction, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_group_budget::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_group_budget::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/model_group_budget::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/management/model-group-budget/get--access-group-access-group-budget-success.yaml
+  - tools/oracle/cases/management/model-group-budget/get--access-group-access-group-budget-invalid-target.yaml
+  - tools/oracle/cases/management/model-group-budget/get--access-group-access-group-budget-unauthorized-caller.yaml
+  - tools/oracle/cases/management/model-group-budget/put--access-group-access-group-budget-success.yaml
+  - tools/oracle/cases/management/model-group-budget/put--access-group-access-group-budget-invalid-target.yaml
+  - tools/oracle/cases/management/model-group-budget/put--access-group-access-group-budget-unauthorized-caller.yaml
+  - tools/oracle/cases/management/model-group-budget/delete--access-group-access-group-budget-success.yaml
+  - tools/oracle/cases/management/model-group-budget/delete--access-group-access-group-budget-invalid-target.yaml
+  - tools/oracle/cases/management/model-group-budget/delete--access-group-access-group-budget-unauthorized-caller.yaml
+  - tools/oracle/cases/management/model-group-budget/get-group-budget.yaml
+  - tools/oracle/cases/management/model-group-budget/set-budget.yaml
+  - tools/oracle/cases/management/model-group-budget/patch-duration.yaml
+  - tools/oracle/cases/management/model-group-budget/delete-budget.yaml
+  - tools/oracle/cases/management/model-group-budget/missing-group-404.yaml
+  - tools/oracle/cases/management/model-group-budget/registry-eviction.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B823 owns _http_error
+    (L95-L97), _DeploymentRow.model_id (L102-L102), _DeploymentRow.model_name (L105-L105), _DeploymentRow.model_info
+    (L108-L108), _ModelTableClient.find_many (L112-L112), _ModelTableClient.find_unique (L114-L114), _ModelTableClient.update
+    (L116-L116), _BudgetRow.budget_id (L121-L121), _BudgetRow.max_budget (L124-L124), _BudgetRow.soft_budget
+    (L127-L127), _BudgetRow.budget_duration (L130-L130), _BudgetRow.budget_reset_at (L133-L133), _ModelAccessGroupBudgetRow.access_group_name
+    (L138-L138), _ModelAccessGroupBudgetRow.spend (L141-L141), _ModelAccessGroupBudgetRow.budget_id (L144-L144),
+    _ModelAccessGroupBudgetRow.litellm_budget_table (L147-L147), _ModelAccessGroupBudgetTableClient.find_unique
+    (L151-L153), _ModelAccessGroupBudgetTableClient.upsert (L155-L161), _ModelAccessGroupBudgetTableClient.find_many
+    (L163-L165), _ModelAccessGroupBudgetTableClient.delete (L167-L167), _model_table (L170-L171), _model_access_group_budget_table
+    (L174-L175), _prisma_client_or_500 (L178-L183), _auth_cache (L186-L189), _evict_model_access_group_cache_keys
+    (L192-L205), _model_access_group_budget_row (L208-L213), _model_access_group_budget_rows (L216-L223),
+    _with_budget (L226-L235), _budget_or_none (L238-L248), _budget_response (L251-L256), _delete_model_access_group_budget_row
+    (L259-L273), _raise_404_if_model_access_group_missing (L276-L279), validate_models_exist (L282-L295),
+    _missing_models_after_read_through (L298-L312), add_access_group_to_deployment (L315-L336), _raise_http_if_reload_degraded_serving
+    (L339-L370), _tag_deployment_with_access_group (L373-L393), _readable_model_info_or_raise (L396-L403),
+    _strip_access_group_from_deployment (L406-L425), update_deployments_with_access_group (L428-L467),
+    update_specific_deployments_with_access_group (L470-L493), _find_deployment_or_400 (L496-L503), remove_access_group_from_deployment
+    (L506-L527), get_all_access_groups_from_db (L530-L566).'
+  - 'litellm/proxy/management_endpoints/model_access_group_management_endpoints.py: B824 owns create_model_group
+    (L574-L712), list_access_groups (L720-L762), get_access_group_info (L770-L821), update_access_group
+    (L829-L975), delete_access_group (L983-L1085).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Deleting one model-group budget must invalidate the group budget registry and spend cache.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

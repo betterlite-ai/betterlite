@@ -1,0 +1,204 @@
+id: B724
+title: Team repository and atomic roster writes
+description: >-
+  Implement TeamRepository with writer-pinned locked roster reads, typed JSON arrays, create/update omissions,
+  archive and deletion. Keep member/admin/model list operation ordering and exact archive columns. Concurrent
+  roster updates must not overwrite an unrelated committed membership.
+
+
+  Build the production team_repository module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/team_repository.py:
+  _TeamArrays.members (L30-L30; 1 source lines), _TeamArrays.admins (L33-L33; 1 source lines), _TeamArrays.models
+  (L36-L36; 1 source lines), _team_arrays (L39-L41; 3 source lines), _TeamTables.litellm_teamtable (L48-L48;
+  1 source lines), _TeamTables.litellm_deletedteamtable (L51-L51; 1 source lines), _TeamTransactionManager.__aenter__
+  (L55-L55; 1 source lines), _TeamTransactionManager.__aexit__ (L57-L62; 6 source lines), _PrismaTeamDb.tx
+  (L66-L66; 1 source lines), _PrismaClientView.db (L71-L71; 1 source lines), _PrismaClientView.writer_db
+  (L74-L74; 1 source lines), TeamRepository.__init__ (L91-L93; 3 source lines), TeamRepository._db (L96-L98;
+  3 source lines), TeamRepository.table (L101-L102; 2 source lines), TeamRepository.deleted_table (L105-L106;
+  2 source lines), TeamRepository.model_class (L109-L110; 2 source lines), TeamRepository._to_model (L112-L122;
+  9 source lines), TeamRepository.get_members_with_roles_locked (L124-L149; 24 source lines), TeamRepository.find_by_id
+  (L151-L152; 2 source lines), TeamRepository.find_by_alias (L154-L159; 6 source lines), TeamRepository.find_by_organization_id
+  (L161-L164; 4 source lines), TeamRepository.find_by_member (L166-L169; 4 source lines), TeamRepository.find_by_admin
+  (L171-L174; 4 source lines), TeamRepository.create_team (L176-L225; 49 source lines), TeamRepository.update_team
+  (L227-L279; 52 source lines), TeamRepository.delete_team (L281-L306; 22 source lines), TeamRepository._build_archive_data
+  (L308-L352; 45 source lines), TeamRepository.update_spend (L354-L356; 3 source lines), TeamRepository.add_member
+  (L358-L367; 9 source lines), TeamRepository.remove_member (L369-L381; 11 source lines), TeamRepository.add_admin
+  (L383-L392; 9 source lines), TeamRepository.remove_admin (L394-L406; 11 source lines), TeamRepository.add_models
+  (L408-L417; 9 source lines), TeamRepository.remove_models (L419-L431; 11 source lines).
+
+
+  Add the team_repository operation under B856 Management::database. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a team-repository-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 314 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  314 production, 154 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 563 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/team_repository.rs
+    - crates/betterlite-db/src/team_repository/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/team_repository/fixtures/**
+    - tools/oracle/src/helpers/team_repository.rs
+    - tools/oracle/src/helpers/team_repository/**
+    - tools/oracle/helpers/team_repository.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/team-repository/**
+    - tools/oracle/fuzz/corpus/helper_case/team-repository-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L1-L431
+    why: Pinned implementation and exact ownership boundary for team_repository.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L30-L30
+    why: Own _TeamArrays.members; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L33-L33
+    why: Own _TeamArrays.admins; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L36-L36
+    why: Own _TeamArrays.models; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L39-L41
+    why: Own _team_arrays; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L48-L48
+    why: Own _TeamTables.litellm_teamtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L51-L51
+    why: Own _TeamTables.litellm_deletedteamtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L55-L55
+    why: Own _TeamTransactionManager.__aenter__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L57-L62
+    why: Own _TeamTransactionManager.__aexit__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L66-L66
+    why: Own _PrismaTeamDb.tx; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L71-L71
+    why: Own _PrismaClientView.db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L74-L74
+    why: Own _PrismaClientView.writer_db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L91-L93
+    why: Own TeamRepository.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L96-L98
+    why: Own TeamRepository._db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L101-L102
+    why: Own TeamRepository.table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L105-L106
+    why: Own TeamRepository.deleted_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L109-L110
+    why: Own TeamRepository.model_class; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L112-L122
+    why: Own TeamRepository._to_model; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L124-L149
+    why: Own TeamRepository.get_members_with_roles_locked; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L151-L152
+    why: Own TeamRepository.find_by_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L154-L159
+    why: Own TeamRepository.find_by_alias; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L161-L164
+    why: Own TeamRepository.find_by_organization_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L166-L169
+    why: Own TeamRepository.find_by_member; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L171-L174
+    why: Own TeamRepository.find_by_admin; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L176-L225
+    why: Own TeamRepository.create_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L227-L279
+    why: Own TeamRepository.update_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L281-L306
+    why: Own TeamRepository.delete_team; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L308-L352
+    why: Own TeamRepository._build_archive_data; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L354-L356
+    why: Own TeamRepository.update_spend; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L358-L367
+    why: Own TeamRepository.add_member; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L369-L381
+    why: Own TeamRepository.remove_member; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L383-L392
+    why: Own TeamRepository.add_admin; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L394-L406
+    why: Own TeamRepository.remove_admin; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L408-L417
+    why: Own TeamRepository.add_models; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/team_repository.py#L419-L431
+    why: Own TeamRepository.remove_models; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: locked_roster_race,
+      member_admin_arrays, model_add_remove, team_archive_atomic, alias_lookup, spend_write, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^team_repository::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/team_repository.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-repository-*")"
+        && grep -rlq "team_repository" tools/oracle/fuzz/corpus/helper_case/team-repository-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_repository::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/team_repository::tests::postgres_failure_effects$/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-repository/locked-roster-race.yaml
+  - tools/oracle/cases/helpers/team-repository/member-admin-arrays.yaml
+  - tools/oracle/cases/helpers/team-repository/model-add-remove.yaml
+  - tools/oracle/cases/helpers/team-repository/team-archive-atomic.yaml
+  - tools/oracle/cases/helpers/team-repository/alias-lookup.yaml
+  - tools/oracle/cases/helpers/team-repository/spend-write.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - The writer lock must protect the roster read as well as the later update.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: security

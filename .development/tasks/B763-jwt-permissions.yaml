@@ -1,0 +1,254 @@
+id: B763
+title: JWT role, scope and administrator permissions
+description: >-
+  Implement JwtPermissions over verified claims and shared RouteAccess/ModelGrant services. Keep admin
+  detection, enforced role mappings and scope-model grants distinct so an admin-scope token still meets
+  its configured route restrictions.
+
+
+  Build the production jwt_permissions module in betterlite-auth; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/auth/handle_jwt.py:
+  JWTAuthManager.can_rbac_role_call_route (L1345-L1369; 21 source lines), JWTAuthManager.can_rbac_role_call_model
+  (L1372-L1394; 21 source lines), JWTAuthManager.check_scope_based_access (L1397-L1426; 26 source lines),
+  JWTAuthManager.check_rbac_role (L1429-L1453; 25 source lines), JWTAuthManager.check_admin_access (L1456-L1496;
+  39 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.admin_allowed_routes=['management_routes',
+  'spend_tracking_routes', 'global_spend_tracking_routes', 'info_routes']; litellm_jwtauth.enforce_rbac=False.
+
+
+  Add the jwt_permissions operation under B856 Management::jwt. Python calls only the owned MIT helper
+  with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a jwt-permissions-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  The auth failure cases are B001 HttpCase requests to an existing protected route (use /v1/chat/completions
+  with an invalid model after auth, or the named management route). Install this production stage through
+  B732 server state; do not wait for the B052 umbrella or create test-only endpoints. Compare HTTP status
+  and the complete error type/param/code. A successful auth branch must reach the downstream route response
+  rather than manufacture a helper success. Pin the source exception translation from auth_exception_handler
+  before choosing fixtures.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  Write betterlite-config::jwt_permissions::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 132 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  132 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 460 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Server wiring tests live under betterlite-server::auth::jwt_permissions::tests: stage_is_registered
+  and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
+  stage; the failure test asserts its public error translation and that the downstream handler was not
+  called. These tests are part of the behavior-test allowance already budgeted above.
+scope:
+  paths:
+    - crates/betterlite-auth/src/jwt_permissions.rs
+    - crates/betterlite-auth/src/jwt_permissions/**
+    - crates/betterlite-auth/src/lib.rs
+    - crates/betterlite-auth/Cargo.toml
+    - tools/oracle/src/helpers/jwt_permissions.rs
+    - tools/oracle/src/helpers/jwt_permissions/**
+    - tools/oracle/helpers/jwt_permissions.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/jwt.rs
+    - tools/oracle/helpers/management/jwt.py
+    - tools/oracle/cases/helpers/jwt-permissions/**
+    - tools/oracle/fuzz/corpus/helper_case/jwt-permissions-*
+    - crates/betterlite-server/src/auth.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/auth/jwt-permissions/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/jwt_permissions.rs
+    - crates/betterlite-config/src/jwt_permissions/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-permissions-*
+    - crates/betterlite-server/src/auth/jwt_permissions.rs
+    - crates/betterlite-server/src/auth/jwt_permissions/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1345-L1496
+    why: Pinned implementation and exact ownership boundary for jwt_permissions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5203-L5208
+    why: ScopeMapping request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5331-L5465
+    why: JWT settings declaration; only the fields consumed by this task are enabled.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1345-L1369
+    why: Own JWTAuthManager.can_rbac_role_call_route; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1372-L1394
+    why: Own JWTAuthManager.can_rbac_role_call_model; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1397-L1426
+    why: Own JWTAuthManager.check_scope_based_access; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1429-L1453
+    why: Own JWTAuthManager.check_rbac_role; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1456-L1496
+    why: Own JWTAuthManager.check_admin_access; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L1-L6
+    why: litellm_jwtauth.enforce_rbac default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L47-L106
+    why: Auth exceptions become public HTTP type, param and code.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: scope_model_grant, scope_model_denial,
+      rbac_required, role_route_denial, admin_route_limited, missing_model.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+  - text: The real server constructor invokes the production auth stage and its failures stop downstream
+      execution.
+    proof:
+      - stage-wiring-tests
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^jwt_permissions::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/jwt_permissions.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-permissions-*")"
+        && grep -rlq "jwt_permissions" tools/oracle/fuzz/corpus/helper_case/jwt-permissions-* && cargo
+        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^jwt_permissions::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-permissions-*")"
+        && grep -rlq "admin_allowed_routes" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-permissions-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+    - id: stage-wiring-tests
+      why: The server does not register this production auth stage or discards its failure.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_permissions::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/jwt-permissions/scope-model-grant.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/scope-model-denial.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/rbac-required.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/role-route-denial.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/admin-route-limited.yaml
+  - tools/oracle/cases/helpers/jwt-permissions/missing-model.yaml
+  - tools/oracle/cases/auth/jwt-permissions/scope-model-grant.yaml
+  - tools/oracle/cases/auth/jwt-permissions/scope-model-denial.yaml
+  - tools/oracle/cases/auth/jwt-permissions/rbac-required.yaml
+  - tools/oracle/cases/auth/jwt-permissions/role-route-denial.yaml
+  - tools/oracle/cases/auth/jwt-permissions/admin-route-limited.yaml
+  - tools/oracle/cases/auth/jwt-permissions/missing-model.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/auth/handle_jwt.py: B053 owns JWTAuthManager.auth_builder (L2391-L2420), JWTAuthManager.authenticate_jwt
+    (L2423-L2432), JWTAuthManager.resolve_identity (L2435-L2446), JWTAuthManager._resolve_claim_identity
+    (L2449-L2485), JWTAuthManager.user_api_key_auth_from_result (L2932-L2971), JWTAuthManager.authorize_jwt.identity_admin
+    (L2488-L2629).'
+  - 'litellm/proxy/auth/handle_jwt.py: B760 owns JWTHandler.__init__ (L251-L258), JWTHandler.bind_agent_lookup
+    (L260-L261), JWTHandler.update_environment (L263-L273), JWTHandler.is_jwt (L276-L280), JWTHandler.get_unverified_claims
+    (L283-L302), JWTHandler._is_trusted_issuer_normalized_token (L376-L383), JWTHandler._has_trusted_issuer_normalized_claim
+    (L385-L386), JWTHandler.get_team_ids_from_jwt (L388-L409), JWTHandler.get_all_jwt_team_ids (L411-L448),
+    JWTHandler.get_end_user_id (L450-L466), JWTHandler.is_required_team_id (L468-L476), JWTHandler.is_enforced_email_domain
+    (L478-L489), JWTHandler.get_team_id (L491-L533), JWTHandler.get_team_alias (L535-L558), JWTHandler.is_upsert_user_id
+    (L560-L568), JWTHandler.get_user_id (L570-L585), JWTHandler.get_user_email (L656-L671), JWTHandler.get_object_id
+    (L673-L685), JWTHandler.get_agent_claim (L687-L691), JWTHandler.get_org_id (L693-L708), JWTHandler.get_org_alias
+    (L710-L733).'
+  - 'litellm/proxy/auth/handle_jwt.py: B761 owns _JWTAuthSettings.issuers (L116-L116), _JWTAuthSettings.public_key_ttl
+    (L119-L119), _JWTAuthSettings.public_key_stale_ttl (L122-L122), _OIDCDiscoveryResponse.json (L134-L134),
+    _UserInfoResponse.json (L140-L140), AgentLookup.get_agent_list (L165-L165), AgentLookup.get_agent_by_id
+    (L167-L168), AgentLookup.get_agent_by_name (L170-L171), _NoRegisteredAgents.get_agent_list (L177-L178),
+    _NoRegisteredAgents.get_agent_by_id (L180-L181), _NoRegisteredAgents.get_agent_by_name (L183-L184),
+    _discovery_document (L187-L189), _userinfo_document (L192-L194), jwks_unavailable_exception (L197-L206),
+    JWTHandler._resolve_jwks_url (L748-L763), JWTHandler._get_with_transient_retries (L765-L784), JWTHandler._get_cached_value
+    (L786-L788), JWTHandler._get_cached_timestamp (L790-L793), JWTHandler._put_cached_value (L795-L796),
+    JWTHandler._cached_with_stale_fallback (L798-L817), JWTHandler._refresh_or_serve_stale (L819-L859),
+    JWTHandler._stale_copy_age (L861-L863), JWTHandler._refresh_or_record_outage (L865-L898), JWTHandler._fetch_jwks_uri_from_discovery
+    (L900-L917), JWTHandler._get_public_key_cache_ttl (L919-L923), JWTHandler._get_public_key_stale_ttl
+    (L925-L929), JWTHandler._fetch_jwks_keys (L931-L945), JWTHandler._get_public_key_from_jwks_url (L947-L960),
+    JWTHandler.get_public_key (L962-L979), JWTHandler.parse_keys (L981-L997), JWTHandler.is_allowed_domain
+    (L999-L1007).'
+  - 'litellm/proxy/auth/handle_jwt.py: B762 owns JWTHandler.get_oidc_userinfo (L1009-L1066), JWTHandler._build_decode_kwargs
+    (L1071-L1107), JWTHandler.managed_issuer_is_trusted (L1109-L1116), JWTHandler._get_configured_issuer
+    (L1118-L1139), JWTHandler._get_jwks_url_for_issuer (L1141-L1146), JWTHandler._get_claim_value_for_issuer_mapping
+    (L1148-L1163), JWTHandler._apply_issuer_claim_mappings (L1165-L1187), JWTHandler._get_jwk_from_public_key
+    (L1189-L1194), JWTHandler._get_decode_options (L1196-L1215), JWTHandler._decode_jwt_with_public_key
+    (L1217-L1261), JWTHandler._auth_jwt_with_issuer (L1263-L1293), JWTHandler.auth_jwt (L1295-L1335),
+    JWTHandler.close (L1337-L1338).'
+  - 'litellm/proxy/auth/handle_jwt.py: B764 owns JWTAuthManager.resolve_agent_id (L1499-L1520), JWTAuthManager.find_and_validate_specific_team_id
+    (L1523-L1620), JWTAuthManager.get_all_team_ids (L1623-L1629), JWTAuthManager._team_has_passthrough_route_access
+    (L1632-L1653), JWTAuthManager._raise_team_passthrough_route_denial (L1656-L1663), JWTAuthManager.find_team_with_model_access
+    (L1666-L1750), JWTAuthManager.validate_object_id (L1890-L1902), JWTAuthManager._team_header_value
+    (L1905-L1909), JWTAuthManager._raise_header_team_not_allowed (L1912-L1919), JWTAuthManager._team_id_by_alias
+    (L1922-L1943), JWTAuthManager.resolve_team_from_header (L1946-L2006), JWTAuthManager._raise_header_team_membership_denial
+    (L2358-L2371).'
+  - 'litellm/proxy/auth/handle_jwt.py: B765 owns JWTAuthManager.get_user_info (L1753-L1763), JWTAuthManager._canonical_user_id_from_db
+    (L1766-L1776), JWTAuthManager.get_objects (L1779-L1887), JWTAuthManager.map_user_to_teams (L2009-L2057),
+    JWTAuthManager.sync_user_role_and_teams (L2060-L2130).'
+  - 'litellm/proxy/auth/handle_jwt.py: B877 owns JWTAuthManager.authorize_jwt.team_stage (L2630-L2929).'
+  - 'litellm/proxy/auth/handle_jwt.py: B890 owns JWTHandler._rbac_role_from_role_mapping (L304-L333),
+    JWTHandler.get_rbac_role (L335-L369), JWTHandler.is_admin (L371-L374), JWTHandler.get_user_roles (L587-L604),
+    JWTHandler.map_jwt_role_to_litellm_role (L606-L619), JWTHandler.get_jwt_role (L621-L640), JWTHandler.is_allowed_user_role
+    (L642-L654), JWTHandler.get_scopes (L735-L746).'
+  - 'litellm/proxy/auth/handle_jwt.py: B891 owns JWTAuthManager._attach_team_from_header_for_admin (L2133-L2175),
+    JWTAuthManager._resolve_single_team_fallback (L2178-L2233), JWTAuthManager._resolve_db_team_fallback
+    (L2236-L2335), JWTAuthManager._is_team_route_allowed (L2338-L2355), JWTAuthManager._validate_header_team_in_db_membership
+    (L2374-L2388).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - An administrator-scope JWT still obeys its configured administrator allowed_routes.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

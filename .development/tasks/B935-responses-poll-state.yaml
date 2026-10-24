@@ -1,0 +1,257 @@
+id: B935
+title: Responses poll state
+description: >-
+  Implement ResponsePollingHandler as typed Redis state transitions using B126 and injected clock/ID source. Expose
+  queued state, partial updates, get/cancel/delete and polling selection with source TTL 3600 and litellm:polling:response:/litellm_poll_
+  prefixes; add the exact polling config key consumed by the source, not a renamed knob. Load litellm_settings.responses.background_mode.polling_via_cache=false
+  (false, all, or provider list), native_background_mode=[] and ttl=3600 seconds; read all environment references
+  through betterlite-config.
+
+
+  Implement crates/betterlite-core/src/api/responses_poll_state.rs. Use ResponsesPollStateInput and ResponsesPollStateResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions queued_state_ttl, update_missing_state_warning, failed_update_error,
+  cancel_polling, delete_polling, background_cache_selection under api::responses_poll_state::tests. Each named
+  function drives production code and asserts its case result; use named rstest inputs for related values. Corpus
+  replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.responses.background_mode.native_background_mode
+  defaults to []; litellm_settings.responses.background_mode.ttl defaults to 3600 seconds; litellm_settings.responses.background_mode.polling_via_cache
+  defaults to false; also accepts all or a provider list. No environment reads occur outside betterlite-config.
+  Test api::responses_poll_state::tests::loads_settings uses the production Config loader and an injected environment
+  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
+  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
+  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
+  parser.
+
+
+  The production external-byte decoder is betterlite-core::api::responses_poll_state::decode_responses_poll_state(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input cached_state at litellm/proxy/response_polling/polling_handler.py:148;
+  json.loads input cached_state at litellm/proxy/response_polling/polling_handler.py:224. Place its implementation
+  in crates/betterlite-core/src/api/responses_poll_state.rs and call it from the actual boundary. The cargo-fuzz
+  target crates/betterlite-core/fuzz/fuzz_targets/responses_poll_state.rs passes arbitrary bounded bytes to that
+  exact decoder; api::responses_poll_state::tests::replays_corpus replays newly committed seeds through the same
+  function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::ResponsesPollState in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_poll_state: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/response_polling/polling_handler.py: ResponsePollingHandler.__init__ (L21-L23);
+  litellm/proxy/response_polling/polling_handler.py: ResponsePollingHandler.generate_polling_id (L26-L28); litellm/proxy/response_polling/polling_handler.py:
+  ResponsePollingHandler.is_polling_id (L31-L33); litellm/proxy/response_polling/polling_handler.py: ResponsePollingHandler.get_cache_key
+  (L36-L38); litellm/proxy/response_polling/polling_handler.py: ResponsePollingHandler.create_initial_state (L40-L82);
+  litellm/proxy/response_polling/polling_handler.py: ResponsePollingHandler.update_state (L84-L213); litellm/proxy/response_polling/polling_handler.py:
+  ResponsePollingHandler.get_state (L215-L226); litellm/proxy/response_polling/polling_handler.py: ResponsePollingHandler.cancel_polling
+  (L228-L238); litellm/proxy/response_polling/polling_handler.py: ResponsePollingHandler.delete_polling (L240-L248);
+  litellm/proxy/response_polling/polling_handler.py: should_use_polling_for_request (L251-L319). Abstract/protocol
+  declarations map to native types and synchronous/async wrappers share one implementation; a partial function span
+  is the explicit preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 182 owned nonblank/non-comment/non-docstring Python lines (244 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 234 implementation,
+  124 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 39 config tests/seeds
+  and 40 wiring; 659 total within the 660-line cap. The estimate includes tests and adapters, not just production
+  code.
+
+
+  Direct inputs come from B002 (Load LiteLLM config.yaml into typed config), B126 (Redis, Redis Cluster and Valkey),
+  B171 (Direct helper oracle and URL path encoding), B198 (Injected call context and shared settings), B902 (Responses
+  shapes), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas; the external
+  B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Add internal PollRecord { owner: PollOwner, response: ResponsesAPIResponse }; PollOwner stores trusted user_id/team_id
+  plus the B732 key fingerprint (never a raw API key), with an explicit Anonymous variant only for configured authentication-disabled
+  mode. B080 supplies it after admission and before caching; keep it on every update/cancel and expire/delete it
+  with the response in the same Redis value. Return only the response field to clients. Use B929 user/team/admin
+  policy for identified callers, require a matching key fingerprint when no user/team identity exists, and reject
+  missing legacy owner data when authentication is enabled. Disabled-auth Anonymous records are accessible only
+  in that configured mode. The source stores only the response; this internal envelope implements the already decided
+  polling-ownership change, not an enterprise feature. For oracle equality compare the response projection, keys
+  and TTL; native tests inspect the private owner envelope rather than ignoring a wire difference. Add tests::poll_owner_retention
+  covering initial write, partial update, cancel, delete, expiry and legacy records.
+
+
+  The polling ownership denial uses HTTP 403 and {error: {type: authentication_error, param: null, code: "403"}};
+  code is a string. This is a native-only deviation test, not a differential equality seed.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_poll_state.rs
+  - crates/betterlite-core/src/api/responses_poll_state/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/responses_poll_state.rs
+  - crates/betterlite-config/src/api/responses_poll_state/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-poll-state-*
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/responses_poll_state.rs
+  - crates/betterlite-core/fuzz/corpus/responses_poll_state/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_poll_state.rs
+  - tools/oracle/src/helpers/responses_poll_state/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_poll_state.py
+  - tools/oracle/helpers/responses_poll_state/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_poll_state-*
+  - tools/oracle/cases/helpers/responses-poll-state/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6552-L6558
+  why: Setting litellm_settings.responses.background_mode.polling_via_cache and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L1-L319
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6553-L6566
+  why: Shared dependency/call-site context; ownership is only the callable list above.
+dod:
+- text: 'queued state ttl: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-queued-state-ttl
+  - oracle
+- text: 'update missing state warning: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-update-missing-state-warning
+  - oracle
+- text: 'failed update error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-failed-update-error
+  - oracle
+- text: 'cancel polling: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cancel-polling
+  - oracle
+- text: 'delete polling: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-delete-polling
+  - oracle
+- text: 'background cache selection: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-background-cache-selection
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Internal polling ownership survives transitions and is omitted from the public response.
+  proof:
+  - poll-owner-tests
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_poll_state::/)
+      - test(/::replays_corpus$/)'
+  - id: case-queued-state-ttl
+    why: the queued-state-ttl behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_state::tests::queued_state_ttl($|::)/)'
+  - id: case-update-missing-state-warning
+    why: the update-missing-state-warning behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_state::tests::update_missing_state_warning($|::)/)'
+  - id: case-failed-update-error
+    why: the failed-update-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_state::tests::failed_update_error($|::)/)'
+  - id: case-cancel-polling
+    why: the cancel-polling behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_state::tests::cancel_polling($|::)/)'
+  - id: case-delete-polling
+    why: the delete-polling behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_state::tests::delete_polling($|::)/)'
+  - id: case-background-cache-selection
+    why: the background-cache-selection behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_state::tests::background_cache_selection($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_poll_state::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-poll-state-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_poll_state)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/responses_poll_state.rs && grep -qF "decode_responses_poll_state"
+      crates/betterlite-core/fuzz/fuzz_targets/responses_poll_state.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::responses_poll_state::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_poll_state.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_poll_state-*)"
+      && grep -qE "^[[:space:]]+responses_poll_state:" tools/oracle/fuzz/corpus/helper_case/responses_poll_state-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-poll-state)"
+  - id: poll-owner-tests
+    why: trusted polling owner data is lost, exposed, or unavailable to authorization
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_state::tests::poll_owner_retention($|::)/)'
+oracle_cases:
+- tools/oracle/cases/helpers/responses-poll-state/queued-state-ttl.yaml
+- tools/oracle/cases/helpers/responses-poll-state/update-missing-state-warning.yaml
+- tools/oracle/cases/helpers/responses-poll-state/failed-update-error.yaml
+- tools/oracle/cases/helpers/responses-poll-state/cancel-polling.yaml
+- tools/oracle/cases/helpers/responses-poll-state/delete-polling.yaml
+- tools/oracle/cases/helpers/responses-poll-state/background-cache-selection.yaml
+deviations:
+- what: Polling cache values carry a private trusted owner envelope; authenticated reads without a matching owner,
+    including legacy owner-less records, return 403 authentication_error with param null and code "403" through
+    B938. Public successful Responses JSON remains unchanged.
+  why: 'ARCHITECT DECISION: extend ownership checks to polling IDs; retaining identity is required to enforce that
+    decision.'
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_polling/polling_handler.py#L40-L82
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'polling_handler.py:211 emits the diagnostic ''Updated polling state for %s: status=%s, output_items=%s''; retain
+  its level and fallback instead of turning it into a hard error.'
+- polling_handler.py:280 emits the diagnostic 'Model %s is in native_background_mode list, skipping polling via
+  cache'; retain its level and fallback instead of turning it into a hard error.
+review_level: security
+budget:
+  max_changed_lines: 660
+  max_new_expects: 1

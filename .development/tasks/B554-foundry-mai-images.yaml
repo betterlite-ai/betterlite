@@ -1,0 +1,206 @@
+id: B554
+title: Foundry MAI images and usage
+description: >-
+  Add MaiImageOptions and image usage normalization with Decimal-free integer token counts and checked pixel arithmetic.
+  Defaults are width=1024, height=1024, n=1; minimum dimension is 768 pixels and maximum total pixels is 1,056,768.
+  Preserve native field precedence, explicit drop policy and exact response size. No pixel download or image decoder
+  is needed for this map.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/azure_ai/image_generation/mai_transformation.py:
+  AzureFoundryMAIImageGenerationConfig.get_mai_image_generation_url L31-L50; AzureFoundryMAIImageGenerationConfig.get_mai_image_edit_url
+  L53-L72; AzureFoundryMAIImageGenerationConfig.is_mai_model L75-L77; AzureFoundryMAIImageGenerationConfig.normalize_mai_image_usage
+  L80-L134; AzureFoundryMAIImageGenerationConfig.get_supported_openai_params L136-L137; AzureFoundryMAIImageGenerationConfig.map_openai_params
+  L139-L183; AzureFoundryMAIImageGenerationConfig._unsupported L186-L187; AzureFoundryMAIImageGenerationConfig._image_count
+  L189-L195; AzureFoundryMAIImageGenerationConfig._map_size_param L197-L224; AzureFoundryMAIImageGenerationConfig._validate_dimensions
+  L226-L238; AzureFoundryMAIImageGenerationConfig.transform_image_generation_response L240-L277.
+
+
+  Reuse OpenAIError.__init__ from B668 (litellm/llms/openai/common_utils.py); its implementation remains with that
+  prerequisite.
+
+
+  Implement crates/betterlite-foundry/src/mai_images.rs with adjacent tests under mai_images/. Keep each Rust module
+  at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never
+  imports betterlite-provider or betterlite-core. The production function is the only Rust implementation used by
+  tests and oracle adapters.
+
+
+  Register helper operation foundry_mai_images in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function mai_images_cases in betterlite-foundry with these exact named cases (one per oracle file):
+  mai_generation_edit_url, default_dimensions, known_and_custom_size, dimension_and_pixel_limit, n_one_only, drop_unsupported_fields,
+  usage_alias_priority, response_size. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/foundry_mai_images* using HelperCase: kind: helper
+  and the externally tagged foundry_mai_images variant inside call. Do not put the Python stdin operation field
+  in a HelperCase. Add oracle test helper_seeds_select_foundry_mai_images that parses every prefixed seed with the
+  production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_mai_image_reply consumes MAI image JSON response bytes in crates/betterlite-foundry/src/mai_images.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-foundry/fuzz/fuzz_targets/foundry_mai_images.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-foundry/fuzz/corpus/foundry_mai_images.
+  The adjacent test replays_the_foundry_mai_images_corpus uses the same function and asserts expected success/failure
+  categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 210 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 235 production lines, 117 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 519 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-foundry/Cargo.toml
+  - crates/betterlite-foundry/src/lib.rs
+  - crates/betterlite-foundry/src/error.rs
+  - crates/betterlite-foundry/src/mai_images.rs
+  - crates/betterlite-foundry/src/mai_images/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/foundry_mai_images.rs
+  - tools/oracle/src/helpers/foundry_mai_images/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/foundry_mai_images.py
+  - tools/oracle/cases/helpers/providers/foundry-mai-images/**
+  - tools/oracle/fuzz/corpus/helper_case/foundry_mai_images*
+  - crates/betterlite-foundry/fuzz/Cargo.toml
+  - crates/betterlite-foundry/fuzz/fuzz_targets/foundry_mai_images.rs
+  - crates/betterlite-foundry/fuzz/corpus/foundry_mai_images/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/mai_transformation.py#L31-L277
+  why: >-
+    Own AzureFoundryMAIImageGenerationConfig.get_mai_image_generation_url, AzureFoundryMAIImageGenerationConfig.get_mai_image_edit_url,
+    AzureFoundryMAIImageGenerationConfig.is_mai_model, AzureFoundryMAIImageGenerationConfig.normalize_mai_image_usage,
+    AzureFoundryMAIImageGenerationConfig.get_supported_openai_params, AzureFoundryMAIImageGenerationConfig.map_openai_params,
+    AzureFoundryMAIImageGenerationConfig._unsupported, AzureFoundryMAIImageGenerationConfig._image_count, AzureFoundryMAIImageGenerationConfig._map_size_param,
+    AzureFoundryMAIImageGenerationConfig._validate_dimensions, AzureFoundryMAIImageGenerationConfig.transform_image_generation_response.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    mai generation edit url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/mai-generation-edit-url.yaml.
+  proof:
+  - case-mai-generation-edit-url
+  - oracle
+  - helper-python
+- text: 'default dimensions: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/default-dimensions.yaml.'
+  proof:
+  - case-default-dimensions
+  - oracle
+  - helper-python
+- text: 'known and custom size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/known-and-custom-size.yaml.'
+  proof:
+  - case-known-and-custom-size
+  - oracle
+  - helper-python
+- text: >-
+    dimension and pixel limit: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/dimension-and-pixel-limit.yaml.
+  proof:
+  - case-dimension-and-pixel-limit
+  - oracle
+  - helper-python
+- text: 'n one only: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/n-one-only.yaml.'
+  proof:
+  - case-n-one-only
+  - oracle
+  - helper-python
+- text: >-
+    drop unsupported fields: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/drop-unsupported-fields.yaml.
+  proof:
+  - case-drop-unsupported-fields
+  - oracle
+  - helper-python
+- text: 'usage alias priority: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/usage-alias-priority.yaml.'
+  proof:
+  - case-usage-alias-priority
+  - oracle
+  - helper-python
+- text: 'response size: the production result, omission or failure matches tools/oracle/cases/helpers/providers/foundry-mai-images/response-size.yaml.'
+  proof:
+  - case-response-size
+  - oracle
+  - helper-python
+- text: New foundry_mai_images seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+- text: decode_mai_image_reply has newly committed malformed and boundary inputs replayed through production parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-mai-generation-edit-url
+    why: The mai-generation-edit-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_mai_generation_edit_url$/)'
+  - id: case-default-dimensions
+    why: The default-dimensions behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_default_dimensions$/)'
+  - id: case-known-and-custom-size
+    why: The known-and-custom-size behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_known_and_custom_size$/)'
+  - id: case-dimension-and-pixel-limit
+    why: The dimension-and-pixel-limit behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_dimension_and_pixel_limit$/)'
+  - id: case-n-one-only
+    why: The n-one-only behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_n_one_only$/)'
+  - id: case-drop-unsupported-fields
+    why: The drop-unsupported-fields behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_drop_unsupported_fields$/)'
+  - id: case-usage-alias-priority
+    why: The usage-alias-priority behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_usage_alias_priority$/)'
+  - id: case-response-size
+    why: The response-size behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::mai_images_cases::case_[0-9]+_response_size$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/foundry_mai_images.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_mai_images*")"
+      && grep -lq 'foundry_mai_images' tools/oracle/fuzz/corpus/helper_case/foundry_mai_images* && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_mai_images$/)' &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-foundry/fuzz/corpus/foundry_mai_images)"
+      && grep -q 'decode_mai_image_reply' crates/betterlite-foundry/fuzz/fuzz_targets/foundry_mai_images.rs && cargo
+      nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::replays_the_foundry_mai_images_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/foundry-mai-images/mai-generation-edit-url.yaml
+- tools/oracle/cases/helpers/providers/foundry-mai-images/default-dimensions.yaml
+- tools/oracle/cases/helpers/providers/foundry-mai-images/known-and-custom-size.yaml
+- tools/oracle/cases/helpers/providers/foundry-mai-images/dimension-and-pixel-limit.yaml
+- tools/oracle/cases/helpers/providers/foundry-mai-images/n-one-only.yaml
+- tools/oracle/cases/helpers/providers/foundry-mai-images/drop-unsupported-fields.yaml
+- tools/oracle/cases/helpers/providers/foundry-mai-images/usage-alias-priority.yaml
+- tools/oracle/cases/helpers/providers/foundry-mai-images/response-size.yaml
+deviations: []
+out_of_scope:
+- B026 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Defaults are width=1024, height=1024, n=1; minimum dimension is 768 pixels and maximum total pixels is 1,056,768.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

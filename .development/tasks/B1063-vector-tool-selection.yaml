@@ -1,0 +1,186 @@
+id: B1063
+title: Vector tool selection
+description: >-
+  Select vector stores from request tools/tool_calls and source defaults, including database fallback and name/ID
+  lookup. Remove only recognized retrieval tools with typed diagnostics and return authorized selection inputs;
+  preserve tool ordering and requested IDs for response metadata.
+
+
+  VectorStoreRegistry.pop_vector_stores_to_run (litellm/vector_stores/vector_store_registry.py:L261-L301) has no
+  MIT runtime caller at the pin (only its declaration; tests are not runtime callers); it is excluded, and no behavior
+  case exercises that unused entry point.
+
+
+  Implement crates/betterlite-core/src/api/vector_tool_selection.rs. Use VectorToolSelectionInput and VectorToolSelectionResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions vector_tool_id_selection, vector_tool_name_selection, tool_call_vector_ids,
+  database_fallback, unknown_tool_kept under api::vector_tool_selection::tests. Each named function drives production
+  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
+  replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::VectorToolSelection in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {vector_tool_selection: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.get_and_pop_recognised_vector_store_tools
+  (L141-L188); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.get_vector_store_to_run (L190-L213);
+  litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.get_litellm_managed_vector_store_from_registry_by_name
+  (L250-L259); litellm/vector_stores/vector_store_registry.py: VectorStoreRegistry.pop_vector_stores_to_run_with_db_fallback
+  (L303-L385). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 91 owned nonblank/non-comment/non-docstring Python lines (121 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 111 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 361 total within the 400-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1061 (Vector endpoint access), B1062
+  (Vector store registry), B1087 (Api boundaries). These are callable/type/config owners, not provider-family umbrellas;
+  the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/vector_tool_selection.rs
+  - crates/betterlite-core/src/api/vector_tool_selection/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/vector_tool_selection.rs
+  - tools/oracle/src/helpers/vector_tool_selection/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/vector_tool_selection.py
+  - tools/oracle/helpers/vector_tool_selection/**
+  - tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-*
+  - tools/oracle/cases/helpers/vector-tool-selection/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L141-L188
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L190-L213
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L250-L260
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/vector_stores/vector_store_registry.py#L302-L386
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'vector tool id selection: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-vector-tool-id-selection
+  - oracle
+- text: 'vector tool name selection: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-vector-tool-name-selection
+  - oracle
+- text: 'tool call vector ids: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-tool-call-vector-ids
+  - oracle
+- text: 'database fallback: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-database-fallback
+  - oracle
+- text: 'unknown tool kept: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unknown-tool-kept
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_tool_selection::/)
+      - test(/::replays_corpus$/)'
+  - id: case-vector-tool-id-selection
+    why: the vector-tool-id-selection behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_tool_selection::tests::vector_tool_id_selection($|::)/)'
+  - id: case-vector-tool-name-selection
+    why: the vector-tool-name-selection behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_tool_selection::tests::vector_tool_name_selection($|::)/)'
+  - id: case-tool-call-vector-ids
+    why: the tool-call-vector-ids behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_tool_selection::tests::tool_call_vector_ids($|::)/)'
+  - id: case-database-fallback
+    why: the database-fallback behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_tool_selection::tests::database_fallback($|::)/)'
+  - id: case-unknown-tool-kept
+    why: the unknown-tool-kept behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_tool_selection::tests::unknown_tool_kept($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/vector_tool_selection.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-*)"
+      && grep -qE "^[[:space:]]+vector_tool_selection:" tools/oracle/fuzz/corpus/helper_case/vector_tool_selection-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vector-tool-selection)"
+oracle_cases:
+- tools/oracle/cases/helpers/vector-tool-selection/vector-tool-id-selection.yaml
+- tools/oracle/cases/helpers/vector-tool-selection/vector-tool-name-selection.yaml
+- tools/oracle/cases/helpers/vector-tool-selection/tool-call-vector-ids.yaml
+- tools/oracle/cases/helpers/vector-tool-selection/database-fallback.yaml
+- tools/oracle/cases/helpers/vector-tool-selection/unknown-tool-kept.yaml
+deviations: []
+out_of_scope:
+- 'litellm/vector_stores/vector_store_registry.py: B1062 owns VectorStoreIndexRegistry.__init__ L35-L36, VectorStoreIndexRegistry.get_vector_store_indexes
+  L38-L42, VectorStoreIndexRegistry.get_vector_store_index_by_name L44-L51, VectorStoreIndexRegistry.upsert_vector_store_index
+  L53-L63, VectorStoreIndexRegistry.is_vector_store_index L71-L78, VectorStoreIndexRegistry._get_vector_store_indexes_from_db
+  L85-L100, VectorStoreRegistry.__init__ L104-L106, VectorStoreRegistry._extract_tool_params L108-L121, VectorStoreRegistry.get_vector_store_ids_to_run
+  L123-L139, VectorStoreRegistry.get_litellm_managed_vector_store_from_registry L215-L222, VectorStoreRegistry.get_litellm_managed_vector_store_from_registry_or_db
+  L224-L248, VectorStoreRegistry._get_vector_store_ids_from_tool_calls L387-L397, VectorStoreRegistry.load_vector_stores_from_config
+  L399-L436, VectorStoreRegistry.is_config_vector_store L456-L458, VectorStoreRegistry.add_vector_store_to_registry
+  L460-L470, VectorStoreRegistry.delete_vector_store_from_registry L472-L480, VectorStoreRegistry.update_vector_store_in_registry
+  L482-L489, VectorStoreRegistry._get_vector_stores_from_db L496-L511, VectorStoreRegistry.get_credentials_for_vector_store
+  L513-L526.'
+- 'litellm/vector_stores/vector_store_registry.py: VectorStoreIndexRegistry.delete_vector_store_index L65-L69, VectorStoreRegistry.pop_vector_stores_to_run
+  L261-L301, VectorStoreRegistry.list_all_vector_stores L438-L454 are out of scope: no MIT runtime caller at the
+  pin; unused entry point is not rebuilt.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- vector_store_registry.py:353 emits the diagnostic 'Vector store %s found in memory but deleted from database,
+  removing from cache'; retain its level and fallback instead of turning it into a hard error.
+- 'vector_store_registry.py:360 emits the diagnostic ''Error verifying vector store %s in database: %s''; retain
+  its level and fallback instead of turning it into a hard error.'
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 1

@@ -1,0 +1,210 @@
+id: B640
+title: Bedrock native count-token shapes
+description: >-
+  Build the Bedrock CountTokens envelope and convert the reply to Anthropic-shaped input_tokens. Detect converse
+  only when messages is a list containing no block with a type field; all other input is invokeModel. Reuse BaseAWSLLM
+  inputs from B590 and get_bedrock_base_model from B591; B641 owns signing, execution and any fallback.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/count_tokens/transformation.py:
+  _json_dict L23-L24; _json_list L27-L28; _to_converse_content L31-L36; _to_converse_message L39-L44; _sanitized_bedrock_tool_name
+  L47-L50; _to_bedrock_tool_spec L53-L62; BedrockCountTokensConfig._detect_input_type L75-L101; BedrockCountTokensConfig.transform_anthropic_to_bedrock_count_tokens
+  L103-L141; BedrockCountTokensConfig._transform_to_converse_format L143-L164; BedrockCountTokensConfig._transform_system
+  L166-L175; BedrockCountTokensConfig._transform_tools L177-L184; BedrockCountTokensConfig._transform_to_invoke_model_format
+  L186-L203; BedrockCountTokensConfig.get_bedrock_count_tokens_endpoint L205-L238; BedrockCountTokensConfig.transform_bedrock_response_to_anthropic
+  L240-L258; BedrockCountTokensConfig.validate_count_tokens_request L260-L298.
+
+
+  Reuse get_bedrock_base_model from B591 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/count_tokens.rs with adjacent tests under count_tokens/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_other_count_tokens in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function count_tokens_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  typed_block_invoke_model, untyped_messages_converse, detect_converse_input, detect_invoke_input, tool_name_schema,
+  count_endpoint_path, count_request_validation, count_to_anthropic_result, invoke_body_python_json_spacing. Each
+  case exercises its named outcome independently; use stable supplied clocks/IDs and fixture transports. HTTP cases
+  use the booted proxy and assert both client response and captured upstream request. Existing API tasks retain
+  route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens* using HelperCase:
+  kind: helper and the externally tagged bedrock_other_count_tokens variant inside call. Do not put the Python stdin
+  operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_other_count_tokens that parses every
+  prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then
+  replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 193 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 220 production lines, 126 behavior/config-test lines,
+  91 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 462 planned, 475 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/count_tokens.rs
+  - crates/betterlite-bedrock/src/count_tokens/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_other_count_tokens.rs
+  - tools/oracle/src/helpers/bedrock_other_count_tokens/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_other_count_tokens.py
+  - tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/count_tokens/transformation.py#L23-L298
+  why: >-
+    Own _json_dict, _json_list, _to_converse_content, _to_converse_message, _sanitized_bedrock_tool_name, _to_bedrock_tool_spec,
+    BedrockCountTokensConfig._detect_input_type, BedrockCountTokensConfig.transform_anthropic_to_bedrock_count_tokens,
+    BedrockCountTokensConfig._transform_to_converse_format, BedrockCountTokensConfig._transform_system, BedrockCountTokensConfig._transform_tools,
+    BedrockCountTokensConfig._transform_to_invoke_model_format, BedrockCountTokensConfig.get_bedrock_count_tokens_endpoint,
+    BedrockCountTokensConfig.transform_bedrock_response_to_anthropic, BedrockCountTokensConfig.validate_count_tokens_request.
+    Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    typed block invoke model: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/typed-block-invoke-model.yaml.
+  proof:
+  - case-typed-block-invoke-model
+  - oracle
+  - helper-python
+- text: >-
+    untyped messages converse: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/untyped-messages-converse.yaml.
+  proof:
+  - case-untyped-messages-converse
+  - oracle
+  - helper-python
+- text: >-
+    detect converse input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-converse-input.yaml.
+  proof:
+  - case-detect-converse-input
+  - oracle
+  - helper-python
+- text: >-
+    detect invoke input: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-invoke-input.yaml.
+  proof:
+  - case-detect-invoke-input
+  - oracle
+  - helper-python
+- text: 'tool name schema: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/tool-name-schema.yaml.'
+  proof:
+  - case-tool-name-schema
+  - oracle
+  - helper-python
+- text: >-
+    count endpoint path: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-endpoint-path.yaml.
+  proof:
+  - case-count-endpoint-path
+  - oracle
+  - helper-python
+- text: >-
+    count request validation: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-request-validation.yaml.
+  proof:
+  - case-count-request-validation
+  - oracle
+  - helper-python
+- text: >-
+    count to anthropic result: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-to-anthropic-result.yaml.
+  proof:
+  - case-count-to-anthropic-result
+  - oracle
+  - helper-python
+- text: >-
+    invoke body python json spacing: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/invoke-body-python-json-spacing.yaml.
+  proof:
+  - case-invoke-body-python-json-spacing
+  - oracle
+  - helper-python
+- text: New bedrock_other_count_tokens seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-typed-block-invoke-model
+    why: The typed-block-invoke-model behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_typed_block_invoke_model$/)'
+  - id: case-untyped-messages-converse
+    why: The untyped-messages-converse behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_untyped_messages_converse$/)'
+  - id: case-detect-converse-input
+    why: The detect-converse-input behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_detect_converse_input$/)'
+  - id: case-detect-invoke-input
+    why: The detect-invoke-input behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_detect_invoke_input$/)'
+  - id: case-tool-name-schema
+    why: The tool-name-schema behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_tool_name_schema$/)'
+  - id: case-count-endpoint-path
+    why: The count-endpoint-path behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_endpoint_path$/)'
+  - id: case-count-request-validation
+    why: The count-request-validation behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_request_validation$/)'
+  - id: case-count-to-anthropic-result
+    why: The count-to-anthropic-result behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_count_to_anthropic_result$/)'
+  - id: case-invoke-body-python-json-spacing
+    why: The invoke-body-python-json-spacing behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::count_tokens_cases::case_[0-9]+_invoke_body_python_json_spacing$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_other_count_tokens.py)" && uv
+      run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*")"
+      && grep -lq 'bedrock_other_count_tokens' tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_count_tokens$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/typed-block-invoke-model.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/untyped-messages-converse.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-converse-input.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/detect-invoke-input.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/tool-name-schema.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-endpoint-path.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-request-validation.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/count-to-anthropic-result.yaml
+- tools/oracle/cases/helpers/providers/bedrock-other-count-tokens/invoke-body-python-json-spacing.yaml
+deviations: []
+out_of_scope:
+- B029 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Preserve system/tool schema conversion and validation, then return Anthropic-shaped input token count.
+- >-
+  invokeModel.body is base64 of Python json.dumps with comma-space and colon-space separators and ensure_ascii;
+  compare decoded JSON or preserve those bytes explicitly.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: standard

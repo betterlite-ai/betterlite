@@ -1,0 +1,242 @@
+id: B502
+title: OpenAI reasoning and audio model parameters
+description: >-
+  Add typed ReasoningPolicy selection to the existing chat mapper, including catalog-declared defaults and the older-catalog
+  fallback. Reuse existing exact decimals, role transforms and drop reporting. This module owns model capability
+  selection and parameter mapping only; existing request serialization invokes it. No tokenizer or template acquisition
+  is introduced.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/openai/chat/gpt_5_transformation.py:
+  _catalogue_declares_default_effort L18-L31; _normalize_reasoning_effort_for_chat_completion L34-L48; _get_effort_level
+  L51-L64; is_gpt_reasoning_series_name L70-L72; OpenAIGPT5Config.is_model_gpt_5_model L86-L87; OpenAIGPT5Config.is_model_gpt_5_search_model
+  L90-L99; OpenAIGPT5Config.is_model_gpt_5_2_model L107-L110; OpenAIGPT5Config._gpt_series_version L119-L123; OpenAIGPT5Config.is_model_gpt_5_4_plus_model
+  L126-L129; OpenAIGPT5Config.is_model_gpt_5_6_plus_model L132-L134; OpenAIGPT5Config.is_model_gpt_6_plus_model
+  L137-L139; OpenAIGPT5Config._model_map_lookup_name L142-L150; OpenAIGPT5Config._supports_reasoning_effort_level
+  L153-L164; OpenAIGPT5Config.effort_resolves_to_none L167-L193; OpenAIGPT5Config._is_reasoning_effort_level_explicitly_disabled
+  L196-L210; OpenAIGPT5Config.get_supported_openai_params L212-L253; OpenAIGPT5Config.map_openai_params L255-L367.
+  litellm/llms/openai/chat/o_series_transformation.py: OpenAIOSeriesConfig.get_config L37-L38; OpenAIOSeriesConfig.translate_developer_role_to_system_role
+  L40-L44; OpenAIOSeriesConfig.get_supported_openai_params L46-L89; OpenAIOSeriesConfig.map_openai_params L91-L115;
+  OpenAIOSeriesConfig.is_model_o_series_model L117-L124; OpenAIOSeriesConfig._transform_messages L127-L129; OpenAIOSeriesConfig._transform_messages
+  L132-L137; OpenAIOSeriesConfig._transform_messages L139-L156. litellm/llms/openai/chat/gpt_audio_transformation.py:
+  OpenAIGPTAudioConfig.get_config L20-L21; OpenAIGPTAudioConfig.get_supported_openai_params L23-L31; OpenAIGPTAudioConfig.is_model_gpt_audio_model
+  L33-L36; OpenAIGPTAudioConfig._map_openai_params L38-L50.
+
+
+  Implement crates/betterlite-openai/src/reasoning_models.rs with adjacent tests under reasoning_models/. Keep each
+  Rust module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider
+  leaf never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation openai_reasoning_models in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function reasoning_models_cases in betterlite-openai with these exact named cases (one per oracle
+  file): gpt5_search_allowlist, gpt5_chat_exclusion, gpt6_family_selection, dict_effort_normalization, xhigh_opt_in,
+  low_minimal_opt_out, catalog_before_default_key, temperature_while_thinking, sampling_with_none, o1_developer_roles,
+  audio_token_parameter. Each case exercises its named outcome independently; use stable supplied clocks/IDs and
+  fixture transports. HTTP cases use the booted proxy and assert both client response and captured upstream request.
+  Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/openai_reasoning_models* using HelperCase: kind:
+  helper and the externally tagged openai_reasoning_models variant inside call. Do not put the Python stdin operation
+  field in a HelperCase. Add oracle test helper_seeds_select_openai_reasoning_models that parses every prefixed
+  seed with the production HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the
+  shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 378 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 395 production lines, 144 behavior/config-test lines,
+  99 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 663 planned, 675 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/reasoning_models.rs
+  - crates/betterlite-openai/src/reasoning_models/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/openai_reasoning_models.rs
+  - tools/oracle/src/helpers/openai_reasoning_models/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/openai_reasoning_models.py
+  - tools/oracle/cases/helpers/providers/openai-reasoning-models/**
+  - tools/oracle/fuzz/corpus/helper_case/openai_reasoning_models*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_5_transformation.py#L18-L367
+  why: >-
+    Own _catalogue_declares_default_effort, _normalize_reasoning_effort_for_chat_completion, _get_effort_level,
+    is_gpt_reasoning_series_name, OpenAIGPT5Config.is_model_gpt_5_model, OpenAIGPT5Config.is_model_gpt_5_search_model,
+    OpenAIGPT5Config.is_model_gpt_5_2_model, OpenAIGPT5Config._gpt_series_version, OpenAIGPT5Config.is_model_gpt_5_4_plus_model,
+    OpenAIGPT5Config.is_model_gpt_5_6_plus_model, OpenAIGPT5Config.is_model_gpt_6_plus_model, OpenAIGPT5Config._model_map_lookup_name,
+    OpenAIGPT5Config._supports_reasoning_effort_level, OpenAIGPT5Config.effort_resolves_to_none, OpenAIGPT5Config._is_reasoning_effort_level_explicitly_disabled,
+    OpenAIGPT5Config.get_supported_openai_params, OpenAIGPT5Config.map_openai_params. Other functions in this file
+    remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/o_series_transformation.py#L37-L156
+  why: >-
+    Own OpenAIOSeriesConfig.get_config, OpenAIOSeriesConfig.translate_developer_role_to_system_role, OpenAIOSeriesConfig.get_supported_openai_params,
+    OpenAIOSeriesConfig.map_openai_params, OpenAIOSeriesConfig.is_model_o_series_model, OpenAIOSeriesConfig._transform_messages,
+    OpenAIOSeriesConfig._transform_messages, OpenAIOSeriesConfig._transform_messages. Other functions in this file
+    remain with the owners listed below.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_audio_transformation.py#L20-L50
+  why: >-
+    Own OpenAIGPTAudioConfig.get_config, OpenAIGPTAudioConfig.get_supported_openai_params, OpenAIGPTAudioConfig.is_model_gpt_audio_model,
+    OpenAIGPTAudioConfig._map_openai_params. Other functions in this file remain with the owners listed below.
+dod:
+- text: >-
+    gpt5 search allowlist: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/gpt5-search-allowlist.yaml.
+  proof:
+  - case-gpt5-search-allowlist
+  - oracle
+  - helper-python
+- text: 'gpt5 chat exclusion: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/gpt5-chat-exclusion.yaml.'
+  proof:
+  - case-gpt5-chat-exclusion
+  - oracle
+  - helper-python
+- text: >-
+    gpt6 family selection: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/gpt6-family-selection.yaml.
+  proof:
+  - case-gpt6-family-selection
+  - oracle
+  - helper-python
+- text: >-
+    dict effort normalization: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/dict-effort-normalization.yaml.
+  proof:
+  - case-dict-effort-normalization
+  - oracle
+  - helper-python
+- text: 'xhigh opt in: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/xhigh-opt-in.yaml.'
+  proof:
+  - case-xhigh-opt-in
+  - oracle
+  - helper-python
+- text: 'low minimal opt out: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/low-minimal-opt-out.yaml.'
+  proof:
+  - case-low-minimal-opt-out
+  - oracle
+  - helper-python
+- text: >-
+    catalog before default key: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/catalog-before-default-key.yaml.
+  proof:
+  - case-catalog-before-default-key
+  - oracle
+  - helper-python
+- text: >-
+    temperature while thinking: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/temperature-while-thinking.yaml.
+  proof:
+  - case-temperature-while-thinking
+  - oracle
+  - helper-python
+- text: 'sampling with none: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/sampling-with-none.yaml.'
+  proof:
+  - case-sampling-with-none
+  - oracle
+  - helper-python
+- text: 'o1 developer roles: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/o1-developer-roles.yaml.'
+  proof:
+  - case-o1-developer-roles
+  - oracle
+  - helper-python
+- text: >-
+    audio token parameter: the production result, omission or failure matches tools/oracle/cases/helpers/providers/openai-reasoning-models/audio-token-parameter.yaml.
+  proof:
+  - case-audio-token-parameter
+  - oracle
+  - helper-python
+- text: New openai_reasoning_models seeds parse as the intended call variant and replay through the shared production
+    parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-gpt5-search-allowlist
+    why: The gpt5-search-allowlist behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_gpt5_search_allowlist$/)'
+  - id: case-gpt5-chat-exclusion
+    why: The gpt5-chat-exclusion behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_gpt5_chat_exclusion$/)'
+  - id: case-gpt6-family-selection
+    why: The gpt6-family-selection behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_gpt6_family_selection$/)'
+  - id: case-dict-effort-normalization
+    why: The dict-effort-normalization behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_dict_effort_normalization$/)'
+  - id: case-xhigh-opt-in
+    why: The xhigh-opt-in behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_xhigh_opt_in$/)'
+  - id: case-low-minimal-opt-out
+    why: The low-minimal-opt-out behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_low_minimal_opt_out$/)'
+  - id: case-catalog-before-default-key
+    why: The catalog-before-default-key behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_catalog_before_default_key$/)'
+  - id: case-temperature-while-thinking
+    why: The temperature-while-thinking behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_temperature_while_thinking$/)'
+  - id: case-sampling-with-none
+    why: The sampling-with-none behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_sampling_with_none$/)'
+  - id: case-o1-developer-roles
+    why: The o1-developer-roles behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_o1_developer_roles$/)'
+  - id: case-audio-token-parameter
+    why: The audio-token-parameter behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/::reasoning_models_cases::case_[0-9]+_audio_token_parameter$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/openai_reasoning_models.py)" && uv run
+      --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_reasoning_models*")"
+      && grep -lq 'openai_reasoning_models' tools/oracle/fuzz/corpus/helper_case/openai_reasoning_models* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_reasoning_models$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/gpt5-search-allowlist.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/gpt5-chat-exclusion.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/gpt6-family-selection.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/dict-effort-normalization.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/xhigh-opt-in.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/low-minimal-opt-out.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/catalog-before-default-key.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/temperature-while-thinking.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/sampling-with-none.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/o1-developer-roles.yaml
+- tools/oracle/cases/helpers/providers/openai-reasoning-models/audio-token-parameter.yaml
+deviations: []
+out_of_scope:
+- B024 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/openai/chat/gpt_5_transformation.py: OpenAIGPT5Config.is_model_gpt_5_codex_model L102-L104; OpenAIGPT5Config.is_model_gpt_5_4_model
+  L113-L116 have no caller at the pin; do not port them.
+pitfalls:
+- Add typed ReasoningPolicy selection to the existing chat mapper, including catalog-declared defaults and the older-catalog
+  fallback.
+budget:
+  max_changed_lines: 675
+  max_new_expects: 0
+review_level: standard

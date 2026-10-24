@@ -1,0 +1,200 @@
+id: B1016
+title: Managed resource ids
+description: >-
+  Implement bounded unified resource ID generation/parsing with typed resource kind, UUID, target model list and
+  provider mapping. Preserve native passthrough IDs, base64 detection and legacy encodings without treating decoded
+  fields as proof of ownership.
+
+
+  Legacy unified ids encode litellm_proxy:<type>;unified_id,<uuid>;target_model_names,<a,b>;resource_id,<id>;model_id,<id>
+  using urlsafe base64 with stripped padding. The detector requires litellm_proxy:; it does not recognize batch
+  ids beginning litellm_proxy;. BaseManagedResource.generate_unified_resource_id/extract_model_mappings_from_responses
+  have no MIT subclass/caller and are excluded rather than inventing a concrete hook.
+
+
+  Implement crates/betterlite-core/src/api/managed_resource_ids.rs. Use ManagedResourceIdsInput and ManagedResourceIdsResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions unified_file_id, resource_type_extraction, native_id_pass_through,
+  malformed_base64, target_model_list under api::managed_resource_ids::tests. Each named function drives production
+  code and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name
+  replays_corpus.
+
+
+  The production external-byte decoder is betterlite-core::api::managed_resource_ids::decode_managed_resource_ids(bytes:
+  &[u8], limits: &ApiLimits), for base64.urlsafe_b64decode input padded at litellm/llms/base_llm/managed_resources/utils.py:65;
+  base64.urlsafe_b64decode input padded at litellm/llms/base_llm/managed_resources/utils.py:345. Place its implementation
+  in crates/betterlite-core/src/api/managed_resource_ids.rs and call it from the actual boundary. The cargo-fuzz
+  target crates/betterlite-core/fuzz/fuzz_targets/managed_resource_ids.rs passes arbitrary bounded bytes to that
+  exact decoder; api::managed_resource_ids::tests::replays_corpus replays newly committed seeds through the same
+  function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::ManagedResourceIds in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {managed_resource_ids: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/base_llm/managed_resources/utils.py: resolve_passthrough_managed_id_provider
+  (L15-L39); litellm/llms/base_llm/managed_resources/utils.py: is_base64_encoded_unified_id (L42-L71); litellm/llms/base_llm/managed_resources/utils.py:
+  extract_target_model_names_from_unified_id (L74-L108); litellm/llms/base_llm/managed_resources/utils.py: extract_resource_type_from_unified_id
+  (L111-L144); litellm/llms/base_llm/managed_resources/utils.py: extract_unified_uuid_from_unified_id (L147-L180);
+  litellm/llms/base_llm/managed_resources/utils.py: extract_model_id_from_unified_id (L183-L222); litellm/llms/base_llm/managed_resources/utils.py:
+  extract_provider_resource_id_from_unified_id (L225-L265); litellm/llms/base_llm/managed_resources/utils.py: generate_unified_id_string
+  (L268-L314); litellm/llms/base_llm/managed_resources/utils.py: encode_unified_id (L317-L327); litellm/llms/base_llm/managed_resources/utils.py:
+  decode_unified_id (L330-L353); litellm/llms/base_llm/managed_resources/utils.py: parse_unified_id (L356-L395).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 160 owned nonblank/non-comment/non-docstring Python lines (285 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 180 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 490 total within the 490-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B1087 (Api boundaries). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/managed_resource_ids.rs
+  - crates/betterlite-core/src/api/managed_resource_ids/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/managed_resource_ids.rs
+  - crates/betterlite-core/fuzz/corpus/managed_resource_ids/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/managed_resource_ids.rs
+  - tools/oracle/src/helpers/managed_resource_ids/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/managed_resource_ids.py
+  - tools/oracle/helpers/managed_resource_ids/**
+  - tools/oracle/fuzz/corpus/helper_case/managed_resource_ids-*
+  - tools/oracle/cases/helpers/managed-resource-ids/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/managed_resources/utils.py#L1-L395
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'unified file id: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unified-file-id
+  - oracle
+- text: 'resource type extraction: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-resource-type-extraction
+  - oracle
+- text: 'native id pass through: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-native-id-pass-through
+  - oracle
+- text: 'malformed base64: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-malformed-base64
+  - oracle
+- text: 'target model list: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-target-model-list
+  - oracle
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::/)
+      - test(/::replays_corpus$/)'
+  - id: case-unified-file-id
+    why: the unified-file-id behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::unified_file_id($|::)/)'
+  - id: case-resource-type-extraction
+    why: the resource-type-extraction behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::resource_type_extraction($|::)/)'
+  - id: case-native-id-pass-through
+    why: the native-id-pass-through behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::native_id_pass_through($|::)/)'
+  - id: case-malformed-base64
+    why: the malformed-base64 behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::malformed_base64($|::)/)'
+  - id: case-target-model-list
+    why: the target-model-list behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::target_model_list($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/managed_resource_ids)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/managed_resource_ids.rs && grep -qF "decode_managed_resource_ids"
+      crates/betterlite-core/fuzz/fuzz_targets/managed_resource_ids.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::managed_resource_ids::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/managed_resource_ids.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/managed_resource_ids-*)"
+      && grep -qE "^[[:space:]]+managed_resource_ids:" tools/oracle/fuzz/corpus/helper_case/managed_resource_ids-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/managed-resource-ids)"
+oracle_cases:
+- tools/oracle/cases/helpers/managed-resource-ids/unified-file-id.yaml
+- tools/oracle/cases/helpers/managed-resource-ids/resource-type-extraction.yaml
+- tools/oracle/cases/helpers/managed-resource-ids/native-id-pass-through.yaml
+- tools/oracle/cases/helpers/managed-resource-ids/malformed-base64.yaml
+- tools/oracle/cases/helpers/managed-resource-ids/target-model-list.yaml
+deviations: []
+out_of_scope:
+- 'litellm/llms/base_llm/managed_resources/base_managed_resource.py: _ManagedResourceRecord.model_dump L51-L51,
+  _ManagedResourceTable.create L55-L55, _ManagedResourceTable.find_first L57-L57, _ManagedResourceTable.find_many
+  L59-L61, _ManagedResourceTable.delete L63-L63, BaseManagedResource.__init__ L84-L90, BaseManagedResource._resource_table
+  L92-L93, BaseManagedResource.resource_type L101-L105, BaseManagedResource.table_name L109-L113, BaseManagedResource.get_unified_resource_id_format
+  L116-L134, BaseManagedResource.create_resource_for_model L137-L155, BaseManagedResource.store_unified_resource_id
+  L161-L241, BaseManagedResource.get_unified_resource_id L243-L277, BaseManagedResource.delete_unified_resource_id
+  L279-L311, BaseManagedResource.can_user_access_unified_resource_id L313-L343, BaseManagedResource.get_model_resource_id_mapping
+  L349-L387, BaseManagedResource.create_resource_for_each_model L393-L424, BaseManagedResource.generate_unified_resource_id
+  L426-L450, BaseManagedResource.extract_model_mappings_from_responses L452-L475, BaseManagedResource.async_filter_deployments
+  L481-L526, BaseManagedResource.get_unified_id_prefix L532-L539, BaseManagedResource.list_user_resources L541-L609
+  are out of scope: no MIT subclass/caller; abstract template and enterprise-hook branches are not activated.'
+- 'litellm/llms/base_llm/managed_resources/base_managed_resource.py: all BaseManagedResource methods, protocol declarations
+  and creation/mapping template bodies have no MIT subclass/caller at the pin. B726 owns the real managed-row repositories;
+  B1017 owns isolation.py predicates. Do not construct an enterprise-equivalent managed_files hook.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Managed-resource and managed-file detectors deliberately recognize different prefixes.
+- Within resolve_passthrough_managed_id_provider\'s not provider branch, preserve return None and its nested guards.
+review_level: security
+budget:
+  max_changed_lines: 490
+  max_new_expects: 1

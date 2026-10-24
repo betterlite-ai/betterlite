@@ -1,0 +1,170 @@
+id: B954
+title: Responses mcp stream loop
+description: >-
+  Run streamed MCP tool execution and follow-up rounds using the split round state, tool executor and follow-up
+  planner. Use owned cancellation and the source iteration cap; synchronous SDK iteration later delegates to this
+  state machine. Keep MAX_MCP_TOOL_CALL_ROUNDS=5 and its warning plus forced text-only follow-up when the cap is
+  reached.
+
+
+  Implement crates/betterlite-core/src/api/responses_mcp_stream_loop.rs. Use ResponsesMcpStreamLoopInput and ResponsesMcpStreamLoopResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions tool_round_followup, streamed_tool_error, iteration_limit, client_cancel_tool_round
+  under api::responses_mcp_stream_loop::tests. Each named function drives production code and asserts its case result;
+  use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::ResponsesMcpStreamLoop in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the
+  re-export) and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_mcp_stream_loop: <typed
+  input>}; operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production
+  service and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values
+  and ordered diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming
+  route tasks.
+
+
+  Callable ownership: litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator.__anext__ (L436-L445);
+  litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator._anext_impl (L447-L515); litellm/responses/mcp/mcp_streaming_iterator.py:
+  MCPEnhancedStreamingIterator._generate_tool_execution_events (L731-L880); litellm/responses/mcp/mcp_streaming_iterator.py:
+  MCPEnhancedStreamingIterator._create_follow_up_iterator (L882-L951); litellm/responses/mcp/mcp_streaming_iterator.py:
+  MCPEnhancedStreamingIterator.__iter__ (L953-L954); litellm/responses/mcp/mcp_streaming_iterator.py: MCPEnhancedStreamingIterator.__next__
+  (L956-L974). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 239 owned nonblank/non-comment/non-docstring Python lines (251 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 259 implementation,
+  64 behavior tests, 48 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 491 total within the 500-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B932 (Responses create call), B950
+  (Responses mcp execute), B951 (Responses mcp followup), B953 (Responses mcp stream round), B1087 (Api boundaries),
+  B952 (Responses mcp events), B948 (Responses mcp selection), B949 (Responses mcp discovery). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_mcp_stream_loop.rs
+  - crates/betterlite-core/src/api/responses_mcp_stream_loop/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_mcp_stream_loop.rs
+  - tools/oracle/src/helpers/responses_mcp_stream_loop/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_mcp_stream_loop.py
+  - tools/oracle/helpers/responses_mcp_stream_loop/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_loop-*
+  - tools/oracle/cases/helpers/responses-mcp-stream-loop/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L436-L445
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L447-L515
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L731-L974
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'tool round followup: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-tool-round-followup
+  - oracle
+- text: 'streamed tool error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-streamed-tool-error
+  - oracle
+- text: 'iteration limit: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-iteration-limit
+  - oracle
+- text: 'client cancel tool round: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-client-cancel-tool-round
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_loop::/)
+      - test(/::replays_corpus$/)'
+  - id: case-tool-round-followup
+    why: the tool-round-followup behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_loop::tests::tool_round_followup($|::)/)'
+  - id: case-streamed-tool-error
+    why: the streamed-tool-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_loop::tests::streamed_tool_error($|::)/)'
+  - id: case-iteration-limit
+    why: the iteration-limit behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_loop::tests::iteration_limit($|::)/)'
+  - id: case-client-cancel-tool-round
+    why: the client-cancel-tool-round behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_stream_loop::tests::client_cancel_tool_round($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_mcp_stream_loop.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_loop-*)"
+      && grep -qE "^[[:space:]]+responses_mcp_stream_loop:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_stream_loop-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-stream-loop)"
+oracle_cases:
+- tools/oracle/cases/helpers/responses-mcp-stream-loop/tool-round-followup.yaml
+- tools/oracle/cases/helpers/responses-mcp-stream-loop/streamed-tool-error.yaml
+- tools/oracle/cases/helpers/responses-mcp-stream-loop/iteration-limit.yaml
+- tools/oracle/cases/helpers/responses-mcp-stream-loop/client-cancel-tool-round.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/mcp/mcp_streaming_iterator.py: B952 owns _output_items L38-L40, _function_call_id L43-L53,
+  _set_event_field L56-L58, create_mcp_list_tools_events L61-L177, create_mcp_call_events L180-L261.'
+- 'litellm/responses/mcp/mcp_streaming_iterator.py: B953 owns MCPEnhancedStreamingIterator.__init__ L276-L352, MCPEnhancedStreamingIterator._extract_mcp_headers_from_params
+  L354-L409, MCPEnhancedStreamingIterator._should_auto_execute_tools L411-L417, MCPEnhancedStreamingIterator._make_stream_error_event
+  L419-L431, MCPEnhancedStreamingIterator.__aiter__ L433-L434, MCPEnhancedStreamingIterator._handle_initial_response_phase
+  L517-L577, MCPEnhancedStreamingIterator._is_response_completed L579-L584, MCPEnhancedStreamingIterator._follow_up_pending
+  L586-L588, MCPEnhancedStreamingIterator._round_output_width L590-L592, MCPEnhancedStreamingIterator._absorb_round
+  L594-L606, MCPEnhancedStreamingIterator._compose_round_chunk L608-L653, MCPEnhancedStreamingIterator._process_base_iterator_chunk
+  L655-L685, MCPEnhancedStreamingIterator._create_initial_response_iterator L687-L727.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- mcp_streaming_iterator.py:929 emits the diagnostic 'MCP auto-execute hit MAX_MCP_TOOL_CALL_ROUNDS=%s; forcing
+  a text-only follow-up.'; retain its level and fallback instead of turning it into a hard error.
+- Within MCPEnhancedStreamingIterator._generate_tool_execution_events\'s not self.collected_response branch, preserve
+  return and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 500
+  max_new_expects: 1

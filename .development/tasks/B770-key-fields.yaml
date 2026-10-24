@@ -1,0 +1,362 @@
+id: B770
+title: Key request fields and policy projections
+description: >-
+  Define typed key management request/response and patch fields from the pinned endpoint types plus _types
+  declarations. Preserve absent/null/reset semantics, audit settings_updated_at, temporary budget validation,
+  key alias regex/uniqueness and rotation timestamp calculation. Custom key policy interfaces consume
+  the effective key after update, not an incomplete patch; B165 supplies Python execution later.
+
+
+  Build the production key_fields module in betterlite-server; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/key_settings_audit.py:
+  with_settings_updated_at (L7-L14; 7 source lines). litellm/proxy/management_endpoints/key_management_endpoints.py:
+  _UserRowLike.user_id (L182-L182; 1 source lines), _UserRowLike.user_email (L185-L185; 1 source lines),
+  _UserRowLike.user_alias (L188-L188; 1 source lines), _UserRowLike.model_dump (L190-L190; 1 source lines),
+  _UserRowLike.dict (L192-L192; 1 source lines), _KeyUpdateTx.litellm_verificationtoken (L237-L237; 1
+  source lines), _KeyUpdateTx.litellm_budgettable (L240-L240; 1 source lines), _ConfigTableActions.find_many
+  (L246-L246; 1 source lines), _ConfigTableActions.update (L248-L253; 6 source lines), _prisma_table (L256-L261;
+  6 source lines), _deleted_verification_token_table (L264-L267; 4 source lines), _deprecated_verification_token_table
+  (L270-L273; 4 source lines), _user_table (L276-L277; 2 source lines), _credentials_table (L280-L283;
+  4 source lines), _config_table (L286-L289; 4 source lines), _LegacyDumpable.dict (L466-L466; 1 source
+  lines), _legacy_model_dict (L469-L470; 2 source lines), _as_object_dict (L473-L474; 2 source lines),
+  _model_items (L477-L478; 2 source lines), _EnvVarsParam.param_value (L483-L483; 1 source lines), _env_vars_param_value
+  (L486-L487; 2 source lines). litellm/types/proxy/management_endpoints/key_management_endpoints.py: key_request_contracts
+  (L1-L155; 104 source lines). litellm/proxy/_types.py: KeyRequestBase (L1340-L1362; 23 source lines),
+  GenerateKeyRequest (L1376-L1396; 20 source lines), GenerateKeyResponse (L1399-L1438; 38 source lines),
+  UpdateKeyRequest (L1441-L1484; 37 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Add the key_fields operation under B856 Management::keys. Python calls only the owned MIT helper with
+  injected clock/cache/DB/network collaborators; it never calls a route or copies the expected algorithm.
+  Rust invokes the production module. Compare typed values, exception status/type/param/code, ordered
+  warnings and effects; exclude only random IDs and message text with a reason per pointer. Add a key-fields-*
+  seed to B171 helper_case, which already owns this decoder.
+
+
+  This task owns the outside-byte boundary key_fields::decode_key_request(&[u8]) -> Result<TypedValue,DecodeError>
+  for key management request JSON including absent/null patch fields. Production calls this decoder before
+  its typed policy functions; the cargo-fuzz target key_fields calls that same function. Seed valid, truncated,
+  malformed, duplicate-field and limit-boundary inputs and add key_fields::tests::replays_the_key_fields_corpus.
+  Reuse B002 limits for config and B009/B003 limits for HTTP; for a new otherwise unbounded JSON/string
+  decoder cap bytes at 1048576 and JSON depth at 64. Record a typed limit failure without panicking or
+  fetching URLs. B770 owns crates/betterlite-server/fuzz; create its manifest with this real decoder target
+  here.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 277 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  277 production, 136 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 45 decoder/fuzz
+  and 0 config lines, 553 changed lines estimated within a 575-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
+  native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso. Exercise the precise
+  changed setting/output branch and assert its configured status/error/side effects; do not add these
+  differing results to oracle equality cases.
+
+
+  Create crates/betterlite-server/fuzz/Cargo.toml and .gitignore exactly once here, with this task’s actual
+  decoder as its first target; no empty untargeted manifest is created earlier. Later betterlite-server
+  parser tasks depend directly on B770 and only register targets.
+scope:
+  paths:
+    - crates/betterlite-server/src/key_fields.rs
+    - crates/betterlite-server/src/key_fields/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/key_fields.rs
+    - tools/oracle/src/helpers/key_fields/**
+    - tools/oracle/helpers/key_fields.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/keys.rs
+    - tools/oracle/helpers/management/keys.py
+    - tools/oracle/cases/helpers/key-fields/**
+    - tools/oracle/fuzz/corpus/helper_case/key-fields-*
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/key_fields.rs
+    - crates/betterlite-server/fuzz/corpus/key_fields/**
+    - crates/betterlite-server/fuzz/.gitignore
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/key_management_endpoints.py#L1-L155
+    why: Own key_request_contracts; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/key_settings_audit.py#L1-L14
+    why: Pinned implementation and exact ownership boundary for key_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L182-L487
+    why: Pinned implementation and exact ownership boundary for key_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L530-L579
+    why: Pinned implementation and exact ownership boundary for key_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L7713-L7840
+    why: Pinned implementation and exact ownership boundary for key_fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1376-L1396
+    why: Own GenerateKeyRequest; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1441-L1484
+    why: Own UpdateKeyRequest; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1487-L1495
+    why: RegenerateKeyRequest request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/key_settings_audit.py#L7-L14
+    why: Own with_settings_updated_at; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L182-L182
+    why: Own _UserRowLike.user_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L185-L185
+    why: Own _UserRowLike.user_email; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L188-L188
+    why: Own _UserRowLike.user_alias; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L190-L190
+    why: Own _UserRowLike.model_dump; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L192-L192
+    why: Own _UserRowLike.dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L237-L237
+    why: Own _KeyUpdateTx.litellm_verificationtoken; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L240-L240
+    why: Own _KeyUpdateTx.litellm_budgettable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L246-L246
+    why: Own _ConfigTableActions.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L248-L253
+    why: Own _ConfigTableActions.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L256-L261
+    why: Own _prisma_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L264-L267
+    why: Own _deleted_verification_token_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L270-L273
+    why: Own _deprecated_verification_token_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L276-L277
+    why: Own _user_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L280-L283
+    why: Own _credentials_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L286-L289
+    why: Own _config_table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L466-L466
+    why: Own _LegacyDumpable.dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L469-L470
+    why: Own _legacy_model_dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L473-L474
+    why: Own _as_object_dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L477-L478
+    why: Own _model_items; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L483-L483
+    why: Own _EnvVarsParam.param_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L486-L487
+    why: Own _env_vars_param_value; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1340-L1362
+    why: Own KeyRequestBase; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1399-L1438
+    why: Own GenerateKeyResponse; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1340-L1430
+    why: KeyRequestBase, GenerateKeyRequest and GenerateKeyResponse wire contracts.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: empty_patch_rejected,
+      temporary_budget_expiry.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+  - text: The production decode_key_request decoder is used by the service and its fuzz target and rejects
+      malformed/oversize input without panic.
+    proof:
+      - behavior-tests
+      - parser-corpus
+  - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava,
+      native_new_otherwise_unbounded_byte_decoders_reject_over_1048576_bytes_or_jso.'
+    proof:
+      - behavior-tests
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^key_fields::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/key_fields.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-fields-*")"
+        && grep -rlq "key_fields" tools/oracle/fuzz/corpus/helper_case/key-fields-* && cargo nextest run
+        --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: parser-corpus
+      why: The named production decoder target, added corpus or replay is missing or fails.
+      run: test -f crates/betterlite-server/fuzz/fuzz_targets/key_fields.rs && grep -q "key_fields" crates/betterlite-server/fuzz/Cargo.toml
+        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/key_fields)"
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_key_fields_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/key-fields/empty-patch-rejected.yaml
+  - tools/oracle/cases/helpers/key-fields/temporary-budget-expiry.yaml
+deviations:
+  - what: License checks and paid-tier quotas are absent; the MIT behavior is available without a premium_user
+      entitlement.
+    why: README Decisions specifies no paid tier and no user/team cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/key_management_endpoints.py#L1-L155
+  - what: New otherwise unbounded byte decoders reject over 1048576 bytes or JSON depth 64, respecting
+      smaller inherited limits.
+    why: Bound the specific outside-byte decoder named in this task; typed helpers inherit no artificial
+      parser behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/key_settings_audit.py#L7-L14
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/_types.py: B767 owns CreateJWTKeyMappingRequest (L4908-L4914), UpdateJWTKeyMappingRequest
+    (L4917-L4923), DeleteJWTKeyMappingRequest (L4926-L4927), JWTKeyMappingResponse (L4930-L4940).'
+  - 'litellm/proxy/_types.py: B866 owns LiteLLMRoutes.openai_routes (L339-L490), LiteLLMRoutes.anthropic_routes
+    (L551-L561), LiteLLMRoutes.llm_api_routes (L648-L659).'
+  - 'litellm/proxy/_types.py: B867 owns LiteLLMRoutes.mcp_management_routes (L583-L587), LiteLLMRoutes.agent_management_routes
+    (L606-L612), LiteLLMRoutes.master_key_only_routes (L688-L692), LiteLLMRoutes.key_management_routes
+    (L694-L719), LiteLLMRoutes.team_service_account_key_routes (L721-L724), LiteLLMRoutes.management_routes
+    (L726-L782), LiteLLMRoutes.spend_tracking_routes (L784-L805), LiteLLMRoutes.global_spend_tracking_routes
+    (L807-L821), LiteLLMRoutes.internal_user_routes (L885-L913), LiteLLMRoutes.internal_user_view_only_routes
+    (L915-L929), LiteLLMRoutes.org_admin_only_routes (L1024-L1036), LiteLLMRoutes.admin_viewer_routes
+    (L1050-L1126), LiteLLMRoutes.org_admin_allowed_routes (L1129-L1129).'
+  - 'litellm/proxy/_types.py: B868 owns LiteLLMRoutes.openai_route_names (L329-L338), LiteLLMRoutes.mapped_pass_through_routes
+    (L492-L521), LiteLLMRoutes.passthrough_routes_wildcard (L527-L527), LiteLLMRoutes.litellm_native_routes
+    (L529-L549), LiteLLMRoutes.mcp_inference_routes (L564-L580), LiteLLMRoutes.mcp_routes (L591-L591),
+    LiteLLMRoutes.agent_inference_routes (L594-L601), LiteLLMRoutes.agent_routes (L616-L616), LiteLLMRoutes.google_routes
+    (L618-L636), LiteLLMRoutes.apply_guardrail_routes (L638-L640), LiteLLMRoutes.model_info_routes (L642-L646),
+    LiteLLMRoutes.info_routes (L660-L685), LiteLLMRoutes.public_routes (L823-L844), LiteLLMRoutes.ui_routes
+    (L849-L871), LiteLLMRoutes.compliance_check_routes (L875-L878), LiteLLMRoutes.self_managed_routes
+    (L931-L1019).'
+  - 'litellm/proxy/_types.py: B869 owns LiteLLM_JWTAuth (L5331-L5576), JWTLiteLLMRoleMap (L5198-L5200),
+    JWTRoutingOverride (L5211-L5232), UnregisteredJWTClientBehavior (L5235-L5251), JWTIssuerConfig (L5254-L5325).'
+  - 'litellm/proxy/_types.py: B1231 owns NewTeamRequest (L2164-L2210), UpdateTeamRequest (L2219-L2281).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
+    generate_service_account_key_fn (L2159-L2322).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B771 owns _check_custom_key_allowed
+    (L490-L503), _is_team_key (L506-L507), _is_allowed_to_make_key_request (L582-L605), _team_key_operation_team_member_check
+    (L608-L651), _key_generation_required_param_check (L654-L665), _team_key_generation_check (L668-L703),
+    _personal_key_membership_check (L706-L719), _object_permission_to_dict (L722-L727), _personal_key_generation_check
+    (L730-L755), key_generation_check (L758-L800), raise_on_invalid_key_logging_config (L803-L811), common_key_access_checks
+    (L814-L846), validate_team_id_used_in_service_account_request (L1074-L1102), _check_model_access_group
+    (L4494-L4513).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B772 owns _enforce_upperbound_key_params
+    (L1110-L1169), _check_key_model_specific_limits (L1565-L1633), _check_key_rpm_tpm_limits (L1636-L1671),
+    check_team_key_model_specific_limits (L1674-L1696), check_team_key_rpm_tpm_limits (L1699-L1713), _check_team_key_limits
+    (L1716-L1749), _check_project_key_limits (L1757-L1804), check_org_key_model_specific_limits (L1807-L1837),
+    check_org_key_rpm_tpm_limits (L1840-L1862), _validate_caller_can_assign_key_org (L1865-L1894), _check_org_key_limits
+    (L1897-L1937).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B773 owns _common_key_generation_helper
+    (L1172-L1562).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B774 owns _with_validated_object_permission
+    (L2914-L2936), _validate_mcp_servers_for_key_update (L2939-L2976), _acting_as_team_admin_for_key_update
+    (L3026-L3061), _validate_update_key_data (L3064-L3352).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B775 owns update_key_fn (L3357-L3617).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B776 owns bulk_update_keys (L3627-L3783),
+    _build_failed_team_key_update (L3786-L3812), bulk_update_team_keys (L3822-L4000).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B777 owns delete_key_fn (L4071-L4175),
+    can_modify_verification_token (L4895-L4963), delete_verification_tokens (L4966-L5093), _transform_verification_tokens_to_deleted_records
+    (L5096-L5149), _save_deleted_verification_token_records (L5152-L5168), _persist_deleted_verification_tokens
+    (L5171-L5188), delete_key_aliases (L5191-L5208).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B778 owns _build_model_max_budget_usage
+    (L4178-L4188), _window_max_budget (L4191-L4199), _budget_window_usage (L4202-L4228), _build_budget_limits_usage
+    (L4231-L4245), info_key_fn_v2 (L4254-L4343), info_key_fn (L4348-L4479), _find_deleted_key_info (L4482-L4491),
+    _can_user_query_key_info (L7606-L7627).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B780 owns _check_proxy_or_team_admin_for_key
+    (L5989-L6015), _validate_reset_spend_value (L6018-L6053), _set_spend_counter_with_floor_and_broadcast
+    (L6056-L6087), _budget_limit_windows (L6090-L6104), _advance_one_key_budget_window (L6107-L6131),
+    _reset_key_budget_windows (L6134-L6172), reset_key_spend_fn (L6181-L6278).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B781 owns validate_key_list_check
+    (L6281-L6376), _fetch_user_team_objects (L6379-L6394), _get_admin_team_ids_from_objects (L6397-L6402),
+    _get_team_ids_with_key_list_permission_from_objects (L6405-L6422), _get_member_team_ids_from_objects
+    (L6425-L6437), _apply_non_admin_alias_scope (L6687-L6718).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B782 owns list_keys (L6492-L6684),
+    key_aliases (L6727-L6840).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B783 owns _check_key_admin_access
+    (L7237-L7285), block_key (L7290-L7399), unblock_key (L7404-L7513), key_health (L7523-L7603), test_key_logging
+    (L7630-L7703).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B785 owns _rotate_master_key (L5211-L5365),
+    _require_proxy_admin (L5368-L5375), migrate_encryption_endpoint (L5383-L5415), check_encryption_endpoint
+    (L5423-L5445).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B800 owns _get_user_in_team (L510-L517),
+    _get_caller_team_role (L520-L527).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B892 owns _validate_caller_can_change_key_ownership
+    (L873-L916), _check_allowed_routes_caller_permission (L919-L959), _is_safe_preset_route_transition
+    (L965-L981), _enforce_allowed_routes_update_permission (L984-L998), _check_permissions_caller_permission
+    (L1001-L1020), _check_budget_limits_delegation_ceiling (L1023-L1071).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B893 owns metadata_json_with_limits
+    (L4519-L4547), generate_key_helper_fn (L4550-L4854).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B894 owns prepare_metadata_fields
+    (L2325-L2373), _validate_soft_budget_value (L2376-L2381), _update_key_soft_budget (L2384-L2404), _apply_soft_budget_update
+    (L2407-L2423), _update_key_row_with_soft_budget (L2426-L2457), prepare_key_update_data (L2460-L2563),
+    _handle_update_object_permission (L2566-L2586), is_different_team (L2589-L2594), _validate_max_budget
+    (L2597-L2611), _resolve_token_to_update (L2685-L2695), _require_prisma_client (L2979-L2982), _requested_end_user_budget_id
+    (L2985-L2991), _general_settings (L3018-L3023).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B895 owns _check_regenerate_guardrail_opt_out
+    (L5701-L5713), regenerate_key_fn (L5727-L5986).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B896 owns get_new_token (L5448-L5467),
+    _insert_deprecated_key (L5470-L5528), _execute_virtual_key_regeneration (L5531-L5698).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B897 owns _derive_key_status (L6476-L6483),
+    _validate_sort_params (L6843-L6872), _build_expires_where_clause (L6875-L6878), _not_blocked_where_clause
+    (L6881-L6882), _build_status_where_clause (L6885-L6890), _build_key_search_where (L6893-L6900), _build_key_filter_conditions
+    (L6903-L7037), _list_key_helper (L7040-L7222), _get_condition_to_filter_out_ui_session_tokens (L7225-L7234).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1219 owns _get_and_validate_existing_key
+    (L2614-L2682), _validate_end_user_budget_id_change (L2994-L3012), validate_key_team_change (L4003-L4066).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1220 owns _process_single_key_update
+    (L2698-L2911).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B1224 owns _custom_key_generate_hook
+    (L298-L301), _custom_key_update_hook (L304-L307), _custom_key_policy_hook (L310-L313), _enforce_custom_key_update_policy
+    (L316-L329), _enforce_custom_key_policy (L332-L345), _effective_key_after_update (L366-L375), _update_policy_request
+    (L378-L391), _generate_budget_windows (L394-L407), _effective_key_for_generate (L410-L444), _regenerate_request_as_update_request
+    (L450-L462), _calculate_key_rotation_time (L530-L542), _set_key_rotation_fields (L545-L579), parse_key_alias_pattern
+    (L7713-L7724), _key_alias_rule (L7727-L7736), _validate_key_alias_format (L7739-L7773), _enforce_unique_key_alias
+    (L7776-L7806), validate_model_max_budget (L7809-L7840), _decode_json_string_column (L355-L358), _verification_token_from_row
+    (L361-L363), handle_key_type (L852-L867).'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::_team_key_deletion_check: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_admin_team_ids: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/management_endpoints/key_management_endpoints.py::get_member_team_ids: no production
+    caller at the pinned commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/proxy/_types.py: B124 owns the remaining functions SupportedDBObjectType.__str__ (L142-L143),
+    LitellmUserRoles.__str__ (L191-L192), LitellmUserRoles.values (L194-L195), LitellmUserRoles.description
+    (L197-L210), LitellmUserRoles.ui_label (L212-L225), LitellmUserRoles.is_internal_user_role (L227-L233),
+    hash_token (L278-L284), LiteLLMPromptInjectionParams.check_llm_api_params (L1144-L1155), ModelInfo.set_model_info
+    (L1226-L1241), ModelParams.set_model_info (L1260-L1265), GenerateRequestBase.check_max_budget (L1327-L1332),
+    ResetSpendRequest.reject_bool_reset_to (L1501-L1509), KeyRequest.validate_at_least_one (L1516-L1521),
+    _dcr_bridge_auth_type_error (L1554-L1559), _per_server_oauth_discovery_error (L1562-L1566), is_per_server_oauth_discovery_eligible
+    (L1569-L1572), _reject_unsupported_per_server_oauth_discovery (L1575-L1588), _validate_mcp_transport_fields
+    (L1591-L1612), NewMCPServerRequest.validate_transport_fields (L1678-L1682), NewMCPServerRequest.validate_credentials_requirements
+    (L1684-L1693), NewMCPServerRequest.validate_dcr_bridge_auth_type (L1695-L1703), NewMCPServerRequest.validate_per_server_oauth_discovery_auth_type
+    (L1705-L1709), UpdateMCPServerRequest.validate_transport_fields (L1761-L1765), UpdateMCPServerRequest.validate_dcr_bridge_auth_type
+    (L1767-L1780), UpdateMCPServerRequest.validate_per_server_oauth_discovery_auth_type (L1782-L1786),
+    NewUserRequest.password_not_supported (L1959-L1967), UpdateUserRequest.check_user_info (L2013-L2018),
+    NewCustomerRequest.check_user_info (L2109-L2115), DeleteTeamRequest.distinct_team_ids (L2314-L2318),
+    AddTeamCallback.validate_callback_vars (L2338-L2352), TeamCallbackMetadata.validate_callback_vars
+    (L2374-L2402), CoordinationRedisParams.has_connection_target (L2661-L2662), LiteLLM_VerificationTokenView.__init__
+    (L3331-L3353), UserAPIKeyAuth.check_api_key (L3445-L3473), UserAPIKeyAuth._safe_hash_litellm_api_key
+    (L3475-L3492), UserAPIKeyAuth.get_litellm_internal_health_check_user_api_key_auth (L3494-L3508), UserAPIKeyAuth.get_litellm_cli_user_api_key_auth
+    (L3510-L3524), UserAPIKeyAuth.get_litellm_internal_jobs_user_api_key_auth (L3526-L3542), UserAPIKeyAuth.is_team_service_account
+    (L3544-L3551), user_api_key_has_admin_view (L3554-L3564), LiteLLM_OrganizationTableUpdate.set_model_info
+    (L3621-L3631), NewProjectRequest.set_model_info (L3714-L3726), UpdateProjectRequest.set_model_info
+    (L3749-L3761), LiteLLM_AuditLogs.cast_changed_by_to_str (L3826-L3831), LiteLLM_AuditLogs.mask_api_keys
+    (L3833-L3861), ProxyException.__init__ (L4328-L4359), ProxyException.to_dict (L4361-L4371), ModelAccessDeniedProxyException.__init__
+    (L4375-L4384), ModelAccessDeniedProxyException.sanitized_internal_message (L4386-L4387), ProxyErrorTypes.get_model_access_error_type_for_object
+    (L4527-L4545), ProxyErrorTypes.get_vector_store_access_error_type_for_object (L4547-L4559), MemberAddRequest.__init__
+    (L4611-L4624), OrgMemberAddRequest.__init__ (L4630-L4646), MemberDeleteRequest.check_user_info (L4664-L4669),
+    TeamMemberUpdateRequest.validate_temp_budget (L4738-L4743), OrganizationMemberUpdateRequest.validate_role
+    (L4792-L4796), SpecialHeaders.litellm_credential_header_names (L4956-L4976), CostEstimateRequest.validate_token_subsets
+    (L5766-L5772).'
+pitfalls:
+  - A null patch, an omitted field and a reset operation have separate key semantics.
+budget:
+  max_changed_lines: 575
+  max_new_expects: 0
+review_level: security

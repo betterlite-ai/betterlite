@@ -1,0 +1,312 @@
+id: B700
+title: Native Postgres access and transaction test support
+description: >-
+  Create betterlite-db PostgresStore, DbSession, DbError and typed RowCodec, with SQLx Postgres bound
+  parameters and explicit transactions. Future repositories receive DbSession and injected StoredCipher;
+  B061 supplies encryption. Expose typed table operations that the production call sites actually use,
+  without a generic JSON query engine. Empty array filters never query and duplicate IDs are removed before
+  binding one ANY($1) Postgres array.
+
+
+  Build the production postgres_store module in betterlite-db; reuse the typed dependencies listed in
+  the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
+  tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/base_repository.py:
+  SupportsModelDump.model_dump (L19-L19; 1 source lines), SupportsDict.dict (L24-L24; 1 source lines),
+  record_to_dict (L30-L38; 9 source lines), BaseRepository.__init__ (L44-L45; 2 source lines), BaseRepository.prisma_client
+  (L48-L51; 4 source lines), BaseRepository.table (L55-L57; 3 source lines), BaseRepository.model_class
+  (L61-L63; 3 source lines), BaseRepository._to_model (L65-L69; 5 source lines), BaseRepository._to_model_list
+  (L71-L73; 3 source lines), BaseRepository.find_by_id (L75-L78; 4 source lines), BaseRepository.find_many
+  (L80-L94; 15 source lines), BaseRepository.find_many_in (L96-L98; 3 source lines), BaseRepository.create
+  (L100-L105; 6 source lines), BaseRepository.update (L107-L110; 4 source lines), BaseRepository.delete
+  (L112-L115; 4 source lines), BaseRepository.count (L117-L119; 3 source lines), BaseRepository.exists
+  (L121-L124; 4 source lines), is_unique_violation (L127-L134; 8 source lines). litellm/repositories/prisma_protocols.py:
+  DatabaseClient.db (L17-L17; 1 source lines), TableActions.find_unique (L28-L30; 3 source lines), TableActions.find_first
+  (L32-L40; 9 source lines), TableActions.find_many (L42-L51; 10 source lines), TableActions.create (L53-L53;
+  1 source lines), TableActions.create_many (L55-L57; 3 source lines), TableActions.upsert (L59-L64; 6
+  source lines), TableActions.update (L66-L71; 6 source lines), TableActions.update_many (L73-L73; 1 source
+  lines), TableActions.delete (L75-L77; 3 source lines), TableActions.delete_many (L79-L79; 1 source lines),
+  TableActions.count (L81-L88; 8 source lines), TableActions.group_by (L90-L104; 15 source lines), PrismaRecord.dict
+  (L108-L108; 1 source lines), ReadOnlyTable.find_many (L112-L112; 1 source lines), SpendLinkedTable.find_many
+  (L116-L116; 1 source lines), SpendLinkedTable.update_many (L118-L118; 1 source lines), FindManyTable.find_many
+  (L122-L122; 1 source lines), CountTable.count (L126-L126; 1 source lines), UpdateManyTable.update_many
+  (L130-L130; 1 source lines), DeleteManyTable.delete_many (L134-L134; 1 source lines), BatchTable.update
+  (L138-L138; 1 source lines), BatchTable.update_many (L140-L140; 1 source lines), PrismaBatch.litellm_verificationtoken
+  (L145-L145; 1 source lines), PrismaBatch.litellm_usertable (L148-L148; 1 source lines), PrismaBatch.litellm_teamtable
+  (L151-L151; 1 source lines), PrismaBatch.litellm_budgettable (L154-L154; 1 source lines), PrismaBatch.litellm_teammembership
+  (L157-L157; 1 source lines), PrismaBatch.litellm_organizationtable (L160-L160; 1 source lines), PrismaBatch.litellm_tagtable
+  (L163-L163; 1 source lines), PrismaBatch.litellm_endusertable (L166-L166; 1 source lines), PrismaBatch.litellm_modelaccessgroupbudgettable
+  (L169-L169; 1 source lines), PrismaBatch.litellm_projecttable (L172-L172; 1 source lines), PrismaBatch.commit
+  (L174-L174; 1 source lines). litellm/repositories/chunked_in.py: find_many_in (L92-L102; 11 source lines).
+  litellm/models/base.py: DomainModel.from_db_record (L24-L34; 11 source lines), DomainModel.to_db_dict
+  (L36-L38; 3 source lines).
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 195 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  195 production, 157 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 382 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  Native-only deviation tests in this production module: native_a_single_any_1_array_parameter_replaces_prisma_chunked_in_and_its_3276.
+  Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
+  do not add these differing results to oracle equality cases.
+scope:
+  paths:
+    - crates/betterlite-db/src/postgres_store.rs
+    - crates/betterlite-db/src/postgres_store/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - Cargo.toml
+    - deny.toml
+    - crates/betterlite-db/src/postgres_store/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/base_client.py#L1-L44
+    why: Pinned implementation and exact ownership boundary for postgres_store.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L1-L134
+    why: Pinned implementation and exact ownership boundary for postgres_store.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L1-L174
+    why: Pinned implementation and exact ownership boundary for postgres_store.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/chunked_in.py#L1-L145
+    why: Pinned implementation and exact ownership boundary for postgres_store.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/base.py#L1-L38
+    why: Pinned implementation and exact ownership boundary for postgres_store.
+  - url: https://docs.rs/sqlx/latest/sqlx/postgres/index.html
+    why: Native Postgres pool, typed parameters and SQLSTATE access.
+  - url: https://docs.rs/tokio-postgres/latest/tokio_postgres/
+    why: Compare the alternative native driver before adding dependencies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L19-L19
+    why: Own SupportsModelDump.model_dump; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L24-L24
+    why: Own SupportsDict.dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L30-L38
+    why: Own record_to_dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L44-L45
+    why: Own BaseRepository.__init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L48-L51
+    why: Own BaseRepository.prisma_client; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L55-L57
+    why: Own BaseRepository.table; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L61-L63
+    why: Own BaseRepository.model_class; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L65-L69
+    why: Own BaseRepository._to_model; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L71-L73
+    why: Own BaseRepository._to_model_list; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L75-L78
+    why: Own BaseRepository.find_by_id; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L80-L94
+    why: Own BaseRepository.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L96-L98
+    why: Own BaseRepository.find_many_in; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L100-L105
+    why: Own BaseRepository.create; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L107-L110
+    why: Own BaseRepository.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L112-L115
+    why: Own BaseRepository.delete; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L117-L119
+    why: Own BaseRepository.count; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L121-L124
+    why: Own BaseRepository.exists; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/base_repository.py#L127-L134
+    why: Own is_unique_violation; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L17-L17
+    why: Own DatabaseClient.db; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L28-L30
+    why: Own TableActions.find_unique; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L32-L40
+    why: Own TableActions.find_first; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L42-L51
+    why: Own TableActions.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L53-L53
+    why: Own TableActions.create; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L55-L57
+    why: Own TableActions.create_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L59-L64
+    why: Own TableActions.upsert; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L66-L71
+    why: Own TableActions.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L73-L73
+    why: Own TableActions.update_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L75-L77
+    why: Own TableActions.delete; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L79-L79
+    why: Own TableActions.delete_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L81-L88
+    why: Own TableActions.count; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L90-L104
+    why: Own TableActions.group_by; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L108-L108
+    why: Own PrismaRecord.dict; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L112-L112
+    why: Own ReadOnlyTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L116-L116
+    why: Own SpendLinkedTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L118-L118
+    why: Own SpendLinkedTable.update_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L122-L122
+    why: Own FindManyTable.find_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L126-L126
+    why: Own CountTable.count; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L130-L130
+    why: Own UpdateManyTable.update_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L134-L134
+    why: Own DeleteManyTable.delete_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L138-L138
+    why: Own BatchTable.update; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L140-L140
+    why: Own BatchTable.update_many; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L145-L145
+    why: Own PrismaBatch.litellm_verificationtoken; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L148-L148
+    why: Own PrismaBatch.litellm_usertable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L151-L151
+    why: Own PrismaBatch.litellm_teamtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L154-L154
+    why: Own PrismaBatch.litellm_budgettable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L157-L157
+    why: Own PrismaBatch.litellm_teammembership; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L160-L160
+    why: Own PrismaBatch.litellm_organizationtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L163-L163
+    why: Own PrismaBatch.litellm_tagtable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L166-L166
+    why: Own PrismaBatch.litellm_endusertable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L169-L169
+    why: Own PrismaBatch.litellm_modelaccessgroupbudgettable; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L172-L172
+    why: Own PrismaBatch.litellm_projecttable; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/prisma_protocols.py#L174-L174
+    why: Own PrismaBatch.commit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/chunked_in.py#L92-L102
+    why: Own find_many_in; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/base.py#L24-L34
+    why: Own DomainModel.from_db_record; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/base.py#L36-L38
+    why: Own DomainModel.to_db_dict; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: bound_parameter_injection,
+      transaction_rollback, empty_ids_no_query, array_parameter_deduplicates, unique_violation, chunked_in_empty,
+      array_deduplication, postgres_pinned_rows, postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: 'The recorded deviations are covered by native behavior tests: native_a_single_any_1_array_parameter_replaces_prisma_chunked_in_and_its_3276.'
+    proof:
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^postgres_store::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/postgres_store::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/postgres_store::tests::postgres_failure_effects$/)'
+oracle_cases: []
+deviations:
+  - what: A single = ANY($1) array parameter replaces Prisma chunked_in and its 32767-parameter splitting;
+      empty input avoids a query and IDs remain deduplicated.
+    why: SQLx binds the array as one parameter; reconstructing Prisma query dictionaries serves no native
+      caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/chunked_in.py#L1-L145
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/db/base_client.py::CustomDB.__init__: no caller at the pin; CustomDB only has the unused
+    DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.get_data: no caller at the pin; CustomDB only has the unused
+    DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.insert_data: no caller at the pin; CustomDB only has the
+    unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.update_data: no caller at the pin; CustomDB only has the
+    unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.delete_data: no caller at the pin; CustomDB only has the
+    unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.connect: no caller at the pin; CustomDB only has the unused
+    DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.disconnect: no caller at the pin; CustomDB only has the
+    unused DynamoDBWrapper subclass.'
+  - 'litellm/repositories/chunked_in.py::_as_clauses: Prisma-only nested-filter/chunk construction is
+    replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_logical_clauses: Prisma-only nested-filter/chunk construction
+    is replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_filters_field: Prisma-only nested-filter/chunk construction
+    is replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_chunk_filter: Prisma-only nested-filter/chunk construction is
+    replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_each_chunk: Prisma-only nested-filter/chunk construction is
+    replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::count_in: no production caller at the pinned commit; repository-wide
+    identifier search finds only this definition.'
+  - 'litellm/repositories/chunked_in.py::update_many_in: no production caller at the pinned commit; repository-wide
+    identifier search finds only this definition.'
+  - 'litellm/repositories/chunked_in.py::delete_many_in: no production caller at the pinned commit; repository-wide
+    identifier search finds only this definition.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.__init__ (L9-L10): no caller at the pin; CustomDB only
+    has the unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.get_data (L12-L15): no caller at the pin; CustomDB only
+    has the unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.insert_data (L17-L20): no caller at the pin; CustomDB only
+    has the unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.update_data (L22-L25): no caller at the pin; CustomDB only
+    has the unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.delete_data (L27-L30): no caller at the pin; CustomDB only
+    has the unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.connect (L32-L37): no caller at the pin; CustomDB only
+    has the unused DynamoDBWrapper subclass.'
+  - 'litellm/proxy/db/base_client.py::CustomDB.disconnect (L39-L44): no caller at the pin; CustomDB only
+    has the unused DynamoDBWrapper subclass.'
+  - 'litellm/repositories/chunked_in.py::_as_clauses (L41-L46): Prisma-only nested-filter/chunk construction
+    is replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_logical_clauses (L49-L54): Prisma-only nested-filter/chunk construction
+    is replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_filters_field (L57-L66): Prisma-only nested-filter/chunk construction
+    is replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_chunk_filter (L69-L73): Prisma-only nested-filter/chunk construction
+    is replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::_each_chunk (L76-L89): Prisma-only nested-filter/chunk construction
+    is replaced by a native bound array.'
+  - 'litellm/repositories/chunked_in.py::count_in (L105-L113): no production caller at the pinned commit;
+    repository-wide identifier search finds only this definition.'
+  - 'litellm/repositories/chunked_in.py::update_many_in (L116-L133): no production caller at the pinned
+    commit; repository-wide identifier search finds only this definition.'
+  - 'litellm/repositories/chunked_in.py::delete_many_in (L136-L145): no production caller at the pinned
+    commit; repository-wide identifier search finds only this definition.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+  - 'litellm/proxy/db/dynamo_db.py: DynamoDBWrapper.__init__ (L17-L39) and set_env_vars_based_on_arn (L41-L72)
+    have no production caller at the pin; the deprecated CustomDB subclass is not implemented.'
+pitfalls:
+  - BaseRepository only forwards dictionaries to Prisma, so bound SQL and rollback are Rust/Postgres tests,
+    not Python equality cases.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

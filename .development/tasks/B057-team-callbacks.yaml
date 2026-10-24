@@ -1,0 +1,118 @@
+id: B057
+title: Team callback persistence and logging controls
+description: >-
+  Implement team callback add/delete/get and disable_logging with B189/B246 callback validation and typed
+  callback configurations. Preserve secret redaction, team admin policy, audit event projection and update
+  cache refresh. Credentials use B061 encryption at rest; callback execution remains the logging pipeline.
+
+
+  Build the production team_callbacks module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_callback_endpoints.py:
+  add_team_callbacks (L258-L432; 134 source lines), delete_team_callback (L442-L577; 105 source lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /team/{team_id:path}/callback -> add_team_callbacks;
+  DELETE /team/{team_id:path}/callback/{callback_name} -> delete_team_callback. For each route send a
+  typed successful request, an invalid or missing target, and a caller lacking that route permission through
+  B001 HttpCase against the running pinned MIT proxy and betterlite. Public login/session routes instead
+  prove bad credentials or invalid/expired codes. Compare status, response model including null/absent
+  fields, error type/param/code, content-type, redirect/cookie headers and litellm-changed-by where read.
+  Do not reduce endpoint checks to direct helper invocations. handle_exception_on_proxy controls management
+  error mapping; keep source partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 239 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  239 production, 136 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 440 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
+  exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
+  route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_callbacks.rs
+    - crates/betterlite-server/src/team_callbacks/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/team-callbacks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L1-L815
+    why: Pinned implementation and exact ownership boundary for team_callbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2333-L2352
+    why: AddTeamCallback request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2367-L2402
+    why: TeamCallbackMetadata request/response fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L258-L432
+    why: Own add_team_callbacks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L442-L577
+    why: Own delete_team_callback; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: add_callback, remove_callback.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_callbacks::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/team-callbacks/post--team-team-id-path-callback-success.yaml
+  - tools/oracle/cases/management/team-callbacks/post--team-team-id-path-callback-invalid-target.yaml
+  - tools/oracle/cases/management/team-callbacks/post--team-team-id-path-callback-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-callbacks/delete--team-team-id-path-callback-callback-name-success.yaml
+  - tools/oracle/cases/management/team-callbacks/delete--team-team-id-path-callback-callback-name-invalid-target.yaml
+  - tools/oracle/cases/management/team-callbacks/delete--team-team-id-path-callback-callback-name-unauthorized-caller.yaml
+  - tools/oracle/cases/management/team-callbacks/add-callback.yaml
+  - tools/oracle/cases/management/team-callbacks/remove-callback.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B1210 owns _callback_config_error
+    (L59-L60), _validate_team_callback (L63-L66), _redact_callback_secrets (L69-L92), _mask_sensitive_callback_vars
+    (L95-L118), _resolve_team_callbacks (L121-L161), _log_audit_task_exception (L164-L176), _emit_team_callback_audit_log
+    (L179-L225), _callback_error (L228-L233), _unknown_team_error (L236-L249).'
+  - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B1211 owns disable_team_logging (L586-L716),
+    get_team_callbacks (L725-L815).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Preserve secret redaction, team admin policy, audit event projection and update cache refresh.
+budget:
+  max_changed_lines: 450
+  max_new_expects: 0
+review_level: security

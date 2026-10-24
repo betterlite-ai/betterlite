@@ -1,0 +1,186 @@
+id: B980
+title: Messages stream restamp
+description: >-
+  Restamp native message_start models across chunk boundaries and persist/replay cached Anthropic event streams
+  using B125. Keep ping filtering and closed-block flushing source-compatible, and preserve served model metadata
+  without buffering the whole live stream.
+
+
+  Implement crates/betterlite-core/src/api/messages_stream_restamp.rs. Use MessagesStreamRestampInput and MessagesStreamRestampResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions split_message_start_model, ping_frame, cache_stream_replay, partial_final_frame_flush,
+  cache_write_failure_warning under api::messages_stream_restamp::tests. Each named function drives production code
+  and asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::MessagesStreamRestamp in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_stream_restamp: <typed input>};
+  operation is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service
+  and Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/proxy/anthropic_endpoints/streaming_model_restamp.py: _restamped_event (L27-L33);
+  litellm/proxy/anthropic_endpoints/streaming_model_restamp.py: _restamped_data_line (L36-L51); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py:
+  _restamped_frame (L54-L59); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py: restamp_anthropic_stream_chunk_model
+  (L62-L87); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py: _is_ping_frame (L90-L91); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py:
+  AnthropicStreamModelRestamper.__init__ (L107-L110); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py:
+  AnthropicStreamModelRestamper.process (L112-L122); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py:
+  AnthropicStreamModelRestamper.flush (L124-L131); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py:
+  AnthropicStreamModelRestamper._process_encoded (L133-L149); litellm/proxy/anthropic_endpoints/streaming_model_restamp.py:
+  AnthropicStreamModelRestamper._restamped_closed_block (L151-L174); litellm/llms/anthropic/pass_through/messages/response_cache.py:
+  _decode (L30-L31); litellm/llms/anthropic/pass_through/messages/response_cache.py: _split_sse_events (L34-L35);
+  litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.__init__ (L39-L50);
+  litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.has_buffered_provider_output
+  (L53-L54); litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.chunks
+  (L57-L60); litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.messages
+  (L63-L66); litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.model
+  (L69-L72); litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.__aiter__
+  (L74-L75); litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.__anext__
+  (L77-L84); litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter.aclose
+  (L86-L87); litellm/llms/anthropic/pass_through/messages/response_cache.py: AnthropicMessagesStreamCacheWriter._persist
+  (L89-L125); litellm/llms/anthropic/pass_through/messages/response_cache.py: CachedAnthropicMessagesStreamIterator.__init__
+  (L129-L141); litellm/llms/anthropic/pass_through/messages/response_cache.py: CachedAnthropicMessagesStreamIterator.__aiter__
+  (L143-L144); litellm/llms/anthropic/pass_through/messages/response_cache.py: CachedAnthropicMessagesStreamIterator.__anext__
+  (L146-L155); litellm/llms/anthropic/pass_through/messages/response_cache.py: get_cached_stream_events (L158-L162);
+  litellm/llms/anthropic/pass_through/messages/response_cache.py: convert_cached_anthropic_messages_result (L165-L177).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 272 owned nonblank/non-comment/non-docstring Python lines (294 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 292 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 0 config tests/seeds and
+  30 wiring; 542 total within the 550-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B125 (Response caching core, in-memory and disk caches, cache API), B171 (Direct helper
+  oracle and URL path encoding), B978 (Messages sse events), B1087 (Api boundaries), B002 (Load LiteLLM config.yaml
+  into typed config). These are callable/type/config owners, not provider-family umbrellas; the external B500-B859
+  ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/messages_stream_restamp.rs
+  - crates/betterlite-core/src/api/messages_stream_restamp/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/messages_stream_restamp.rs
+  - tools/oracle/src/helpers/messages_stream_restamp/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_stream_restamp.py
+  - tools/oracle/helpers/messages_stream_restamp/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_stream_restamp-*
+  - tools/oracle/cases/helpers/messages-stream-restamp/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L1-L174
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/response_cache.py#L1-L177
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'split message start model: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-split-message-start-model
+  - oracle
+- text: 'ping frame: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-ping-frame
+  - oracle
+- text: 'cache stream replay: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-cache-stream-replay
+  - oracle
+- text: 'partial final frame flush: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-partial-final-frame-flush
+  - oracle
+- text: 'cache write failure warning: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-cache-write-failure-warning
+  - oracle
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional: []
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_restamp::/)
+      - test(/::replays_corpus$/)'
+  - id: case-split-message-start-model
+    why: the split-message-start-model behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_restamp::tests::split_message_start_model($|::)/)'
+  - id: case-ping-frame
+    why: the ping-frame behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_restamp::tests::ping_frame($|::)/)'
+  - id: case-cache-stream-replay
+    why: the cache-stream-replay behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_restamp::tests::cache_stream_replay($|::)/)'
+  - id: case-partial-final-frame-flush
+    why: the partial-final-frame-flush behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_restamp::tests::partial_final_frame_flush($|::)/)'
+  - id: case-cache-write-failure-warning
+    why: the cache-write-failure-warning behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_stream_restamp::tests::cache_write_failure_warning($|::)/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/messages_stream_restamp.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_stream_restamp-*)"
+      && grep -qE "^[[:space:]]+messages_stream_restamp:" tools/oracle/fuzz/corpus/helper_case/messages_stream_restamp-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-stream-restamp)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-stream-restamp/split-message-start-model.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/ping-frame.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/cache-stream-replay.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/partial-final-frame-flush.yaml
+- tools/oracle/cases/helpers/messages-stream-restamp/cache-write-failure-warning.yaml
+deviations: []
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within _restamped_event\'s event.get('type') != _MESSAGE_START_EVENT or not isinstance(message, dict) branch,
+  preserve return None and its nested guards.
+- Within _restamped_event\'s message.get('model') == requested_model branch, preserve return None and its nested
+  guards.
+review_level: standard
+budget:
+  max_changed_lines: 550
+  max_new_expects: 1

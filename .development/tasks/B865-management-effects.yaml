@@ -1,0 +1,135 @@
+id: B865
+title: Management completion effects and cache eviction
+description: >-
+  Implement ManagementEffects around successful management handlers, preserving alert then span then key/user/team/customer
+  eviction ordering and warning-only failure. On handler failure, emit the failure span without replacing
+  the original error. Inject ManagementAlertSink and ManagementSpanSink; B116 and B110 install their transports,
+  and B065 owns audit persistence. Cache eviction is concrete here through B734, not deferred to those
+  later tasks. Register the wrapper once around each decorated route; an umbrella composes the route modules
+  instead of registering aliases a second time.
+
+
+  Build the production management_effects module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_helpers/utils.py:
+  _delete_user_id_from_cache (L503-L514; 9 source lines), _delete_api_key_from_cache (L517-L528; 9 source
+  lines), _delete_team_id_from_cache (L531-L542; 9 source lines), _delete_customer_id_from_cache (L545-L556;
+  9 source lines), management_endpoint_wrapper (L755-L823; 57 source lines).
+
+
+  Add the management_effects operation under B856 Management::models. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a management-effects-* seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 93 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  93 production, 151 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 339 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+
+
+  This component performs no SQL: test its cache/sink or SQLSTATE/transport inputs directly with typed
+  collaborators. Real database execution belongs to B713-B715 and the mutation/repository owners; no fake
+  Postgres row or rollback test is required here.
+scope:
+  paths:
+    - crates/betterlite-server/src/management_effects.rs
+    - crates/betterlite-server/src/management_effects/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/management_effects.rs
+    - tools/oracle/src/helpers/management_effects/**
+    - tools/oracle/helpers/management_effects.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/models.rs
+    - tools/oracle/helpers/management/models.py
+    - tools/oracle/cases/helpers/management-effects/**
+    - tools/oracle/fuzz/corpus/helper_case/management-effects-*
+    - crates/betterlite-server/src/management_effects/fixtures/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L503-L514
+    why: Own _delete_user_id_from_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L517-L528
+    why: Own _delete_api_key_from_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L531-L542
+    why: Own _delete_team_id_from_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L545-L556
+    why: Own _delete_customer_id_from_cache; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/utils.py#L755-L823
+    why: Own management_endpoint_wrapper; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: success_evicts, alert_failure_stops_later_effects,
+      handler_failure_preserved, span_failure_original_error, customer_cache_eviction.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management_effects::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/management_effects.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/management-effects-*")"
+        && grep -rlq "management_effects" tools/oracle/fuzz/corpus/helper_case/management-effects-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/management-effects/success-evicts.yaml
+  - tools/oracle/cases/helpers/management-effects/alert-failure-stops-later-effects.yaml
+  - tools/oracle/cases/helpers/management-effects/handler-failure-preserved.yaml
+  - tools/oracle/cases/helpers/management-effects/span-failure-original-error.yaml
+  - tools/oracle/cases/helpers/management-effects/customer-cache-eviction.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_helpers/utils.py: B862 owns handle_budget_for_entity (L180-L264), _clone_team_default_budget_for_member
+    (L283-L333), _resolve_member_budget_id (L336-L390).'
+  - 'litellm/proxy/management_helpers/utils.py: B1227 owns _user_table (L112-L113), _budget_table (L116-L117),
+    _team_membership_table (L120-L121), _find_users_by_email (L124-L134), _upsert_user_row (L137-L150),
+    _create_user_row (L153-L158), get_new_internal_user_defaults (L161-L177), _append_team_id_if_absent
+    (L393-L408), add_new_member (L411-L500), _PrismaRecord.model_dump (L47-L47), _PrismaUserRecord.model_dump
+    (L55-L55), _PrismaBudgetRecord.model_dump (L63-L63), _PrismaBudgetTable.create (L69-L69), _PrismaBudgetTable.find_unique
+    (L71-L71), _PrismaUserTable.update_many (L77-L77), _PrismaUserTable.upsert (L79-L81), _PrismaUserTable.find_many
+    (L83-L83), _PrismaTeamMembershipTable.upsert (L89-L91), MemberWriteTx.litellm_usertable (L102-L103),
+    MemberWriteTx.litellm_budgettable (L105-L106), MemberWriteTx.litellm_teammembership (L108-L109).'
+  - 'litellm/proxy/management_helpers/utils.py: B1228 owns _object_mapping (L609-L611), _object_list (L614-L616),
+    _redacted_env_var (L619-L626), _redact_record_env_vars (L629-L647), _redact_env_var_values (L650-L666).'
+  - 'litellm/proxy/management_helpers/utils.py: B1228 owns send_management_endpoint_alert (L559-L606)
+    and _emit_management_endpoint_otel_span (L669-L752) as typed event/payload projections. B116 and B110
+    implement the injected alert and OTel transports.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - On handler failure, emit the failure span without replacing the original error.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

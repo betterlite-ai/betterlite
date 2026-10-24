@@ -1,0 +1,183 @@
+id: B854
+title: Refresh short-lived database credentials
+description: >-
+  Implement DatabaseRefreshLoop over PoolGeneration and DatabaseTokenAuth. Preserve token endpoint extraction,
+  expiry calculation, 180-second buffer, 600-second unparseable-expiry fallback and 30-second minimum
+  sleep, with bounded jitter and injected time. Refresh failure retains the live pool and retries with
+  source warning behavior; shutdown cancels and joins the loop.
+
+
+  Build the production database_refresh_loop module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/db/prisma_client.py:
+  PrismaWrapper._extract_token_from_db_url (L349-L368; 16 source lines), PrismaWrapper._parse_token_expiration
+  (L370-L378; 8 source lines), PrismaWrapper._calculate_seconds_until_refresh (L380-L415; 24 source lines),
+  PrismaWrapper.is_token_expired (L417-L430; 10 source lines), PrismaWrapper.get_rds_iam_token (L432-L450;
+  17 source lines), PrismaWrapper._endpoint_from_env (L453-L476; 21 source lines), PrismaWrapper.start_token_refresh_task
+  (L646-L667; 19 source lines), PrismaWrapper.stop_token_refresh_task (L669-L688; 18 source lines), PrismaWrapper._token_refresh_loop
+  (L690-L744; 47 source lines), PrismaWrapper._safe_refresh_token (L746-L789; 37 source lines), PrismaWrapper._token_refresh_not_needed
+  (L791-L806; 15 source lines).
+
+
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): DATABASE_HOST=None;
+  DATABASE_USER=None; DATABASE_NAME=None; DATABASE_PORT=DEFAULT_POSTGRES_PORT; DATABASE_SCHEMA=None.
+
+
+  Real Postgres tests use betterlite-postgres-fixture as a dev-dependency: POSTGRES_TEST_URL when set,
+  otherwise testcontainers. Failure to connect/start is a test failure, never an ignored or skipped test.
+  The architect supplies the CI Postgres service. postgres_pinned_rows checks actual rows/catalog facts
+  against independently initialized pinned fixtures; postgres_failure_effects injects a failure and checks
+  the exact source transaction rollback or preceding partial writes. Use a unique schema per test and
+  clean it on every exit.
+
+
+  Write betterlite-config::database_refresh_loop::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
+  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
+  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
+  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 232 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  232 production, 154 behavior/Postgres tests, 0 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 50 config lines, 466 changed lines estimated within a 475-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/database_refresh_loop.rs
+    - crates/betterlite-db/src/database_refresh_loop/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/database_refresh_loop/fixtures/**
+    - crates/betterlite-config/Cargo.toml
+    - crates/betterlite-config/src/lib.rs
+    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/database_refresh_loop.rs
+    - crates/betterlite-config/src/database_refresh_loop/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/database-refresh-loop-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L349-L476
+    why: Pinned implementation and exact ownership boundary for database_refresh_loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L646-L806
+    why: Pinned implementation and exact ownership boundary for database_refresh_loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L349-L368
+    why: Own PrismaWrapper._extract_token_from_db_url; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L370-L378
+    why: Own PrismaWrapper._parse_token_expiration; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L380-L415
+    why: Own PrismaWrapper._calculate_seconds_until_refresh; preserve caller-visible values and failure
+      ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L417-L430
+    why: Own PrismaWrapper.is_token_expired; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L432-L450
+    why: Own PrismaWrapper.get_rds_iam_token; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L453-L476
+    why: Own PrismaWrapper._endpoint_from_env; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L646-L667
+    why: Own PrismaWrapper.start_token_refresh_task; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L669-L688
+    why: Own PrismaWrapper.stop_token_refresh_task; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L690-L744
+    why: Own PrismaWrapper._token_refresh_loop; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L746-L789
+    why: Own PrismaWrapper._safe_refresh_token; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L791-L806
+    why: Own PrismaWrapper._token_refresh_not_needed; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L454-L459
+    why: DATABASE_HOST default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L455-L460
+    why: DATABASE_USER default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L456-L461
+    why: DATABASE_NAME default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L472-L477
+    why: DATABASE_PORT default and read site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L475-L480
+    why: DATABASE_SCHEMA default and read site.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: expiry_buffer, unknown_expiry_fallback,
+      cached_token_minimum_sleep, refresh_failure_keeps_pool, reader_token_refresh, shutdown_joins, postgres_pinned_rows,
+      postgres_failure_effects.'
+    proof:
+      - behavior-tests
+  - text: The independently initialized Postgres data and failure write effects match the pinned contract.
+    proof:
+      - postgres-tests
+  - text: Every named setting loads through the production config boundary with its pinned default, precedence
+      and invalid-value behavior.
+    proof:
+      - config-tests
+      - config-corpus
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^database_refresh_loop::tests::/)
+        - test(/replays_the_/)'
+    - id: postgres-tests
+      why: Actual Postgres row and failure-effect tests are absent or fail.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_refresh_loop::tests::postgres_pinned_rows$/)'
+        && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/database_refresh_loop::tests::postgres_failure_effects$/)'
+    - id: config-tests
+      why: The actual configuration loader rejects, ignores or misresolves a new setting.
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^database_refresh_loop::tests::/)
+        - test(/replays_the_/)'
+    - id: config-corpus
+      why: The task added no new configuration seed or production config replay fails.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/database-refresh-loop-*")"
+        && grep -rlq "DATABASE_HOST" crates/betterlite-config/fuzz/corpus/config_yaml/database-refresh-loop-*
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/db/prisma_client.py: B051 owns PrismaManager._apply_replica_identity_full_if_requested
+    (L883-L895), PrismaManager._raise_if_partitioned_spend_logs (L898-L911), PrismaManager.setup_database
+    (L914-L985), PrismaManager.build_request_log_indexes (L988-L997), PrismaManager.start_request_log_index_build
+    (L1000-L1009), should_update_prisma_schema (L1012-L1036).'
+  - 'litellm/proxy/db/prisma_client.py: B713 owns _PrismaEngine.process (L48-L48), _PrismaEngine.query
+    (L50-L50), _PrismaEngine.start_transaction (L52-L52), _PrismaEngine.commit_transaction (L54-L54),
+    _PrismaEngine.rollback_transaction (L56-L56), _PrismaClient._engine (L63-L63), _PrismaDrainTracker.__init__
+    (L67-L71), _PrismaDrainTracker.begin_operation (L73-L76), _PrismaDrainTracker.end_operation (L78-L81),
+    _PrismaDrainTracker.transaction_started (L83-L84), _PrismaDrainTracker.transaction_finished (L86-L90),
+    _PrismaDrainTracker.wait_until_drained (L92-L93), _TrackedPrismaEngine.__init__ (L97-L99), _TrackedPrismaEngine.process
+    (L102-L103), _TrackedPrismaEngine.__getattr__ (L105-L106), _TrackedPrismaEngine.query (L108-L113),
+    _TrackedPrismaEngine.start_transaction (L115-L123), _TrackedPrismaEngine.commit_transaction (L125-L131),
+    _TrackedPrismaEngine.rollback_transaction (L133-L139), PrismaWrapper.__init__ (L169-L220), PrismaWrapper.token_auth
+    (L223-L225), PrismaWrapper.token_label (L228-L230), PrismaWrapper.iam_token_db_auth (L233-L239), PrismaWrapper._read_engine
+    (L242-L243), PrismaWrapper._write_engine (L246-L247), PrismaWrapper._instrument_prisma_client (L249-L260),
+    PrismaWrapper._retire_engine_when_drained (L282-L296), PrismaWrapper._schedule_engine_retirement (L298-L303),
+    PrismaWrapper._retirement_finished (L305-L306), PrismaWrapper.connect (L308-L313), PrismaWrapper.engine_generation
+    (L479-L487), PrismaWrapper._reconnection_settled (L489-L491), PrismaWrapper.wait_for_planned_engine_replacement
+    (L493-L508), PrismaWrapper.recreate_prisma_client (L510-L546), PrismaWrapper._recreate_prisma_client_locked
+    (L548-L605), PrismaWrapper._replace_prisma_client_for_token_refresh_locked (L607-L644), PrismaWrapper.__getattr__
+    (L808-L871).'
+  - 'litellm/proxy/db/prisma_client.py::PrismaManager._get_prisma_dir: Prisma filesystem/tool discovery
+    is absent from the native runner.'
+  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._get_engine_pid: Prisma engine process supervision
+    has no equivalent process in native SQLx; owned pool tasks replace it.'
+  - 'litellm/proxy/db/prisma_client.py::PrismaWrapper._kill_engine_process: Prisma engine process supervision
+    has no equivalent process in native SQLx; owned pool tasks replace it.'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A failed short-lived token refresh retains the still-live pool generation.
+budget:
+  max_changed_lines: 475
+  max_new_expects: 0
+review_level: security

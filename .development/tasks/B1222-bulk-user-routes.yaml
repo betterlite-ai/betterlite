@@ -1,0 +1,111 @@
+id: B1222
+title: Bulk user management HTTP routes
+description: >-
+  Register POST /management/v1/users/bulk and /management/v1/users/bulk_delete over B793/B794. Preserve
+  the 500-row limit, per-row result indexing, unknown-body-field 422 rejection, unknown-query rejection
+  on delete, and application/problem+json errors (503 without a DB, 500 driver failure), not the ordinary
+  OpenAI management error envelope. Omit the license-seat cap while retaining per-target organization
+  authorization. management_endpoint_wrapper supplies ordered completion effects.
+
+
+  Build the production bulk_user_routes module in betterlite-server; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/management_v1/users.py:
+  bulk_create_users_route (L28-L108; 74 source lines), bulk_delete_users_action (L111-L187; 72 source
+  lines).
+
+
+  Register these actual HTTP routes and aliases exactly once: POST /users/bulk -> bulk_create_users_route;
+  POST /users/bulk_delete -> bulk_delete_users_action. For each route send a typed successful request,
+  an invalid or missing target, and a caller lacking that route permission through B001 HttpCase against
+  the running pinned MIT proxy and betterlite. Public login/session routes instead prove bad credentials
+  or invalid/expired codes. Compare status, response model including null/absent fields, error type/param/code,
+  content-type, redirect/cookie headers and litellm-changed-by where read. Do not reduce endpoint checks
+  to direct helper invocations. handle_exception_on_proxy controls management error mapping; keep source
+  partial writes visible in fixture inspection.
+
+
+  B860 starts separate equivalent Postgres fixtures for the real MIT proxy and the actual betterlite binary.
+  Seed hashed virtual keys and explicit owner/team/org roles; no enterprise package or import is present.
+  Permission fixtures must distinguish a missing bearer, an unrelated ordinary user and an authorized
+  scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 146 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  146 production, 148 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 359 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/bulk_user_routes.rs
+    - crates/betterlite-server/src/bulk_user_routes/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/state.rs
+    - crates/betterlite-server/src/app.rs
+    - tools/oracle/cases/management/bulk-user-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/users.py#L28-L108
+    why: Own bulk_create_users_route; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/management_v1/users.py#L111-L187
+    why: Own bulk_delete_users_action; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8321
+    why: Management exception HTTP status and public error translation.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: bulk_create_mixed, bulk_delete_mixed,
+      unknown_body_422, unknown_delete_query, no_db_problem_503, non_admin_route_denied.'
+    proof:
+      - behavior-tests
+  - text: HTTP oracle cases prove the route or middleware success/failure contract, permissions and headers
+      against the real MIT server.
+    proof:
+      - oracle
+      - behavior-tests
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bulk_user_routes::tests::/)
+        - test(/replays_the_/)'
+oracle_cases:
+  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-success.yaml
+  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-invalid-target.yaml
+  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-unauthorized-caller.yaml
+  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-delete-success.yaml
+  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-delete-invalid-target.yaml
+  - tools/oracle/cases/management/bulk-user-routes/post--users-bulk-delete-unauthorized-caller.yaml
+  - tools/oracle/cases/management/bulk-user-routes/bulk-create-mixed.yaml
+  - tools/oracle/cases/management/bulk-user-routes/bulk-delete-mixed.yaml
+  - tools/oracle/cases/management/bulk-user-routes/unknown-body-422.yaml
+  - tools/oracle/cases/management/bulk-user-routes/unknown-delete-query.yaml
+  - tools/oracle/cases/management/bulk-user-routes/no-db-problem-503.yaml
+  - tools/oracle/cases/management/bulk-user-routes/non-admin-route-denied.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Preserve the 500-row limit, per-row result indexing, unknown-body-field 422 rejection, unknown-query
+    rejection on delete, and application/problem+json errors (503 without a DB, 500 driver failure), not
+    the ordinary OpenAI management error envelope.
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

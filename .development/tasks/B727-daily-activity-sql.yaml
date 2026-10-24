@@ -1,0 +1,150 @@
+id: B727
+title: Daily spend query and rollup builders
+description: >-
+  Implement DailyActivityScope and parameterized SQL builders for aggregate, entity rollup and key page
+  queries. Retain timezone-adjusted date windows, PTU flat-cost attribution and filters without string-interpolating
+  caller values. Return Decimal sums and typed query plans; actual execution is provided by daily activity
+  repository.
+
+
+  This task returns SQL plans over typed filters and executes no query. Helper cases call the pinned SQL
+  builder only; real Postgres execution belongs to B729. There is no outside-byte decoder or task fuzz
+  target here.
+
+
+  Build the production daily_activity_sql module in betterlite-db; reuse the typed dependencies listed
+  in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules with
+  adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/repositories/daily_activity_sql.py:
+  adjust_dates_for_timezone (L43-L56; 14 source lines), build_where_clause (L59-L106; 48 source lines),
+  _ptu_flat_cost_select (L109-L112; 4 source lines), _rollup_metric_select (L115-L132; 18 source lines),
+  _validate_api_key_limit (L135-L137; 3 source lines), _top_api_keys_sql (L140-L148; 9 source lines),
+  build_aggregated_sql (L151-L216; 66 source lines), build_entity_rollup_sql (L219-L261; 43 source lines),
+  _key_spend_select (L264-L274; 11 source lines), build_key_page_sql (L277-L301; 25 source lines). litellm/types/repositories/daily_activity.py:
+  DailyActivityScope.__post_init__ (L43-L45; 3 source lines), DailyActivityProxyReads.recover_key_metadata
+  (L158-L160; 3 source lines).
+
+
+  Represent monetary amounts with rust_decimal::Decimal and checked conversion to the pinned Postgres
+  column type; retain source storage types.
+
+
+  Add the daily_activity_sql operation under B856 Management::database. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a daily-activity-sql-* seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 247 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  247 production, 148 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 490 changed lines estimated within a 500-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-db/src/daily_activity_sql.rs
+    - crates/betterlite-db/src/daily_activity_sql/**
+    - crates/betterlite-db/src/lib.rs
+    - crates/betterlite-db/Cargo.toml
+    - crates/betterlite-db/src/daily_activity_sql/fixtures/**
+    - tools/oracle/src/helpers/daily_activity_sql.rs
+    - tools/oracle/src/helpers/daily_activity_sql/**
+    - tools/oracle/helpers/daily_activity_sql.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/database.rs
+    - tools/oracle/helpers/management/database.py
+    - tools/oracle/cases/helpers/daily-activity-sql/**
+    - tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L1-L301
+    why: Pinned implementation and exact ownership boundary for daily_activity_sql.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L1-L192
+    why: Pinned implementation and exact ownership boundary for daily_activity_sql.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L43-L56
+    why: Own adjust_dates_for_timezone; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L59-L106
+    why: Own build_where_clause; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L109-L112
+    why: Own _ptu_flat_cost_select; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L115-L132
+    why: Own _rollup_metric_select; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L135-L137
+    why: Own _validate_api_key_limit; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L140-L148
+    why: Own _top_api_keys_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L151-L216
+    why: Own build_aggregated_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L219-L261
+    why: Own build_entity_rollup_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L264-L274
+    why: Own _key_spend_select; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_sql.py#L277-L301
+    why: Own build_key_page_sql; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L43-L45
+    why: Own DailyActivityScope.__post_init__; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L158-L160
+    why: Own DailyActivityProxyReads.recover_key_metadata; preserve caller-visible values and failure
+      ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: timezone_day_window,
+      entity_scope, ptu_flat_cost, top_key_limit, empty_filter, malicious_filter_bound.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^daily_activity_sql::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/daily_activity_sql.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-*")"
+        && grep -rlq "daily_activity_sql" tools/oracle/fuzz/corpus/helper_case/daily-activity-sql-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/daily-activity-sql/timezone-day-window.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/entity-scope.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/ptu-flat-cost.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/top-key-limit.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/empty-filter.yaml
+  - tools/oracle/cases/helpers/daily-activity-sql/malicious-filter-bound.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/repositories/daily_activity_sql.py: B728 owns _bounded_limit (L304-L306), build_key_search_sql
+    (L309-L341), build_model_top_keys_sql (L344-L363), build_cache_leakage_keys_sql (L366-L380), build_export_sql
+    (L383-L454), _export_grouping (L457-L509), _export_cursor_clause (L512-L526).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Caller filter values must remain bind parameters even when the query contains dynamic grouping or
+    cursor predicates.
+budget:
+  max_changed_lines: 500
+  max_new_expects: 0
+review_level: security

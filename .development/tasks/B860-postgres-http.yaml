@@ -1,0 +1,87 @@
+id: B860
+title: Postgres-backed HTTP oracle cases
+description: >-
+  Extend B001 HttpCase process setup with isolated Postgres schemas and typed fixture rows for keys, users,
+  teams, memberships, budgets and JWT mappings. Start the real LiteLLM proxy without litellm-enterprise
+  and the actual betterlite binary against separate equivalent databases; configure general_settings.database_url
+  and disable_prisma_schema_update=true after applying the pinned SQL in fixture setup. Keep HTTP response
+  comparison in B001; do not call FastAPI handlers as helper functions. Use POSTGRES_TEST_URL first and
+  testcontainers only when absent. Add local TLS Postgres support with test-owned CA/server certificates
+  for certificate verification cases. Seed test keys as SHA256 hashes with deterministic owner roles;
+  the fixture is the only tool that may inject DB faults or a controlled clock for server cases. The CI
+  architect supplies a Postgres service.
+
+
+  Create tools/postgres-fixture (package betterlite-postgres-fixture) with unique schema setup/cleanup
+  and shared connection configuration. It is a dev-dependency only. Use separately applied pinned SQL
+  fixtures, not product migration startup or repositories. Add typed optional database fixtures to B001
+  HttpCase and extend the actual process runner; existing cases remain valid. tests::configured_url_wins
+  and containers_when_unset exercise selection through injected environment/process collaborators; tests::isolated_schemas
+  and cleanup_after_failure use real Postgres. http::postgres::tests::detects_status_mismatch must intentionally
+  alter a response and prove comparison fails. Also prove schema/roles cannot leak between cases and TLS
+  hostname validation works. Expose the production B001 HttpCase decoder as decode_http_case(&[u8]) and
+  add http_case in the existing B171 oracle fuzz workspace, with postgres setup seeds and replays_the_http_case_corpus.
+  This is the existing HTTP schema decoder, not a second parser or fake endpoint. Estimate 250 fixture/process
+  plumbing, 180 tests, 100 HTTP schema/comparison, 70 manifests/TLS setup lines: 600 total.
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - tools/postgres-fixture/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/case.rs
+    - tools/oracle/src/case/**
+    - tools/oracle/src/http.rs
+    - tools/oracle/src/http/**
+    - tools/oracle/src/runner.rs
+    - tools/oracle/src/runner/**
+    - tools/oracle/src/process.rs
+    - tools/oracle/src/process/**
+    - tools/oracle/src/lib.rs
+    - tools/oracle/src/main.rs
+    - tools/oracle/fuzz/Cargo.toml
+    - tools/oracle/fuzz/fuzz_targets/http_case.rs
+    - tools/oracle/fuzz/corpus/http_case/postgres-*
+    - tools/oracle/cases/management/postgres-fixture/**
+  lint_tables: false
+references: []
+dod:
+  - text: Real Postgres fixtures prefer POSTGRES_TEST_URL, otherwise start testcontainers, isolate schemas
+      and clean up after failure.
+    proof:
+      - fixture-tests
+  - text: The actual HTTP runner detects changed status and roles and its extended HttpCase fixture parser
+      replays.
+    proof:
+      - http-fixture-tests
+      - http-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: fixture-tests
+      why: Actual configured/container Postgres fixture selection, isolation or cleanup fails.
+      run: cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
+    - id: http-fixture-tests
+      why: The actual HTTP runner fails to load fixtures or detect status/role differences.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::/)
+        - test(/replays_the_/)'
+    - id: http-case-corpus
+      why: The production HTTP case parser lacks a new database fixture seed or fails replay.
+      run: test -f tools/oracle/fuzz/fuzz_targets/http_case.rs && grep -q http_case tools/oracle/fuzz/Cargo.toml
+        && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/http_case/postgres-*")"
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Product Postgres repositories and migration behavior belong to B700 and the other database tasks.
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - A set but unreachable POSTGRES_TEST_URL is a failure, not permission to silently fall back to a container.
+  - Both servers require equivalent independent data; sharing a mutated fixture can hide a persistence
+    mismatch.
+  - TLS verification tests require a server certificate and a mismatched hostname, not merely a parsed
+    sslmode string.
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: security

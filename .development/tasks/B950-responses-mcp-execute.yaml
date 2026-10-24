@@ -1,0 +1,232 @@
+id: B950
+title: Responses mcp execute
+description: >-
+  Execute extracted MCP function/custom calls through B136 and B137 using typed parsed arguments and normalized
+  tool results. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
+  name as permission to access another server.
+
+
+  Implement crates/betterlite-core/src/api/responses_mcp_execute.rs. Use ResponsesMcpExecuteInput and ResponsesMcpExecuteResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions function_call_execution, malformed_arguments, denied_tool_call, tool_result_error,
+  structured_tool_content under api::responses_mcp_execute::tests. Each named function drives production code and
+  asserts its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.MAXIMUM_TRACEBACK_LINES_TO_LOG
+  defaults to 100. No environment reads occur outside betterlite-config. Test api::responses_mcp_execute::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  The production external-byte decoder is betterlite-core::api::responses_mcp_execute::decode_responses_mcp_execute(bytes:
+  &[u8], limits: &ApiLimits), for json.loads input tool_arguments at litellm/responses/mcp/litellm_proxy_mcp_handler.py:644.
+  Place its implementation in crates/betterlite-core/src/api/responses_mcp_execute.rs and call it from the actual
+  boundary. The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/responses_mcp_execute.rs passes arbitrary
+  bounded bytes to that exact decoder; api::responses_mcp_execute::tests::replays_corpus replays newly committed
+  seeds through the same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::ResponsesMcpExecute in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {responses_mcp_execute: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._should_auto_execute_tools
+  (L540-L563); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_response
+  (L566-L577); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._extract_tool_calls_from_chat_response
+  (L580-L601); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._extract_tool_call_details
+  (L604-L635); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._parse_tool_arguments
+  (L638-L648); litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._parse_mcp_result (L651-L684);
+  litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._execute_tool_calls (L687-L972);
+  litellm/responses/mcp/litellm_proxy_mcp_handler.py: LiteLLM_Proxy_MCP_Handler._log_mcp_tool_failure (L1121-L1143).
+  Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation; a
+  partial function span is the explicit preparation/transition stage described above, with typed values passed to
+  the following stage.
+
+
+  Sizing: 388 owned nonblank/non-comment/non-docstring Python lines (405 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 408 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
+  and 30 wiring; 751 total within the 760-line cap. The estimate includes tests and adapters, not just production
+  code.
+
+
+  Direct inputs come from B136 (MCP gateway server, transports and server registry), B137 (MCP auth, OAuth flows,
+  BYOK and outbound credentials), B171 (Direct helper oracle and URL path encoding), B949 (Responses mcp discovery),
+  B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B1106 (Principal metadata
+  and tags), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/responses_mcp_execute.rs
+  - crates/betterlite-core/src/api/responses_mcp_execute/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/responses_mcp_execute.rs
+  - crates/betterlite-config/src/api/responses_mcp_execute/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/responses-mcp-execute-*
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/responses_mcp_execute.rs
+  - crates/betterlite-core/fuzz/corpus/responses_mcp_execute/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/responses_mcp_execute.rs
+  - tools/oracle/src/helpers/responses_mcp_execute/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/responses_mcp_execute.py
+  - tools/oracle/helpers/responses_mcp_execute/**
+  - tools/oracle/fuzz/corpus/helper_case/responses_mcp_execute-*
+  - tools/oracle/cases/helpers/responses-mcp-execute/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1551-L1551
+  why: Setting env.MAXIMUM_TRACEBACK_LINES_TO_LOG and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L540-L972
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/litellm_proxy_mcp_handler.py#L1120-L1143
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'function call execution: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-function-call-execution
+  - oracle
+- text: 'malformed arguments: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-malformed-arguments
+  - oracle
+- text: 'denied tool call: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-denied-tool-call
+  - oracle
+- text: 'tool result error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-tool-result-error
+  - oracle
+- text: 'structured tool content: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-structured-tool-content
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::responses_mcp_execute::/)
+      - test(/::replays_corpus$/)'
+  - id: case-function-call-execution
+    why: the function-call-execution behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_execute::tests::function_call_execution($|::)/)'
+  - id: case-malformed-arguments
+    why: the malformed-arguments behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_execute::tests::malformed_arguments($|::)/)'
+  - id: case-denied-tool-call
+    why: the denied-tool-call behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_execute::tests::denied_tool_call($|::)/)'
+  - id: case-tool-result-error
+    why: the tool-result-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_execute::tests::tool_result_error($|::)/)'
+  - id: case-structured-tool-content
+    why: the structured-tool-content behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_mcp_execute::tests::structured_tool_content($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::responses_mcp_execute::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/responses-mcp-execute-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/responses_mcp_execute)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/responses_mcp_execute.rs && grep -qF "decode_responses_mcp_execute"
+      crates/betterlite-core/fuzz/fuzz_targets/responses_mcp_execute.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::responses_mcp_execute::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/responses_mcp_execute.py && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_execute-*)"
+      && grep -qE "^[[:space:]]+responses_mcp_execute:" tools/oracle/fuzz/corpus/helper_case/responses_mcp_execute-*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-execute)"
+oracle_cases:
+- tools/oracle/cases/helpers/responses-mcp-execute/function-call-execution.yaml
+- tools/oracle/cases/helpers/responses-mcp-execute/malformed-arguments.yaml
+- tools/oracle/cases/helpers/responses-mcp-execute/denied-tool-call.yaml
+- tools/oracle/cases/helpers/responses-mcp-execute/tool-result-error.yaml
+- tools/oracle/cases/helpers/responses-mcp-execute/structured-tool-content.yaml
+deviations: []
+out_of_scope:
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B948 owns _mcp_server_url L66-L70, _names_gateway_explicitly
+  L73-L74, _proxy_path_mcp_name L77-L80, _registered_mcp_servers L83-L88, _registry_serves L91-L97, _toolset_exists
+  L100-L112, _gateway_served_names L115-L121, _served_mcp_path_names L124-L128, LiteLLM_Proxy_MCP_Handler._get_parent_request_tags
+  L139-L150, LiteLLM_Proxy_MCP_Handler._should_use_litellm_mcp_gateway L153-L156, LiteLLM_Proxy_MCP_Handler._parse_mcp_tools
+  L159-L163, LiteLLM_Proxy_MCP_Handler._split_mcp_tools L166-L179, LiteLLM_Proxy_MCP_Handler.routes_through_gateway
+  L182-L188, LiteLLM_Proxy_MCP_Handler._apply_toolset_permissions L191-L232, LiteLLM_Proxy_MCP_Handler._deduplicate_mcp_tools
+  L355-L386, LiteLLM_Proxy_MCP_Handler._filter_mcp_tools_by_allowed_tools L389-L414.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B949 owns LiteLLM_Proxy_MCP_Handler._get_mcp_tools_from_manager
+  L235-L352, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_to_openai_format L417-L447, LiteLLM_Proxy_MCP_Handler._process_mcp_tools_without_openai_transform
+  L450-L503, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L507-L510, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai
+  L514-L517, LiteLLM_Proxy_MCP_Handler._transform_mcp_tools_to_openai L520-L537.'
+- 'litellm/responses/mcp/litellm_proxy_mcp_handler.py: B951 owns LiteLLM_Proxy_MCP_Handler._create_follow_up_messages_for_chat
+  L975-L1017, LiteLLM_Proxy_MCP_Handler._is_persistence_disabled L1020-L1022, LiteLLM_Proxy_MCP_Handler._create_follow_up_input
+  L1025-L1101, LiteLLM_Proxy_MCP_Handler._make_follow_up_call L1104-L1118, LiteLLM_Proxy_MCP_Handler._create_mcp_streaming_response
+  L1146-L1188, LiteLLM_Proxy_MCP_Handler._build_request_params L1191-L1222, LiteLLM_Proxy_MCP_Handler._create_tool_execution_events
+  L1225-L1272, LiteLLM_Proxy_MCP_Handler._prepare_initial_call_params L1275-L1288, LiteLLM_Proxy_MCP_Handler._prepare_follow_up_call_params
+  L1291-L1308, LiteLLM_Proxy_MCP_Handler._add_mcp_output_elements_to_response L1311-L1357.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'litellm_proxy_mcp_handler.py:729 emits the diagnostic ''Tool call missing name: %s''; retain its level and fallback
+  instead of turning it into a hard error.'
+- 'litellm_proxy_mcp_handler.py:810 emits the diagnostic ''Failed to initialize logging for MCP tool call %s: %s'';
+  retain its level and fallback instead of turning it into a hard error.'
+review_level: security
+budget:
+  max_changed_lines: 760
+  max_new_expects: 1

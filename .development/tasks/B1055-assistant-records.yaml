@@ -1,0 +1,208 @@
+id: B1055
+title: Assistant records
+description: >-
+  Implement assistant list/create/delete operations through B024/B010 using typed assistant tool/model/resource
+  records. Preserve provider model resolution, list pagination and deletion result; SDK sync/async entrypoints later
+  bind to these operations.
+
+
+  Implement crates/betterlite-core/src/api/assistant_records.rs. Use AssistantRecordsInput and AssistantRecordsResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions assistant_create_tools, assistant_provider_error under api::assistant_records::tests.
+  Each named function drives production code and asserts its case result; use named rstest inputs for related values.
+  Corpus replay has the separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): litellm_settings.api_base
+  defaults to None; env.OPENAI_BASE_URL defaults to unset (None); env.OPENAI_API_BASE defaults to unset (None);
+  litellm_settings.organization defaults to None; env.OPENAI_ORGANIZATION defaults to None; litellm_settings.api_key
+  defaults to None; litellm_settings.openai_key defaults to None; env.OPENAI_API_KEY defaults to unset (None); env.AZURE_API_BASE
+  defaults to unset (None); litellm_settings.api_version defaults to None; env.AZURE_API_VERSION defaults to unset
+  (None); litellm_settings.azure_key defaults to None; env.AZURE_OPENAI_API_KEY defaults to unset (None); env.AZURE_API_KEY
+  defaults to unset (None); env.AZURE_AD_TOKEN defaults to unset (None). No environment reads occur outside betterlite-config.
+  Test api::assistant_records::tests::loads_settings uses the production Config loader and an injected environment
+  map, with a named rstest case for every key above, explicit override, unset/default and invalid-value/fallback
+  behavior. Keys must be accepted, applied and absent from the unsupported-key report; a grep is not proof of support.
+  Add new config_yaml seeds for these keys and replay B002's existing decoder rather than introducing a second YAML
+  parser.
+
+
+  This slice consumes typed records or streams and introduces no outside-byte parser. Do not add a cargo-fuzz target
+  for arithmetic, routing, lifecycle or an already decoded transformation; byte decoding stays with the dependency
+  that owns it.
+
+
+  Register HelperCall::AssistantRecords in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {assistant_records: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/assistants/main.py: acreate_assistants (L193-L227); litellm/assistants/main.py: create_assistants
+  (L230-L371). Abstract/protocol declarations map to native types and synchronous/async wrappers share one implementation;
+  a partial function span is the explicit preparation/transition stage described above, with typed values passed
+  to the following stage.
+
+
+  Sizing: 155 owned nonblank/non-comment/non-docstring Python lines (155 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 175 implementation,
+  52 behavior tests, 24 oracle fixtures, 90 Rust/Python adapters, 0 decoder fuzz/replay, 75 config tests/seeds and
+  30 wiring; 446 total within the 450-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
+  oracle and URL path encoding), B1019 (File routing ids), B1087 (Api boundaries), B1130 (Assistant list and delete
+  calls), B519 (OpenAI assistant definitions), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config
+  owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
+  branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/assistant_records.rs
+  - crates/betterlite-core/src/api/assistant_records/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/assistant_records.rs
+  - crates/betterlite-config/src/api/assistant_records/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/assistant-records-*
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/assistant_records.rs
+  - tools/oracle/src/helpers/assistant_records/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/assistant_records.py
+  - tools/oracle/helpers/assistant_records/**
+  - tools/oracle/fuzz/corpus/helper_case/assistant_records-*
+  - tools/oracle/cases/helpers/assistant-records/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L592-L592
+  why: Setting litellm_settings.api_base and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L291-L291
+  why: Setting env.OPENAI_BASE_URL and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L292-L292
+  why: Setting env.OPENAI_API_BASE and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L595-L595
+  why: Setting litellm_settings.organization and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L298-L298
+  why: Setting env.OPENAI_ORGANIZATION and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L276-L276
+  why: Setting litellm_settings.api_key and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L277-L277
+  why: Setting litellm_settings.openai_key and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L306-L306
+  why: Setting env.OPENAI_API_KEY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L320-L320
+  why: Setting env.AZURE_API_BASE and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L594-L594
+  why: Setting litellm_settings.api_version and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L322-L322
+  why: Setting env.AZURE_API_VERSION and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L283-L283
+  why: Setting litellm_settings.azure_key and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L328-L328
+  why: Setting env.AZURE_OPENAI_API_KEY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L329-L329
+  why: Setting env.AZURE_API_KEY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L337-L337
+  why: Setting env.AZURE_AD_TOKEN and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/assistants/main.py#L191-L373
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'assistant create tools: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-assistant-create-tools
+  - oracle
+- text: 'assistant provider error: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-assistant-provider-error
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::assistant_records::/)
+      - test(/::replays_corpus$/)'
+  - id: case-assistant-create-tools
+    why: the assistant-create-tools behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_records::tests::assistant_create_tools($|::)/)'
+  - id: case-assistant-provider-error
+    why: the assistant-provider-error behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_records::tests::assistant_provider_error($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::assistant_records::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/assistant-records-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/assistant_records.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/assistant_records-*)"
+      && grep -qE "^[[:space:]]+assistant_records:" tools/oracle/fuzz/corpus/helper_case/assistant_records-* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/assistant-records)"
+oracle_cases:
+- tools/oracle/cases/helpers/assistant-records/assistant-create-tools.yaml
+- tools/oracle/cases/helpers/assistant-records/assistant-provider-error.yaml
+deviations: []
+out_of_scope:
+- 'litellm/assistants/main.py: B1130 owns aget_assistants L38-L70, get_assistants L73-L190, adelete_assistant L374-L407,
+  delete_assistant L410-L520.'
+- 'litellm/assistants/main.py: B1056 owns acreate_thread L526-L554, create_thread L557-L690, aget_thread L693-L726,
+  get_thread L729-L835.'
+- 'litellm/assistants/main.py: B1057 owns a_add_message L841-L889, add_message L892-L1011, aget_messages L1014-L1054,
+  get_messages L1057-L1161.'
+- 'litellm/assistants/main.py: B089 owns arun_thread_stream L1165-L1171, arun_thread L1174-L1228, run_thread_stream
+  L1231-L1236, run_thread L1239-L1365.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- acreate_assistants uses kwargs.pop('model', None); retain its missing-value behavior and field spelling in the
+  typed projection.
+- Within create_assistants\'s async_create_assistants is not None and (not isinstance(async_create_assistants, bool))
+  branch, preserve raise ValueError('Invalid value passed in for async_create_assistants. Only bool or None allowed')
+  and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 450
+  max_new_expects: 1

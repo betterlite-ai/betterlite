@@ -1,0 +1,230 @@
+id: B962
+title: Messages thinking
+description: >-
+  Translate reasoning_effort and adaptive effort into native Anthropic thinking/output_config, remove incompatible
+  sampling fields through diagnostics and apply prompt_cache_key derivation. Expose normalized request and response
+  transforms to the native call service, retaining target-specific thinking support.
+
+
+  Implement crates/betterlite-core/src/api/messages_thinking.rs. Use MessagesThinkingInput and MessagesThinkingResult
+  with typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses
+  through constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential
+  resolution.
+
+
+  Write adjacent tests.rs behavior functions adaptive_effort_native, nonadaptive_budget, thinking_temperature_drop,
+  metadata_user_cache_key, reasoning_auto_summary under api::messages_thinking::tests. Each named function drives
+  production code and asserts its case result; use named rstest inputs for related values. Corpus replay has the
+  separate name replays_corpus.
+
+
+  Settings contract (load with B002, reuse existing fields where another dependency already declares them): env.DEFAULT_MAX_TOKENS
+  defaults to 4096; litellm_settings.reasoning_auto_summary defaults to False; env.LITELLM_REASONING_AUTO_SUMMARY
+  defaults to 'false'. No environment reads occur outside betterlite-config. Test api::messages_thinking::tests::loads_settings
+  uses the production Config loader and an injected environment map, with a named rstest case for every key above,
+  explicit override, unset/default and invalid-value/fallback behavior. Keys must be accepted, applied and absent
+  from the unsupported-key report; a grep is not proof of support. Add new config_yaml seeds for these keys and
+  replay B002's existing decoder rather than introducing a second YAML parser.
+
+
+  The production external-byte decoder is betterlite-core::api::messages_thinking::decode_messages_thinking(bytes:
+  &[u8], limits: &ApiLimits), for _ClaudeCodeUserId.model_validate_json input user_id at litellm/llms/anthropic/pass_through/utils.py:44.
+  Place its implementation in crates/betterlite-core/src/api/messages_thinking.rs and call it from the actual boundary.
+  The cargo-fuzz target crates/betterlite-core/fuzz/fuzz_targets/messages_thinking.rs passes arbitrary bounded bytes
+  to that exact decoder; api::messages_thinking::tests::replays_corpus replays newly committed seeds through the
+  same function. Transform-only helpers reuse the already decoded records.
+
+
+  Register HelperCall::MessagesThinking in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {messages_thinking: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._translate_reasoning_effort_to_anthropic
+  (L287-L345); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._translate_adaptive_effort_for_non_adaptive_model
+  (L348-L447); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig._drop_incompatible_temperature_for_thinking
+  (L450-L477); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.transform_anthropic_messages_request
+  (L479-L570); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.transform_anthropic_messages_response
+  (L572-L585); litellm/llms/anthropic/pass_through/messages/transformation.py: AnthropicMessagesConfig.get_async_streaming_response_iterator
+  (L587-L608); litellm/llms/anthropic/pass_through/utils.py: prompt_cache_key_from_user_id (L34-L46); litellm/llms/anthropic/pass_through/utils.py:
+  litellm_logging_obj_from_kwargs (L49-L54); litellm/llms/anthropic/pass_through/utils.py: local_model_name (L57-L59);
+  litellm/llms/anthropic/pass_through/utils.py: is_reasoning_auto_summary_enabled (L62-L64); litellm/llms/anthropic/pass_through/utils.py:
+  normalize_reasoning_effort_value (L67-L101). Abstract/protocol declarations map to native types and synchronous/async
+  wrappers share one implementation; a partial function span is the explicit preparation/transition stage described
+  above, with typed values passed to the following stage.
+
+
+  Sizing: 267 owned nonblank/non-comment/non-docstring Python lines (345 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 287 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 39 config tests/seeds
+  and 30 wiring; 636 total within the 640-line cap. The estimate includes tests and adapters, not just production
+  code.
+
+
+  Direct inputs come from B171 (Direct helper oracle and URL path encoding), B175 (Provider parameter capabilities
+  and mapping), B961 (Messages native prepare), B1087 (Api boundaries), B569 (Anthropic model capability and thinking
+  policy), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/messages_thinking.rs
+  - crates/betterlite-core/src/api/messages_thinking/**
+  - crates/betterlite-core/src/api.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/api.rs
+  - crates/betterlite-config/src/api/messages_thinking.rs
+  - crates/betterlite-config/src/api/messages_thinking/**
+  - crates/betterlite-config/fuzz/corpus/config_yaml/messages-thinking-*
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/messages_thinking.rs
+  - crates/betterlite-core/fuzz/corpus/messages_thinking/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/messages_thinking.rs
+  - tools/oracle/src/helpers/messages_thinking/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/messages_thinking.py
+  - tools/oracle/helpers/messages_thinking/**
+  - tools/oracle/fuzz/corpus/helper_case/messages_thinking-*
+  - tools/oracle/cases/helpers/messages-thinking/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L248-L248
+  why: Setting env.DEFAULT_MAX_TOKENS and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L374-L374
+  why: Setting litellm_settings.reasoning_auto_summary and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L64-L64
+  why: Setting env.LITELLM_REASONING_AUTO_SUMMARY and its pinned default/precedence.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L287-L608
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L1-L101
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'adaptive effort native: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-adaptive-effort-native
+  - oracle
+- text: 'nonadaptive budget: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-nonadaptive-budget
+  - oracle
+- text: 'thinking temperature drop: the named production behavior test asserts the result and effects described
+    above.'
+  proof:
+  - case-thinking-temperature-drop
+  - oracle
+- text: 'metadata user cache key: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-metadata-user-cache-key
+  - oracle
+- text: 'reasoning auto summary: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-reasoning-auto-summary
+  - oracle
+- text: Every enumerated config/environment setting loads, defaults and changes the typed settings; existing YAML
+    fuzz corpus exercises the new keys.
+  proof:
+  - config-tests
+  - config-corpus
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-config --no-tests=fail -E 'test(/^api::messages_thinking::/)
+      - test(/::replays_corpus$/)'
+  - id: case-adaptive-effort-native
+    why: the adaptive-effort-native behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_thinking::tests::adaptive_effort_native($|::)/)'
+  - id: case-nonadaptive-budget
+    why: the nonadaptive-budget behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_thinking::tests::nonadaptive_budget($|::)/)'
+  - id: case-thinking-temperature-drop
+    why: the thinking-temperature-drop behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_thinking::tests::thinking_temperature_drop($|::)/)'
+  - id: case-metadata-user-cache-key
+    why: the metadata-user-cache-key behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_thinking::tests::metadata_user_cache_key($|::)/)'
+  - id: case-reasoning-auto-summary
+    why: the reasoning-auto-summary behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_thinking::tests::reasoning_auto_summary($|::)/)'
+  - id: config-tests
+    why: a listed setting is unrecognized, unused, incorrectly defaulted, or lacks a loader test
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::messages_thinking::tests::loads_settings($|::)/)'
+  - id: config-corpus
+    why: no newly added key-bearing config seed reaches the production loader
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/messages-thinking-*)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/messages_thinking)"
+      && test -f crates/betterlite-core/fuzz/fuzz_targets/messages_thinking.rs && grep -qF "decode_messages_thinking"
+      crates/betterlite-core/fuzz/fuzz_targets/messages_thinking.rs && cargo nextest run --locked -p betterlite-core
+      --no-tests=fail -E 'test(/^api::messages_thinking::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/messages_thinking.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/messages_thinking-*)"
+      && grep -qE "^[[:space:]]+messages_thinking:" tools/oracle/fuzz/corpus/helper_case/messages_thinking-* &&
+      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/messages-thinking)"
+oracle_cases:
+- tools/oracle/cases/helpers/messages-thinking/adaptive-effort-native.yaml
+- tools/oracle/cases/helpers/messages-thinking/nonadaptive-budget.yaml
+- tools/oracle/cases/helpers/messages-thinking/thinking-temperature-drop.yaml
+- tools/oracle/cases/helpers/messages-thinking/metadata-user-cache-key.yaml
+- tools/oracle/cases/helpers/messages-thinking/reasoning-auto-summary.yaml
+deviations: []
+out_of_scope:
+- 'litellm/llms/anthropic/pass_through/messages/transformation.py: B960 owns _messages_carry_output_config L53-L54,
+  AnthropicMessagesConfig._update_headers_with_anthropic_beta L611-L709.'
+- 'litellm/llms/anthropic/pass_through/messages/transformation.py: B961 owns AnthropicMessagesConfig.custom_llm_provider
+  L59-L60, AnthropicMessagesConfig._resolved_provider L63-L64, AnthropicMessagesConfig.get_supported_anthropic_messages_params
+  L66-L89, AnthropicMessagesConfig.should_filter_anthropic_beta_headers L91-L92, AnthropicMessagesConfig._remove_scope_from_cache_control
+  L94-L122, AnthropicMessagesConfig.should_strip_billing_metadata L124-L131, AnthropicMessagesConfig._filter_billing_headers_from_system
+  L134-L165, AnthropicMessagesConfig._normalize_system_role_messages L167-L230, AnthropicMessagesConfig.get_complete_url
+  L232-L244, AnthropicMessagesConfig.validate_anthropic_messages_environment L246-L284.'
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- 'transformation.py:555 emits the diagnostic ''TRANSFORMATION DEBUG - Messages: %s''; retain its level and fallback
+  instead of turning it into a hard error.'
+- Within AnthropicMessagesConfig._translate_reasoning_effort_to_anthropic\'s not isinstance(reasoning_effort, str)
+  branch, preserve return and its nested guards.
+review_level: standard
+budget:
+  max_changed_lines: 640
+  max_new_expects: 1

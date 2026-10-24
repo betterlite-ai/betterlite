@@ -1,0 +1,225 @@
+id: B1013
+title: Rerank contracts
+description: >-
+  Define typed rerank request/result and provider preparation contracts with string/structured documents, original
+  indexes and exact decimal scores. Preserve top_n, rank_fields, return_documents and max_chunks_per_doc projection
+  through B175, using closed provider capability data.
+
+
+  Implement crates/betterlite-core/src/api/rerank_contracts.rs, crates/betterlite-openai/src/api/rerank_contracts.rs,
+  crates/betterlite-provider/src/api/rerank_contracts.rs. Use RerankContractsInput and RerankContractsResult with
+  typed nested records; inject only the clock, repositories, transports and resolved settings this slice uses through
+  constructors. Reuse ApiLimits from B1087; do not introduce ambient environment or duplicate credential resolution.
+
+
+  Write adjacent tests.rs behavior functions structured_documents, return_documents, top_n_projection, score_exact_decimal,
+  unsupported_rank_fields under api::rerank_contracts::tests. Each named function drives production code and asserts
+  its case result; use named rstest inputs for related values. Corpus replay has the separate name replays_corpus.
+
+
+  Implement tests::compatibility_deviations with one named rstest case per deviation below, asserting the exact
+  current betterlite result and the pinned contrast. These cases are not disguised as differential equality; oracle
+  inputs for unchanged behavior remain comparable.
+
+
+  The production external-byte decoder is betterlite-openai::api::rerank_contracts::decode_rerank_contracts(bytes:
+  &[u8], limits: &WireDecodeLimits), for bounded external JSON bytes into the domain wire records. Place its implementation
+  in crates/betterlite-openai/src/api/rerank_contracts.rs and call it from the actual boundary. The cargo-fuzz target
+  crates/betterlite-openai/fuzz/fuzz_targets/rerank_contracts.rs passes arbitrary bounded bytes to that exact decoder;
+  api::rerank_contracts::tests::replays_corpus replays newly committed seeds through the same function. Transform-only
+  helpers reuse the already decoded records.
+
+
+  Register HelperCall::RerankContracts in tools/oracle/src/helpers/mod.rs (and helpers.rs if it owns the re-export)
+  and tools/oracle/helpers/dispatch.py. Each HelperCase encodes call: {rerank_contracts: <typed input>}; operation
+  is only the Python stdin protocol key, never the case tag. The Rust adapter calls this production service and
+  Python invokes the pinned MIT helper with independently scripted inputs/dependencies. Compare values and ordered
+  diagnostics/effects, never fixtures against themselves; HTTP/auth route behavior stays in consuming route tasks.
+
+
+  Callable ownership: litellm/llms/base_llm/rerank/transformation.py: BaseRerankConfig.validate_environment (L22-L30);
+  litellm/llms/base_llm/rerank/transformation.py: BaseRerankConfig.transform_rerank_request (L33-L40); litellm/llms/base_llm/rerank/transformation.py:
+  BaseRerankConfig.transform_rerank_response (L43-L54); litellm/llms/base_llm/rerank/transformation.py: BaseRerankConfig.get_complete_url
+  (L57-L70); litellm/llms/base_llm/rerank/transformation.py: BaseRerankConfig.get_supported_cohere_rerank_params
+  (L73-L74); litellm/llms/base_llm/rerank/transformation.py: BaseRerankConfig.map_cohere_rerank_params (L77-L92);
+  litellm/llms/base_llm/rerank/transformation.py: BaseRerankConfig.get_error_class (L94-L99); litellm/llms/base_llm/rerank/transformation.py:
+  BaseRerankConfig.calculate_rerank_cost (L101-L136); litellm/rerank_api/rerank_utils.py: get_optional_rerank_params
+  (L6-L52); litellm/types/rerank.py: RerankResponse.__getitem__ (L88-L89); litellm/types/rerank.py: RerankResponse.get
+  (L91-L92); litellm/types/rerank.py: RerankResponse.__contains__ (L94-L95). Abstract/protocol declarations map
+  to native types and synchronous/async wrappers share one implementation; a partial function span is the explicit
+  preparation/transition stage described above, with typed values passed to the following stage.
+
+
+  Sizing: 205 owned nonblank/non-comment/non-docstring Python lines (224 nonblank/non-comment physical lines, including
+  signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 225 implementation,
+  70 behavior tests, 60 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 0 config tests/seeds and
+  46 wiring; 551 total within the 560-line cap. The estimate includes tests and adapters, not just production code.
+
+
+  Direct inputs come from B010 (Provider framework, provider resolution and parameter mapping), B171 (Direct helper
+  oracle and URL path encoding), B175 (Provider parameter capabilities and mapping), B204 (Typed model price fields
+  and exact decimal parsing), B1087 (Api boundaries). These are callable/type/config owners, not provider-family
+  umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
+
+
+  Place wire DTOs and their decoder in the named wire leaf crate; provider contracts depend only on leaf records,
+  and core composes them above betterlite-provider. Do not add a wire/provider dependency on betterlite-core to
+  share an Input/Result type. Wire decoders accept a local limits value converted by the core boundary from ApiLimits.
+
+
+  WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
+  convert B1087 limits into it. This record has no dependency on the core crate.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/api/rerank_contracts.rs
+  - crates/betterlite-core/src/api/rerank_contracts/**
+  - crates/betterlite-core/src/api.rs
+  - crates/betterlite-openai/Cargo.toml
+  - crates/betterlite-openai/src/lib.rs
+  - crates/betterlite-openai/src/error.rs
+  - crates/betterlite-openai/src/api/rerank_contracts.rs
+  - crates/betterlite-openai/src/api/rerank_contracts/**
+  - crates/betterlite-openai/src/api.rs
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/api/rerank_contracts.rs
+  - crates/betterlite-provider/src/api/rerank_contracts/**
+  - crates/betterlite-provider/src/api.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - Cargo.toml
+  - Cargo.lock
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/rerank_contracts.rs
+  - crates/betterlite-openai/fuzz/corpus/rerank_contracts/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers.rs
+  - tools/oracle/src/helpers/rerank_contracts.rs
+  - tools/oracle/src/helpers/rerank_contracts/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/rerank_contracts.py
+  - tools/oracle/helpers/rerank_contracts/**
+  - tools/oracle/fuzz/corpus/helper_case/rerank_contracts-*
+  - tools/oracle/cases/helpers/rerank-contracts/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/rerank/transformation.py#L1-L136
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/rerank_utils.py#L1-L52
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L1-L95
+  why: Owned callable/type slice; use decorators for route aliases and the exact branches for behavior.
+dod:
+- text: 'structured documents: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-structured-documents
+  - oracle
+- text: 'return documents: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-return-documents
+  - oracle
+- text: 'top n projection: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-top-n-projection
+  - oracle
+- text: 'score exact decimal: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-score-exact-decimal
+  - oracle
+- text: 'unsupported rank fields: the named production behavior test asserts the result and effects described above.'
+  proof:
+  - case-unsupported-rank-fields
+  - oracle
+- text: Every explicit deviation has a native test for its documented status/code or fallback.
+  proof:
+  - deviation-tests
+- text: The named external-byte decoder is shared by production, fuzz and committed replay; behavior filters exclude
+    replay.
+  proof:
+  - parser-corpus
+- text: The independent Rust/Python helper adapter and the externally tagged case seed execute through B171.
+  proof:
+  - oracle
+  - helper-python
+  - helper-corpus
+- text: Every listed case is a newly added parity fixture and compares independent native and pinned results.
+  proof:
+  - new-oracle-cases
+  - oracle
+  - helper-python
+  - helper-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: the production domain behavior is absent in the scoped crates or only corpus replay exists
+    run: cargo nextest run --locked -p betterlite-core -p betterlite-openai -p betterlite-provider --no-tests=fail
+      -E 'test(/^api::rerank_contracts::/) - test(/::replays_corpus$/)'
+  - id: case-structured-documents
+    why: the structured-documents behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_contracts::tests::structured_documents($|::)/)'
+  - id: case-return-documents
+    why: the return-documents behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_contracts::tests::return_documents($|::)/)'
+  - id: case-top-n-projection
+    why: the top-n-projection behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_contracts::tests::top_n_projection($|::)/)'
+  - id: case-score-exact-decimal
+    why: the score-exact-decimal behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_contracts::tests::score_exact_decimal($|::)/)'
+  - id: case-unsupported-rank-fields
+    why: the unsupported-rank-fields behavior or its assertions are absent
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_contracts::tests::unsupported_rank_fields($|::)/)'
+  - id: deviation-tests
+    why: the documented compatibility difference lacks a native assertion
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_contracts::tests::compatibility_deviations($|::)/)'
+  - id: parser-corpus
+    why: the named production decoder has no fuzz target/new seed, or its replay fails
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/rerank_contracts)"
+      && test -f crates/betterlite-openai/fuzz/fuzz_targets/rerank_contracts.rs && grep -qF "decode_rerank_contracts"
+      crates/betterlite-openai/fuzz/fuzz_targets/rerank_contracts.rs && cargo nextest run --locked -p betterlite-openai
+      --no-tests=fail -E 'test(/^api::rerank_contracts::tests::replays_corpus$/)'
+  - id: helper-python
+    why: the operation adapter is missing or fails strict Python checks
+    run: test -f tools/oracle/helpers/rerank_contracts.py && uv run --locked --project tools/oracle/litellm ruff
+      check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-corpus
+    why: the new external enum tag has no added seed or the shared parser rejects it
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/rerank_contracts-*)"
+      && grep -qE "^[[:space:]]+rerank_contracts:" tools/oracle/fuzz/corpus/helper_case/rerank_contracts-* && cargo
+      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: new-oracle-cases
+    why: no new domain case exists on this branch
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/rerank-contracts)"
+oracle_cases:
+- tools/oracle/cases/helpers/rerank-contracts/structured-documents.yaml
+- tools/oracle/cases/helpers/rerank-contracts/return-documents.yaml
+- tools/oracle/cases/helpers/rerank-contracts/top-n-projection.yaml
+- tools/oracle/cases/helpers/rerank-contracts/score-exact-decimal.yaml
+- tools/oracle/cases/helpers/rerank-contracts/unsupported-rank-fields.yaml
+deviations:
+- what: Finite scores outside exact rust_decimal representation fail with HTTP 502, type bad_gateway, param score,
+    code decimal_out_of_range rather than rounding.
+  why: Reuse B204's exact-number boundary and the no-floats rule.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/rerank/transformation.py#L1-L136
+out_of_scope:
+- Provider-specific execution belongs to the provider part ids in the dependencies; this slice consumes their prepared
+  operations. Python package export/event-loop facades remain B158-B161.
+- Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
+  never stand in for those HTTP comparisons.
+pitfalls:
+- Within BaseRerankConfig.calculate_rerank_cost\'s search_units is None branch, preserve return (0.0, 0.0) and its
+  nested guards.
+- BaseRerankConfig.calculate_rerank_cost uses billed_units.get('search_units'); retain its missing-value behavior
+  and field spelling in the typed projection.
+review_level: standard
+budget:
+  max_changed_lines: 560
+  max_new_expects: 1

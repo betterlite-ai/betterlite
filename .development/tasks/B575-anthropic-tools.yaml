@@ -1,0 +1,233 @@
+id: B575
+title: Anthropic tools and tool-choice conversion
+description: >-
+  Add native ToolDefinition variants for functions, hosted/computer tools, advisor, MCP servers and programmatic
+  tool calls, using the existing argument/schema helpers. Preserve cache_control, input_examples, allowed_callers,
+  eager_input_streaming, defer_loading and parallel choice fields. This layer serializes MCP descriptors but never
+  contacts an MCP server.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/anthropic/chat/transformation.py:
+  AnthropicConfig._map_tool_choice L680-L721; AnthropicConfig._map_tool_helper L723-L922; AnthropicConfig._map_openai_mcp_server_tool
+  L924-L951; AnthropicConfig._map_tools L953-L997.
+
+
+  Implement crates/betterlite-anthropic/src/tools.rs with adjacent tests under tools/. Keep each Rust module at
+  most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf never imports
+  betterlite-provider or betterlite-core. The production function is the only Rust implementation used by tests
+  and oracle adapters.
+
+
+  Register helper operation anthropic_tools in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function tools_cases in betterlite-anthropic with these exact named cases (one per oracle file):
+  function_input_schema, computer_hosted_tools, tool_choice_any_none_auto, parallel_tool_use, mcp_server_configuration,
+  advisor_tool, cache_examples_callers, eager_input_streaming_defer_loading. Each case exercises its named outcome
+  independently; use stable supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert
+  both client response and captured upstream request. Existing API tasks retain route registration; this task must
+  not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/anthropic_tools* using HelperCase: kind: helper
+  and the externally tagged anthropic_tools variant inside call. Do not put the Python stdin operation field in
+  a HelperCase. Add oracle test helper_seeds_select_anthropic_tools that parses every prefixed seed with the production
+  HelperCase parser, asserts that exact variant and fails on zero seeds; then replay the shared corpus.
+
+
+  This task transforms already parsed records or delegates byte decoding to a named prerequisite/library; it adds
+  no provider byte parser and no provider fuzz target. The HelperCase parser is B171; configuration parsing, when
+  needed, is B002.
+
+
+  Budget from 271 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 290 production lines, 117 behavior/config-test lines,
+  87 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 519 planned, 525 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-anthropic/Cargo.toml
+  - crates/betterlite-anthropic/src/lib.rs
+  - crates/betterlite-anthropic/src/error.rs
+  - crates/betterlite-anthropic/src/tools.rs
+  - crates/betterlite-anthropic/src/tools/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/anthropic_tools.rs
+  - tools/oracle/src/helpers/anthropic_tools/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/anthropic_tools.py
+  - tools/oracle/cases/helpers/providers/anthropic-tools/**
+  - tools/oracle/fuzz/corpus/helper_case/anthropic_tools*
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/anthropic.py#L16-L202
+  why: Reuse or declare the typed records and aliases consumed by this slice.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L680-L997
+  why: >-
+    Own AnthropicConfig._map_tool_choice, AnthropicConfig._map_tool_helper, AnthropicConfig._map_openai_mcp_server_tool,
+    AnthropicConfig._map_tools. Other functions in this file remain with the owners listed below.
+dod:
+- text: 'function input schema: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/function-input-schema.yaml.'
+  proof:
+  - case-function-input-schema
+  - oracle
+  - helper-python
+- text: 'computer hosted tools: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/computer-hosted-tools.yaml.'
+  proof:
+  - case-computer-hosted-tools
+  - oracle
+  - helper-python
+- text: >-
+    tool choice any none auto: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/tool-choice-any-none-auto.yaml.
+  proof:
+  - case-tool-choice-any-none-auto
+  - oracle
+  - helper-python
+- text: 'parallel tool use: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/parallel-tool-use.yaml.'
+  proof:
+  - case-parallel-tool-use
+  - oracle
+  - helper-python
+- text: 'mcp server configuration: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/mcp-server-configuration.yaml.'
+  proof:
+  - case-mcp-server-configuration
+  - oracle
+  - helper-python
+- text: 'advisor tool: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/advisor-tool.yaml.'
+  proof:
+  - case-advisor-tool
+  - oracle
+  - helper-python
+- text: 'cache examples callers: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/cache-examples-callers.yaml.'
+  proof:
+  - case-cache-examples-callers
+  - oracle
+  - helper-python
+- text: >-
+    eager input streaming defer loading: the production result, omission or failure matches tools/oracle/cases/helpers/providers/anthropic-tools/eager-input-streaming-defer-loading.yaml.
+  proof:
+  - case-eager-input-streaming-defer-loading
+  - oracle
+  - helper-python
+- text: New anthropic_tools seeds parse as the intended call variant and replay through the shared production parser.
+  proof:
+  - helper-case-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-function-input-schema
+    why: The function-input-schema behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_function_input_schema$/)'
+  - id: case-computer-hosted-tools
+    why: The computer-hosted-tools behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_computer_hosted_tools$/)'
+  - id: case-tool-choice-any-none-auto
+    why: The tool-choice-any-none-auto behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_tool_choice_any_none_auto$/)'
+  - id: case-parallel-tool-use
+    why: The parallel-tool-use behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_parallel_tool_use$/)'
+  - id: case-mcp-server-configuration
+    why: The mcp-server-configuration behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_mcp_server_configuration$/)'
+  - id: case-advisor-tool
+    why: The advisor-tool behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_advisor_tool$/)'
+  - id: case-cache-examples-callers
+    why: The cache-examples-callers behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_cache_examples_callers$/)'
+  - id: case-eager-input-streaming-defer-loading
+    why: The eager-input-streaming-defer-loading behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/::tools_cases::case_[0-9]+_eager_input_streaming_defer_loading$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_tools.py)" && uv run --locked
+      --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm
+      basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_tools*")"
+      && grep -lq 'anthropic_tools' tools/oracle/fuzz/corpus/helper_case/anthropic_tools* && cargo nextest run --locked
+      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_tools$/)' && cargo nextest
+      run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/anthropic-tools/function-input-schema.yaml
+- tools/oracle/cases/helpers/providers/anthropic-tools/computer-hosted-tools.yaml
+- tools/oracle/cases/helpers/providers/anthropic-tools/tool-choice-any-none-auto.yaml
+- tools/oracle/cases/helpers/providers/anthropic-tools/parallel-tool-use.yaml
+- tools/oracle/cases/helpers/providers/anthropic-tools/mcp-server-configuration.yaml
+- tools/oracle/cases/helpers/providers/anthropic-tools/advisor-tool.yaml
+- tools/oracle/cases/helpers/providers/anthropic-tools/cache-examples-callers.yaml
+- tools/oracle/cases/helpers/providers/anthropic-tools/eager-input-streaming-defer-loading.yaml
+deviations: []
+out_of_scope:
+- B027 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: _enum_conflicts_with_declared_type L172-L181; AnthropicConfig.filter_anthropic_output_schema
+  L530-L665; AnthropicConfig.get_json_schema_from_pydantic_object L667-L670; AnthropicConfig._extract_json_schema_from_response_format
+  L1328-L1337; AnthropicConfig.map_response_format_to_anthropic_output_format L1339-L1364; AnthropicConfig.map_response_format_to_anthropic_tool
+  L1366-L1387; AnthropicConfig._create_json_tool_call_for_response_format L1656-L1682 belong to B574; reuse that
+  implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: _basic_sanitize_anthropic_tool_name L193-L202; _build_anthropic_tool_name_maps
+  L205-L265; AnthropicConfig._rewrite_tool_names_in_messages L1000-L1048; AnthropicConfig._sanitize_tool_names_in_request
+  L1079-L1151 belong to B573; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._is_opus_4_6_model L387-L390; AnthropicConfig._is_opus_4_7_model
+  L393-L396; AnthropicConfig.get_cache_control_headers L672-L678; AnthropicConfig._build_request_tool_name_maps
+  L1051-L1076; AnthropicConfig._detect_tool_search_tools L1153-L1165; AnthropicConfig._separate_deferred_tools L1167-L1183;
+  AnthropicConfig._expand_tool_references L1185-L1228 have no caller at the pin; do not port them.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.__init__ L307-L320; AnthropicConfig.custom_llm_provider
+  L323-L324; AnthropicConfig._resolved_provider L327-L328; AnthropicConfig.get_config L331-L338; AnthropicConfig.get_max_tokens_for_model
+  L341-L354; AnthropicConfig._map_stop_sequences L1230-L1248; AnthropicConfig.map_web_search_tool L1389-L1414; AnthropicConfig.map_openai_context_management_to_anthropic
+  L1417-L1471; AnthropicConfig.map_openai_params L1473-L1654; AnthropicConfig._apply_output_config L2082-L2128;
+  _valid_user_id L2795-L2808 belong to B576; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.convert_tool_use_to_openai_format L357-L384; AnthropicConfig._resolve_json_mode_non_streaming
+  L2130-L2160; AnthropicConfig.extract_response_content L2162-L2253; AnthropicConfig._build_code_by_id_map L2469-L2482;
+  AnthropicConfig._build_code_interpreter_results L2484-L2507; AnthropicConfig._build_web_search_calls L2509-L2536;
+  AnthropicConfig._build_provider_specific_fields L2538-L2582; AnthropicConfig._convert_tool_response_to_message
+  L2762-L2785 belong to B578; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.should_strip_billing_metadata L1684-L1691; AnthropicConfig.translate_system_message
+  L1693-L1747; AnthropicConfig.add_code_execution_tool L1749-L1780; AnthropicConfig._ensure_beta_header L1782-L1801;
+  AnthropicConfig._ensure_context_management_beta_header L1803-L1837; AnthropicConfig.update_headers_with_optional_anthropic_beta
+  L1839-L1875; AnthropicConfig.inlines_remote_media L1877-L1878; AnthropicConfig.async_transform_request L1880-L1894;
+  AnthropicConfig.transform_request L1896-L2080 belong to B577; reuse that implementation or its injected typed
+  boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.thinking_tokens_from_usage L2256-L2263; AnthropicConfig._response_has_thinking_block
+  L2266-L2274; AnthropicConfig._build_completion_token_details L2276-L2307; AnthropicConfig._sum_iteration_thinking_tokens
+  L2309-L2315; AnthropicConfig.is_anthropic_usage_object L2318-L2330; AnthropicConfig._aggregate_cache_creation_token_details
+  L2333-L2346; AnthropicConfig._resolve_cache_creation_token_details L2349-L2361; AnthropicConfig.calculate_usage
+  L2363-L2467 belong to B579; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig.transform_parsed_response L2584-L2688; AnthropicConfig.get_prefix_prompt
+  L2690-L2707; AnthropicConfig.transform_response L2709-L2759; AnthropicConfig.get_error_class L2787-L2792 belong
+  to B580; reuse that implementation or its injected typed boundary.
+- >-
+  litellm/llms/anthropic/chat/transformation.py: AnthropicConfig._supports_effort_level L399-L403; AnthropicConfig._validate_effort_for_model
+  L406-L415; AnthropicConfig._model_supports_effort_param L418-L431; AnthropicConfig._model_supports_speed_param
+  L434-L444; AnthropicConfig._maybe_drop_speed_param L447-L471; AnthropicConfig._raise_invalid_reasoning_effort
+  L474-L494; AnthropicConfig.get_supported_openai_params L496-L527; AnthropicConfig._map_reasoning_effort L1251-L1309;
+  AnthropicConfig.cap_thinking_budget_to_max_tokens L1312-L1326 belong to B569; reuse that implementation or its
+  injected typed boundary.
+pitfalls:
+- Preserve cache_control, input_examples, allowed_callers, eager_input_streaming, defer_loading and parallel choice
+  fields.
+budget:
+  max_changed_lines: 525
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,124 @@
+id: B1210
+title: Team callback validation redaction and audit projection
+description: >-
+  Validate and redact team callback configuration through B189/B246 callback policy and B061 stored-secret
+  format. Resolve effective callback values and construct audit before/after records for the B065 sink;
+  never expose decrypted callback secrets in GET responses.
+
+
+  Build the production team_callback_policy module in betterlite-server; reuse the typed dependencies
+  listed in the backlog. Keep Rust implementation files below 300 lines by using named domain submodules
+  with adjacent tests.rs files.
+
+
+  Production ownership, including fields, protocol contracts and accessors as native types: litellm/proxy/management_endpoints/team_callback_endpoints.py:
+  _callback_config_error (L59-L60; 2 source lines), _validate_team_callback (L63-L66; 4 source lines),
+  _redact_callback_secrets (L69-L92; 23 source lines), _mask_sensitive_callback_vars (L95-L118; 21 source
+  lines), _resolve_team_callbacks (L121-L161; 36 source lines), _log_audit_task_exception (L164-L176;
+  12 source lines), _emit_team_callback_audit_log (L179-L225; 42 source lines), _callback_error (L228-L233;
+  6 source lines), _unknown_team_error (L236-L249; 13 source lines).
+
+
+  Add the team_callback_policy operation under B856 Management::teams. Python calls only the owned MIT
+  helper with injected clock/cache/DB/network collaborators; it never calls a route or copies the expected
+  algorithm. Rust invokes the production module. Compare typed values, exception status/type/param/code,
+  ordered warnings and effects; exclude only random IDs and message text with a reason per pointer. Add
+  a team-callback-policy-* seed to B171 helper_case, which already owns this decoder.
+
+
+  This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
+  parser and no task-specific fuzz target. HTTP request schema changes belong to the named request/model
+  contract owner, not a duplicate decoder in the handler.
+
+
+  The oracle runs open-source LiteLLM without its enterprise directory/package. Follow the reachable MIT
+  fallback. Only the explicitly recorded no-paid-tier deviations may enable an MIT premium_user branch;
+  prove those differences in Rust tests, outside the equality corpus.
+
+
+  Sizing: 159 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
+  159 production, 139 behavior/Postgres tests, 65 helper adapters, 30 route/manifests/wiring, 0 decoder/fuzz
+  and 0 config lines, 393 changed lines estimated within a 400-line gate. Only the repository fixture/corpus/lock
+  exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+scope:
+  paths:
+    - crates/betterlite-server/src/team_callback_policy.rs
+    - crates/betterlite-server/src/team_callback_policy/**
+    - crates/betterlite-server/src/lib.rs
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/src/helpers/team_callback_policy.rs
+    - tools/oracle/src/helpers/team_callback_policy/**
+    - tools/oracle/helpers/team_callback_policy.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/src/helpers/management/teams.rs
+    - tools/oracle/helpers/management/teams.py
+    - tools/oracle/cases/helpers/team-callback-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/team-callback-policy-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L59-L60
+    why: Own _callback_config_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L63-L66
+    why: Own _validate_team_callback; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L69-L92
+    why: Own _redact_callback_secrets; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L95-L118
+    why: Own _mask_sensitive_callback_vars; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L121-L161
+    why: Own _resolve_team_callbacks; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L164-L176
+    why: Own _log_audit_task_exception; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L179-L225
+    why: Own _emit_team_callback_audit_log; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L228-L233
+    why: Own _callback_error; preserve caller-visible values and failure ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_callback_endpoints.py#L236-L249
+    why: Own _unknown_team_error; preserve caller-visible values and failure ordering.
+dod:
+  - text: 'Implement the owned behavior and ordered failure effects; named tests: invalid_callback, list_masked_secrets,
+      audit_after_write.'
+    proof:
+      - behavior-tests
+  - text: The independently invoked MIT helper matches the production operation and the new helper-case
+      seed replays.
+    proof:
+      - oracle
+      - helper-python
+      - helper-case-corpus
+checks:
+  optional: []
+  commands:
+    - id: behavior-tests
+      why: The named domain behavior tests are absent or the pinned behavior fails.
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^team_callback_policy::tests::/)
+        - test(/replays_the_/)'
+    - id: helper-python
+      why: The referenced helper adapter is missing or strict Python checking fails.
+      run: test -f tools/oracle/helpers/team_callback_policy.py && uv run --locked --project tools/oracle/litellm
+        ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright
+        --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/team-callback-policy-*")"
+        && grep -rlq "team_callback_policy" tools/oracle/fuzz/corpus/helper_case/team-callback-policy-*
+        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/team-callback-policy/invalid-callback.yaml
+  - tools/oracle/cases/helpers/team-callback-policy/list-masked-secrets.yaml
+  - tools/oracle/cases/helpers/team-callback-policy/audit-after-write.yaml
+deviations: []
+out_of_scope:
+  - B061 owns the cryptographic storage format; injected StoredCipher test doubles are not a plaintext
+    production fallback.
+  - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B057 owns add_team_callbacks (L258-L432),
+    delete_team_callback (L442-L577).'
+  - 'litellm/proxy/management_endpoints/team_callback_endpoints.py: B1211 owns disable_team_logging (L586-L716),
+    get_team_callbacks (L725-L815).'
+  - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
+pitfalls:
+  - Resolve effective callback values and construct audit before/after records for the B065 sink; never
+    expose decrypted callback secrets in GET responses..
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+review_level: security

@@ -1,0 +1,212 @@
+id: B660
+title: Bedrock Knowledge Bases vector retrieval
+description: >-
+  Add BedrockVectorQuery/Reply for knowledge-base retrieve, OpenAI filter operator translation and optional user
+  context. Preserve nested and/or filters, metadata file-id/name/attribute extraction and score/result order. Creation
+  remains the pinned unsupported provider operation, not a synthetic successful store.
+
+
+  Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/vector_stores/transformation.py:
+  BedrockVectorStoreConfig.__init__ L40-L42; BedrockVectorStoreConfig.get_error_class L44-L50; BedrockVectorStoreConfig.get_auth_credentials
+  L52-L53; BedrockVectorStoreConfig.get_vector_store_endpoints_by_type L55-L59; BedrockVectorStoreConfig.get_supported_openai_params
+  L61-L62; BedrockVectorStoreConfig._map_operator_to_aws L64-L92; BedrockVectorStoreConfig._map_operator_filter
+  L94-L107; BedrockVectorStoreConfig._map_and_or_filters L109-L153; BedrockVectorStoreConfig.map_openai_params L155-L184;
+  BedrockVectorStoreConfig.validate_environment L186-L189; BedrockVectorStoreConfig.get_complete_url L191-L199;
+  BedrockVectorStoreConfig.transform_search_vector_store_request L201-L252; BedrockVectorStoreConfig._user_context
+  L255-L268; BedrockVectorStoreConfig.sign_request L270-L285; BedrockVectorStoreConfig._get_file_id_from_metadata
+  L287-L297; BedrockVectorStoreConfig._get_filename_from_metadata L299-L319; BedrockVectorStoreConfig._get_attributes_from_metadata
+  L321-L328; BedrockVectorStoreConfig.transform_search_vector_store_response L330-L367; BedrockVectorStoreConfig.transform_create_vector_store_request
+  L370-L375; BedrockVectorStoreConfig.transform_create_vector_store_response L377-L378.
+
+
+  Reuse BaseAWSLLM.__init__ from B590 (litellm/llms/bedrock/base_aws_llm.py); its implementation remains with that
+  prerequisite.
+
+
+  Reuse BedrockError.__init__ from B682 (litellm/llms/bedrock/common_utils.py); its implementation remains with
+  that prerequisite.
+
+
+  Implement crates/betterlite-bedrock/src/vector_stores.rs with adjacent tests under vector_stores/. Keep each Rust
+  module at most 300 lines. Use the typed records and direct prerequisites listed in backlog.yaml; a provider leaf
+  never imports betterlite-provider or betterlite-core. The production function is the only Rust implementation
+  used by tests and oracle adapters.
+
+
+  Register helper operation bedrock_services_vector_stores in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py.
+  The Rust adapter calls production code; the Python adapter invokes the referenced pinned functions with fixture
+  transport/SDK constructors, clocks and IDs, never a copied algorithm. Run with LITELLM_RUST=false and the local
+  model map; intercept HTTP before external IO. A native-only binding is captured at its call seam where specified
+  above. Compare omissions, warning/drop/fallback outcomes and stable error fields as well as success.
+
+
+  Write rstest function vector_stores_cases in betterlite-bedrock with these exact named cases (one per oracle file):
+  filter_operator_map, nested_and_or_filters, knowledge_base_retrieve_url, user_context, location_file_id_name,
+  attributes_and_scores, unsupported_create. Each case exercises its named outcome independently; use stable supplied
+  clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and captured
+  upstream request. Existing API tasks retain route registration; this task must not register a duplicate axum route.
+
+
+  Add new shared-parser seeds tools/oracle/fuzz/corpus/helper_case/bedrock_services_vector_stores* using HelperCase:
+  kind: helper and the externally tagged bedrock_services_vector_stores variant inside call. Do not put the Python
+  stdin operation field in a HelperCase. Add oracle test helper_seeds_select_bedrock_services_vector_stores that
+  parses every prefixed seed with the production HelperCase parser, asserts that exact variant and fails on zero
+  seeds; then replay the shared corpus.
+
+
+  Outside-byte boundary: decode_knowledge_base_reply consumes knowledge-base retrieval JSON bytes in crates/betterlite-bedrock/src/vector_stores.rs
+  (or its scoped child module). Add cargo-fuzz target crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_vector_stores.rs
+  calling that exact production function, with new valid, malformed, truncated and boundary seeds under crates/betterlite-bedrock/fuzz/corpus/bedrock_services_vector_stores.
+  The adjacent test replays_the_bedrock_services_vector_stores_corpus uses the same function and asserts expected
+  success/failure categories; never introduce a parser solely for fuzzing.
+
+
+  Budget from 285 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
+  docstrings; SDK overloads share an async implementation): 305 production lines, 108 behavior/config-test lines,
+  83 combined Rust/Python adapter lines, 55 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
+  wiring lines; 576 planned, 600 maximum changed lines.
+scope:
+  paths:
+  - crates/betterlite-bedrock/Cargo.toml
+  - crates/betterlite-bedrock/src/lib.rs
+  - crates/betterlite-bedrock/src/error.rs
+  - crates/betterlite-bedrock/src/vector_stores.rs
+  - crates/betterlite-bedrock/src/vector_stores/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/mod.rs
+  - tools/oracle/src/helpers/bedrock_services_vector_stores.rs
+  - tools/oracle/src/helpers/bedrock_services_vector_stores/**
+  - tools/oracle/helpers/dispatch.py
+  - tools/oracle/helpers/bedrock_services_vector_stores.py
+  - tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/**
+  - tools/oracle/fuzz/corpus/helper_case/bedrock_services_vector_stores*
+  - crates/betterlite-bedrock/fuzz/Cargo.toml
+  - crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_vector_stores.rs
+  - crates/betterlite-bedrock/fuzz/corpus/bedrock_services_vector_stores/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/vector_stores/transformation.py#L40-L378
+  why: >-
+    Own BedrockVectorStoreConfig.__init__, BedrockVectorStoreConfig.get_error_class, BedrockVectorStoreConfig.get_auth_credentials,
+    BedrockVectorStoreConfig.get_vector_store_endpoints_by_type, BedrockVectorStoreConfig.get_supported_openai_params,
+    BedrockVectorStoreConfig._map_operator_to_aws, BedrockVectorStoreConfig._map_operator_filter, BedrockVectorStoreConfig._map_and_or_filters,
+    BedrockVectorStoreConfig.map_openai_params, BedrockVectorStoreConfig.validate_environment, BedrockVectorStoreConfig.get_complete_url,
+    BedrockVectorStoreConfig.transform_search_vector_store_request, BedrockVectorStoreConfig._user_context, BedrockVectorStoreConfig.sign_request,
+    BedrockVectorStoreConfig._get_file_id_from_metadata, BedrockVectorStoreConfig._get_filename_from_metadata, BedrockVectorStoreConfig._get_attributes_from_metadata,
+    BedrockVectorStoreConfig.transform_search_vector_store_response, BedrockVectorStoreConfig.transform_create_vector_store_request,
+    BedrockVectorStoreConfig.transform_create_vector_store_response. Other functions in this file remain with the
+    owners listed below.
+dod:
+- text: >-
+    filter operator map: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/filter-operator-map.yaml.
+  proof:
+  - case-filter-operator-map
+  - oracle
+  - helper-python
+- text: >-
+    nested and or filters: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/nested-and-or-filters.yaml.
+  proof:
+  - case-nested-and-or-filters
+  - oracle
+  - helper-python
+- text: >-
+    knowledge base retrieve url: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/knowledge-base-retrieve-url.yaml.
+  proof:
+  - case-knowledge-base-retrieve-url
+  - oracle
+  - helper-python
+- text: 'user context: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/user-context.yaml.'
+  proof:
+  - case-user-context
+  - oracle
+  - helper-python
+- text: >-
+    location file id name: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/location-file-id-name.yaml.
+  proof:
+  - case-location-file-id-name
+  - oracle
+  - helper-python
+- text: >-
+    attributes and scores: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/attributes-and-scores.yaml.
+  proof:
+  - case-attributes-and-scores
+  - oracle
+  - helper-python
+- text: >-
+    unsupported create: the production result, omission or failure matches tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/unsupported-create.yaml.
+  proof:
+  - case-unsupported-create
+  - oracle
+  - helper-python
+- text: New bedrock_services_vector_stores seeds parse as the intended call variant and replay through the shared
+    production parser.
+  proof:
+  - helper-case-corpus
+- text: decode_knowledge_base_reply has newly committed malformed and boundary inputs replayed through production
+    parsing.
+  proof:
+  - parser-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: case-filter-operator-map
+    why: The filter-operator-map behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_filter_operator_map$/)'
+  - id: case-nested-and-or-filters
+    why: The nested-and-or-filters behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_nested_and_or_filters$/)'
+  - id: case-knowledge-base-retrieve-url
+    why: The knowledge-base-retrieve-url behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_knowledge_base_retrieve_url$/)'
+  - id: case-user-context
+    why: The user-context behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_user_context$/)'
+  - id: case-location-file-id-name
+    why: The location-file-id-name behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_location_file_id_name$/)'
+  - id: case-attributes-and-scores
+    why: The attributes-and-scores behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_attributes_and_scores$/)'
+  - id: case-unsupported-create
+    why: The unsupported-create behavior is missing or differs from its pinned fixture.
+    run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::vector_stores_cases::case_[0-9]+_unsupported_create$/)'
+  - id: helper-python
+    why: The operation adapter is absent, unchanged or fails strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/bedrock_services_vector_stores.py)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_vector_stores*")"
+      && grep -lq 'bedrock_services_vector_stores' tools/oracle/fuzz/corpus/helper_case/bedrock_services_vector_stores*
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_vector_stores$/)'
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: parser-corpus
+    why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/bedrock_services_vector_stores)"
+      && grep -q 'decode_knowledge_base_reply' crates/betterlite-bedrock/fuzz/fuzz_targets/bedrock_services_vector_stores.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::replays_the_bedrock_services_vector_stores_corpus$/)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/filter-operator-map.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/nested-and-or-filters.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/knowledge-base-retrieve-url.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/user-context.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/location-file-id-name.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/attributes-and-scores.yaml
+- tools/oracle/cases/helpers/providers/bedrock-services-vector-stores/unsupported-create.yaml
+deviations: []
+out_of_scope:
+- B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
+  remain with their endpoint/SDK tasks.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Knowledge-base retrieve is implemented; create remains an unsupported provider operation.
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard
