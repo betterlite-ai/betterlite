@@ -1885,7 +1885,7 @@ tasks:
     title: Anthropic prompt and tool conversion helpers
     status: todo
     depends_on: [B177, B179, B183]
-    file: null
+    file: tasks/B180-anthropic-prompts.yaml
     covers:
       - "litellm/litellm_core_utils/prompt_templates/factory.py"
   - id: B181
