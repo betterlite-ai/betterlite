@@ -1828,7 +1828,7 @@ tasks:
     title: Pooled outbound requests and response limits
     status: todo
     depends_on: [B172, B005]
-    file: null
+    file: tasks/B173-http-pool.yaml
     covers:
       - "litellm/llms/custom_httpx/{http_handler,httpx_handler,aiohttp_handler,aiohttp_transport,async_client_cleanup,llm_http_handler,container_handler}.py"
       - "litellm/llms/aiohttp_openai/**"

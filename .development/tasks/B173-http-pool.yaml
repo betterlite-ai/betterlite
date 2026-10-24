@@ -1,0 +1,106 @@
+id: B173
+title: Pooled outbound requests and response limits
+description: >-
+  Refine B004's betterlite-http into the shared transport all provider adapters call. Keep one async reqwest implementation
+  and injected policy/client ownership, replacing the Python httpx/aiohttp backend distinction with the same observable
+  request contract. Pool by immutable TLS/proxy/HTTP policy and keep authorization per request; bound the pool to
+  configured deployments and retain client ownership through each streamed body. Provide typed method, headers,
+  query, body and deadline inputs for JSON, bytes and multipart callers, without implementing endpoint-specific
+  transformations from llm_http_handler.py or container_handler.py. Disable implicit retries and cookies, keep network
+  and source errors typed, enforce separate connect/read and total deadlines, and cap buffered success/error bodies
+  and headers, including decompressed bytes. Use constructor limits (16 MiB buffered body, 64 KiB aggregate headers
+  unless the existing stricter limit applies); streaming stays incremental with bounded buffers. Wire the existing
+  OpenAI adapter and server shutdown to the pool, and test connection reuse, cancellation, malformed length/encoding,
+  TLS policy isolation, drain and no retry. Add transport helper probes using the injected Python HTTP handler and
+  local mock; the helper runner owns all subprocesses. Budget 300 transport lines, 150 integration lines and 300
+  tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-http/**
+  - crates/betterlite-openai/**
+  - crates/betterlite-server/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/http-transport/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L181-L226
+  why: Client ownership, stream anchoring and blocked cookies.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
+  why: Bounded response reads and closure on every exit.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1810
+  why: Cache identity and reuse.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L442-L540
+  why: Common async/sync send boundary, distinct from per-endpoint conversion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L101-L139
+  why: Path and query construction consumed by future container endpoints.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/aiohttp_openai/chat/transformation.py#L27-L81
+  why: The aiohttp_openai alias uses the same OpenAI wire contract.
+- url: https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html
+  why: Pooling, limits and retry/redirect configuration.
+dod:
+- text: >-
+    Repeated calls reuse a local connection, different security policies remain isolated, and concurrent deployments
+    never exchange authorization or cookies.
+  proof:
+  - http-pool-tests
+- text: Deadlines, decompression/body/header limits, read failure and cancellation release capacity and close resources
+    without retrying.
+  proof:
+  - http-pool-tests
+- text: Method/query/body handling and explicit client ownership match the listed transport probes.
+  proof:
+  - oracle
+- text: The existing chat stream remains incremental and shutdown waits for tracked work with a bounded deadline.
+  proof:
+  - http-pool-tests
+  - chat-regression
+- text: Only betterlite-http builds production outbound clients and deny.toml retains its layering rule.
+  proof:
+  - clippy
+  - deny
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: http-pool-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-http -p betterlite-server --no-tests=fail -E 'test(/http_pool|http_limit|http_shutdown/)'
+  - id: chat-regression
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-openai -p betterlite-server --no-tests=fail -E 'test(/chat|stream/)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/http-transport/json-bytes.yaml
+- tools/oracle/cases/helpers/http-transport/query-duplicates.yaml
+- tools/oracle/cases/helpers/http-transport/cookie-isolation.yaml
+- tools/oracle/cases/helpers/http-transport/borrowed-client.yaml
+- tools/oracle/cases/helpers/http-transport/response-close.yaml
+- tools/oracle/cases/chat/openai-basic.yaml
+- tools/oracle/cases/chat/openai-stream.yaml
+deviations:
+- what: >-
+    One async transport replaces the configurable httpx/aiohttp engines; engine-selection settings fail startup
+    until an equivalent supported policy exists.
+  why: Python backend identity is not a Rust runtime feature, and a silently ignored option is forbidden.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1213-L1242
+out_of_scope:
+- Endpoint request/response schemas in the large HTTP handler belong to B024-B050 and B080-B099; this part owns
+  only their shared transport.
+- Retries and backoff are B017, WebSocket protocols are their endpoint tasks, and synchronous Python wrappers are
+  B157-B161.
+pitfalls:
+- A request timeout must still cover body consumption after headers have arrived.
+- Do not derive a cache key by concatenating arbitrary parameter strings.
+- No detached client cleanup task may survive server shutdown.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
