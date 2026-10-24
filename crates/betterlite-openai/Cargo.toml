@@ -1,0 +1,18 @@
+[package]
+name = "betterlite-openai"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json = "1.0.154"
+thiserror.workspace = true
+
+[dev-dependencies]
+betterlite-config = { path = "../betterlite-config" }
+rstest = "=0.27.0"
+
+[lints]
+workspace = true

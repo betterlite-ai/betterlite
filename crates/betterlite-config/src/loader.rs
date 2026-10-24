@@ -209,10 +209,26 @@ where
     let timeout_path = "litellm_settings.request_timeout";
     let num_retries = number(raw.num_retries, retries_path, lookup, parse_integer)?;
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
+    // LiteLLM reads bool(os.getenv(...)), so every nonempty value, "false" included, turns it on
+    let modify_params = raw.modify_params.unwrap_or_else(|| {
+        lookup
+            .lookup("LITELLM_MODIFY_PARAMS")
+            .is_some_and(|value| !value.is_empty())
+    });
+    let default_max_tokens = lookup.lookup("DEFAULT_MAX_TOKENS").map_or(Ok(4096), |text| {
+        text.trim()
+            .parse::<i64>()
+            .map_err(|source| ConfigError::InvalidInteger {
+                path: "DEFAULT_MAX_TOKENS".to_owned(),
+                source,
+            })
+    })?;
     Ok(LiteLlmSettings {
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,
+        modify_params,
+        default_max_tokens,
     })
 }
 

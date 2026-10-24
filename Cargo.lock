@@ -169,6 +169,7 @@ name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "rstest",
  "secrecy",
  "serde",
  "serde-saphyr",
@@ -182,6 +183,17 @@ version = "0.1.0"
 dependencies = [
  "percent-encoding",
  "rstest",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-openai"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "rstest",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
