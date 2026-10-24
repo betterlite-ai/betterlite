@@ -9,7 +9,8 @@ description: >-
   backup for offline runtime behavior, and compare registry projection/model queries through helper cases without
   advertising unimplemented routes in /models. Add provider_capabilities parser fuzz target and a real composition
   test constructing the whole layer without network or ambient environment. Budget 280 registry/facade lines, 100
-  integration and 300 tests.
+  integration and 300 tests. Seed B171's shared helper_case corpus with every added operation and replay it through
+  the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -30,6 +31,7 @@ scope:
   - crates/betterlite-tokenizer/Cargo.toml
   - crates/betterlite-tokenizer/src/model_capabilities.rs
   - crates/betterlite-tokenizer/src/model_capabilities/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/provider_endpoints_support.json#L1-L130
@@ -56,6 +58,9 @@ dod:
 - text: Provider capability input has fuzz corpus replay.
   proof:
   - provider-capabilities-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -82,6 +87,11 @@ checks:
       f5751876c574c98f0aa16ba48e54c1457c110acfe57aad3f250f41ee89125d98  provider_endpoints_support_backup.json
 
       SUMS'
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/model-capabilities/root-registry.yaml
 - tools/oracle/cases/helpers/model-capabilities/packaged-registry.yaml
