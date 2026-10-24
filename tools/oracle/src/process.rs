@@ -1,7 +1,7 @@
 use reqwest::blocking::Client;
 use std::fs::File;
 use std::io::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -16,13 +16,13 @@ pub(crate) struct Gateway {
     pub(crate) log_path: PathBuf,
 }
 
-pub(crate) struct GatewaySpec<'spec> {
-    pub(crate) command: &'spec Path,
-    pub(crate) args: &'spec [String],
-    pub(crate) cwd: &'spec Path,
-    pub(crate) env: &'spec [(String, String)],
+pub(crate) struct GatewaySpec {
+    pub(crate) command: PathBuf,
+    pub(crate) args: Vec<String>,
+    pub(crate) cwd: PathBuf,
+    pub(crate) env: Vec<(String, String)>,
     pub(crate) port: u16,
-    pub(crate) log_path: &'spec Path,
+    pub(crate) log_path: PathBuf,
 }
 
 #[derive(Debug, Error)]
@@ -42,25 +42,25 @@ pub(crate) enum ProcessError {
 }
 
 impl Gateway {
-    pub(crate) fn start(spec: &GatewaySpec<'_>) -> Result<Self, ProcessError> {
-        let (log, stderr) = File::create(spec.log_path)
+    pub(crate) fn start(spec: GatewaySpec) -> Result<Self, ProcessError> {
+        let (log, stderr) = File::create(&spec.log_path)
             .and_then(|log| Ok((log.try_clone()?, log)))
             .map_err(|source| ProcessError::Log {
-                path: spec.log_path.to_owned(),
+                path: spec.log_path.clone(),
                 source,
             })?;
         let mut process = Command::new(spec.command);
         process
             .args(spec.args)
             .current_dir(spec.cwd)
-            .envs(spec.env.iter().cloned())
+            .envs(spec.env)
             .stdout(Stdio::from(log))
             .stderr(Stdio::from(stderr));
         let child = process.spawn().map_err(ProcessError::Spawn)?;
         Ok(Self {
             child,
             base_url: format!("http://127.0.0.1:{}", spec.port),
-            log_path: spec.log_path.to_owned(),
+            log_path: spec.log_path,
         })
     }
 
@@ -68,7 +68,7 @@ impl Gateway {
         let deadline = Instant::now()
             .checked_add(Duration::from_secs(120))
             .ok_or(ProcessError::Timeout)?;
-        while Instant::now() < deadline {
+        while Instant::now().checked_duration_since(deadline).is_none() {
             if let Some(status) = self.child.try_wait().map_err(ProcessError::Stop)? {
                 return Err(ProcessError::Exited(status));
             }

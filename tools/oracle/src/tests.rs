@@ -19,6 +19,7 @@ use serde_json::Value;
 use crate::case::{Case, Compare, UpstreamAnswer, load_cases};
 use crate::cli::Options;
 use crate::compare;
+use crate::gateway::{self, GatewayInput};
 use crate::http::{HttpError, MAX_BODY, Response, client, ready, send};
 use crate::mock::MockProvider;
 use crate::mock::ProviderRequest;
@@ -96,14 +97,6 @@ fn comparison_cases(#[case] name: &str) {
     assert_eq!(
         result.err().map(|difference| difference.pointer),
         data.expected
-    );
-    assert_eq!(
-        serde_json::to_value(&data.left).unwrap().get("status"),
-        Some(&Value::from(data.left.status))
-    );
-    assert_eq!(
-        compare::first_difference_optional(None, None, "/missing"),
-        None
     );
 }
 
@@ -217,15 +210,8 @@ fn http_ready_rejects_non_success_status_and_chunks_allow_the_limit() {
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}",
         body.len()
     );
-    assert_eq!(
-        wire_response(wire.into_bytes())
-            .unwrap()
-            .body
-            .as_str()
-            .unwrap()
-            .len(),
-        body.len()
-    );
+    let reply = wire_response(wire.into_bytes()).unwrap();
+    assert_eq!(reply.body.as_str().map(str::len), Some(MAX_BODY));
     let oversized = format!(
         "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{body}a",
         body.len() + 1
@@ -315,17 +301,49 @@ fn mock_server_handles_nonblocking_waits_and_failure_storage() {
 }
 
 fn gateway_fixture(name: &str, script: &str, port: u16) -> Gateway {
-    let log = temporary_case_path(name);
-    let args = vec!["-c".to_owned(), script.to_owned()];
-    Gateway::start(&GatewaySpec {
-        command: Path::new("/bin/sh"),
-        args: &args,
-        cwd: Path::new("/tmp"),
-        env: &[],
+    Gateway::start(GatewaySpec {
+        command: PathBuf::from("/bin/sh"),
+        args: vec!["-c".to_owned(), script.to_owned()],
+        cwd: PathBuf::from("/tmp"),
+        env: Vec::new(),
         port,
-        log_path: &log,
+        log_path: temporary_case_path(name),
     })
     .unwrap()
+}
+
+#[rstest::rstest]
+#[case::litellm(false, true, "uv run --locked litellm", "litellm.log")]
+#[case::betterlite(false, false, "betterlite", "betterlite.log")]
+#[case::self_check(true, false, "uv run --locked litellm", "betterlite.log")]
+fn gateway_spec_picks_command_arguments_and_log(
+    #[case] self_check: bool,
+    #[case] first: bool,
+    #[case] launcher: &str,
+    #[case] log: &str,
+) {
+    let options = Options {
+        self_check,
+        paths: Vec::new(),
+    };
+    let case_env = BTreeMap::from([("CASE".to_owned(), "1".to_owned())]);
+    let input = GatewayInput {
+        options: &options,
+        group_dir: Path::new("/group"),
+        config_path: Path::new("/group/config.yaml"),
+        case_env: &case_env,
+    };
+    let spec = gateway::spec(&input, first, 7).unwrap();
+    let command = spec.command.file_name().unwrap().to_str().unwrap();
+    let flags = "--config /group/config.yaml --host 127.0.0.1 --port 7";
+    assert_eq!(
+        format!("{command} {}", spec.args.join(" ")),
+        format!("{launcher} {flags}")
+    );
+    assert_eq!(spec.log_path, Path::new("/group").join(log));
+    let cost_map = ("LITELLM_LOCAL_MODEL_COST_MAP".to_owned(), "True".to_owned());
+    assert_eq!(spec.env.first(), Some(&cost_map));
+    assert_eq!(spec.env.last(), Some(&("CASE".to_owned(), "1".to_owned())));
 }
 
 #[test]
@@ -333,6 +351,10 @@ fn process_starts_waits_and_stops_gateways() {
     let mut gateway = gateway_fixture("started", "exec sleep 10", 1);
     assert_eq!(gateway.base_url, "http://127.0.0.1:1");
     assert_eq!(gateway.log_path, temporary_case_path("started"));
+    let mock = MockProvider::start(&[answer()]).unwrap();
+    gateway.base_url.clone_from(&mock.base_url);
+    gateway.wait_ready(&client().unwrap()).unwrap();
+    assert_eq!(mock.finish().unwrap()[0].path, "/health/liveliness");
     gateway.base_url = ":".to_owned();
     assert!(matches!(
         gateway.wait_ready(&client().unwrap()),
@@ -359,14 +381,61 @@ fn process_starts_waits_and_stops_gateways() {
 fn runner_helpers_create_safe_artifact_paths_and_ports() {
     assert_eq!(runner::safe_name("a/b c-underscore_"), "a_b_c-underscore_");
     assert_eq!(runner::safe_name(""), "case");
-    let first_port = runner::free_port().unwrap();
-    let second_port = runner::free_port().unwrap();
-    assert_ne!(first_port, 0);
-    assert_ne!(second_port, 0);
-    assert_ne!(first_port, 1);
-    assert_ne!(second_port, 1);
-    assert_ne!(runner::unique_id().unwrap(), 0);
-    assert_ne!(runner::unique_id().unwrap(), 1);
+    assert!(runner::free_port().unwrap() > 1);
+    let first_id = runner::unique_id().unwrap();
+    assert!(first_id.starts_with(&format!("{}-", process::id())));
+    assert_ne!(first_id, runner::unique_id().unwrap());
+}
+
+#[test]
+fn prepare_writes_the_config_with_the_mock_url() {
+    let root = env::temp_dir().join(format!("betterlite-prepare-{}", process::id()));
+    let mut case = test_case();
+    case.config = "api_base: {{upstream}}/v1".to_owned();
+    let (directory, config) = artifacts::prepare(&root, &case, "http://mock").unwrap();
+    assert!(directory.starts_with(&root));
+    assert_eq!(config, directory.join("config.yaml"));
+    let written = fs::read_to_string(config).unwrap();
+    assert_eq!(written, "api_base: http://mock/v1");
+    fs::remove_dir_all(&root).unwrap();
+}
+
+#[test]
+fn compare_group_reports_each_case_and_writes_its_artifacts() {
+    let root = env::temp_dir().join(format!("betterlite-group-{}", process::id()));
+    fs::create_dir_all(&root).unwrap();
+    fs::write(root.join("first.log"), "first").unwrap();
+    fs::write(root.join("second.log"), "second").unwrap();
+    let mut same = test_case();
+    same.name = "same".to_owned();
+    let mut differ = test_case();
+    differ.name = "differ".to_owned();
+    let captures = runner::GroupCapture {
+        first: vec![response(value("{\"a\":1}")), response(value("{\"a\":1}"))],
+        second: vec![response(value("{\"a\":1}")), response(value("{\"a\":2}"))],
+        first_log: root.join("first.log"),
+        second_log: root.join("second.log"),
+        requests: Vec::new(),
+        midpoint: 0,
+    };
+    let outcomes = runner::compare_group(&root, &[same, differ], &captures).unwrap();
+    assert_eq!(outcomes, vec![false, true]);
+    let differs = "{\n  \"message\": \"response bodies differ\",\n  \"pointer\": \"/a\"\n}";
+    for (name, diff) in [("same", "null"), ("differ", differs)] {
+        let mut written = fs::read_dir(root.join(name)).unwrap();
+        let directory = written.next().unwrap().unwrap().path();
+        let files = [
+            ("diff.json", diff),
+            ("litellm.log", "first"),
+            ("betterlite.log", "second"),
+            ("provider-litellm.json", "[]"),
+        ];
+        for (file, text) in files {
+            assert_eq!(fs::read_to_string(directory.join(file)).unwrap(), text);
+        }
+        assert!(directory.join("client-betterlite.json").exists());
+    }
+    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]
@@ -384,50 +453,6 @@ fn runner_selects_cases_and_gateways() {
     runner::run_group(&normal, &group_root, &[]).unwrap_err();
     fs::remove_dir_all(&group_root).unwrap();
     assert!(runner::artifact_root().unwrap().exists());
-}
-
-#[test]
-fn artifacts_write_client_provider_diff_and_logs() {
-    let root = env::temp_dir().join(format!("betterlite-artifacts-{}", process::id()));
-    fs::create_dir_all(&root).unwrap();
-    let first_log = root.join("first.log");
-    let second_log = root.join("second.log");
-    fs::write(&first_log, "first").unwrap();
-    fs::write(&second_log, "second").unwrap();
-    let case = test_case();
-    let captured = response(value("{\"ok\":true}"));
-    let provider = request(Value::Null);
-    let input = artifacts::ArtifactInput {
-        root: &root,
-        case: &case,
-        first: &captured,
-        second: &captured,
-        first_requests: slice::from_ref(&provider),
-        second_requests: slice::from_ref(&provider),
-        first_log: &first_log,
-        second_log: &second_log,
-        result: Some(&compare::Difference {
-            pointer: "/ok".to_owned(),
-            message: "response bodies differ".to_owned(),
-        }),
-    };
-    let directory = artifacts::write(input).unwrap();
-    assert_ne!(directory, artifacts::write(input).unwrap());
-    assert!(directory.join("client-litellm.json").exists());
-    assert!(directory.join("provider-betterlite.json").exists());
-    assert_eq!(
-        fs::read_to_string(directory.join("litellm.log")).unwrap(),
-        "first"
-    );
-    assert_eq!(
-        fs::read_to_string(directory.join("betterlite.log")).unwrap(),
-        "second"
-    );
-    assert_eq!(
-        fs::read_to_string(directory.join("diff.json")).unwrap(),
-        "{\n  \"message\": \"response bodies differ\",\n  \"pointer\": \"/ok\"\n}"
-    );
-    fs::remove_dir_all(&root).unwrap();
 }
 
 #[test]

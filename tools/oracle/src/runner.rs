@@ -53,11 +53,11 @@ pub(crate) fn run_cases(options: &Options, cases: Vec<Case>) -> Result<ExitCode,
         groups.entry(group_key).or_default().push(case);
     }
     let root = artifact_root()?;
-    let mut different = false;
+    let mut outcomes = Vec::new();
     for (_, group) in groups {
-        different |= run_group(options, &root, &group)?;
+        outcomes.extend(run_group(options, &root, &group)?);
     }
-    Ok(exit_status(different))
+    Ok(exit_status(outcomes.contains(&true)))
 }
 
 pub(crate) fn exit_status(different: bool) -> ExitCode {
@@ -72,15 +72,13 @@ pub(crate) fn run_group(
     options: &Options,
     root: &Path,
     cases: &[Case],
-) -> Result<bool, HarnessError> {
+) -> Result<Vec<bool>, HarnessError> {
     let upstream_answers = cases
         .iter()
         .flat_map(|case| case.upstream.iter())
         .cloned()
         .collect::<Vec<_>>();
-    let mut answers = upstream_answers.clone();
-    answers.extend(upstream_answers.iter().cloned());
-    let mock = MockProvider::start(&answers)?;
+    let mock = MockProvider::start(&[upstream_answers.clone(), upstream_answers.clone()].concat())?;
     let first_case = cases.first().ok_or(HarnessError::MissingCapture(0))?;
     let (group_dir, config_path) = artifacts::prepare(root, first_case, &mock.base_url)?;
     let client = http::client()?;
@@ -88,7 +86,6 @@ pub(crate) fn run_group(
         options,
         group_dir: &group_dir,
         config_path: &config_path,
-        upstream: &mock.base_url,
         case_env: &first_case.env,
     };
     let first = start_gateway(&input, true)?;
@@ -108,29 +105,25 @@ pub(crate) fn run_group(
     compare_group(root, cases, &captures)
 }
 
-struct GroupCapture {
-    first: Vec<Response>,
-    second: Vec<Response>,
-    first_log: PathBuf,
-    second_log: PathBuf,
-    requests: Vec<ProviderRequest>,
-    midpoint: usize,
+pub(crate) struct GroupCapture {
+    pub(crate) first: Vec<Response>,
+    pub(crate) second: Vec<Response>,
+    pub(crate) first_log: PathBuf,
+    pub(crate) second_log: PathBuf,
+    pub(crate) requests: Vec<ProviderRequest>,
+    pub(crate) midpoint: usize,
 }
 
-fn compare_group(
+pub(crate) fn compare_group(
     root: &Path,
     cases: &[Case],
     captures: &GroupCapture,
-) -> Result<bool, HarnessError> {
-    let first_requests = captures
+) -> Result<Vec<bool>, HarnessError> {
+    let (first_requests, second_requests) = captures
         .requests
-        .get(..captures.midpoint)
+        .split_at_checked(captures.midpoint)
         .unwrap_or_default();
-    let second_requests = captures
-        .requests
-        .get(captures.midpoint..)
-        .unwrap_or_default();
-    let mut different = false;
+    let mut outcomes = Vec::with_capacity(cases.len());
     let mut first_offset = 0;
     for (index, case) in cases.iter().enumerate() {
         let request_count = case.upstream.len();
@@ -145,7 +138,7 @@ fn compare_group(
         let first_slice = request_slice(first_requests, first_offset, request_count);
         let second_slice = request_slice(second_requests, first_offset, request_count);
         first_offset = first_offset.saturating_add(request_count);
-        different |= compare_case(artifacts::ArtifactInput {
+        outcomes.push(compare_case(artifacts::ArtifactInput {
             root,
             case,
             first: first_capture,
@@ -155,9 +148,9 @@ fn compare_group(
             first_log: &captures.first_log,
             second_log: &captures.second_log,
             result: None,
-        })?;
+        })?);
     }
-    Ok(different)
+    Ok(outcomes)
 }
 
 fn compare_case(input: artifacts::ArtifactInput<'_>) -> Result<bool, HarnessError> {
@@ -232,13 +225,11 @@ pub(crate) fn free_port() -> Result<u16, HarnessError> {
     Ok(port.port())
 }
 
-pub(crate) fn unique_id() -> Result<u128, HarnessError> {
+pub(crate) fn unique_id() -> Result<String, HarnessError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(HarnessError::Clock)?;
-    let nanos = elapsed.as_nanos();
-    let pid = u128::from(process::id());
-    Ok(nanos ^ pid)
+    Ok(format!("{}-{}", process::id(), elapsed.as_nanos()))
 }
 
 pub(crate) fn safe_name(name: &str) -> String {

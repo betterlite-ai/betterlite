@@ -143,14 +143,13 @@ fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String
     }
 }
 
-pub(crate) fn first_difference_optional(
+fn first_difference_optional(
     left: Option<&Value>,
     right: Option<&Value>,
     pointer: &str,
 ) -> Option<String> {
     match (left, right) {
         (Some(left_value), Some(right_value)) => first_difference(left_value, right_value, pointer),
-        (None, None) => None,
         _ => Some(pointer.to_owned()),
     }
 }

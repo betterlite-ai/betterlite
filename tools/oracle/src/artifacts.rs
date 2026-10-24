@@ -27,7 +27,7 @@ pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, HarnessError> {
     let directory = input
         .root
         .join(super::safe_name(&input.case.name))
-        .join(super::unique_id()?.to_string());
+        .join(super::unique_id()?);
     fs::create_dir_all(&directory).map_err(|source| HarnessError::Filesystem {
         path: directory.clone(),
         source,
