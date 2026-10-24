@@ -1,0 +1,103 @@
+id: B183
+title: Bounded inline media conversion
+description: >-
+  Add typed media descriptors and bounded in-memory conversion under betterlite-prompts/media. Cover data URLs,
+  MIME inference from filename/content, inline base64 images/documents, file metadata extraction, supplied model-file-ID
+  mappings and the shape-preserving inline_remote_media traversal. HTTP input never opens a filesystem path or downloads
+  a media URL; unresolved remote media is either preserved for a provider that accepts URLs or rejected when conversion
+  requires bytes. Keep SDK path/handle convenience for M12 and managed-file database lookup for B085; accept an
+  injected ID mapping here rather than querying storage. Reuse maintained base64 and image-header decoding libraries
+  after comparing existing dependencies, with a cap before decoding and pixel/dimension checks before allocating.
+  Add media_data fuzz target covering MIME, data URL and unified ID parsing, and direct helper cases using local
+  byte fixtures. Budget 350 conversions, 80 wire/adapter lines and 320 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-prompts/Cargo.toml
+  - crates/betterlite-prompts/src/lib.rs
+  - crates/betterlite-prompts/src/error.rs
+  - crates/betterlite-prompts/src/media.rs
+  - crates/betterlite-prompts/src/media/**
+  - crates/betterlite-prompts/fuzz/**
+  - crates/betterlite-prompts/tests/fixtures/**
+  - crates/betterlite-openai/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/inline-media/**
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L146-L334
+  why: Typed media shapes and inlining traversal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L490-L786
+  why: Model-specific file/vector IDs and supplied mappings.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L789-L914
+  why: Metadata without file reads and bare string path rejection.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1439-L1594
+  why: MIME inference precedence.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L29-L139
+  why: Remote fetch behavior deliberately excluded from request processing.
+dod:
+- text: Inline data conversion, metadata, MIME and supplied ID mappings match helper cases on exact output bytes
+    and record shape.
+  proof:
+  - oracle
+- text: Oversized data, invalid base64, huge dimensions and malformed IDs fail before large allocation, file access
+    or network calls.
+  proof:
+  - inline-media-tests
+- text: The media/ID parser has a cargo-fuzz target and corpus replay; added wire variants retain chat corpus coverage.
+  proof:
+  - media-data-corpus
+  - chat-request-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: inline-media-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/inline_media/)'
+  - id: media-data-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-prompts/fuzz/fuzz_targets/media_data.rs && test -n "$(ls -A crates/betterlite-prompts/fuzz/corpus/media_data)"
+      && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(replays_the_media_data_corpus)'
+  - id: chat-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/inline-media/data-image.yaml
+- tools/oracle/cases/helpers/inline-media/data-document.yaml
+- tools/oracle/cases/helpers/inline-media/mime-precedence.yaml
+- tools/oracle/cases/helpers/inline-media/bytes-metadata.yaml
+- tools/oracle/cases/helpers/inline-media/bare-path-rejected.yaml
+- tools/oracle/cases/helpers/inline-media/mapped-file-id.yaml
+- tools/oracle/cases/helpers/inline-media/embedded-file-id.yaml
+- tools/oracle/cases/helpers/inline-media/responses-file-id.yaml
+- tools/oracle/cases/helpers/inline-media/vector-id.yaml
+deviations:
+- what: Media conversion never downloads a request-supplied URL or opens an HTTP-supplied path.
+  why: The bounded-inputs rule and B009's destination boundary apply to media helpers too.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L84-L139
+out_of_scope:
+- SDK PathLike and file-handle adapters are B159-B161; storage-backed managed IDs are B085.
+- Provider-native attachment upload is implemented by provider/endpoint tasks.
+pitfalls:
+- A filename is metadata, never permission to open a local path.
+- Enforce decoded-size bounds before base64 decoding, not after allocating the decoded buffer.
+- File metadata extraction must not consume a streaming upload.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
