@@ -108,10 +108,10 @@ scope:
   - crates/betterlite-foundry/fuzz/corpus/foundry_vector_stores/**
   - crates/betterlite-config/Cargo.toml
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
-  - crates/betterlite-config/src/settings.rs
-  - crates/betterlite-config/src/model.rs
-  - crates/betterlite-config/src/env.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/providers.rs
   - crates/betterlite-config/src/providers/foundry.rs
   - crates/betterlite-config/src/providers/foundry/foundry_vector_store.rs

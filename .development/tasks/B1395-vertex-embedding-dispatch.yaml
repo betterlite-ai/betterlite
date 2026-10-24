@@ -39,7 +39,10 @@ scope:
     - crates/betterlite-core/src/vertex_embedding_dispatch/**
     - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_embedding_binding}.rs
     - crates/betterlite-provider/src/vertex_embedding_binding/**
-    - crates/betterlite-config/src/env.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/providers/vertex.rs
     - crates/betterlite-config/src/providers/vertex/embedding/**
     - tools/oracle/cases/embeddings/vertex-dispatch/**

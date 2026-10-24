@@ -86,7 +86,10 @@ scope:
     - crates/betterlite-config/src/virtual_key_auth.rs
     - crates/betterlite-config/src/virtual_key_auth/**
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-auth-*
     - tools/oracle/cases/auth/virtual-key-auth/**

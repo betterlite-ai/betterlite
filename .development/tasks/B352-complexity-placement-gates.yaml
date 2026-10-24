@@ -44,7 +44,10 @@ scope:
   - tools/oracle/litellm/probes/complexity_placement_gates.py
   - tools/oracle/cases/routing/complexity-placement-gates/**
   - crates/betterlite-config/src/lib.rs
-  - crates/betterlite-config/src/config.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/raw.rs
+  - crates/betterlite-config/src/resolve.rs
+  - crates/betterlite-config/src/types.rs
   - crates/betterlite-config/src/router.rs
   - crates/betterlite-config/src/complexity_placement_gates.rs
   - crates/betterlite-config/src/complexity_placement_gates/**

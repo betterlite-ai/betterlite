@@ -104,7 +104,10 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/session-token-codec-*
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/src/lib.rs
-    - crates/betterlite-config/src/config.rs
+    - crates/betterlite-config/src/loader.rs
+    - crates/betterlite-config/src/raw.rs
+    - crates/betterlite-config/src/resolve.rs
+    - crates/betterlite-config/src/types.rs
     - crates/betterlite-config/src/session_token_codec.rs
     - crates/betterlite-config/src/session_token_codec/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/session-token-codec-*
