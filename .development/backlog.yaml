@@ -98,18 +98,11 @@ tasks:
     status: todo
     depends_on:
     - B005
-    - B009
+    - B006
     - B174
     - B175
     - B176
-    - B177
-    - B178
     - B179
-    - B180
-    - B181
-    - B182
-    - B183
-    - B006
     file: tasks/B010-provider-framework.yaml
     covers:
     - litellm/llms/{__init__,base,README}.*
@@ -268,13 +261,15 @@ tasks:
     milestone: M3 providers
     title: Azure OpenAI
     status: todo
-    depends_on: [B024]
+    depends_on:
+    - B024
+    - B182
     file: null
     covers:
-      - "litellm/llms/azure/**"
-      - "litellm/types/llms/azure.py"
-      - "litellm/secret_managers/get_azure_ad_token_provider.py"
-      - "litellm/types/secret_managers/get_azure_ad_token_provider.py"
+    - litellm/llms/azure/**
+    - litellm/types/llms/azure.py
+    - litellm/secret_managers/get_azure_ad_token_provider.py
+    - litellm/types/secret_managers/get_azure_ad_token_provider.py
   - id: B026
     milestone: M3 providers
     title: Azure AI Foundry
@@ -288,24 +283,32 @@ tasks:
     milestone: M3 providers
     title: Anthropic provider
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B180
+    - B186
     file: null
     covers:
-      - "litellm/llms/anthropic/*.py"
-      - "litellm/llms/anthropic/{batches,chat,completion,count_tokens,files}/**"
-      - "litellm/types/llms/{anthropic,anthropic_tool_search}.py"
+    - litellm/llms/anthropic/*.py
+    - litellm/llms/anthropic/{batches,chat,completion,count_tokens,files}/**
+    - litellm/types/llms/{anthropic,anthropic_tool_search}.py
   - id: B028
     milestone: M3 providers
     title: Bedrock chat through Converse and Invoke, and Bedrock Messages
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B181
+    - B186
     file: null
     covers:
-      - "whitelisted_bedrock_models.txt"
-      - "litellm/llms/bedrock/*.py"
-      - "litellm/llms/bedrock/{chat,messages}/**"
-      - "litellm/llms/{bedrock_mantle,amazon_nova}/**"
-      - "litellm/types/llms/bedrock.py"
+    - whitelisted_bedrock_models.txt
+    - litellm/llms/bedrock/*.py
+    - litellm/llms/bedrock/{chat,messages}/**
+    - litellm/llms/{bedrock_mantle,amazon_nova}/**
+    - litellm/types/llms/bedrock.py
   - id: B029
     milestone: M3 providers
     title: Bedrock embeddings, images, rerank, token counting and transcription
@@ -327,12 +330,16 @@ tasks:
     milestone: M3 providers
     title: Vertex AI Gemini, context caching and token counting
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B182
+    - B186
     file: null
     covers:
-      - "litellm/llms/vertex_ai/*.py"
-      - "litellm/llms/vertex_ai/{gemini,context_caching,count_tokens}/**"
-      - "litellm/types/llms/vertex_ai.py"
+    - litellm/llms/vertex_ai/*.py
+    - litellm/llms/vertex_ai/{gemini,context_caching,count_tokens}/**
+    - litellm/types/llms/vertex_ai.py
   - id: B032
     milestone: M3 providers
     title: Vertex AI partner models, Gemma and Model Garden
@@ -372,20 +379,26 @@ tasks:
     milestone: M3 providers
     title: xAI, Mistral and Codestral
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B177
     file: null
     covers:
-      - "litellm/llms/{xai,mistral,codestral}/**"
-      - "litellm/types/llms/{xai,mistral}.py"
+    - litellm/llms/{xai,mistral,codestral}/**
+    - litellm/types/llms/{xai,mistral}.py
   - id: B037
     milestone: M3 providers
     title: Cohere, Voyage, Jina and Infinity
     status: todo
-    depends_on: [B010, B011]
+    depends_on:
+    - B010
+    - B011
+    - B177
     file: null
     covers:
-      - "litellm/llms/{cohere,voyage,jina_ai,infinity}/**"
-      - "litellm/types/llms/{cohere,rerank}.py"
+    - litellm/llms/{cohere,voyage,jina_ai,infinity}/**
+    - litellm/types/llms/{cohere,rerank}.py
   - id: B038
     milestone: M3 providers
     title: JSON-configured OpenAI-compatible providers, A to L
