@@ -45,6 +45,12 @@ references:
 - url: >-
     https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L533-L653
   why: Typed logging and explicit shutdown replace Python global teardown.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/additional_logging_utils.py#L1-L33
+  why: Exporter health/payload interface delegated to exporter tasks.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mock_client_factory.py#L1-L315
+  why: Python mock factories are replaced by injected exporter test transports.
 dod:
 - text: >-
     Successful worker traces, callback failures and flush accounting match helper probes; batch behavior is proven
@@ -108,6 +114,11 @@ out_of_scope:
 - >-
   CustomBatchLogger and every batch_utils function belong to B256; Python atexit hooks and thread/loop discovery
   have no caller in the native explicit-shutdown design.
+- >-
+  AdditionalLoggingUtils health-check/payload inspection is an exporter interface implemented by B110-B118 and the
+  Python CustomLogger extension B164. mock_client_factory and *_mock_client provide Python monkeypatch-only exporter
+  tests: their Rust equivalents are injected transport fixtures owned by each exporter task, not production mocks
+  here. test_httpx.py is empty at the pin.
 pitfalls:
 - >-
   A dequeued event waiting for a semaphore still belongs to the worker and must be included in shutdown accounting.
