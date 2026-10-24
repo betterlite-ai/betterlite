@@ -1,0 +1,101 @@
+id: B175
+title: Provider parameter capabilities and mapping
+description: >-
+  Add typed parameter classification and capability dispatch under betterlite-provider/params, reusing B004's chat/embedding
+  wire fields and B174's identity. Expose supported OpenAI parameter queries for implemented adapters and a common
+  mapping result separating standard parameters, provider passthrough fields and trusted controls. Keep omission
+  distinct from an explicit value where provider defaults matter; numeric wire parameters use exact decimal types.
+  Implement shared reasoning-budget and service-tier helpers and the model-parameter logging/cache-key projection.
+  B010's final dispatcher will call these functions; do not add endpoints or claim capabilities for unimplemented
+  adapters. A requested drop_params or additional_drop_params policy must report the removed field names through
+  a typed mapping outcome so the caller can record the decision without logging values. Add parameter helper cases
+  and existing HTTP chat regression cases; extend the existing chat/config parsers and their corpora as fields become
+  supported. Budget 320 mapping lines, 130 wire/config lines and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-provider/Cargo.toml
+  - crates/betterlite-provider/src/lib.rs
+  - crates/betterlite-provider/src/error.rs
+  - crates/betterlite-provider/src/params.rs
+  - crates/betterlite-provider/src/params/**
+  - crates/betterlite-openai/**
+  - crates/betterlite-config/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/provider-params/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_supported_openai_params.py#L9-L110
+  why: Call-type/provider capability dispatch.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/model_param_helper.py#L25-L185
+  why: Standard API parameters and excluded content/metadata fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/reasoning_effort_utils.py#L12-L26
+  why: Thinking budget thresholds.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/service_tier_utils.py#L18-L70
+  why: Served, requested and logging service-tier selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L99-L164
+  why: Shared thinking, token and developer-role hooks.
+dod:
+- text: Parameter defaults, explicit values, supported names, reasoning boundaries, served tier and content-free
+    projections match listed helper cases.
+  proof:
+  - oracle
+- text: Unsupported fields fail by name unless an explicit drop policy applies, and each intentional drop is returned
+    as a field name without its value.
+  proof:
+  - provider-params-tests
+- text: Passthrough values cannot overwrite standard typed fields or trusted control fields.
+  proof:
+  - provider-params-tests
+- text: The extended chat and config parsers replay their corpus under normal tests.
+  proof:
+  - chat-request-corpus
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-params-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-provider -p betterlite-openai -p betterlite-config --no-tests=fail
+      -E 'test(/provider_params/)'
+  - id: chat-request-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
+  - id: config-yaml-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/provider-params/supported-chat.yaml
+- tools/oracle/cases/helpers/provider-params/supported-embedding.yaml
+- tools/oracle/cases/helpers/provider-params/absent-null-zero.yaml
+- tools/oracle/cases/helpers/provider-params/unsupported-param.yaml
+- tools/oracle/cases/helpers/provider-params/drop-params.yaml
+- tools/oracle/cases/helpers/provider-params/reasoning-boundaries.yaml
+- tools/oracle/cases/helpers/provider-params/requested-served-tier.yaml
+- tools/oracle/cases/helpers/provider-params/logging-projection.yaml
+- tools/oracle/cases/chat/openai-tools.yaml
+- tools/oracle/cases/chat/openai-extra-param.yaml
+deviations: []
+out_of_scope:
+- Provider-specific mapping tables are extended by the corresponding provider tasks.
+- Actual routing, spend calculations and execution are outside this part.
+pitfalls:
+- Do not confuse an absent capability result with an empty supported-parameter list.
+- A JSON passthrough field is an explicit narrow exception, not permission to make the whole request untyped.
+- An opt-in drop policy is observable; a silently ignored field still violates the rules.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 1
