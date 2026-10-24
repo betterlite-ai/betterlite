@@ -1,0 +1,86 @@
+id: B204
+title: Typed model price fields and exact decimal parsing
+description: >-
+  Create betterlite-models with the exact-decimal pricing portion of the pinned catalog schema, before B205 adds
+  non-price metadata and B193 assembles whole entries. Model every cost/rate/multiplier and nested tier/off-peak/search-context
+  pricing field appearing in the pinned schema or actual bundled map; keep long wire names through serde renames
+  while Rust names meet the 30-character rule. Use explicit typed groups or enums for known pricing dimensions,
+  never a free string-to-float map. Copy the pinned JSON schema and representative whole-map excerpts into fixtures,
+  derive the field inventory from the actual map as well as the schema, and fail tests if any observed monetary
+  field lacks a typed representation. Parse monetary JSON number lexemes directly into Decimal without passing through
+  f64; null/absence remain distinct where the source permits them. Add price_fields helper cases that compare canonical
+  decimal strings derived from Python Decimal parsing of the same pinned values; add price_fields fuzz target and
+  corpus replay. Budget 380 types/decimal adapter lines, 60 wiring and 300 tests.
+scope:
+  paths:
+  - Cargo.toml
+  - deny.toml
+  - crates/betterlite-models/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/price-fields/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.schema.json#L1-L120
+  why: Catalog contract and special top-level entries; inspect all modelEntry properties.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L64-L105
+  why: Bundled map is the source of raw prices.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/model_prices_and_context_window.json#L1-L140
+  why: Actual pinned fields, which include prices omitted from the schema.
+dod:
+- text: All observed monetary keys have typed coverage and canonical values preserve small fractions and exponent
+    notation exactly.
+  proof:
+  - price-field-tests
+  - oracle
+- text: No price is converted through a float and overprecision/overflow/malformed values fail with a typed field
+    path.
+  proof:
+  - price-field-tests
+- text: The schema fixture matches its pinned SHA-256 and the price parser has corpus replay.
+  proof:
+  - price-schema-pin
+  - price-fields-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: price-field-tests
+    why: the required tests fail or the filter selects no tests
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/price_field/)'
+  - id: price-fields-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f crates/betterlite-models/fuzz/fuzz_targets/price_fields.rs && test -n "$(ls -A crates/betterlite-models/fuzz/corpus/price_fields)"
+      && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(replays_the_price_fields_corpus)'
+  - id: helper-python
+    why: the oracle adapters fail strict Python checks
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
+      tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: price-schema-pin
+    why: the copied price schema differs from the pinned source
+    run: >-
+      echo '9ca0837778541b5b2ce90f8eb30c66b2cbb320ac93295dff975f53483576f57e  crates/betterlite-models/fixtures/model_prices_and_context_window.schema.json'
+      | sha256sum --check --quiet
+oracle_cases:
+- tools/oracle/cases/helpers/price-fields/fraction.yaml
+- tools/oracle/cases/helpers/price-fields/exponent.yaml
+- tools/oracle/cases/helpers/price-fields/null-absent.yaml
+- tools/oracle/cases/helpers/price-fields/nested-tier.yaml
+- tools/oracle/cases/helpers/price-fields/off-peak.yaml
+- tools/oracle/cases/helpers/price-fields/schema-extra-prices.yaml
+deviations: []
+out_of_scope:
+- Token-cost multiplication and spend accounting are B068-B069.
+- Whole-entry parsing, aliases and loading are B193-B194.
+pitfalls:
+- The actual pinned map contains monetary keys absent from its 212-property schema, so schema-only generation drops
+  prices.
+- Decimal must receive the original JSON numeric lexeme, not a number already rounded by serde_json.
+- Only raw fixture assets use the fixture budget exemption; generated Rust fields count toward 800 lines.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
