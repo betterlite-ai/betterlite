@@ -9,8 +9,8 @@ tools:
     version_command: cargo deny --version
     expect: cargo-deny 0.20.2
   - name: cargo-shear
-    version_command: cargo install --list | grep '^cargo-shear '
-    expect: cargo-shear v1.13.1
+    version_command: grep -o '"cargo-shear [0-9.]*' "${CARGO_HOME:-$HOME/.cargo}/.crates.toml"
+    expect: cargo-shear 1.13.1
   - name: cargo-llvm-cov
     version_command: cargo llvm-cov --version
     expect: cargo-llvm-cov 0.8.7
