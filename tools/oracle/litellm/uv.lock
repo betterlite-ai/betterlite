@@ -1214,9 +1214,9 @@ proxy = [
 name = "litellm-enterprise"
 version = "0.1.73"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/b1/70/ce3f6eb7d187b4459ba9dec3211cb6473373dee46e34c7c37067d376611c/litellm\u005fenterprise-0.1.73.tar.gz", hash = "sha256:b8d37e546075876908c7f272e665111b86dc2993d5637ba30a35c6101e623821", size = 90813, upload-time = "2026-10-02T07:57:13.81Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b1/70/ce3f6eb7d187b4459ba9dec3211cb6473373dee46e34c7c37067d376611c/litellm_enterprise-0.1.73.tar.gz", hash = "sha256:b8d37e546075876908c7f272e665111b86dc2993d5637ba30a35c6101e623821", size = 90813, upload-time = "2026-10-02T07:57:13.81Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c0/bc/42e33e6485e55c168cf541efd0506566b5c3ce96aee6792edfb2c4567abf/litellm\u005fenterprise-0.1.73-py3-none-any.whl", hash = "sha256:8af439ddf65fb2dba5a90e72125303fa17caba1e6e98ee60c931a6b339ccf247", size = 159618, upload-time = "2026-10-02T07:57:12.443Z" },
+    { url = "https://files.pythonhosted.org/packages/c0/bc/42e33e6485e55c168cf541efd0506566b5c3ce96aee6792edfb2c4567abf/litellm_enterprise-0.1.73-py3-none-any.whl", hash = "sha256:8af439ddf65fb2dba5a90e72125303fa17caba1e6e98ee60c931a6b339ccf247", size = 159618, upload-time = "2026-10-02T07:57:12.443Z" },
 ]
 
 [[package]]

@@ -1,0 +1,12 @@
+kind: helper
+name: empty-segment
+call:
+  url_path:
+    function: segments
+    value: "one//two"
+    field_name: resource path
+env: {}
+compare:
+  ignore:
+    - pointer: /error/message
+      why: betterlite writes its own error message

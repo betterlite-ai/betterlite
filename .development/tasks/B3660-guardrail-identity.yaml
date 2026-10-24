@@ -1,0 +1,144 @@
+id: B3660
+title: Guardrail identity and PII configuration vocabulary
+description: >-
+  Build the provider-name and PII vocabularies, Presidio UI records and initializer
+  contract. Preserve the exact category/action choices exposed by configuration and
+  the UI.
+
+  Implement in betterlite-config::types::guardrails:
+
+  - SupportedGuardrailIntegrations enum with all 60 provider names and their LiteLLM
+    wire values (aporia, bedrock, presidio, custom_code, generic_guardrail_api, etc).
+
+  - Role enum (system, assistant, user) and default_roles list.
+
+  - GuardrailItem with callbacks list, default_on, logging_only, guardrail_name,
+    enabled_roles (defaulting to all three), callback_args dict and its __init__ signature.
+
+  - PiiAction enum (BLOCK, MASK) and PiiEntityCategory enum (20 categories from General
+    through South Africa).
+
+  - PiiEntityType enum with 79 entity types across all categories.
+
+  - PII_ENTITY_CATEGORIES_MAP constant keying each category to its entity type tuple.
+
+  - GuardrailParamUITypes enum (bool, str, multiselect, percentage).
+
+  - PresidioPresidioConfigModelUserInterface with presidio_analyzer_api_base, presidio_anonymizer_api_base,
+    presidio_filter_scope (input/output/both), output_parse_pii bool with ui_type annotation,
+    presidio_language (default "en"), presidio_run_on (input/output/both).
+
+  - PresidioConfigModel extending the UI model with pii_entities_config dict, score
+    thresholds dict, deny_list, ad_hoc_recognizers path, chunk_size_bytes and
+    mock_redacted_text.
+
+  - LassoGuardrailConfigModel with lasso_user_id, lasso_conversation_id and mask bool.
+
+  - DeepKeepGuardrailConfigModel with deepkeep_firewall_id and env var fallback documentation.
+
+  - GuardrailBaseInitKwargs TypedDict for the scalar keyword payload guardrails forward
+    to CustomGuardrail.__init__, with all 13 keyword fields marked ReadOnly.
+
+  - GuardrailConfigModel base class with optional_params field and abstract ui_friendly_name
+    method.
+
+  Do not implement BedrockChecksConfigModel, BedrockGuardrailConfigModel, or other provider
+  config models owned by B3661; they are marked out_of_scope below. Do not add a parser
+  or any transformation logic; preserve types exactly as they appear, with every docstring,
+  Field description and default value from LiteLLM.
+scope:
+  paths:
+  - crates/betterlite-config/Cargo.toml
+  - crates/betterlite-config/src/lib.rs
+  - crates/betterlite-config/src/types.rs
+  - crates/betterlite-config/src/types/guardrails.rs
+  - crates/betterlite-config/src/types/guardrails/**
+  - Cargo.toml
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L92-L152
+  why: SupportedGuardrailIntegrations with all 60 variants; preserve all wire values.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L155-L161
+  why: Role enum and default_roles list; preserve defaults and callback_args init.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L182-L198
+  why: GuardrailItem __init__ signature and defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L212-L427
+  why: PiiAction, PiiEntityCategory (20 members), PiiEntityType (79 members) enums and PII_ENTITY_CATEGORIES_MAP constant.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L435-L512
+  why: GuardrailParamUITypes enum, PresidioPresidioConfigModelUserInterface and PresidioConfigModel with all fields and defaults.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L734-L751
+  why: LassoGuardrailConfigModel and DeepKeepGuardrailConfigModel configuration.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrail_base_init.py#L11-L24
+  why: GuardrailBaseInitKwargs TypedDict with all 13 keyword fields and ReadOnly markers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L9-L20
+  why: GuardrailConfigModel base class with optional_params and abstract ui_friendly_name method.
+dod:
+- text: >-
+    SupportedGuardrailIntegrations enum declares all 60 provider names with LiteLLM wire values.
+    Unknown provider name strings fail the type check; mismatched wire values fail round-trip
+    serialization. Providers aporia, bedrock, presidio, custom_code and generic_guardrail_api
+    appear in the type.
+  proof: [type-check, enum-round-trip-tests]
+- text: >-
+    PiiEntityType declares all 79 entity types and PiiEntityCategory lists all 20 categories
+    with correct groupings. PII_ENTITY_CATEGORIES_MAP maps each category to exactly its type
+    tuple; missing or extra types break lookups. General has 11 types, Germany has 13, USA has 7.
+  proof: [type-check, pii-map-tests]
+- text: >-
+    PresidioConfigModel, LassoGuardrailConfigModel and DeepKeepGuardrailConfigModel preserve
+    all field names, types, defaults and Field descriptions from LiteLLM. Setting unknown field
+    keys fails validation; null defaults and optional field annotations round-trip exactly.
+  proof: [type-check, config-field-tests]
+- text: >-
+    GuardrailItem.__init__ accepts callbacks list, guardrail_name, default_on (defaulting False),
+    logging_only, enabled_roles (defaulting to [system, assistant, user]) and callback_args dict
+    (defaulting to {}). Callers omitting enabled_roles receive the default; callers with empty
+    roles get empty roles, not the default.
+  proof: [type-check, default-value-tests]
+- text: >-
+    GuardrailBaseInitKwargs TypedDict fields are all marked ReadOnly; a runtime mutation attempt
+    is caught by the type checker. All 13 fields map to CustomGuardrail.__init__ parameters and
+    accept the documented types (bool, str, int, None as shown).
+  proof: [type-check, readonly-field-tests]
+- text: >-
+    GuardrailParamUITypes enum and GuardrailConfigModel base class with optional_params field
+    and abstract ui_friendly_name method are present. Concrete models inherit the base pattern
+    and override ui_friendly_name as defined in B3661+ tasks.
+  proof: [type-check]
+checks:
+  optional: []
+  commands:
+  - id: type-check
+    why: Provider vocabularies and PII/Presidio types are missing or misdeclared
+    run: cargo clippy --locked -p betterlite-config --all-targets -- -D warnings
+  - id: enum-round-trip-tests
+    why: Wire-value strings do not round-trip through serde or provider count is incomplete
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_enums::/)'
+  - id: pii-map-tests
+    why: PII_ENTITY_CATEGORIES_MAP omits types, has wrong category groupings or type count is incorrect
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^pii_entity_categories::/)'
+  - id: config-field-tests
+    why: Config model field names do not match LiteLLM or defaults do not deserialize correctly
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_config_models::/)'
+  - id: default-value-tests
+    why: GuardrailItem defaults for enabled_roles or callback_args do not match expected behavior
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_item_defaults::/)'
+  - id: readonly-field-tests
+    why: GuardrailBaseInitKwargs fields are not ReadOnly or field count is incomplete
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^guardrail_base_init_kwargs::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- B3661 owns BedrockChecksConfigModel, BedrockChecksContentFilterModel, BedrockChecksPromptAttackModel, BedrockChecksSensitiveInformationModel, BedrockGuardrailConfigModel, BedrockGuardrailStreamingParams and LakeraV2GuardrailConfigModel configuration and validation.
+- B3661 owns PillarGuardrailConfigModel, NomaGuardrailConfigModel, ZscalerGuardrailConfigModel, JavalinGuardrailConfigModel and other provider-specific option records beyond Lasso and DeepKeep.
+pitfalls:
+- PII_ENTITY_CATEGORIES_MAP values are tuples of PiiEntityType, not lists; iterating expects immutable sequences.
+- enabled_roles defaults to [Role.SYSTEM, Role.ASSISTANT, Role.USER] only when omitted from __init__, never when set to None or [].
+- PresidioConfigModel.presidio_language defaults to "en", not None; callers expecting optional must check explicitly.
+- 'Field names on Presidio/Lasso/DeepKeep models carry provider prefixes: presidio_analyzer_api_base, not analyzer_api_base; lasso_user_id, not user_id; deepkeep_firewall_id, not firewall_id.'
+- LITELLM_* environment variables are documented in Field descriptions but not implemented as fallbacks here; B3680+ tasks own initializer defaults.
+review_level: standard
+budget:
+  max_changed_lines: 420
+  max_new_expects: 0

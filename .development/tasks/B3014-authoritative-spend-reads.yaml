@@ -1,0 +1,113 @@
+id: B3014
+title: Read and repair authoritative spend counters
+description: >-
+  Extract betterlite-auth::spend_reads to provide read-only access to spend counters with clean Redis-miss semantics, cached database floors and monotonic repair operations. Implement functions to read the current spend with fallback chain behavior, distinguish between authoritative cross-pod values and per-pod cached estimates, and repair stale Redis counters from the database.
+
+  get_current_spend returns the authoritative spend value for budget admission checks, reading cross-pod from Redis first, falling back to in-memory then database floors, and finally the caller-supplied fallback. When max_budget is supplied, an additional database floor re-check detects when a Redis counter has become stale-low (e.g. after a Redis restart with an older RDB snapshot) and repairs it monotonically using atomic set-max to raise stale values toward truth. Preserve the 5-second cache TTL on database floor reads to bound per-window lookup cost, and the fail_closed_budget_enforcement strict mode that rejects requests when spend cannot be verified against authoritative sources.
+
+  _repair_stale_spend_counter restores a Redis counter to its authoritative database floor after it falls behind (e.g., Redis restart reloading a stale RDB snapshot). It updates in-memory by comparing and setting without awaiting, keeping the update atomic per pod. For Redis, it uses atomic set-max to raise the counter only; concurrent increments cannot be undone. reseed_spend_counter_from_db handles counters left in an inconsistent state by settlement (missing after a reconcile, or negative after applying a reconcile delta). It reads the database floor and uses monotonic set-max to restore the counter to that floor. Counters with no database row (window, end-user, tag counters) are never deleted; they retain their current value.
+
+  read_spend_counter_cache_value and _read_spend_counter_estimate extract the cache layers and database fallback for reading the live counter value. Preserve that active batch reads return authoritative values, clean Redis miss is final (per-pod in-memory only holds this pod's writes), exception handling logs and falls back rather than raising, and the in-memory marker cache speeds repeated database floor reads without holding a real connection.
+
+scope:
+  paths:
+    - crates/betterlite-auth/src/spend_reads.rs
+    - crates/betterlite-auth/src/spend_reads/**
+    - crates/betterlite-auth/src/lib.rs
+  lint_tables: false
+references:
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2771-L2771"
+    why: SPEND_DB_FLOOR_CACHE_TTL_SECONDS constant.
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2774-L2794"
+    why: "_fail_closed_budget_enforcement and _raise_budget_unverifiable: strict mode rejection on unverifiable spend."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2797-L2875"
+    why: "get_current_spend: main entry point with Redis-first, fallback chain, optional DB floor re-check, and strict mode gate."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2878-L2912"
+    why: "_repair_stale_spend_counter: monotonic raise with atomic set-max in Redis, uncontended in-memory update."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2915-L2936"
+    why: "reseed_spend_counter_from_db: recover from inconsistent state using monotonic set-max."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2939-L2959"
+    why: "_floor_spend_from_db: dispatch to per-entity database lookups, end-user and window handlers."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2962-L2995"
+    why: "_authoritative_floor_spend: in-memory marker cache with 5s TTL, defeat cache races on spend resets."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2998-L3020"
+    why: "read_spend_counter_cache_value: check active batch first, then Redis with fallback to in-memory."
+  - url: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3023-L3042"
+    why: "_read_spend_counter_estimate: return (value, authoritative) with database fallback for cold misses."
+dod:
+  - text: "get_current_spend reads Redis first (cross-pod authoritative), then in-memory, then reseeds from the database and uses caller-supplied fallback as the final fallback."
+    proof: [spend-read-chain-tests]
+  - text: "When max_budget is supplied and spend is below the budget, get_current_spend may perform an authoritative floor re-check that calls _authoritative_floor_spend and repairs the counter if the database spend exceeds the cached value."
+    proof: [spend-read-recheck-tests]
+  - text: "Strict-mode fail_closed_budget_enforcement causes get_current_spend to recheck against the authoritative floor for every request and reject with HTTP 503 if the spend cannot be verified."
+    proof: [spend-read-strict-mode-tests]
+  - text: "_repair_stale_spend_counter updates in-memory and uses atomic set-max in Redis to monotonically raise a stale counter without clobbering concurrent increments."
+    proof: [spend-repair-monotonic-tests]
+  - text: "reseed_spend_counter_from_db returns true only if a database row was found and the counter was reseeded; counters with no database row are not deleted."
+    proof: [spend-reseed-behavior-tests]
+  - text: "read_spend_counter_cache_value checks the active batch first and returns (value, authoritative) indicating whether the value came from Redis/batch (true) or in-memory (false)."
+    proof: [spend-cache-read-tests]
+  - text: "The database floor cache key is spend_db_floor:<counter_key> and the in-memory marker cache uses a 5-second TTL. When a spend reset writes a post-reset floor to the marker during a concurrent database read, the fresher cached value is kept instead of the stale pre-reset read."
+    proof: [spend-floor-cache-tests]
+  - text: "All cache layer exceptions (Redis failures, database errors) are logged and result in fallback behavior rather than raising to the caller."
+    proof: [spend-read-error-handling-tests]
+pitfalls:
+  - "get_current_spend's fallback chain uses the caller's fallback_spend as the final fallback only if earlier layers return None or raise; do not substitute a constant default."
+  - "The authoritative floor re-check only runs when max_budget is not None and current spend is below max_budget; above max_budget the counter is returned immediately without further checks."
+  - "fail_closed_budget_enforcement is a global configuration setting read via general_settings; ensure strict mode and normal mode have different re-check frequencies."
+  - "_repair_stale_spend_counter must forget the counter from the active batch before attempting Redis repair to ensure the repaired value is not overwritten by a batched increment."
+  - "The database floor cache uses an in-memory marker key spend_db_floor:<counter_key> with 5-second TTL, not the counter itself; keep the cache layers distinct."
+  - "read_spend_counter_cache_value's authoritative flag is False only when the value comes from the per-pod in-memory cache; a clean Redis miss (None returned) means the counter does not exist cross-pod."
+  - "SpendCounterReseed methods return None when no database row exists (end-user without a row, tags, cold start) and the caller must handle None separately from 0.0 spend."
+  - "Window floor reads require non-None window_entity_type, window_entity_id and window_start; if any are None the call skips the window lookup."
+  - "A spend reset that commits while _authoritative_floor_spend is reading the database floor will write the post-reset floor to the marker cache before this function caches its pre-reset read; re-check the marker after the DB read completes and keep the newer cached value if present."
+out_of_scope:
+  - B360 owns Redis async_get_cache, async_set_max and the atomic compare-and-set transport.
+  - B1718 owns active_spend_counter_batch, PendingSpendIncrement and the record/forget batch API.
+  - B1735 owns SpendCounterReseed.from_db, SpendCounterReseed.end_user_from_db and the database row lookups.
+  - B1736 owns SpendCounterReseed.coalesced, SpendCounterReseed.window_from_db and window aggregation logic.
+  - B2226 owns spend_counter_cache local get/set/delete.
+  - Budget admission policy and counter reservation; owned by B3004.
+  - Counter initialization and mutations; owned by B3015.
+  - Strict-mode configuration parsing; owned by B002.
+deviations: []
+review_level: security
+budget:
+  max_changed_lines: 400
+  max_new_expects: 0
+checks:
+  optional: []
+  commands:
+    - id: spend-read-chain-tests
+      why: Spend read fallback chain tests are missing, skipped or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_reads_chain(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: spend-read-recheck-tests
+      why: Database floor re-check behavior tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_reads_recheck(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: spend-read-strict-mode-tests
+      why: Strict-mode fail_closed_budget_enforcement tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_reads_strict_mode(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: spend-repair-monotonic-tests
+      why: Monotonic repair tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_repair_monotonic(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: spend-reseed-behavior-tests
+      why: Reseed behavior and database row handling tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_reseed_behavior(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: spend-cache-read-tests
+      why: Cache read layer and authoritative flag tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_cache_read(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: spend-floor-cache-tests
+      why: Database floor marker cache and TTL tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_floor_cache(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+    - id: spend-read-error-handling-tests
+      why: Error handling and fallback tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/::spend_read_error_handling(::|$)/)
+        - test(/replays_the_.*_corpus/)'
+oracle_cases: []

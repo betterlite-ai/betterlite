@@ -1,0 +1,10 @@
+kind: helper
+name: multi-unicode
+call:
+  url_path:
+    function: segments
+    value: "α/β café"
+    field_name: path
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,132 @@
+id: B3840
+title: OTel semantic vocabulary and span roles
+description: >-
+  Build the shared semantic key vocabulary, provider/operation/output classifications
+  and span-role/name rules. Implement enums for GenAI operations, output types and
+  providers; attribute key constants for GenAI, MCP, database, HTTP and error families;
+  metric names; resolver functions mapping litellm call types and providers to OTel
+  conventions; span role classification for service calls; span registry with role/kind/parent
+  relationships; and span name builders using the OTel GenAI/MCP naming conventions.
+  Keep the legacy experimental-semconv opt-in parser and category declarations so both
+  V2 and legacy generations use these lower-level vocabulary definitions.
+
+  Exported enums and resolvers:
+  - GenAIOperation.CHAT, TEXT_COMPLETION, EMBEDDINGS, GENERATE_CONTENT, RETRIEVAL,
+    CREATE_AGENT, INVOKE_AGENT, EXECUTE_TOOL, plus LITELLM_* vendor operations.
+  - GenAIOutputType.TEXT, JSON, IMAGE, SPEECH.
+  - GenAIProvider with common provider values (OPENAI, ANTHROPIC, AWS_BEDROCK, etc.).
+  - MCPMethod.TOOLS_CALL, TOOLS_LIST, PROMPTS_GET, PROMPTS_LIST.
+  - Attribute key classes: GenAI, MCP, JsonRpc, RpcSystem, Network, Client, Error,
+    LiteLLMError, ExceptionEvent, GenAIEvent, Server, DB, HTTP, LiteLLM, Metric.
+  - NetworkTransport enum with TCP, UDP, QUIC, UNIX, PIPE values for MCP span
+    transport classification.
+  - resolve_provider(custom_llm_provider) → gen_ai.provider.name, unmapped providers
+    pass through verbatim.
+  - resolve_operation(call_type) → GenAIOperation, unmapped call types fall back to CHAT
+    with a debug log.
+  - resolve_output_type(call_type) → GenAIOutputType | None, only routes with pinned
+    modality are listed.
+  - db_system(service_name) → "postgresql" | "redis" | None, covers redis_* prefixes.
+  - span_role_for_service(service_name) → SpanRole.DB_CALL | SpanRole.SERVICE | None;
+    excludes metrics-only services (self, router, proxy_pre_call, auth).
+  - SpanRole enum with PROXY_REQUEST, LLM_CALL, MCP_TOOL_CALL, MCP_LIST_TOOLS,
+    GUARDRAIL, DB_CALL, SERVICE.
+  - LiteLLMSpanKind enum with SERVER, CLIENT, INTERNAL, PRODUCER, CONSUMER.
+  - SpanSpec frozen dataclass with role, kind, parent.
+  - SPAN_REGISTRY mapping every role to its spec, complete and immutable.
+  - Span name builders: llm_call_span_name, mcp_tool_call_span_name,
+    mcp_list_tools_span_name, proxy_request_span_name (no-op but named),
+    guardrail_span_name, service_span_name; all using semconv patterns.
+  - root_roles(), child_roles(parent), validate_registry() for registry helpers.
+  - OTELSemconvCategory.GEN_AI_LATEST_EXPERIMENTAL enum.
+  - parse_semconv_opt_in(raw) → set[OTELSemconvCategory], parsing comma-separated
+    opt-in tokens with unknown tokens ignored per spec.
+
+  The literal litellm provider names, call types and semconv operation names are
+  preserved exactly. Attribute key strings and span names match the conventions or
+  litellm's vendor extensions in form and spelling. The registry declares every role
+  with its span kind and parent, enforcing consistency through invariant checks.
+scope:
+  paths:
+    - crates/betterlite-logging/src/lib.rs
+    - crates/betterlite-logging/src/otel/mod.rs
+    - crates/betterlite-logging/src/otel/model.rs
+    - crates/betterlite-logging/src/otel/model/**
+    - crates/betterlite-logging/Cargo.toml
+    - tools/oracle/src/helpers/otel_vocabulary.rs
+    - tools/oracle/src/helpers/otel_vocabulary/**
+    - tools/oracle/helpers/otel_vocabulary.py
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/otel-vocabulary/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/semconv.py#L14-L501
+    why: Complete enum and attribute vocabulary; provider/operation/output type mappings
+      and resolver functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/spans.py#L67-L189
+    why: SpanRole, LiteLLMSpanKind, SpanSpec, SPAN_REGISTRY, db_system, span_role_for_service
+      and the three MCP/LLM span name builders.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/spans.py#L197-L229
+    why: guardrail_span_name and service_span_name at L197-L204; registry helpers root_roles, child_roles, validate_registry at L207-L229.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/gen_ai_semconv.py#L51-L90
+    why: OTELSemconvCategory enum; parse_semconv_opt_in function and category lookup table.
+dod:
+  - text: Every GenAI/output/provider enum value and literal attribute key matches LiteLLM at the pin exactly, including vendor extensions and semconv standardized names.
+    proof: [otel-vocabulary-constants, helper-case-corpus]
+  - text: Resolver functions map all captured call_type and custom_llm_provider values to their canonical OTel operations/providers, with unmapped values following LiteLLM's fallback and logging behavior exactly.
+    proof: [otel-vocabulary-resolvers, helper-python, helper-case-corpus]
+  - text: Span registry is complete, immutable, declares every role with its kind and parent, and validates invariants (no mismatched role, no unknown parent, no missing roles).
+    proof: [otel-vocabulary-registry, helper-python]
+  - text: Span name builders produce the exact naming convention for each role (operation/model, method/tool, db.operation, guardrail name), handling empty model/call type with the correct strip behavior.
+    proof: [otel-vocabulary-span-names, helper-python, helper-case-corpus]
+  - text: OTel semconv stability opt-in parses comma-separated categories, ignores unknown tokens per spec, and gate validates a seed produces the expected output set.
+    proof: [otel-vocabulary-semconv, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: otel-vocabulary-constants
+      why: Enum values and key strings must match LiteLLM's wire format and semconv definitions exactly.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::vocabulary::constants::/)'
+    - id: otel-vocabulary-resolvers
+      why: Provider and operation mappings must handle all litellm call_type and custom_llm_provider values with correct fallbacks.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::vocabulary::resolvers::/)'
+    - id: otel-vocabulary-registry
+      why: Registry completeness and span invariants prevent dropped or mislinked roles in schema.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::vocabulary::registry::/)'
+    - id: otel-vocabulary-span-names
+      why: Span name builders produce the naming conventions, with whitespace handling matching LiteLLM.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::vocabulary::span_names::/)'
+    - id: otel-vocabulary-semconv
+      why: Opt-in parser and category lookup must conform to the semconv spec's comma-separated format.
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::vocabulary::semconv::/)'
+    - id: helper-python
+      why: The independently invoked MIT helper semantics must match the production functions.
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::otel_vocabulary::/)'
+    - id: helper-case-corpus
+      why: Oracle helper cases and corpus must replay with the new vocabulary decoder.
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/otel-vocabulary-* tools/oracle/fuzz/corpus/helper_case/otel-vocabulary-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/otel-vocabulary/provider-mapping-unmapped-pass-through.yaml
+  - tools/oracle/cases/helpers/otel-vocabulary/operation-mapping-all-call-types.yaml
+  - tools/oracle/cases/helpers/otel-vocabulary/output-type-only-modality-routes.yaml
+  - tools/oracle/cases/helpers/otel-vocabulary/db-system-redis-prefix-coverage.yaml
+  - tools/oracle/cases/helpers/otel-vocabulary/span-role-excludes-metrics-only.yaml
+  - tools/oracle/cases/helpers/otel-vocabulary/registry-validates-invariants.yaml
+  - tools/oracle/cases/helpers/otel-vocabulary/span-names-strip-empty-model-tool.yaml
+  - tools/oracle/cases/helpers/otel-vocabulary/semconv-opt-in-comma-separated-and-unknown-ignored.yaml
+deviations: []
+out_of_scope:
+  - The FastAPI instrumentor owns PROXY_REQUEST span creation (from opentelemetry-instrumentation-fastapi);
+    this task only declares the role and registers it in SPAN_REGISTRY.
+  - 'No caller at the pin: proxy_request_span_name (L192-L194) — the proxy request span is created by the instrumentation, not by litellm code; it is named here only so the registry is complete and tests assert against the literal.'
+  - LITELLM_PROXY_REQUEST_SPAN_NAME (L172) — a constant string literal for the proxy request span name; exported and used throughout the test suite for span matching and assertion, but owned by the instrumentation that creates the span; tests asserting this literal are validation only.
+pitfalls:
+  - Unknown provider names pass through as-is per the semconv convention, not as "unknown" or null; a new provider in LiteLLM that is not in the mapping will not label as generic.
+  - Unmapped call types log at debug before falling back to "chat"; add new call types to _OPERATION_BY_CALL_TYPE so they don't silently pollute the chat series.
+  - service_span_name returns "{service} {call_type or ''}" stripped; a service with no call_type is just the service name.
+  - The SPAN_REGISTRY is immutable and validated at module load; tests must call validate_registry() to prove the invariants hold, not just inspect the dict.
+  - parse_semconv_opt_in returns an empty set for None or empty string, not a set with one empty entry; trailing commas and whitespace-only tokens are stripped.
+budget:
+  max_changed_lines: 435
+  max_new_expects: 0
+review_level: standard

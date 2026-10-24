@@ -1,0 +1,129 @@
+id: B3008
+title: Recheck key and user budgets before router fallbacks
+description: >-
+  Build `betterlite-auth::fallback_budget` as the router's injected read-only predicate for fallback target budget checking.
+  A free target (zero-cost model) is always allowed, mirroring the auth-time bypass. A paid fallback is attempted only
+  when the key and user (if applicable) are still within their max_budget limits. The predicate fails closed: a spend
+  lookup exception must deny the fallback, while missing auth metadata, disabled enforcement and free models retain their
+  pinned bypasses.
+
+  Serve the budget check through a dataclass-frozen RouterFallbackBudgetCheck that holds an is_enforced callable and
+  exposes an async __call__ method matching the Router's fallback_budget_check signature. Build the predicate with
+  is_enforced=_enforced_by_general_settings so the runtime setting determines enforcement.
+
+  This checks key and user budgets only, not team, team-member, end-user, org, global or per-model budgets, and does not
+  reserve against the counter: it reads the current spend and compares it against max_budget. Preserve exact-ID/legacy-ID
+  lookup order, metadata field order (metadata then litellm_metadata), team-key personal-budget opt-in and stale-counter
+  verification (passing max_budget to get_current_spend).
+scope:
+  paths:
+    - Cargo.toml
+    - deny.toml
+    - crates/betterlite-auth/**
+    - tools/oracle/cases/auth/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_budget.py
+    why: The complete fallback budget check, its scope, and the spend-verification semantics when a counter is stale-low
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L454-L566
+    why: _is_model_cost_zero predicate and the zero-cost bypass used by auth-time budget checks
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3356-L3391
+    why: UserAPIKeyAuth class definition with user_spend and user_max_budget fields
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/models/verification_token.py#L17-L28
+    why: LiteLLM_VerificationToken base class with inherited fields max_budget, spend, token and team_id
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L836-L919
+    why: fallback_budget_check Router constructor parameter and its docstring describing the protocol
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1049-L1059
+    why: FallbackBudgetCheck Protocol definition with __call__ signature the predicate must match
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/proxy/auth/test_fallback_budget.py
+    why: Test cases covering zero-cost bypass, team key opt-in, stale counter semantics, fail-closed behavior and metadata field parsing
+dod:
+  - text: The predicate is built in betterlite-auth and available as a module-level instance.
+    proof:
+      - instantiation
+  - text: >-
+      Zero-cost fallback targets are always allowed, even when the key or user is over budget. A paid target is denied
+      only when the key's spend >= max_budget or the user's spend >= max_budget (if applicable).
+    proof:
+      - oracle
+  - text: >-
+      Enforcement is enabled by default (enforce_fallback_budget defaults to true). When disabled via settings,
+      all fallback targets are allowed.
+    proof:
+      - oracle
+  - text: >-
+      Requests without user_api_key_auth in metadata or litellm_metadata are unrestricted.
+    proof:
+      - oracle
+  - text: >-
+      Team keys do not inherit the owner's personal user budget unless apply_user_budget_to_team_keys is explicitly true.
+    proof:
+      - oracle
+  - text: >-
+      A stale-low spend counter is detected and verified against the authoritative database spend by passing max_budget
+      to get_current_spend, so the paid fallback is correctly refused.
+    proof:
+      - oracle
+  - text: >-
+      A spend lookup exception must deny the fallback (fail closed), and the exception is logged as a warning.
+    proof:
+      - oracle
+  - text: >-
+      The predicate receives settings through runtime calls to general_settings, not constructor injection, matching LiteLLM's design.
+    proof:
+      - oracle
+checks:
+  optional: []
+  commands:
+    - id: instantiation
+      why: the fallback budget predicate is not built or not available as router_fallback_budget_check
+      run: cargo build --locked -p betterlite-auth && cargo run --locked --quiet -p betterlite --example check_instantiation 2>&1 | grep -q fallback_budget_check
+oracle_cases:
+  - tools/oracle/cases/auth/fallback-zero-cost-always-allowed.yaml
+  - tools/oracle/cases/auth/fallback-paid-denied-when-over-key-budget.yaml
+  - tools/oracle/cases/auth/fallback-paid-denied-when-over-user-budget.yaml
+  - tools/oracle/cases/auth/fallback-no-budget-configured-always-allowed.yaml
+  - tools/oracle/cases/auth/fallback-team-key-ignores-personal-budget.yaml
+  - tools/oracle/cases/auth/fallback-team-key-inherits-budget-when-opted-in.yaml
+  - tools/oracle/cases/auth/fallback-no-key-in-metadata-is-unrestricted.yaml
+  - tools/oracle/cases/auth/fallback-enforcement-disabled-allows-all.yaml
+  - tools/oracle/cases/auth/fallback-stale-counter-still-enforced.yaml
+  - tools/oracle/cases/auth/fallback-lookup-exception-fails-closed.yaml
+  - tools/oracle/cases/auth/fallback-metadata-absent-uses-litellm-metadata.yaml
+  - tools/oracle/cases/auth/fallback-metadata-takes-precedence-over-litellm-metadata.yaml
+deviations:
+  - what: >-
+      betterlite checks key and user budgets only. Team, team-member, end-user, org, global and per-model budget checks
+      are not implemented; they belong to their respective tasks and would trigger threshold alerts and spend reservations
+      if reused here.
+    why: >-
+      Fallback targets are skipped, not billed, so enforcing checks that carry side effects (alerts, reservations)
+      would block a free fallback without billing the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_budget.py#L14-L20
+  - what: >-
+      betterlite does not reserve against the spend counter on the fallback path. Multiple concurrent fallback attempts
+      all see the same pre-billing spend figure, so the actual total can exceed the budget cap by roughly the number of
+      concurrent fallbacks times their individual cost.
+    why: >-
+      Reservations are expensive (they increment counters and require cleanup on cancellation). The auth path pre-fills
+      the counter through reserve_budget_for_request; fallbacks that bypass the primary do not pay that cost.
+      This is a known soft-cap limitation shared with fallback_model_access.py in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/fallback_budget.py#L23-L28
+out_of_scope:
+  - Team, team-member, end-user, org, global and per-model budgets; their implementations live in other tasks.
+  - Rolling budget_limits windows (spend:key:{token}:window:{budget_duration}); those counters are model-specific and owned by the model-budget enforcement task.
+  - Reservation of budget on the fallback path; that would require settlement cleanup when the fallback is skipped.
+  - The admin UI, configuration loading and database access; those belong to their respective tasks.
+  - _is_model_cost_zero implementation; that is owned by B750.
+pitfalls:
+  - Do not hardcode settings lookup or use global singletons. Call _enforced_by_general_settings() and _applies_user_budget_to_team_keys() at runtime to honor config changes without restart.
+  - The predicate extracts metadata from both metadata and litellm_metadata fields in the request_kwargs. Try metadata first, then litellm_metadata, and return None if neither contains user_api_key_auth or parsing fails.
+  - Pass max_budget to get_current_spend even when checking only to trigger verification against the authoritative database spend if the cached counter reads stale-low. Without it, a counter restored from an old Redis snapshot would pass even when the user is over budget.
+  - Team keys do not carry the owner's personal budget by default. Only apply the user budget check when valid_token.team_id is None or apply_user_budget_to_team_keys() returns True.
+  - A zero-cost model must bypass all budget checks, not just one. Check _is_model_cost_zero first and return True immediately.
+  - Catch all exceptions in __call__, log them as a warning, and return False (deny the fallback). Never let an exception bubble up; the log includes the model name, the exception type and the message.
+  - UserAPIKeyAuth.spend and user_spend are optional (may be None); use 0.0 as the fallback value when reading them. Do not compare None against a max_budget.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 1

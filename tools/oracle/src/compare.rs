@@ -2,7 +2,8 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-use crate::case::Compare;
+use crate::case::{Compare, Ignore};
+use crate::helpers::HelperOutput;
 use crate::http::Response;
 use crate::mock::ProviderRequest;
 
@@ -10,6 +11,23 @@ use crate::mock::ProviderRequest;
 pub(crate) struct Difference {
     pub(crate) message: String,
     pub(crate) pointer: String,
+}
+
+pub(crate) fn compare_helper(
+    left: &HelperOutput,
+    right: &HelperOutput,
+    ignores: &[Ignore],
+) -> Option<Difference> {
+    let mut left_value = serde_json::to_value(left).ok()?;
+    let mut right_value = serde_json::to_value(right).ok()?;
+    for ignored in ignores {
+        remove_pointer(&mut left_value, &ignored.pointer);
+        remove_pointer(&mut right_value, &ignored.pointer);
+    }
+    first_difference(&left_value, &right_value, "").map(|pointer| Difference {
+        pointer,
+        message: "helper results differ".to_owned(),
+    })
 }
 
 pub(crate) fn compare(
