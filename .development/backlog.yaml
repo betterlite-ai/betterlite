@@ -2111,12 +2111,15 @@ tasks:
     title: Usage v2 batched reads and pre-call accounting
     status: todo
     depends_on:
-    - B317
-    - B304
+    - B016
+    - B371
+    - B382
+    - B013
+    - B301
+    - B002
     file: tasks/B318-usage-routing-v2.yaml
     covers:
     - litellm/router_strategy/lowest_tpm_rpm_v2.py
-
   - id: B319
     milestone: M2 routing
     title: Strategy-independent model RPM and TPM checks
@@ -2804,6 +2807,18 @@ tasks:
     file: tasks/B370-responses-stream-fallback.yaml
     covers:
     - litellm/router.py
+  - id: B371
+    milestone: M2 routing
+    title: Usage v2 reservation and callback accounting
+    status: todo
+    depends_on:
+    - B304
+    - B011
+    - B301
+    - B002
+    file: tasks/B371-usage-v2-accounting.yaml
+    covers:
+    - litellm/router_strategy/lowest_tpm_rpm_v2.py
   - id: B382
     milestone: M2 routing
     title: Request-scoped routing read batches
