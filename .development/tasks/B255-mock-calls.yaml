@@ -1,0 +1,117 @@
+id: B255
+title: Typed mock chat, stream and embedding calls
+description: >-
+  Implement main.py _handle_mock_potential_exceptions, mock timeout/sleep helpers and mock_completion (774-1057),
+  utils.py mock stream builders (7403-7476), and mock_functions.py embedding output. Reuse B004/B005/B006 typed
+  records, injected clock/IDs and B184 errors. Cover n, mock_tool_calls, mock_timeout, mock_delay and usage. Preserve
+  sentinel behavior for litellm.RateLimitError (429), litellm.ContextWindowExceededError (400), litellm.InternalServerError
+  (500), Exception: content_filter_policy (400) and Exception: mock_streaming_error (529). Load operator litellm_params.mock_response;
+  client mock_response/mock_tool_calls are stripped with a field-naming warning unless trusted key/team metadata
+  allow_client_mock_response is true. Accept a typed permission input until B052/B057 wire auth metadata; never
+  trust a body flag. No mock invokes upstream HTTP. Image mocks belong to B082. Budget 290 builders/gate, 110 adapters,
+  300 tests/fuzz and 80 config/wiring (780 total). Write the behavior rstest functions b255_behavior_tests_behavior
+  in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
+  separate names. Register helper operations mock_calls in tools/oracle/src/helpers/mod.rs and tools/oracle/helpers/dispatch.py;
+  each operation has its own Rust and Python adapter file and corpus seed.
+scope:
+  paths:
+  - Cargo.toml
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/lib.rs
+  - crates/betterlite-core/src/error.rs
+  - crates/betterlite-core/src/mock.rs
+  - crates/betterlite-core/src/mock/**
+  - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/**
+  - tools/oracle/helpers/**
+  - tools/oracle/cases/helpers/mock-calls/**
+  - tools/oracle/fuzz/corpus/helper_case/**
+  - crates/betterlite-config/**
+  - crates/betterlite-openai/**
+  - crates/betterlite-server/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L774-L1057
+  why: Mock exceptions, timeout and response handling.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7403-L7476
+  why: Mock stream generation.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2018-L2028
+  why: Key/team permission gates client mock fields.
+dod:
+- text: >-
+    Each listed helper case compares its named production function with the pinned Python function, including precedence,
+    omissions and error facts.
+  proof:
+  - oracle
+  - helper-python
+- text: >-
+    Adjacent behavior tests exercise every branch described above, bounds, injected dependencies and typed failures
+    independently of corpus replay.
+  proof:
+  - behavior-tests
+- text: Each operation has a newly committed seed consumed by the shared helper parser.
+  proof:
+  - helper-case-corpus
+- text: Every named config key has a new seed that replays the existing config parser.
+  proof:
+  - config-yaml-corpus
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: behavior-tests
+    why: new behavior tests are missing or fail
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::b255_behavior_tests_behavior($|::)/)
+      - test(/replays_the_/)'
+  - id: helper-python
+    why: strict adapters fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: new helper seeds are missing or fail replay
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case)" &&
+      grep -rlq 'mock_calls' tools/oracle/fuzz/corpus/helper_case && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: config-yaml-corpus
+    why: the required new behavior or its evidence is missing
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && grep -rlq 'mock_response' crates/betterlite-config/fuzz/corpus/config_yaml && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/mock-calls/chat.yaml
+- tools/oracle/cases/helpers/mock-calls/stream.yaml
+- tools/oracle/cases/helpers/mock-calls/embedding.yaml
+- tools/oracle/cases/helpers/mock-calls/rate-limit.yaml
+- tools/oracle/cases/helpers/mock-calls/context-window.yaml
+- tools/oracle/cases/helpers/mock-calls/internal-server.yaml
+- tools/oracle/cases/helpers/mock-calls/content-filter.yaml
+- tools/oracle/cases/helpers/mock-calls/stream-error.yaml
+- tools/oracle/cases/helpers/mock-calls/n-choices.yaml
+- tools/oracle/cases/helpers/mock-calls/tools.yaml
+- tools/oracle/cases/helpers/mock-calls/timeout.yaml
+- tools/oracle/cases/helpers/mock-calls/delay.yaml
+- tools/oracle/cases/helpers/mock-calls/usage.yaml
+- tools/oracle/cases/helpers/mock-calls/client-stripped.yaml
+- tools/oracle/cases/helpers/mock-calls/client-allowed.yaml
+deviations: []
+out_of_scope:
+- >-
+  The remaining functions in the shared covered paths belong to B200 and its explicitly named sibling parts; this
+  part implements only the functions/ranges listed above.
+- >-
+  mock_functions.mock_image_generation is B082; admission_input_tokens/admitted_prompt_token_counter are B069 (consume
+  an injected optional prompt_tokens value here).
+pitfalls:
+- >-
+  Adapters compare independently executed implementations; error cases ignore /error/message with the betterlite-owned
+  wording reason.
+review_level: security
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
