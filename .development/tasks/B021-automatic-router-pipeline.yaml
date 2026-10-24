@@ -1,81 +1,85 @@
 id: B021
 title: Compose automatic routing and its policy boundaries
-description: 'Complete the M2 automatic-routing pipeline by composing the finished classifier, placement,
-  session, compaction, cache-cost, adaptive, registry and plugin services. Keep the main strategy enum
-  in betterlite-router and the authorized provider/auth/callback adapters in betterlite-server. Apply
-  the production hook sequence to Chat Completions, Responses and Messages through the already-implemented
-  B080/B081 integration points; preserve original caller surfaces and one final decision attribution.
-  Add end-to-end cases for interactions the component tasks cannot prove alone. Do not reimplement a classifier
-  or add another fallback engine: this task is the final orchestration and parity pass for the split B021
-  parts. Use the existing Rust crate boundaries from B004 and B008; integrate through the server when
-  the provider dispatcher or callbacks live in another core crate. This task''s source slices are the
-  linked ranges, not a port of their Python classes. Add the listed oracle cases and the matching adapters
-  to B301''s component runner where state is not observable over HTTP; adapters call production logic
-  and never reproduce it. Use deterministic candidate sets or supplied random samples for comparisons,
-  and separate seeded distribution tests for random choices. Extend the existing config_yaml fuzz target
-  and committed corpus for every newly accepted config form; unsupported keys still fail by full path.
-  Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle cases are
-  budget-excluded by checks.yaml.'
+description: 'Compose B362 registry selection and B366 ComplexityDecision with the semantic, quality and
+  adaptive pre-routing services through B016. Adapt Chat, Responses and Messages using B080/B081 public
+  service inputs at the server boundary. Enforce one authorized final dispatch and one final decision
+  attribution; classifier, session and placement algorithms remain in their component tasks. Implement
+  the owned native service in crates/betterlite-router/src/automatic_router_pipeline.rs. Add ProbeOperation::B021
+  in tools/oracle/src/router_probes/mod.rs and the corresponding B021 entry in tools/oracle/litellm/probes/registry.py;
+  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
+  lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
+  exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router.py:
+  Router.async_pre_routing_hook (L13796-L13980). Implement these behaviors through the typed Rust services
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
 scope:
   paths:
-  - crates/betterlite-router/**
-  - crates/betterlite-config/**
-  - crates/betterlite-server/**
-  - tools/oracle/cases/routing/automatic-router-pipeline/**
+  - crates/betterlite-router/src/automatic_router_pipeline.rs
+  - crates/betterlite-router/src/automatic_router_pipeline/**
+  - crates/betterlite-router/src/lib.rs
+  - crates/betterlite-router/src/error.rs
+  - crates/betterlite-server/src/lib.rs
+  - crates/betterlite-server/src/routes.rs
+  - crates/betterlite-server/src/state.rs
+  - crates/betterlite-server/src/routing/mod.rs
+  - crates/betterlite-server/src/routing/automatic_router_pipeline.rs
+  - crates/betterlite-server/src/routing/automatic_router_pipeline/**
+  - crates/betterlite-router/src/strategy.rs
+  - crates/betterlite-router/src/context.rs
+  - tools/oracle/src/router_probes/automatic_router_pipeline.rs
   - tools/oracle/src/router_probes/automatic_router_pipeline/**
   - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/automatic_router_pipeline.py
   - tools/oracle/litellm/probes/registry.py
+  - tools/oracle/litellm/probes/protocol.py
+  - tools/oracle/litellm/probes/automatic_router_pipeline.py
+  - tools/oracle/cases/routing/automatic-router-pipeline/**
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13796-L13989
-  why: Authorization, compression, hook invocation and attribution.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4169-L4425
-  why: Session orchestration and final response gates.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L4474-L4811
-  why: Classifier, keyword, floor, plugin and placement composition.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13796-L13980
+  why: Implementation boundary verified against the pinned checkout.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Write tests named b021_behaviors and b021_boundaries under automatic_router_pipeline::tests. The
+    first asserts the listed successful and warning/fallback outcomes; the second asserts error fields,
+    bounds, cancellation and the exact selection at boundaries. Use rstest cases for tables; corpus replay
+    cannot satisfy either check.
+  proof:
+  - b021-behaviors
+  - b021-boundaries
+- text: Every listed oracle case exercises the production operation and asserts exact selected model/tier,
+    provider requests, status, code and state changes; only /error/message may be ignored for betterlite
+    wording. Every declared deviation asserts independent exact reference/Rust values through B361.
   proof:
   - oracle
-- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests. Name these tests with the automatic_router_pipeline prefix so the
-    required filter runs them.
+- text: The task adapter invokes production logic and passes strict ruff/basedpyright without Any or broad
+    suppressions.
   proof:
-  - routing-tests
-- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
-    fields still fail startup.
-  proof:
-  - config-corpus
-  - routing-tests
-- text: All mutants in changed router, config or wire code are caught.
+  - probe-python
+  - oracle
+- text: Mutants in changed router/config/wire code are caught.
   proof:
   - mutants
 checks:
   optional:
   - mutants
   commands:
-  - id: routing-tests
-    why: the focused routing tests are missing or fail
-    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
-      -E 'test(automatic_router_pipeline)'
-  - id: config-corpus
-    why: the new configuration forms are absent from the fuzz corpus or their replay fails
-    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
-      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: b021-behaviors
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b021_behaviors(::|$)/)
+      - test(/replays_the_.*_corpus/)'
+  - id: b021-boundaries
+    why: the task-specific behavior test is absent or fails
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::b021_boundaries(::|$)/)
+      - test(/replays_the_.*_corpus/)'
   - id: probe-python
-    why: the task's Python oracle adapter fails strict typing or linting
-    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
-      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+    why: the new adapter is missing, unchanged, untyped or fails lint
+    run: test -f tools/oracle/litellm/probes/automatic_router_pipeline.py && test -n "$(git diff --name-only
+      "$GATE_BASE" -- tools/oracle/litellm/probes/automatic_router_pipeline.py)" && uv run --locked --project
+      tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run --locked --project tools/oracle/litellm
+      basedpyright tools/oracle/litellm/probes
 oracle_cases:
 - tools/oracle/cases/routing/automatic-router-pipeline/chat-full-pipeline.yaml
 - tools/oracle/cases/routing/automatic-router-pipeline/responses-full-pipeline.yaml
 - tools/oracle/cases/routing/automatic-router-pipeline/messages-full-pipeline.yaml
-- tools/oracle/cases/routing/automatic-router-pipeline/routing-only-compression-preserves-provider-body.yaml
-- tools/oracle/cases/routing/automatic-router-pipeline/plugin-policy-survives-classifier-fallback.yaml
-- tools/oracle/cases/routing/automatic-router-pipeline/context-floor-then-modality-and-health.yaml
-- tools/oracle/cases/routing/automatic-router-pipeline/adaptive-choice-restamped-after-replacement.yaml
 - tools/oracle/cases/routing/automatic-router-pipeline/authorization-before-internal-provider-call.yaml
 - tools/oracle/cases/routing/automatic-router-pipeline/same-session-concurrent-turns.yaml
 - tools/oracle/cases/routing/automatic-router-pipeline/cancellation-does-not-persist-unserved-choice.yaml
@@ -85,15 +89,335 @@ deviations: []
 out_of_scope:
 - New routing algorithms, schemas, Python runtime implementation or dashboard work.
 - Simple-shuffle load balancing already completed by B008.
+- B366 owns complexity classification and placement composition; consume its tested public interface.
+- 'litellm/router.py: B012 owns: Router._redact_prompt_text_if_needed (L14121-L14151).'
+- 'litellm/router.py: B013 owns: _cost_value_as_float (L391-L397), _replay_live_router_model_cost (L707-L710),
+  Router._inherit_builtin_cache_pricing (L8800-L8826), Router._inherit_builtin_service_tier_pricing (L8839-L8861),
+  Router._inherit_builtin_base_rates_for_off_peak (L8864-L8907), Router._inherit_builtin_tiered_output_rate
+  (L8910-L8940), Router._deployment_model_cost_payload (L10032-L10066), Router._register_deployment_pricing
+  (L10069-L10081), Router._register_deployment_in_model_cost (L10084-L10155), Router._replay_model_cost_registrations
+  (L10157-L10181).'
+- 'litellm/router.py: B016 owns: Router._async_get_healthy_deployments (L8601-L8629), Router.async_callback_filter_deployments
+  (L8715-L8757), Router.async_get_healthy_deployments (L12995-L13160), Router.async_get_available_deployment
+  (L13282-L13431).'
+- 'litellm/router.py: B017 owns: _as_retry_skipped_deployment_ids (L479-L480), Router._set_deployment_num_retries_on_exception
+  (L3861-L3878), Router._set_failed_deployment_id_on_exception (L3880-L3897), Router._stamp_failed_deployment_id_with_effective_model_info
+  (L3899-L3907), Router._stamp_retry_skip_deployment_id (L3910-L3914), Router.make_call (L7875-L7887),
+  Router.log_retry (L8389-L8420), Router.get_num_retries_from_retry_policy (L14635-L14641).'
+- 'litellm/router.py: B060 owns: Router.get_deployment (L10267-L10284), Router.get_deployment_by_model_group_name
+  (L10301-L10321), Router.arefresh_model_info (L10350-L10362), Router._arefresh_deployment_model_info
+  (L10364-L10411), Router.get_discovered_model_info (L10413-L10422), Router.get_model_listing_info (L10424-L10480),
+  Router._widest_configured_limit (L10483-L10490), Router.get_configured_token_limits (L10492-L10517),
+  Router.get_configured_mode (L10519-L10528), Router.get_configured_display_name (L10530-L10548), Router._get_team_public_name_deployment
+  (L10572-L10579), Router.get_router_model_info (L10664-L10670), Router.get_router_model_info (L10673-L10674),
+  Router.get_router_model_info (L10676-L10800), Router.get_model_info (L10802-L10816), Router.get_model_group
+  (L10818-L10828), Router.get_deployment_model_info (L10830-L10907), Router._set_model_group_info (L10909-L11169),
+  Router.get_model_group_info (L11171-L11198), Router.get_model_group_usage (L11200-L11265), Router.get_model_group_io_token_usage
+  (L11267-L11317), Router._cached_get_model_group_info (L11320-L11326), Router.get_remaining_model_group_usage
+  (L11331-L11365), Router.set_response_headers (L11367-L11395), Router._build_model_name_index (L11397-L11415),
+  Router._build_model_id_to_deployment_index_map (L11417-L11442), Router.get_model_ids (L11444-L11476),
+  Router.get_candidate_model_ids_for_route (L11478-L11504), Router.has_model_id (L11515-L11526), Router.resolve_model_name_from_model_id
+  (L11528-L11583), Router.should_include_deployment (L11618-L11639), Router._get_all_deployments (L11641-L11713),
+  Router.get_model_names (L11715-L11734), Router._get_team_specific_model (L11820-L11837), Router._is_team_specific_model
+  (L11839-L11849), Router.get_model_list_from_model_alias (L11851-L11887), Router.get_model_list (L12041-L12078),
+  Router._invalidate_model_group_info_cache (L12099-L12111), Router._invalidate_access_groups_cache (L12113-L12118),
+  Router.get_model_access_groups (L12120-L12164), Router._filter_deployments_by_model_access_groups (L12941-L12993).'
+- 'litellm/router.py: B066 owns: Router.get_settings (L12185-L12225), Router.update_settings (L12227-L12291).'
+- 'litellm/router.py: B086 owns: Router.aguardrail (L5183-L5210), Router._aguardrail_helper (L5212-L5239),
+  Router.get_available_guardrail (L5241-L5270).'
+- 'litellm/router.py: B114 owns: Router._initialize_alerting (L14697-L14717).'
+- 'litellm/router.py: B118 owns: _silent_experiment_targets (L483-L494), _silent_experiment_kwargs_snapshot
+  (L497-L501), Router._get_silent_experiment_kwargs (L2656-L2696), Router._run_silent_experiment (L2698-L2713),
+  Router._silent_experiment_completion (L2715-L2754), Router._silent_experiment_acompletion (L3650-L3670),
+  Router._maybe_run_weighted_failover (L7195-L7270).'
+- 'litellm/router.py: B138 owns: Router._is_prompt_management_model (L4518-L4528), Router._prompt_management_factory
+  (L4530-L4617).'
+- 'litellm/router.py: B162 owns: _with_router_resolved_session_model (L504-L517), FallbackAwareAnthropicMessagesStream.__init__
+  (L633-L637), FallbackAwareAnthropicMessagesStream.has_buffered_provider_output (L640-L641), FallbackAwareAnthropicMessagesStream.chunks
+  (L644-L647), FallbackAwareAnthropicMessagesStream.messages (L650-L653), FallbackAwareAnthropicMessagesStream.model
+  (L656-L659), as_output_cap (L751-L760), Router.__init__ (L772-L1237), Router.get_valid_args (L1240-L1248),
+  Router.apply_default_settings (L1250-L1256), Router.discard (L1258-L1279), Router._normalize_strategy
+  (L1325-L1332), Router.is_recognized_model (L1598-L1611), Router.team_model_has_alternatives (L1630-L1640),
+  Router._select_deployment_sync (L1854-L1897), Router.initialize_assistants_endpoint (L1899-L1908), Router._initialize_core_endpoints
+  (L1910-L1955), Router._initialize_vector_store_endpoints (L1959-L1985), Router._initialize_vector_store_file_endpoints
+  (L1987-L2057), Router._initialize_google_genai_endpoints (L2059-L2075), Router._initialize_ocr_search_endpoints
+  (L2077-L2097), Router._initialize_video_endpoints (L2099-L2141), Router._initialize_container_endpoints
+  (L2143-L2170), Router._initialize_skills_endpoints (L2172-L2177), Router._initialize_interactions_endpoints
+  (L2179-L2197), Router._initialize_managed_agents_endpoints (L2199-L2221), Router._initialize_specialized_endpoints
+  (L2223-L2235), Router.initialize_router_endpoints (L2237-L2239), Router._remove_optional_callbacks_of_type
+  (L2425-L2438), Router.print_deployment (L2440-L2459), Router.completion (L2533-L2548), Router._completion
+  (L2550-L2654), Router.acompletion (L2759-L2762), Router.acompletion (L2765-L2768), Router.acompletion
+  (L2771-L2774), Router.acompletion (L2779-L2830), Router._completion_streaming_iterator (L3518-L3648),
+  Router._completion_streaming_iterator.SyncFallbackStreamWrapper.__init__ (L3534-L3544), Router._completion_streaming_iterator.SyncFallbackStreamWrapper.__iter__
+  (L3546-L3547), Router._completion_streaming_iterator.SyncFallbackStreamWrapper.__next__ (L3549-L3550),
+  Router._completion_streaming_iterator.stream_with_fallbacks (L3554-L3643), Router._acompletion (L3672-L3835),
+  Router._update_kwargs_with_default_litellm_params (L3916-L3935), Router.abatch_completion._async_completion_no_exceptions
+  (L4192-L4199), Router.abatch_completion._async_completion_no_exceptions_return_idx (L4201-L4216), Router.abatch_completion_one_model_multiple_requests
+  (L4249-L4286), Router.abatch_completion_one_model_multiple_requests._async_completion_no_exceptions
+  (L4271-L4278), Router.abatch_completion_fastest_response (L4291-L4294), Router.abatch_completion_fastest_response
+  (L4299-L4302), Router.abatch_completion_fastest_response (L4306-L4375), Router.abatch_completion_fastest_response._async_completion_no_exceptions
+  (L4320-L4333), Router.abatch_completion_fastest_response.check_response (L4337-L4355), Router.schedule_acompletion
+  (L4382-L4385), Router.schedule_acompletion (L4388-L4391), Router.image_generation (L4619-L4629), Router._image_generation
+  (L4631-L4671), Router.aimage_generation (L4673-L4691), Router._aimage_generation (L4693-L4734), Router.atranscription
+  (L4736-L4776), Router._atranscription (L4778-L4817), Router.aspeech (L4819-L4869), Router._aspeech (L4871-L4910),
+  Router.arerank (L4912-L4931), Router._arerank (L4933-L4969), Router.text_completion (L4971-L5005), Router.atext_completion
+  (L5007-L5042), Router._atext_completion (L5044-L5084), Router.aadapter_completion (L5086-L5112), Router._aadapter_completion
+  (L5114-L5154), Router._asearch_with_fallbacks (L5156-L5167), Router._asearch_with_fallbacks_helper (L5169-L5181),
+  Router._ageneric_api_call_with_fallbacks (L5272-L5303), Router._ageneric_api_call_with_fallbacks_helper
+  (L5334-L5414), Router._dispatch_generic_call_type (L5780-L5797), Router._generic_api_call_with_fallbacks
+  (L5799-L5861), Router.embedding (L5863-L5878), Router._embedding (L5880-L5928), Router.aembedding (L5930-L5953),
+  Router._aembedding (L5955-L5994), Router.acreate_file (L5997-L6018), Router._acreate_file (L6020-L6137),
+  Router.avector_store_create (L6140-L6216), Router._override_vector_store_methods_for_router (L6218-L6224),
+  Router.acreate_batch (L6229-L6255), Router._acreate_batch (L6257-L6312), Router.aretrieve_batch (L6314-L6422),
+  Router.acancel_batch (L6424-L6453), Router._acancel_batch (L6455-L6517), Router.alist_batches (L6519-L6562),
+  Router.alist_batches.try_retrieve_batch (L6532-L6537), Router._pass_through_moderation_endpoint_factory
+  (L6566-L6590), Router.factory_function (L6592-L7011), Router.factory_function.async_wrapper (L6835-L7009),
+  Router._vector_store_request_metadata (L7014-L7015), Router._init_vector_store_api_endpoints (L7017-L7048),
+  Router._init_containers_api_endpoints (L7050-L7106), Router._init_responses_api_endpoints (L7108-L7126),
+  Router._init_interactions_api_endpoints (L7128-L7155), Router._init_managed_agents_api_endpoints (L7157-L7173),
+  Router._pass_through_assistants_endpoint_factory (L7175-L7191), Router._handle_mock_testing_fallbacks
+  (L7612-L7657), Router._handle_mock_testing_rate_limit_error (L7889-L7913), Router.sync_deployment_callback_on_success
+  (L8205-L8240), Router._get_metadata_variable_name_from_kwargs (L8375-L8387), Router._anthropic_messages_order_levels
+  (L8498-L8514), Router._anthropic_messages_stream_can_fall_back (L8516-L8546), Router._get_healthy_deployments
+  (L8581-L8599), Router._cost_map_backend_model (L8829-L8836), Router._is_auto_router_deployment (L9078-L9086),
+  Router._deployment_tags (L9089-L9091), Router._is_complexity_router_deployment (L9138-L9144), Router.config_deployments
+  (L9146-L9153), Router._is_adaptive_router_deployment (L9233-L9235), Router._deployment_participates_in_adaptive_routing
+  (L9237-L9250), Router.deployment_is_active_for_environment (L9504-L9517), Router._backend_cost_map_keys
+  (L10024-L10029), Router.arefresh_model_info.refresh_worker (L10354-L10359), Router.cached_model_group_info
+  (L11328-L11329), Router._deployment_ids (L11507-L11513), Router.map_team_model (L11585-L11616), Router._declared_param_allowlist
+  (L11946-L11950), Router._deployment_accepts_param (L11953-L11982), Router.resolved_litellm_models (L12080-L12097),
+  Router._is_model_access_group_for_wildcard_route (L12166-L12183), Router.get_available_deployment (L14153-L14312),
+  Router.get_available_deployment_for_pass_through (L14314-L14474), Router.flush_cache (L14745-L14750),
+  Router.reset (L14752-L14759).'
+- 'litellm/router.py: B302 owns: Router._get_model_from_alias (L12627-L12635), Router._get_deployment_by_litellm_model
+  (L12637-L12641), Router._try_early_resolve_deployments_for_model_not_in_names (L12643-L12688), Router._team_deployments_across_teams
+  (L12690-L12713), Router.deployments_for_request (L12715-L12727), Router._is_strategy_marker_deployment
+  (L12730-L12735), Router._common_checks_available_deployment (L12737-L12908), Router._drop_strategy_markers
+  (L12910-L12921).'
+- 'litellm/router.py: B303 owns: Router._handle_clientside_credential (L3937-L3970), Router._merge_tools_from_deployment
+  (L3973-L3990), Router._update_kwargs_with_deployment (L3992-L4096), Router._get_async_openai_model_client
+  (L4098-L4120), Router._deployment_slot (L8699-L8713), Router.get_deployment_credentials (L10286-L10299),
+  Router.get_credential_deployment (L10550-L10570), Router.get_deployment_credentials_with_provider (L10599-L10661),
+  Router._get_client (L12293-L12331).'
+- 'litellm/router.py: B305 owns: Router._get_stream_timeout (L4122-L4130), Router._get_non_stream_timeout
+  (L4132-L4143), Router._get_timeout (L4145-L4154), Router.abatch_completion (L4156-L4247).'
+- 'litellm/router.py: B306 owns: Router._deployment_ids_to_skip_on_retry (L7660-L7674), Router.async_function_with_retries
+  (L7677-L7873), Router.should_retry_this_error (L7915-L7977), Router.function_with_fallbacks (L7979-L7985),
+  Router._get_fallback_model_group_for_lookup_groups (L7987-L7995), Router._get_first_default_fallback
+  (L7997-L8008), Router._time_to_sleep_before_retry (L8010-L8053).'
+- 'litellm/router.py: B307 owns: Router.get_fully_blocked_model_names (L11736-L11755), Router._are_all_deployments_blocked
+  (L11758-L11763), Router._is_model_fully_blocked (L11765-L11767), Router.async_get_fully_unhealthy_model_names
+  (L11769-L11818), Router._filter_cooldown_deployments (L14476-L14493), Router._filter_blocked_deployments
+  (L14495-L14509), Router._is_deployment_blocked (L14512-L14521), Router._async_filter_health_check_unhealthy_deployments
+  (L14523-L14566), Router._filter_health_check_unhealthy_deployments (L14568-L14596).'
+- 'litellm/router.py: B308 owns: Router.get_allowed_fails_from_policy (L14643-L14695).'
+- 'litellm/router.py: B310 owns: Router.validate_fallbacks (L2241-L2253), Router._update_kwargs_before_fallbacks
+  (L3837-L3859), Router.async_function_with_fallbacks (L7542-L7610).'
+- 'litellm/router.py: B311 owns: _stream_chunks_have_generated_content (L454-L471), FallbackAwareStreamWrapper.adopt_fallback_response_headers
+  (L725-L748), Router._combine_fallback_usage (L2833-L2849), Router._prepare_fallback_hidden_params (L2852-L2859),
+  Router._adopt_fallback_response_headers (L2862-L2871), Router._apply_fallback_hidden_params_to_item
+  (L2874-L2891), Router._acompletion_streaming_iterator (L2893-L3053), Router._acompletion_streaming_iterator.FallbackStreamWrapper.__init__
+  (L2913-L2928), Router._acompletion_streaming_iterator.FallbackStreamWrapper.__aiter__ (L2930-L2931),
+  Router._acompletion_streaming_iterator.FallbackStreamWrapper.__anext__ (L2933-L2934), Router._acompletion_streaming_iterator.close_model_response
+  (L2936-L2945), Router._acompletion_streaming_iterator.stream_with_fallbacks (L2947-L3047), Router._extract_partial_responses_usage
+  (L3056-L3127).'
+- 'litellm/router.py: B312 owns: _anthropic_stream_forwards_ping_live (L528-L534), _is_retriable_anthropic_status
+  (L537-L538), _without_line_breaks (L541-L542), _anthropic_stream_error_is_gateway_verdict (L545-L552),
+  _anthropic_stream_should_decline_fallback (L555-L563), _anthropic_stream_raised_error_status (L566-L573),
+  _anthropic_stream_fallback_error_for_raised (L576-L593), _anthropic_stream_commits_now (L596-L609),
+  FallbackAwareAnthropicMessagesStream.adopt_fallback_source (L661-L663), FallbackAwareAnthropicMessagesStream.__aiter__
+  (L665-L666), FallbackAwareAnthropicMessagesStream.__anext__ (L668-L669), FallbackAwareAnthropicMessagesStream.aclose
+  (L671-L672), FallbackAwareAnthropicMessagesStream.merge_fallback_hidden_params (L674-L693), Router._aanthropic_messages_streaming_iterator
+  (L5458-L5625), Router._aanthropic_messages_streaming_iterator.stream_with_fallbacks (L5521-L5619), Router._aanthropic_messages_recover_stream_error
+  (L5627-L5655), Router._aanthropic_messages_fallback_attempt (L5657-L5734), Router._aanthropic_messages_with_streaming_fallbacks
+  (L5736-L5751), Router._ageneric_api_call_with_fallbacks_anthropic_messages_attempt (L5753-L5778).'
+- 'litellm/router.py: B322 owns: Router._deployment_usable_by_team (L10324-L10331), Router._get_model_group_deployment_usable_by_team
+  (L10333-L10348), Router._get_wildcard_deployment_usable_by_team (L10581-L10597), Router._filter_reserved_deployments
+  (L12923-L12939).'
+- 'litellm/router.py: B323 owns: Router._init_routing_groups (L1475-L1517), Router._replace_routing_groups
+  (L1519-L1547), Router.get_routing_group (L1549-L1566), Router._get_routing_group_deployments (L1568-L1591),
+  Router._is_priority_routing_group (L1593-L1596), Router.routing_group_has_alternatives (L1613-L1628),
+  Router._deployment_params_with_request_reasoning_override (L2462-L2491), Router._drop_unsupported_classifier_reasoning_effort
+  (L2503-L2529), Router.get_model_list_from_routing_groups (L11889-L11912), Router._materialize_routing_group_rows
+  (L11914-L11920), Router._as_routing_group_row (L11923-L11931), Router._tier_params_the_target_accepts
+  (L11984-L12039).'
+- 'litellm/router.py: B324 owns: Router._add_encrypted_content_affinity_check (L2255-L2298), Router._add_encrypted_content_affinity_check._move_before_deployment_affinity
+  (L2256-L2267), Router._ensure_deployment_affinity_callback (L2300-L2321).'
+- 'litellm/router.py: B331 owns: Router._is_classifier_internal_call (L2494-L2501).'
+- 'litellm/router.py: B334 owns: Router._pop_effort_from_nested_carrier (L13163-L13171), Router._tier_ceiling_under_the_surface_name
+  (L13174-L13198), Router._pin_tier_params_onto_request (L13200-L13218), Router._restore_client_ceiling_no_tier_pins
+  (L13221-L13247), Router._drop_client_carriers_a_tier_pin_supersedes (L13250-L13280).'
+- 'litellm/router.py: B346 owns: Router.schedule_acompletion (L4395-L4453), Router._schedule_factory (L4455-L4516).'
+- 'litellm/router.py: B360 owns: Router._create_redis_cache (L1282-L1297), Router._update_redis_cache
+  (L1299-L1311).'
+- 'litellm/router.py: B362 owns: Router._select_pre_routing_strategy (L13645-L13698), Router._request_header
+  (L13701-L13715), Router._claude_code_session_router_cache_key (L13717-L13728), Router._delete_claude_code_session_router_binding
+  (L13730-L13737), Router._get_claude_code_session_router_binding (L13739-L13752), Router._resolve_claude_code_session_router
+  (L13754-L13794), Router._selected_strategy_marker_deployment (L13982-L13997), Router._forwardable_alias_marker_params
+  (L13999-L14013), Router._forwarded_alias_marker_keys_the_deployment_sets (L14016-L14026), Router._deployment_sets_litellm_param
+  (L14029-L14034), Router._consumed_request_tags_stamp (L14036-L14056), Router._record_routing_decision
+  (L14059-L14095), Router._stamp_or_clear_metadata_key (L14098-L14118).'
+- 'litellm/router.py: B363 owns: Router._run_routing_plugins (L13578-L13613), Router._filter_by_routing_plugin_candidates
+  (L13615-L13643), Router.set_custom_routing_strategy (L14719-L14738), Router._reset_custom_routing_strategy
+  (L14740-L14743).'
+- 'litellm/router.py: B364 owns: model_info_is_active_for_environment (L400-L434), Router.add_optional_pre_call_checks
+  (L2323-L2414), Router.set_optional_pre_call_checks (L2416-L2423), Router.routing_strategy_pre_call_checks
+  (L8631-L8645), Router.async_routing_strategy_pre_call_checks (L8647-L8696), Router._count_pre_call_check_tokens
+  (L12333-L12385), Router._deployment_max_input_tokens (L12387-L12400), Router._pre_call_checks_need_token_count
+  (L12402-L12412), Router._acount_pre_call_check_tokens (L12414-L12442), Router._pre_call_checks (L12444-L12625).'
+- 'litellm/router.py: B368 owns: Router.set_model_list (L9519-L9609), Router._add_deployment (L9611-L9739),
+  Router.add_deployment (L9775-L9806), Router._update_deployment_indices_after_removal (L9808-L9876),
+  Router._update_team_model_index (L9878-L9894), Router._add_model_to_list_and_index_map (L9896-L9923),
+  Router.upsert_deployment (L9925-L9993), Router._restore_deployment_after_failed_upsert (L9995-L10021),
+  Router.delete_deployment (L10183-L10220).'
+- 'litellm/router.py: B370 owns: _responses_stream_holds_event (L615-L620), Router._combine_responses_fallback_usage
+  (L3130-L3169), Router._build_responses_continuation_input (L3172-L3230), Router._aresponses_streaming_iterator
+  (L3232-L3420), Router._aresponses_streaming_iterator.FallbackResponsesStreamWrapper.__init__ (L3290-L3339),
+  Router._aresponses_streaming_iterator.FallbackResponsesStreamWrapper.adopt_fallback_headers (L3341-L3345),
+  Router._aresponses_streaming_iterator.FallbackResponsesStreamWrapper.__aiter__ (L3347-L3348), Router._aresponses_streaming_iterator.FallbackResponsesStreamWrapper.__anext__
+  (L3350-L3377), Router._aresponses_streaming_iterator.FallbackResponsesStreamWrapper.aclose (L3379-L3381),
+  Router._aresponses_streaming_iterator.stream_with_fallbacks (L3383-L3417), Router._aresponses_fallback_attempt
+  (L3422-L3516), Router._aresponses_with_streaming_fallbacks (L5416-L5428), Router._ageneric_api_call_with_fallbacks_responses_attempt
+  (L5430-L5456).'
+- 'litellm/router.py: B383 owns: Router._get_router_deployment_budget_limiter (L10222-L10239), Router._deployment_has_budget_limits
+  (L10241-L10246), Router._sync_deployment_budget_config (L10248-L10265).'
+- 'litellm/router.py: B395 owns: Router._validate_routing_strategy (L1335-L1336), Router._build_strategy_selector
+  (L1338-L1379), Router._register_router_selector (L1382-L1389), Router._unregister_router_selectors (L1391-L1407),
+  Router._apply_updated_routing_strategy_args (L1409-L1444), Router.routing_strategy_init (L1446-L1473),
+  Router._get_request_routing_strategy_override (L1644-L1667), Router._get_override_strategy_selector
+  (L1669-L1689), Router._override_selector_pre_call_check (L1691-L1701), Router._async_override_selector_pre_call_check
+  (L1703-L1712), Router._bind_override_selector_to_request (L1714-L1721), Router._globally_registered_strategies
+  (L1723-L1730), Router.arm_routing_read_prefetch (L1732-L1749), Router._get_routing_context (L1751-L1799),
+  Router._select_deployment_async (L1801-L1852).'
+- 'litellm/router.py: B396 owns: Router.async_get_available_deployment_for_pass_through (L13433-L13576),
+  Router._filter_pass_through_deployments (L14598-L14620).'
+- 'litellm/router.py: B397 owns: Router.deployment_callback_on_success (L8057-L8107), Router.increment_deployment_usage_for_response
+  (L8109-L8143), Router._increment_deployment_usage (L8145-L8203), Router.deployment_callback_on_failure
+  (L8242-L8341), Router.async_deployment_callback_on_failure (L8343-L8373), Router._update_usage (L8422-L8439),
+  Router._track_deployment_metrics (L14622-L14633).'
+- 'litellm/router.py: B399 owns: Router.async_function_with_fallbacks_common_utils (L7272-L7539), Router._has_default_fallbacks
+  (L8441-L8448), Router._has_content_policy_fallback (L8450-L8473), Router._refusal_fallback_available
+  (L8475-L8496), Router._should_raise_content_policy_error (L8548-L8560), Router._should_raise_anthropic_refusal_error
+  (L8562-L8579).'
+- 'litellm/router.py: B400 owns: Router.init_auto_router_deployment (L9093-L9136), Router.init_complexity_router_deployment
+  (L9171-L9231), Router._has_registered_strategy (L9253-L9259), Router._register_pre_routing_strategy
+  (L9261-L9282), Router._unregister_pre_routing_strategy (L9285-L9301), Router._unregister_pre_routing_strategy_for_deployment
+  (L9303-L9327), Router._finalize_adaptive_router_if_configured (L9329-L9365), Router._sync_adaptive_router_hooks
+  (L9367-L9381), Router.init_adaptive_router_deployment (L9383-L9455), Router._is_quality_router_deployment
+  (L9457-L9463), Router.init_quality_router_deployment (L9465-L9502).'
+- 'litellm/router.py: B401 owns: Router._add_deployment_model_to_endpoint_for_llm_passthrough_route (L5305-L5332),
+  Router._json_default_stable_id (L8760-L8765), Router.generate_model_id (L8768-L8797), Router._create_deployment
+  (L8942-L9076), Router._initialize_deployment_for_pass_through (L9741-L9773).'
+- 'litellm/router.py: Licensing-only behavior is omitted under the accepted no-paid-tier decision; B343
+  records the deviation: Router.auto_router_capability_violation (L9155-L9169).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B328 owns: _tier_name (L151-L153),
+  _built_in_tier_or_none (L156-L158), DimensionScore.__init__ (L1028-L1031), _allowed (L1222-L1223), _RequestContextFit.accepts
+  (L1251-L1252), ComplexityRouter._estimate_tokens (L1555-L1560), ComplexityRouter._score_token_count
+  (L1562-L1572), ComplexityRouter._keyword_matches (L1574-L1593), ComplexityRouter._score_keyword_match
+  (L1595-L1625), ComplexityRouter._count_custom_hits (L1627-L1632), ComplexityRouter._score_custom_dimensions
+  (L1634-L1647), ComplexityRouter._score_multi_step (L1649-L1654), ComplexityRouter._score_question_complexity
+  (L1656-L1661), ComplexityRouter.classify (L1663-L1670), ComplexityRouter._score_and_classify (L1672-L1769),
+  ComplexityRouter._is_near_tier_boundary (L1771-L1778), ComplexityRouter._effective_reasoning_override_min_score
+  (L1780-L1790), ComplexityRouter._effective_tier_boundaries (L1792-L1803), ComplexityRouter._build_routing_decision
+  (L1805-L1890).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B330 owns: _truncate (L854-L869), _iter_context_turns_newest_first
+  (L872-L892), _turns_within_budget (L895-L920), _extract_prior_turns (L923-L965), ComplexityRouter._classifier_image_parts
+  (L2019-L2044), ComplexityRouter._classifier_caller_constraints (L2391-L2403), ComplexityRouter._classifier_context_payload
+  (L2405-L2442), ComplexityRouter._native_classifier_payload (L2702-L2727), ComplexityRouter._build_classifier_user_payload
+  (L2730-L2789).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B331 owns: _ClassifierCircuitBreaker.__init__
+  (L1164-L1170), _ClassifierCircuitBreaker.acquire_permit (L1172-L1187), _ClassifierCircuitBreaker.record_success
+  (L1189-L1195), _ClassifierCircuitBreaker.record_failure (L1197-L1209), _is_classifier_timeout (L1212-L1219),
+  ComplexityRouter._build_classifier_system_prompt (L1481-L1516), ComplexityRouter._classify_heuristic_first
+  (L1958-L1989), ComplexityRouter._classify_hybrid (L1991-L2017), ComplexityRouter._classifier_failure_outcome
+  (L2254-L2299), ComplexityRouter._classify_with_llm (L2444-L2500), ComplexityRouter._call_classifier_model
+  (L2628-L2700).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B332 owns: _with_llm_v2_forecast (L1092-L1111),
+  _with_classifier_forecast (L1114-L1148), ComplexityRouter._capability_classifier_outcome (L2046-L2081),
+  ComplexityRouter._capability_classifier_failure_outcome (L2083-L2104), ComplexityRouter._classify_with_capability_llm
+  (L2502-L2569).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B333 owns: ComplexityRouter._build_jev_client
+  (L1311-L1322), ComplexityRouter._jev_classifier_outcome (L2159-L2252).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B334 owns: ComplexityRouter.get_model_for_tier
+  (L2791-L2813), ComplexityRouter._litellm_params_for_model (L2815-L2824), ComplexityRouter._pick_from_tier_value
+  (L2827-L2832), ComplexityRouter._tier_pools (L2834-L2835), ComplexityRouter._pin_model_for_tier (L2837-L2880).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B335 owns: _decision_is_pinnable (L968-L1020),
+  _parse_session_affinity_pin (L1269-L1288), _session_affinity_cache_value (L1291-L1293), ComplexityRouter._tier_for_model
+  (L3451-L3462), ComplexityRouter._escalate_tier (L3464-L3482), ComplexityRouter._escalated_pin (L3484-L3498),
+  ComplexityRouter._iter_metadata_dicts (L4110-L4117), ComplexityRouter._get_session_id_from_request_kwargs
+  (L4120-L4126), ComplexityRouter._get_user_api_key_hash_from_request_kwargs (L4129-L4137), ComplexityRouter._get_session_affinity_cache_key
+  (L4139-L4145), ComplexityRouter._uses_tier_pin (L4148-L4153), ComplexityRouter._uses_deployment_pin
+  (L4156-L4160), ComplexityRouter._with_session_deployment_affinity (L4162-L4167), ComplexityRouter.async_pre_routing_hook
+  (L4169-L4425).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B337 owns: ComplexityRouter._apply_prompt_cache_routing
+  (L4427-L4472).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B342 owns: ComplexityRouter._hardest_tier_models
+  (L1518-L1534), ComplexityRouter.savings_baseline (L1537-L1553).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B352 owns: ComplexityRouter._vision_verdicts
+  (L3500-L3533), ComplexityRouter._vision_verdicts.model_verdict (L3519-L3522), ComplexityRouter._vision_verdicts.deployment_verdict
+  (L3524-L3528), ComplexityRouter._model_accepts_image_input (L3535-L3542), ComplexityRouter._model_declares_vision_support
+  (L3544-L3546), ComplexityRouter._modality_eligible_models (L3548-L3553), ComplexityRouter._gate_response_modality
+  (L3555-L3670), ComplexityRouter._modality_default_model_usable (L3672-L3689), ComplexityRouter._model_group_can_serve
+  (L3691-L3746), ComplexityRouter._gate_response_health (L3748-L3892), ComplexityRouter._gate_response_health.recover_tier
+  (L3785-L3848), ComplexityRouter._placed_default_model (L3894-L3900), ComplexityRouter._restamp_adaptive_choice
+  (L3903-L3913).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B353 owns: ComplexityRouter._classify_with_llm_v2
+  (L2571-L2626).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B354 owns: ComplexityRouter._ensure_adaptive_router
+  (L2933-L2997), ComplexityRouter._adaptive_candidate_models (L2999-L3031), ComplexityRouter._soft_floor_pick
+  (L3033-L3148), ComplexityRouter._fitting_tier_fallback (L3150-L3154).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B358 owns: ComplexityRouter._classify_with_heuristic_v2
+  (L1931-L1956).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B359 owns: ComplexityRouter._resolve_plan_mode_floor
+  (L3156-L3162), ComplexityRouter._active_tier_severity (L3164-L3168), ComplexityRouter._matched_plan_mode_signal
+  (L3170-L3186), ComplexityRouter._matched_housekeeping_sentinel (L3188-L3212), ComplexityRouter._cheapest_configured_tier
+  (L3214-L3224), ComplexityRouter._apply_plan_mode_floor (L3423-L3428), ComplexityRouter._plan_mode_floor_is_top_tier
+  (L3430-L3438), ComplexityRouter._matched_escalation_keyword (L3440-L3449), ComplexityRouter._lexical_tier_override
+  (L3915-L3937), ComplexityRouter._get_or_create_semantic_routelayer (L3939-L3976), ComplexityRouter._ensure_semantic_routelayer
+  (L3978-L3992), ComplexityRouter._semantic_tier_override (L3994-L4042), ComplexityRouter._resolve_keyword_tier_override
+  (L4044-L4066).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B363 owns: ComplexityRouter._classify_with_plugin
+  (L2301-L2358), ComplexityRouter._default_model_fallback_outcome (L2360-L2389), ComplexityRouter._pick_model_for_tier
+  (L2882-L2931).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B366 owns: _with_signal (L1088-L1089),
+  ComplexityRouter.aclassify (L1892-L1929), ComplexityRouter._classify_and_route (L4474-L4811).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B375 owns: _tier_bullets (L218-L223),
+  _built_in_criteria (L226-L228), _built_in_prompt (L231-L252), _tier_classification_model (L255-L261),
+  _closing_line (L271-L272), _sectioned_prompt (L275-L290), _operator_examples_section (L293-L294), built_in_tier_classification_prompt
+  (L297-L331), custom_tier_classification_prompt (L334-L356), classification_system_prompt (L359-L396),
+  _append_custom_keywords (L399-L404), _parent_session_kwargs (L407-L409), _response_cost_or_none (L412-L419),
+  _effective_turn_off_message_logging (L422-L429), _classifier_reply_is_private (L432-L447), _validation_problem
+  (L450-L452), _log_rejected_classifier_verdict (L455-L464), ComplexityRouter._llm_classifier_outcome
+  (L2106-L2157).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B384 owns: _message_text (L487-L498),
+  _reminder_block_spans (L501-L515), _strip_reminder_blocks (L518-L544), _inline_image_part (L547-L561),
+  _human_text (L564-L573), _encrypted_classifier_task (L576-L609), _iter_human_asks_newest_first (L612-L621),
+  _conversation_is_continuing (L624-L655), _newest_turn_ask (L658-L671), _extract_current_ask_and_system_prompt
+  (L674-L693), _last_human_ask_index (L696-L714), _is_reminder_only_turn (L717-L726), _newest_turn_is_human_ask
+  (L729-L755), _iter_system_scope_texts (L758-L780), _matched_plan_mode_sentinel (L783-L851), ComplexityRouter._resolve_messages
+  (L4068-L4083), ComplexityRouter._extract_user_message_and_system_prompt (L4086-L4095), ComplexityRouter._reminder_markers_for_request
+  (L4097-L4107).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B386 owns: _apply_context_placement
+  (L1226-L1234), _window_can_hold (L1237-L1238), _group_provably_fits (L1241-L1243), ComplexityRouter._deployment_window
+  (L3226-L3227), ComplexityRouter._deployment_limit (L3229-L3255), ComplexityRouter._group_deployments
+  (L3257-L3260), ComplexityRouter._group_output_ceiling (L3262-L3272), ComplexityRouter._group_window_facts
+  (L3274-L3284), ComplexityRouter._out_of_band_request_text (L3287-L3308), ComplexityRouter._request_byte_upper_bound
+  (L3310-L3316), ComplexityRouter._counted_request_tokens (L3318-L3334), ComplexityRouter._request_context_fit
+  (L3336-L3357), ComplexityRouter._context_window_placement (L3359-L3384), ComplexityRouter._placement_for_tokens
+  (L3386-L3421).'
+- 'litellm/router_strategy/complexity_router/complexity_router.py: B400 owns: ComplexityRouter.__init__
+  (L1324-L1479).'
 pitfalls:
-- The final task deliberately waits for B165's Python bridge through B363; the architect must accept the
-  later-milestone dependency before scheduling the M2 umbrella complete.
 - The earlier component tasks can run independently in dependency order, so do not defer their tests to
   this integration pass.
 - Every provider call, including classifiers and compaction, must retain the original caller's authorization
   and budget context.
 - Do not mistake duplicate covers on shared monolithic source files for permission to rewrite the whole
   file's behavior in this one task.
+- Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become
+  a hard request error.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules
+  at the repository 300-line limit.
 review_level: security
 budget:
   max_changed_lines: 800
