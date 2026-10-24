@@ -2385,14 +2385,13 @@ tasks:
     status: todo
     depends_on:
     - B334
-    - B325
     - B075
-    - B081
-    - B068
+    - B012
+    - B301
+    - B002
     file: tasks/B337-cache-cost-routing.yaml
     covers:
     - litellm/router_strategy/complexity_router/complexity_router.py
-
   - id: B338
     milestone: M2 routing
     title: Quality-tier and keyword routing
