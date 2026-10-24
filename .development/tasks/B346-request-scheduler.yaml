@@ -14,31 +14,35 @@ description: Add a per-model scheduler using B304 state and an injected clock/re
   distribution tests for random choices. Extend the existing config_yaml fuzz target and committed corpus
   for every newly accepted config form; unsupported keys still fail by full path. Keep the implementation,
   adapters and tests within 800 changed lines; fixtures and oracle cases are budget-excluded by checks.yaml.
+  Extend B004's typed chat request fields only for the routing controls this task consumes, and extend
+  its existing chat_request fuzz corpus; router-only fields never reach the provider body.
 scope:
   paths:
   - crates/betterlite-router/**
   - crates/betterlite-config/**
   - crates/betterlite-server/**
+  - crates/betterlite-openai/**
   - tools/oracle/cases/routing/request-scheduler/**
-  - tools/oracle/src/router_probes/request-scheduler/**
+  - tools/oracle/src/router_probes/request_scheduler/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/request_scheduler.py
   - tools/oracle/litellm/probes/registry.py
   lint_tables: false
 references:
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L12-L160
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/scheduler.py#L12-L137
   why: Queue ordering, poll/peek and removal.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/scheduler.py#L1-L7
   why: Named priority values.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4395-L4514
   why: Scheduled call lifecycle and headers.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the request_scheduler prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
@@ -49,6 +53,11 @@ dod:
 - text: All mutants in changed router, config or wire code are caught.
   proof:
   - mutants
+- text: Routing controls have valid and invalid chat parser corpus seeds and are consumed before upstream
+    serialization.
+  proof:
+  - chat-corpus
+  - oracle
 checks:
   optional:
   - mutants
@@ -65,6 +74,10 @@ checks:
     why: the task's Python oracle adapter fails strict typing or linting
     run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
       --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+  - id: chat-corpus
+    why: routing request controls lack chat parser corpus coverage or replay fails
+    run: test -f crates/betterlite-openai/fuzz/fuzz_targets/chat_request.rs && test -n "$(ls -A crates/betterlite-openai/fuzz/corpus/chat_request)"
+      && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_chat_request_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/request-scheduler/lower-priority-number-first.yaml
 - tools/oracle/cases/routing/request-scheduler/equal-priority-request-id-order.yaml
