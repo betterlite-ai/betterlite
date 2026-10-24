@@ -58,6 +58,7 @@ helper_group! {
     "bedrock_pegasus" => pegasus,
     "bedrock_qwen_deepseek" => qwen_deepseek,
     "bedrock_reasoning_stream" => reasoning_stream,
+    "bedrock_request_policy" => request_policy,
     "bedrock_services_agentcore_request" => services_agentcore_request,
     "bedrock_services_agentcore_response" => services_agentcore_response,
     "bedrock_services_agentcore_stream" => services_agentcore_stream,

@@ -1,0 +1,10 @@
+kind: helper
+name: fuzz-seed
+call:
+  provider_base_helpers:
+    response_format:
+      format: {type: json_schema, json_schema: {schema: {$ref: "#/$defs/A", items: [{$ref: B}]}}}
+      ref_template: "#/components/{model}"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-request-metadata-owner
+call:
+  bedrock_request_policy:
+    fields: [nonsense, nonsense, ""]
+    step:
+      resolve:
+        litellm_params:
+          metadata:
+            nonsense: x
+            user_api_key_hash: hash
+            spend_logs_metadata: {team: a}
+        caller: null
+env: {}
+compare:
+  ignore: []

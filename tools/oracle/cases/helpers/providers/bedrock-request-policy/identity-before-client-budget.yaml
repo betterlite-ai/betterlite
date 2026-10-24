@@ -1,0 +1,35 @@
+kind: helper
+name: bedrock-identity-before-client-budget
+call:
+  bedrock_request_policy:
+    fields: [user_api_key_team_id, user_api_key_hash, user_api_key_alias, spend_logs_metadata, user_api_key_hash]
+    step:
+      resolve:
+        litellm_params:
+          metadata:
+            user_api_key_hash: "bad!"
+            user_api_key_alias: 1
+          litellm_metadata:
+            user_api_key_hash: good
+            user_api_key_alias: "team\U00003000alias\t\x1c"
+            user_api_key_team_id: ""
+            spend_logs_metadata: {a: spend, b: 2, c: "3", d: "4", e: "5", user_api_key_x: spoof}
+        caller:
+          z: "1"
+          a: caller
+          User_api_key_y: ok
+          user_api_key_hash: spoof
+          k00: v
+          k01: v
+          k02: v
+          k03: v
+          k04: v
+          k05: v
+          k06: v
+          k07: v
+          k08: v
+          k09: v
+          bad: "caf\xe9"
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,16 @@
+kind: helper
+name: class-config-filter
+call:
+  provider_base_helpers:
+    class_config:
+      values: {max_tokens: 0, stream: false, stop: [], label: "", top_k: null, _private: 1}
+      methods:
+        helper: function
+        length: builtin
+        build: classmethod
+        make: staticmethod
+        view: property
+        hook: callable
+env: {}
+compare:
+  ignore: []

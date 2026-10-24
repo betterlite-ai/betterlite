@@ -1,0 +1,12 @@
+kind: helper
+name: history-tool-and-thinking-predicates
+call:
+  provider_base_helpers:
+    history:
+      - {role: user, tool_calls: []}
+      - {role: assistant, tool_calls: [{id: one}], thinking_blocks: [{type: thinking}]}
+      - {role: assistant, thinking_blocks: []}
+      - {role: assistant, tool_calls: [], thinking_blocks: {}}
+env: {}
+compare:
+  ignore: []

@@ -64,6 +64,7 @@ helper_group! {
     "openai_video_identifiers" => video_identifiers,
     "openai_videos" => videos,
     "openai_workload_identity" => workload_identity,
+    "provider_base_helpers" => provider_base_helpers,
     "proxy_provider_options" => proxy_provider_options,
     "rerank_contracts" => rerank_contracts,
     "responses_event_records" => responses_event_records,

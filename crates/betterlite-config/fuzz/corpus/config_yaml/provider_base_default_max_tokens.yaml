@@ -1,0 +1,2 @@
+litellm_settings:
+  DEFAULT_MAX_TOKENS: 8192

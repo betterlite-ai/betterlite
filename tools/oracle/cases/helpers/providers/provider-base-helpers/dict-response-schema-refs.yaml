@@ -1,0 +1,24 @@
+kind: helper
+name: dict-response-schema-refs
+call:
+  provider_base_helpers:
+    response_format:
+      format:
+        type: json_schema
+        extra: kept
+        json_schema:
+          name: answer
+          strict: true
+          schema:
+            $ref: "#/$defs/Answer"
+            $defs:
+              Answer:
+                type: object
+                properties:
+                  items: {type: array, items: {$ref: "#/$defs/Item"}}
+                  choice: {anyOf: [{$ref: Leaf}, [{$ref: "a/b/Nested"}]]}
+              Item: {type: string}
+      ref_template: "#/components/{{schemas}}/{model}"
+env: {}
+compare:
+  ignore: []

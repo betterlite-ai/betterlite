@@ -9,6 +9,7 @@ publish.workspace = true
 betterlite-anthropic = { path = "../../crates/betterlite-anthropic" }
 betterlite-auth = { path = "../../crates/betterlite-auth" }
 betterlite-azure = { path = "../../crates/betterlite-azure" }
+betterlite-bedrock = { path = "../../crates/betterlite-bedrock" }
 betterlite-billing = { path = "../../crates/betterlite-billing" }
 betterlite-compression = { path = "../../crates/betterlite-compression" }
 betterlite-config = { path = "../../crates/betterlite-config" }
@@ -22,6 +23,7 @@ betterlite-http = { path = "../../crates/betterlite-http" }
 betterlite-logging = { path = "../../crates/betterlite-logging" }
 betterlite-models = { path = "../../crates/betterlite-models" }
 betterlite-ocr = { path = "../../crates/betterlite-ocr" }
+betterlite-openai = { path = "../../crates/betterlite-openai" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../crates/betterlite-provider" }
@@ -51,5 +53,5 @@ rstest = "=0.27.0"
 workspace = true
 
 [package.metadata.cargo-shear]
-ignored = ["betterlite-anthropic", "betterlite-auth", "betterlite-azure", "betterlite-billing", "betterlite-compression", "betterlite-config", "betterlite-core", "betterlite-cost", "betterlite-db", "betterlite-error", "betterlite-foundry", "betterlite-logging", "betterlite-ocr", "betterlite-prompts", "betterlite-provider", "betterlite-rate-limit", "betterlite-redact", "betterlite-router", "betterlite-streaming", "betterlite-tokenizer", "betterlite-vertex"]
+ignored = ["betterlite-anthropic", "betterlite-auth", "betterlite-azure", "betterlite-billing", "betterlite-compression", "betterlite-core", "betterlite-cost", "betterlite-db", "betterlite-error", "betterlite-foundry", "betterlite-logging", "betterlite-ocr", "betterlite-prompts", "betterlite-provider", "betterlite-rate-limit", "betterlite-redact", "betterlite-router", "betterlite-streaming", "betterlite-tokenizer", "betterlite-vertex"]
 ignored-paths = ["src/helpers/*/*.rs"]

@@ -177,6 +177,19 @@ name = "betterlite-azure"
 version = "0.1.0"
 
 [[package]]
+name = "betterlite-bedrock"
+version = "0.1.0"
+dependencies = [
+ "futures-util",
+ "indexmap",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-billing"
 version = "0.1.0"
 
@@ -189,6 +202,7 @@ name = "betterlite-config"
 version = "0.1.0"
 dependencies = [
  "insta",
+ "rstest",
  "secrecy",
  "serde",
  "serde-saphyr",
@@ -257,6 +271,17 @@ name = "betterlite-ocr"
 version = "0.1.0"
 
 [[package]]
+name = "betterlite-openai"
+version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
@@ -264,6 +289,7 @@ dependencies = [
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",
+ "betterlite-bedrock",
  "betterlite-billing",
  "betterlite-compression",
  "betterlite-config",
@@ -277,6 +303,7 @@ dependencies = [
  "betterlite-logging",
  "betterlite-models",
  "betterlite-ocr",
+ "betterlite-openai",
  "betterlite-paths",
  "betterlite-prompts",
  "betterlite-provider",
