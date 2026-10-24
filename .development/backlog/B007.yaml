@@ -1,7 +1,7 @@
 id: B007
 milestone: M1 openai data plane
 title: Model list
-status: in-progress
+status: done
 depends_on: [B003]
 file: tasks/B007-models.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/model_listing.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 56
