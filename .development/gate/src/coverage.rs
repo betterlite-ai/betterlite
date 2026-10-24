@@ -1,9 +1,8 @@
 mod tests;
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
-
-use globset::GlobSet;
 
 use crate::builtins::globs::glob_set;
 use crate::error::GateError;
@@ -15,6 +14,12 @@ pub(crate) struct Coverage {
     pub(crate) uncovered: Vec<String>,
     pub(crate) dead_globs: Vec<String>,
     pub(crate) stale: Option<String>,
+}
+
+pub(crate) struct Tally {
+    pub(crate) counts: Vec<usize>,
+    pub(crate) uncovered: Vec<String>,
+    pub(crate) used: Vec<bool>,
 }
 
 pub(crate) fn read_inventory(folder: &Path) -> Result<(String, Vec<String>), GateError> {
@@ -29,27 +34,60 @@ pub(crate) fn read_inventory(folder: &Path) -> Result<(String, Vec<String>), Gat
     Ok((commit, lines.map(str::to_owned).collect()))
 }
 
-fn hits(set: &GlobSet, patterns: &[String], paths: &[String]) -> (Vec<bool>, Vec<String>) {
+pub(crate) fn tally(
+    patterns: &[String],
+    owners: &[Option<usize>],
+    paths: Vec<String>,
+    entry_count: usize,
+) -> Result<Tally, GateError> {
+    let set = glob_set(patterns)?;
     let mut used = vec![false; patterns.len()];
-    let matched: Vec<bool> = paths
-        .iter()
-        .map(|path| {
-            let indices = set.matches(path);
-            for index in &indices {
-                if let Some(slot) = used.get_mut(*index) {
-                    *slot = true;
-                }
+    let mut counts = vec![0_usize; entry_count];
+    let mut uncovered = Vec::new();
+    for path in paths {
+        let indices = set.matches(&path);
+        let mut hit_entries = BTreeSet::new();
+        for index in &indices {
+            if let Some(slot) = used.get_mut(*index) {
+                *slot = true;
             }
-            !indices.is_empty()
-        })
-        .collect();
-    let dead = patterns
-        .iter()
-        .zip(&used)
-        .filter(|&(_, hit)| !hit)
-        .map(|(pattern, _)| pattern.clone())
-        .collect();
-    (matched, dead)
+            if let Some(Some(owner)) = owners.get(*index) {
+                hit_entries.insert(*owner);
+            }
+        }
+        for owner in hit_entries {
+            if let Some(count) = counts.get_mut(owner) {
+                *count = count.saturating_add(1);
+            }
+        }
+        if indices.is_empty() {
+            uncovered.push(path);
+        }
+    }
+    Ok(Tally {
+        counts,
+        uncovered,
+        used,
+    })
+}
+
+fn dead(
+    patterns: &[String],
+    owners: &[Option<usize>],
+    used: &[bool],
+    backlog: &Backlog,
+) -> Vec<String> {
+    let mut dead_globs = Vec::new();
+    for ((pattern, owner), hit) in patterns.iter().zip(owners).zip(used) {
+        if *hit {
+            continue;
+        }
+        match owner.and_then(|index| backlog.tasks.get(index)) {
+            Some(entry) => dead_globs.push(format!("{}: {pattern}", entry.id)),
+            None => dead_globs.push(pattern.clone()),
+        }
+    }
+    dead_globs
 }
 
 pub(crate) fn measure(
@@ -64,27 +102,29 @@ pub(crate) fn measure(
             litellm.commit
         )
     });
-    let exclusion_globs: Vec<String> = litellm
-        .excluded
-        .iter()
-        .map(|exclusion| exclusion.glob.clone())
-        .collect();
-    let (excluded, mut dead_globs) = hits(&glob_set(&exclusion_globs)?, &exclusion_globs, &paths);
-    let mut covered = excluded;
-    let mut entries = Vec::new();
-    for entry in &backlog.tasks {
-        let (matched, dead) = hits(&glob_set(&entry.covers)?, &entry.covers, &paths);
-        dead_globs.extend(dead.into_iter().map(|glob| format!("{}: {glob}", entry.id)));
-        entries.push((entry.id.clone(), matched.iter().filter(|hit| **hit).count()));
-        for (slot, hit) in covered.iter_mut().zip(matched) {
-            *slot = *slot || hit;
+    let mut patterns: Vec<String> = Vec::new();
+    let mut owners: Vec<Option<usize>> = Vec::new();
+    for exclusion in &litellm.excluded {
+        patterns.push(exclusion.glob.clone());
+        owners.push(None);
+    }
+    for (index, entry) in backlog.tasks.iter().enumerate() {
+        for glob in &entry.covers {
+            patterns.push(glob.clone());
+            owners.push(Some(index));
         }
     }
-    let uncovered = paths
-        .into_iter()
-        .zip(covered)
-        .filter(|&(_, hit)| !hit)
-        .map(|(path, _)| path)
+    let Tally {
+        counts,
+        uncovered,
+        used,
+    } = tally(&patterns, &owners, paths, backlog.tasks.len())?;
+    let dead_globs = dead(&patterns, &owners, &used, backlog);
+    let entries = backlog
+        .tasks
+        .iter()
+        .map(|entry| entry.id.clone())
+        .zip(counts)
         .collect();
     Ok(Coverage {
         entries,
