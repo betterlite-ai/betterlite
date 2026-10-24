@@ -11,7 +11,8 @@ description: >-
   deployment construction. Add provider_resolution helper cases, including representatives of each branch family
   and every endpoint-boundary trap, with env values supplied only by the harness. The JSON-provider-specific API
   credentials and transport implementations stay with B038-B045; this task resolves their registered identities
-  from pinned data. Budget 300 identity/table lines, 180 resolution/config lines and 280 tests.
+  from pinned data. Budget 300 identity/table lines, 180 resolution/config lines and 280 tests. Seed B171's shared
+  helper_case corpus with every added operation and replay it through the common typed parser.
 scope:
   paths:
   - Cargo.toml
@@ -24,6 +25,7 @@ scope:
   - tools/oracle/helpers/**
   - tools/oracle/cases/helpers/provider-resolution/**
   - crates/betterlite-server/**
+  - tools/oracle/fuzz/corpus/helper_case/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L19-L155
@@ -53,6 +55,9 @@ dod:
 - text: The existing config parser corpus includes the new typed provider field.
   proof:
   - config-yaml-corpus
+- text: Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
+  proof:
+  - helper-case-corpus
 checks:
   optional:
   - mutants
@@ -70,6 +75,11 @@ checks:
     run: >-
       uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project
       tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: the fuzz target or nonempty committed corpus is missing, or corpus replay fails
+    run: >-
+      test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)"
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
 - tools/oracle/cases/helpers/provider-resolution/explicit-openai.yaml
 - tools/oracle/cases/helpers/provider-resolution/custom-provider.yaml
