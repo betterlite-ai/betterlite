@@ -19,17 +19,9 @@ from litellm.llms.bedrock.request_metadata import (
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
-def mapping(value: Json) -> dict[str, Json]:
-    return value if isinstance(value, dict) else {}
-
-
-def items(value: Json) -> list[Json]:
-    return value if isinstance(value, list) else []
-
-
-def header_pairs(value: Json) -> list[tuple[str, str]]:
+def header_pairs(value: list[Json]) -> list[tuple[str, str]]:
     pairs: list[tuple[str, str]] = []
-    for pair in items(value):
+    for pair in value:
         match pair:
             case [str() as name, str() as text]:
                 pairs.append((name, text))
@@ -82,44 +74,36 @@ def resolve(step: dict[str, Json]) -> Json:
     return result
 
 
-def merge(step: dict[str, Json]) -> Json:
-    params = step.get("litellm_params")
+def merge(headers: list[Json], guardrail: list[Json], params: Json) -> Json:
     names, proxy_owned = bedrock_request_metadata_headers(
         params if isinstance(params, dict) else None
     )
-    headers = dict(header_pairs(step.get("headers")))
-    guardrail = tuple(header_pairs(step.get("guardrail")))
-    merged = merge_bedrock_invoke_headers(headers, guardrail, proxy_owned, names)
+    original, caller_owned = dict(header_pairs(headers)), tuple(header_pairs(guardrail))
+    merged = merge_bedrock_invoke_headers(original, caller_owned, proxy_owned, names)
     return [[name, text] for name, text in merged.items()]
 
 
 def run(input_value: dict[str, Json]) -> Json:
-    litellm.bedrock_request_metadata_fields = [
-        str(field) for field in items(input_value.get("fields"))
-    ]
-    steps = list(mapping(input_value.get("step")).items())
-    if len(steps) != 1:
-        raise ValueError("bedrock_request_policy needs exactly one step")
-    name, body = steps[0]
-    step = mapping(body)
-    match name:
-        case "resolve":
+    match input_value.get("fields"):
+        case list() as fields:
+            litellm.bedrock_request_metadata_fields = [str(field) for field in fields]
+        case _:
+            litellm.bedrock_request_metadata_fields = []
+    match input_value.get("step"):
+        case {"resolve": dict() as step}:
             return resolve(step)
-        case "validate":
-            return [validate(metadata) for metadata in items(step.get("metadata"))]
-        case "merge":
-            return merge(step)
-        case "aliases":
-            optional = mapping(step.get("optional"))
-            non_default = mapping(step.get("non_default"))
+        case {"validate": {"metadata": list() as metadata}}:
+            return [validate(value) for value in metadata]
+        case {"merge": {"headers": list() as headers, "guardrail": list() as guardrail, **rest}}:
+            return merge(headers, guardrail, rest.get("litellm_params"))
+        case {"aliases": {"non_default": dict() as non_default, "optional": dict() as optional}}:
             # LiteLLM types both parameters as a bare dict
             AmazonBedrockGlobalConfig().map_special_auth_params(non_default, optional)  # pyright: ignore[reportUnknownMemberType]
             return [[key, value] for key, value in optional.items()]
-        case "merge_params":
-            deployment, request = mapping(step.get("deployment")), mapping(step.get("request"))
+        case {"merge_params": {"deployment": dict() as deployment, "request": dict() as request}}:
             merged = cast(dict[str, Json], merge_bedrock_aws_request_params(deployment, request))
             return [[key, value] for key, value in merged.items()]
-        case "iterate":
-            return iterate(step.get("response"), items(step.get("calls")))
-        case _:
-            raise ValueError(f"unknown bedrock_request_policy step: {name}")
+        case {"iterate": {"response": response, "calls": list() as calls}}:
+            return iterate(response, calls)
+        case step:
+            raise ValueError(f"unknown bedrock_request_policy step: {step}")
