@@ -1,0 +1,8 @@
+id: B395
+milestone: M2 routing
+title: Native routing strategy dispatch
+status: todo
+depends_on: [B008, B301, B002]
+file: tasks/B395-strategy-dispatch.yaml
+covers:
+  - "litellm/router.py"

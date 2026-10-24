@@ -60,7 +60,7 @@ settings:
 base:
   builtin:
     - id: task-file
-      why: checks.yaml, backlog.yaml, every task file and the JSON Schemas must match the format
+      why: checks.yaml, every backlog entry, every task file and the JSON Schemas must match the format
     - id: tools
       why: every CLI tool must be at the exact version pinned in checks.yaml
     - id: scope

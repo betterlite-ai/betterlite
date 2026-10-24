@@ -1,0 +1,7 @@
+id: B361
+milestone: M2 routing
+title: Explicit numerical and deviation comparison contracts
+status: todo
+depends_on: [B301]
+file: tasks/B361-oracle-comparison-contracts.yaml
+covers: []

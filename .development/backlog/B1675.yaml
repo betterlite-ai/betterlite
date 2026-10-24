@@ -1,0 +1,16 @@
+id: B1675
+milestone: M4 keys, spend and management
+title: Apply Anthropic surcharges and Bedrock image-family prices
+status: todo
+depends_on: [B171, B193, B204, B633, B634, B1668, B1672, B1678]
+file: tasks/B1675-anthropic-bedrock-prices.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/utils.py"
+  - "litellm/llms/anthropic/cost_calculation.py"
+  - "litellm/llms/amazon_nova/cost_calculation.py"
+  - "litellm/llms/bedrock/cost_calculation.py"
+  - "litellm/llms/bedrock/image_generation/cost_calculator.py"
+  - "litellm/llms/bedrock/image_generation/amazon_titan_transformation.py"
+  - "litellm/llms/bedrock/image_generation/amazon_stability1_transformation.py"
+  - "litellm/llms/bedrock/image_generation/amazon_stability3_transformation.py"
+  - "litellm/llms/bedrock/image_generation/amazon_nova_canvas_transformation.py"

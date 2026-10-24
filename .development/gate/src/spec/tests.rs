@@ -4,7 +4,7 @@ use std::env;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::spec::backlog::Backlog;
+use crate::spec::backlog::BacklogEntry;
 use crate::spec::report::{Report, ReportStatus};
 use crate::spec::task::Task;
 use crate::yaml::read_yaml;
@@ -92,9 +92,9 @@ fn an_anchor_is_rejected() {
 
 #[test]
 fn an_unknown_status_is_rejected() {
-    let text = "tasks:\n  - id: B001\n    milestone: M0\n    title: Probe\n    status: started\n    depends_on: []\n    file: null\n";
+    let text = "id: B001\nmilestone: M0\ntitle: Probe\nstatus: started\ndepends_on: []\nfile: null\ncovers: []\n";
     assert!(
-        read_yaml::<Backlog>(&written("status", text))
+        read_yaml::<BacklogEntry>(&written("status", text))
             .is_err_and(|error| error.to_string().contains("started"))
     );
 }

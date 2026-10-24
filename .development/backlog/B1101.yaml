@@ -1,0 +1,8 @@
+id: B1101
+milestone: M5 API families
+title: Shared multipart and form extraction
+status: todo
+depends_on: [B003, B900, B171, B1087, B1100, B002, B844]
+file: tasks/B1101-request-form.yaml
+covers:
+  - "litellm/proxy/common_utils/http_parsing_utils.py"

@@ -1,0 +1,9 @@
+id: B1416
+milestone: M3 providers
+title: Cohere v2 chat replies and document citations
+status: todo
+depends_on: [B004, B503, B668, B1414, B171]
+file: tasks/B1416-cohere-chat-v2.yaml
+covers:
+  - "litellm/llms/cohere/chat/v2_transformation.py"
+  - "litellm/types/llms/cohere.py"

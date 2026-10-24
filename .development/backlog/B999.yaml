@@ -1,0 +1,8 @@
+id: B999
+milestone: M5 api families
+title: Image edit call
+status: todo
+depends_on: [B010, B174, B176, B157, B1120, B997, B512, B044, B2451, B011, B012, B002, B2401]
+file: tasks/B999-image-edit-call.yaml
+covers:
+  - "litellm/images/main.py"

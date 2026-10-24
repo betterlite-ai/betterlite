@@ -1,0 +1,8 @@
+id: B1005
+milestone: M5 api families
+title: Realtime beta protocol
+status: todo
+depends_on: [B171, B1004]
+file: tasks/B1005-realtime-beta-protocol.yaml
+covers:
+  - "litellm/litellm_core_utils/realtime_streaming.py"

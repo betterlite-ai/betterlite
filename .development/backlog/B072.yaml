@@ -1,0 +1,10 @@
+id: B072
+milestone: M4 keys, spend and management
+title: Rate limits, parallel request limits and dynamic limits
+status: todo
+depends_on: [B052]
+file: null
+covers:
+  - "litellm/proxy/hooks/{parallel_request_limiter,parallel_request_limiter_v3,dynamic_rate_limiter,dynamic_rate_limiter_v3,rate_limiter_utils,max_iterations_limiter}.py"
+  - "litellm/proxy/hooks/README.dynamic_rate_limiter_v3.md"
+  - "litellm/proxy/common_utils/proxy_rate_limit_error.py"

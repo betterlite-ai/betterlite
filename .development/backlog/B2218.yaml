@@ -1,0 +1,8 @@
+id: B2218
+milestone: M3 providers
+title: Resolved model metadata projection
+status: todo
+depends_on: [B204, B205, B171]
+file: tasks/B2218-model-metadata-projection.yaml
+covers:
+  - "litellm/utils.py"

@@ -1,0 +1,8 @@
+id: B982
+milestone: M5 api families
+title: Messages native call
+status: todo
+depends_on: [B014, B171, B961, B962, B963, B974, B979, B985, B1087, B1118, B570, B948, B002]
+file: tasks/B982-messages-native-call.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/messages/handler.py"

@@ -1,0 +1,9 @@
+id: B1622
+milestone: M4 keys, spend and management
+title: Convert Microsoft OAuth logins into proxy identities
+status: todo
+depends_on: [B002, B171, B760, B1608, B1609, B1617, B1621, B1629]
+file: tasks/B1622-microsoft-login.yaml
+covers:
+  - "litellm/proxy/management_endpoints/sso/{__init__,custom_microsoft_sso}.py"
+  - "litellm/proxy/management_endpoints/ui_sso.py"

@@ -1,0 +1,10 @@
+id: B500
+milestone: M3 providers
+title: OpenAI credential and endpoint settings
+status: todo
+depends_on: [B002, B171, B004]
+file: tasks/B500-openai-credentials.yaml
+covers:
+  - "litellm/llms/openai/data_residency.py"
+  - "litellm/llms/openai/common_utils.py"
+  - "litellm/main.py"

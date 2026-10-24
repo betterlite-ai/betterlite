@@ -1,0 +1,9 @@
+id: B1057
+milestone: M5 api families
+title: Assistant messages
+status: todo
+depends_on: [B010, B011, B171, B174, B176, B520, B697, B2487, B2401]
+file: tasks/B1057-assistant-messages.yaml
+covers:
+  - "litellm/assistants/main.py"
+  - "litellm/assistants/utils.py"

@@ -1,0 +1,8 @@
+id: B642
+milestone: M3 providers
+title: Bedrock audio transcription payload and Converse calls
+status: todo
+depends_on: [B1001, B590, B594, B595, B173, B171]
+file: tasks/B642-bedrock-other-transcription.yaml
+covers:
+  - "litellm/llms/bedrock/audio_transcription/__init__.py"

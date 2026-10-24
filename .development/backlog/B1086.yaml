@@ -1,0 +1,8 @@
+id: B1086
+milestone: M5 api families
+title: Assistant thread routes
+status: todo
+depends_on: [B003, B004, B012, B732, B1103, B2489]
+file: tasks/B1086-assistant-thread-routes.yaml
+covers:
+  - "litellm/proxy/proxy_server.py"

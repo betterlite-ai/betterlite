@@ -1,0 +1,8 @@
+id: B2362
+milestone: M4 keys, spend and management
+title: Key and user write primitives below management services
+status: todo
+depends_on: [B171, B192, B700, B722, B723, B770, B856, B860]
+file: tasks/B2362-key-user-write-primitives.yaml
+covers:
+  - "litellm/proxy/utils.py"

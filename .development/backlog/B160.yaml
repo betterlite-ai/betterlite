@@ -1,0 +1,12 @@
+id: B160
+milestone: M12 python
+title: Python Responses, Anthropic Messages, Google GenAI and Interactions functions
+status: todo
+depends_on: [B158]
+file: null
+covers:
+  - "litellm/responses/main.py"
+  - "litellm/{anthropic_interface,messages}/**"
+  - "litellm/{google_genai,interactions}/main.py"
+  - "litellm/types/responses/**"
+  - "litellm/llms/base_llm/base_utils.py"

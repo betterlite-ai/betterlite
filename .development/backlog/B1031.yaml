@@ -1,0 +1,8 @@
+id: B1031
+milestone: M5 api families
+title: File upload routing
+status: todo
+depends_on: [B002, B171, B1020, B1022, B1024, B1087, B1048, B1023, B1027, B1019, B1028, B303, B844, B235, B162, B124, B2401]
+file: tasks/B1031-file-upload-routing.yaml
+covers:
+  - "litellm/proxy/openai_files_endpoints/files_endpoints.py"

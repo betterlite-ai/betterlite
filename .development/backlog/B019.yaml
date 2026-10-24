@@ -1,0 +1,9 @@
+id: B019
+milestone: M2 routing
+title: Input and output token reservations and reconciliation
+status: todo
+depends_on: [B365, B016, B017, B319, B014, B301]
+file: tasks/B019-io-token-limits.yaml
+covers:
+  - "litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py"
+  - "litellm/router_utils/add_retry_fallback_headers.py"

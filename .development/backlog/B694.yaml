@@ -1,0 +1,8 @@
+id: B694
+milestone: M3 providers
+title: Azure file lifecycle
+status: todo
+depends_on: [B516, B531, B171, B187, B159]
+file: tasks/B694-azure-files.yaml
+covers:
+  - "litellm/llms/azure/files/handler.py"

@@ -1,0 +1,8 @@
+id: B1728
+milestone: M4 keys, spend and management
+title: Decode spend-log filters and preserve route-specific date semantics
+status: todo
+depends_on: [B003, B171, B204, B1715]
+file: tasks/B1728-spend-log-query.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_management_endpoints.py"

@@ -1,0 +1,10 @@
+id: B143
+milestone: M9 agents and mcp
+title: Agent harnesses and coding agent providers
+status: todo
+depends_on: [B141]
+file: null
+covers:
+  - "litellm/harness/**"
+  - "litellm/llms/base_llm/harness/**"
+  - "litellm/llms/{deepagents,opencode,claude_code,codex}/**"

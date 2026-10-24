@@ -1,0 +1,8 @@
+id: B924
+milestone: M5 api families
+title: Chat response stream
+status: todo
+depends_on: [B004, B005, B011, B922, B923, B1113, B1138, B1115, B914, B2401]
+file: tasks/B924-chat-response-stream.yaml
+covers:
+  - "litellm/responses/litellm_completion_transformation/streaming_iterator.py"

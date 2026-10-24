@@ -1,0 +1,9 @@
+id: B357
+milestone: M2 routing
+title: Shadow evaluation listings and aggregate results
+status: todo
+depends_on: [B381, B380, B052, B051, B301, B361]
+file: tasks/B357-shadow-eval-results.yaml
+covers:
+  - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
+  - "litellm/types/management_endpoints/auto_router_endpoints.py"

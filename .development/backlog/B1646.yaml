@@ -1,0 +1,9 @@
+id: B1646
+milestone: M4 keys, spend and management
+title: Model encrypted secret-manager overrides and reversible runtime state
+status: todo
+depends_on: [B002, B065, B124, B129, B171, B192, B244, B726, B732, B860, B1600]
+file: tasks/B1646-config-override-support.yaml
+covers:
+  - "litellm/proxy/management_endpoints/config_override_endpoints.py"
+  - "litellm/types/proxy/management_endpoints/config_overrides.py"

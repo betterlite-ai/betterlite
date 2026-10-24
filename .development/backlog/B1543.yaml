@@ -1,0 +1,8 @@
+id: B1543
+milestone: M3 providers
+title: Adapt Deepgram raw-audio transcription and diarized paragraphs
+status: todo
+depends_on: [B002, B1542, B1122, B1001, B171]
+file: tasks/B1543-deepgram-transcription.yaml
+covers:
+  - "litellm/llms/deepgram/audio_transcription/**"

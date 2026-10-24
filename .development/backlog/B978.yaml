@@ -1,0 +1,10 @@
+id: B978
+milestone: M5 api families
+title: Messages sse events
+status: todo
+depends_on: [B171, B958, B963, B1087, B206, B2435, B009, B2401]
+file: tasks/B978-messages-sse-events.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/messages/streaming_iterator.py"
+  - "litellm/llms/anthropic/pass_through/messages/fake_stream_iterator.py"
+  - "litellm/llms/anthropic/common_utils.py"

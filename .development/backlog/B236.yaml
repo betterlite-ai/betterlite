@@ -1,0 +1,8 @@
+id: B236
+milestone: M1 openai data plane
+title: Shared error facts, parsing and status fallbacks
+status: todo
+depends_on: [B184, B187]
+file: tasks/B236-error-facts.yaml
+covers:
+  - "litellm/litellm_core_utils/exception_mapping_utils.py"

@@ -1,0 +1,9 @@
+id: B980
+milestone: M5 api families
+title: Messages stream restamp
+status: todo
+depends_on: [B125, B171, B978, B1087, B002]
+file: tasks/B980-messages-stream-restamp.yaml
+covers:
+  - "litellm/proxy/anthropic_endpoints/streaming_model_restamp.py"
+  - "litellm/llms/anthropic/pass_through/messages/response_cache.py"

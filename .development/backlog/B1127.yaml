@@ -1,0 +1,8 @@
+id: B1127
+milestone: M5 API families
+title: Realtime health probes and stored credentials
+status: todo
+depends_on: [B002, B1402, B061, B173, B528, B529, B545, B901, B1011, B1301, B1304, B1356, B1365, B2225]
+file: tasks/B1127-realtime-connection-plan.yaml
+covers:
+  - "litellm/realtime_api/main.py"

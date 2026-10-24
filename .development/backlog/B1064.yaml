@@ -1,0 +1,8 @@
+id: B1064
+milestone: M5 api families
+title: Vector store search
+status: todo
+depends_on: [B010, B011, B012, B174, B1058, B1059, B1062, B527, B002, B2484, B2485, B2401]
+file: tasks/B1064-vector-store-search.yaml
+covers:
+  - "litellm/vector_stores/main.py"

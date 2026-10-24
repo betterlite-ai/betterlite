@@ -1,0 +1,9 @@
+id: B1423
+milestone: M3 providers
+title: Jina and Infinity ranking response differences
+status: todo
+depends_on: [B002, B193, B249, B1013, B1419, B1422, B171]
+file: tasks/B1423-jina-infinity-rerank.yaml
+covers:
+  - "litellm/llms/jina_ai/rerank/**"
+  - "litellm/llms/infinity/rerank/**"

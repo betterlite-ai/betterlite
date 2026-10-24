@@ -1,0 +1,8 @@
+id: B630
+milestone: M3 providers
+title: Bedrock TwelveLabs Marengo 3 input validation
+status: todo
+depends_on: [B171, B183, B682]
+file: tasks/B630-bedrock-other-marengo-three.yaml
+covers:
+  - "litellm/llms/bedrock/embed/twelvelabs_marengo_3_transformation.py"

@@ -1,0 +1,10 @@
+id: B671
+milestone: M3 providers
+title: OpenAI assistants and session operation composition
+status: todo
+depends_on: [B519, B520, B521, B524, B528, B171]
+file: tasks/B671-openai-assistant-dispatch.yaml
+covers:
+  - "litellm/llms/openai/openai.py"
+  - "litellm/llms/openai/decisions/transformation.py"
+  - "litellm/llms/openai/realtime/handler.py"

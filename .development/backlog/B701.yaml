@@ -1,0 +1,10 @@
+id: B701
+milestone: M4 keys, spend and management
+title: Pinned LiteLLM Postgres schema contract
+status: todo
+depends_on: [B700, B709, B860, B2309]
+file: tasks/B701-schema-contract.yaml
+covers:
+  - "schema.prisma"
+  - "litellm/proxy/schema.prisma"
+  - "litellm-proxy-extras/litellm_proxy_extras/schema.prisma"

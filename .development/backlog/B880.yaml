@@ -1,0 +1,9 @@
+id: B880
+milestone: M4 keys, spend and management
+title: End-user identity extraction and registry validation
+status: todo
+depends_on: [B001, B002, B003, B192, B732, B733, B736, B739, B856, B860, B2315]
+file: tasks/B880-end-user-identity.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/auth_utils.py"

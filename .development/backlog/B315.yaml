@@ -1,0 +1,8 @@
+id: B315
+milestone: M2 routing
+title: Latency and first-token latency selection
+status: todo
+depends_on: [B016, B389, B013, B301, B002, B361]
+file: tasks/B315-latency-routing.yaml
+covers:
+  - "litellm/router_strategy/lowest_latency.py"

@@ -1,0 +1,8 @@
+id: B612
+milestone: M3 providers
+title: Bedrock Invoke reply conversion and stream ownership
+status: todo
+depends_on: [B2205, B613, B614, B617, B618, B206, B196, B682, B171]
+file: tasks/B612-bedrock-invoke-response.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"

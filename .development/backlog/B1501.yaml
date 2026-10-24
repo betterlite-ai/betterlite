@@ -1,0 +1,8 @@
+id: B1501
+milestone: M3 providers
+title: Preserve the deprecated Aleph Alpha completion protocol
+status: todo
+depends_on: [B004, B173, B171, B196, B249, B184]
+file: tasks/B1501-aleph-alpha.yaml
+covers:
+  - "litellm/llms/deprecated_providers/**"

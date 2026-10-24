@@ -1,0 +1,8 @@
+id: B920
+milestone: M5 api families
+title: Responses to chat stream
+status: todo
+depends_on: [B004, B005, B010, B2214, B171, B1113, B1087, B917, B906]
+file: tasks/B920-responses-to-chat-stream.yaml
+covers:
+  - "litellm/completion_extras/litellm_responses_transformation/transformation.py"

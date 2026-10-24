@@ -1,0 +1,8 @@
+id: B128
+milestone: M8 platform
+title: Semantic caches
+status: todo
+depends_on: [B126]
+file: null
+covers:
+  - "litellm/caching/{qdrant_semantic_cache,redis_semantic_cache,valkey_semantic_cache}.py"

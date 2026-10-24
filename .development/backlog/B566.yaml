@@ -1,0 +1,8 @@
+id: B566
+milestone: M3 providers
+title: Foundry passthrough URLs and response projections
+status: todo
+depends_on: [B549, B548, B171, B101, B092, B103]
+file: tasks/B566-foundry-passthrough.yaml
+covers:
+  - "litellm/llms/azure_ai/passthrough/transformation.py"

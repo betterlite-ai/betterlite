@@ -1,0 +1,8 @@
+id: B317
+milestone: M2 routing
+title: Legacy usage-based routing windows
+status: todo
+depends_on: [B016, B013, B304, B301, B002]
+file: tasks/B317-usage-routing.yaml
+covers:
+  - "litellm/router_strategy/lowest_tpm_rpm.py"

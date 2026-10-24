@@ -1,0 +1,8 @@
+id: B2360
+milestone: M4 keys, spend and management
+title: Request credential and callback field ban catalog
+status: todo
+depends_on: [B171, B856]
+file: tasks/B2360-request-ban-catalog.yaml
+covers:
+  - "litellm/proxy/auth/auth_utils.py"

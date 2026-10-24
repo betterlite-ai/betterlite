@@ -1,0 +1,8 @@
+id: B2217
+milestone: M3 providers
+title: Model catalog keys and provider matching
+status: todo
+depends_on: [B193, B2203, B171]
+file: tasks/B2217-model-catalog-keys.yaml
+covers:
+  - "litellm/utils.py"

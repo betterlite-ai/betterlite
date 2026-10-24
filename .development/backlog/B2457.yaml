@@ -1,0 +1,8 @@
+id: B2457
+milestone: M5 API families
+title: Generic realtime backend connection
+status: todo
+depends_on: [B002, B012, B173, B901, B1004, B1006, B1009, B2455]
+file: tasks/B2457-realtime-backend-transport.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

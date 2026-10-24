@@ -1,0 +1,9 @@
+id: B786
+milestone: M4 keys, spend and management
+title: Password strength, breach checks and compatible hashes
+status: todo
+depends_on: [B002, B003, B171, B173, B856]
+file: tasks/B786-password-policy.yaml
+covers:
+  - "litellm/proxy/auth/password_policy.py"
+  - "litellm/proxy/utils.py"

@@ -1,0 +1,8 @@
+id: B1681
+milestone: M4 keys, spend and management
+title: Collect billable websocket events and price realtime sessions
+status: todo
+depends_on: [B171, B204, B906, B1668, B1672, B1678, B1680, B1682]
+file: tasks/B1681-realtime-cost-events.yaml
+covers:
+  - "litellm/cost_calculator.py"

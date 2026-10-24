@@ -1,0 +1,8 @@
+id: B2233
+milestone: M3 providers
+title: Stream tool fragment assembly
+status: todo
+depends_on: [B004, B171]
+file: tasks/B2233-stream-tool-assembly.yaml
+covers:
+  - "litellm/litellm_core_utils/streaming_chunk_builder_utils.py"

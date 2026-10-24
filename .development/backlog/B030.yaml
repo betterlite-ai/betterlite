@@ -1,0 +1,10 @@
+id: B030
+milestone: M3 providers
+title: Bedrock batches, files, realtime, responses, agents, passthrough, search and vector stores
+status: todo
+depends_on: [B678, B680, B681, B643, B644, B645, B646, B647, B648, B649, B650, B651, B174, B175, B171]
+file: tasks/B030-bedrock-services-services.yaml
+covers:
+  - "litellm/llms/bedrock/claude_platform/__init__.py"
+  - "litellm/llms/bedrock/passthrough/guardrail_translation/__init__.py"
+  - "litellm/llms/bedrock/search/__init__.py"

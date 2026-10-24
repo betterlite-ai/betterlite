@@ -1,0 +1,9 @@
+id: B1340
+milestone: M3 providers
+title: Gemini text and multimodal embedding transformations
+status: todo
+depends_on: [B1300, B006, B196, B171]
+file: tasks/B1340-gemini-embedding-records.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py"
+  - "litellm/types/llms/vertex_ai.py"

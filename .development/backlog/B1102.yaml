@@ -1,0 +1,9 @@
+id: B1102
+milestone: M5 API families
+title: Request model and destination policy
+status: todo
+depends_on: [B171, B1087, B1100]
+file: tasks/B1102-request-destination.yaml
+covers:
+  - "litellm/proxy/common_utils/http_parsing_utils.py"
+  - "litellm/proxy/litellm_pre_call_utils.py"

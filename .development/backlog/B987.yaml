@@ -1,0 +1,10 @@
+id: B987
+milestone: M5 api families
+title: Messages advisor
+status: todo
+depends_on: [B002, B014, B061, B171, B967, B1087, B732]
+file: tasks/B987-messages-advisor.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/messages/interceptors/advisor.py"
+  - "litellm/llms/anthropic/pass_through/messages/interceptors/base.py"
+  - "litellm/llms/anthropic/pass_through/messages/interceptors/__init__.py"

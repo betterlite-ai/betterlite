@@ -1,0 +1,9 @@
+id: B1318
+milestone: M3 providers
+title: Google cached-content endpoint and paginated lookup
+status: todo
+depends_on: [B1304, B1305, B173, B171]
+file: tasks/B1318-gemini-cache-lookup.yaml
+covers:
+  - "litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py"
+  - "litellm/types/llms/vertex_ai.py"

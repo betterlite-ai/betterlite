@@ -1,0 +1,8 @@
+id: B1740
+milestone: M4 keys, spend and management
+title: Delete expired spend rows in bounded batches with capped backlog probes
+status: todo
+depends_on: [B002, B171, B198, B199, B700, B860, B1690, B1739]
+file: tasks/B1740-bounded-spend-deletes.yaml
+covers:
+  - "litellm/proxy/db/db_transaction_queue/spend_log_cleanup.py"

@@ -1,0 +1,9 @@
+id: B256
+milestone: M1 openai data plane
+title: Bounded callback batch delivery
+status: todo
+depends_on: [B189]
+file: tasks/B256-batch-delivery.yaml
+covers:
+  - "litellm/integrations/custom_batch_logger.py"
+  - "litellm/integrations/batch_utils.py"

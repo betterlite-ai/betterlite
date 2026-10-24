@@ -1,0 +1,8 @@
+id: B1669
+milestone: M4 keys, spend and management
+title: Resolve off-peak windows on UTC and vendor weekday calendars
+status: todo
+depends_on: [B171, B204]
+file: tasks/B1669-off-peak-pricing.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/utils.py"

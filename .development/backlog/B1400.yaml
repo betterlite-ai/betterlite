@@ -1,0 +1,8 @@
+id: B1400
+milestone: M3 providers
+title: xAI OAuth token records and refresh
+status: todo
+depends_on: [B002, B004, B173, B171]
+file: tasks/B1400-xai-oauth-tokens.yaml
+covers:
+  - "litellm/llms/xai/oauth.py"

@@ -1,0 +1,8 @@
+id: B631
+milestone: M3 providers
+title: Bedrock embedding request ordering and replies
+status: todo
+depends_on: [B627, B628, B629, B591, B595, B171, B590, B693, B037, B249]
+file: tasks/B631-bedrock-other-embedding-call.yaml
+covers:
+  - "litellm/llms/bedrock/embed/embedding.py"

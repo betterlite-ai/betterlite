@@ -1,0 +1,10 @@
+id: B568
+milestone: M3 providers
+title: Anthropic content feature and beta detection
+status: todo
+depends_on: [B688, B174, B234, B221, B180, B171, B2221]
+file: tasks/B568-anthropic-feature-flags.yaml
+covers:
+  - "litellm/llms/anthropic/common_utils.py"
+  - "litellm/types/llms/anthropic_tool_search.py"
+  - "litellm/integrations/websearch_interception/tools.py"

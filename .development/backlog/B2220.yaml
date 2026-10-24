@@ -1,0 +1,13 @@
+id: B2220
+milestone: M3 providers
+title: Provider model metadata factory
+status: todo
+depends_on: [B668, B2203, B2222, B2223, B2224, B171]
+file: tasks/B2220-provider-metadata-factory.yaml
+covers:
+  - "litellm/utils.py"
+  - "litellm/llms/base_llm/base_utils.py"
+  - "litellm/llms/xai/common_utils.py"
+  - "litellm/llms/fireworks_ai/chat/transformation.py"
+  - "litellm/llms/lemonade/chat/transformation.py"
+  - "litellm/llms/azure_ai/common_utils.py"

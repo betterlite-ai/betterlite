@@ -1,0 +1,9 @@
+id: B324
+milestone: M2 routing
+title: Atomic caller and session deployment affinity
+status: todo
+depends_on: [B016, B372, B080, B323, B052, B301, B002]
+file: tasks/B324-deployment-affinity.yaml
+covers:
+  - "litellm/router_utils/pre_call_checks/deployment_affinity_check.py"
+  - "litellm/caching/affinity_cache.py"

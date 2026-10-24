@@ -1,0 +1,12 @@
+id: B095
+milestone: M5 api families
+title: Skills API
+status: todo
+depends_on: [B087, B081]
+file: null
+covers:
+  - "litellm/skills/**"
+  - "litellm/llms/base_llm/skills/**"
+  - "litellm/llms/anthropic/skills/**"
+  - "litellm/types/llms/anthropic_skills.py"
+  - "litellm/proxy/hooks/litellm_skills/**"

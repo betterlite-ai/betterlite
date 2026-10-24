@@ -1,0 +1,9 @@
+id: B1027
+milestone: M5 api families
+title: File storage service
+status: todo
+depends_on: [B171, B1015, B1025, B1026, B732, B726, B2401]
+file: tasks/B1027-file-storage-service.yaml
+covers:
+  - "litellm/proxy/openai_files_endpoints/storage_backend_service.py"
+  - "litellm/llms/base_llm/files/storage_backend_factory.py"

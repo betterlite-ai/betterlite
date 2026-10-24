@@ -1,0 +1,8 @@
+id: B1670
+milestone: M4 keys, spend and management
+title: Select service-tier, threshold and batch token rates
+status: todo
+depends_on: [B171, B204, B1666, B1668, B1669]
+file: tasks/B1670-token-rate-selection.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/utils.py"

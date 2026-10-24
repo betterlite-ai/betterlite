@@ -1,0 +1,8 @@
+id: B534
+milestone: M3 providers
+title: Azure embedding requests
+status: todo
+depends_on: [B531, B006, B173, B171, B237, B529, B004, B673, B249]
+file: tasks/B534-azure-embeddings.yaml
+covers:
+  - "litellm/llms/azure/azure.py"

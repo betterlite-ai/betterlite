@@ -1,0 +1,9 @@
+id: B533
+milestone: M3 providers
+title: Azure chat execution and SDK error propagation
+status: todo
+depends_on: [B531, B532, B171, B505, B685, B004, B684, B249, B673, B668, B2202]
+file: tasks/B533-azure-chat-call.yaml
+covers:
+  - "litellm/llms/azure/azure.py"
+  - "litellm/llms/azure/chat/o_series_handler.py"

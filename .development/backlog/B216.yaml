@@ -1,0 +1,8 @@
+id: B216
+milestone: M1 openai data plane
+title: Limited tool JSON repair and argument parsing
+status: todo
+depends_on: [B214, B171]
+file: tasks/B216-tool-arguments.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/common_utils.py"

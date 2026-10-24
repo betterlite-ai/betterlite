@@ -1,0 +1,8 @@
+id: B1365
+milestone: M3 providers
+title: Vertex Live setup policy and Chirp backend selection
+status: todo
+depends_on: [B1304, B1356, B1357, B1378, B1379, B171]
+file: tasks/B1365-vertex-live-session.yaml
+covers:
+  - "litellm/llms/vertex_ai/realtime/**"

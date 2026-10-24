@@ -1,0 +1,10 @@
+id: B1350
+milestone: M3 providers
+title: Studio image generation usage and token-first pricing
+status: todo
+depends_on: [B1331, B1334, B1345, B1346, B1349, B193, B997, B171]
+file: tasks/B1350-studio-image-generation.yaml
+covers:
+  - "litellm/llms/gemini/image_generation/**"
+  - "litellm/llms/gemini/image_usage_transformation.py"
+  - "litellm/types/llms/gemini.py"

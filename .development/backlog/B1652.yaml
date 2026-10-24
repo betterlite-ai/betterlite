@@ -1,0 +1,9 @@
+id: B1652
+milestone: M4 keys, spend and management
+title: Resolve and redact the coordination Redis configuration
+status: todo
+depends_on: [B002, B124, B126, B129, B171, B725, B860]
+file: tasks/B1652-coordination-redis-settings.yaml
+covers:
+  - "litellm/proxy/management_endpoints/coordination_redis_endpoints.py"
+  - "litellm/types/management_endpoints/coordination_redis_endpoints.py"

@@ -1,0 +1,8 @@
+id: B692
+milestone: M3 providers
+title: Bedrock Messages beta headers and unsupported fields
+status: todo
+depends_on: [B960, B690, B568, B599, B171]
+file: tasks/B692-bedrock-messages-beta.yaml
+covers:
+  - "litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py"

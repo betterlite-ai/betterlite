@@ -1,0 +1,9 @@
+id: B544
+milestone: M3 providers
+title: Azure Responses native requests
+status: todo
+depends_on: [B506, B507, B508, B509, B502, B171, B2200, B532, B174, B206, B673, B2221]
+file: tasks/B544-azure-responses.yaml
+covers:
+  - "litellm/llms/azure/responses/transformation.py"
+  - "litellm/llms/azure/responses/o_series_transformation.py"

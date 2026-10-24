@@ -1,0 +1,8 @@
+id: B1686
+milestone: M4 keys, spend and management
+title: Dispatch call pricing after custom-cache and model-name normalization
+status: todo
+depends_on: [B010, B171, B174, B193, B204, B209, B1668, B1672, B1673, B1675, B1676, B1677, B1678, B1679, B1683]
+file: tasks/B1686-call-price-dispatch.yaml
+covers:
+  - "litellm/cost_calculator.py"

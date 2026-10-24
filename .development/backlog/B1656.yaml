@@ -1,0 +1,8 @@
+id: B1656
+milestone: M4 keys, spend and management
+title: Project settings schemas and preserve shared settings-save ordering
+status: todo
+depends_on: [B065, B124, B171, B725, B726, B860]
+file: tasks/B1656-settings-services.yaml
+covers:
+  - "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py"

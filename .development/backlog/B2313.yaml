@@ -1,0 +1,10 @@
+id: B2313
+milestone: M4 keys, spend and management
+title: Request-carried agent policies and budget snapshots
+status: todo
+depends_on: [B000, B171, B856]
+file: tasks/B2313-carried-policy-records.yaml
+covers:
+  - "litellm/types/agents.py"
+  - "litellm/types/proxy/agent_identity.py"
+  - "litellm/types/proxy/carried_budget_state.py"

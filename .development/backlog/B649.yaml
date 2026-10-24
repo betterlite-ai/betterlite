@@ -1,0 +1,9 @@
+id: B649
+milestone: M3 providers
+title: Bedrock batch creation requests and replies
+status: todo
+depends_on: [B643, B595, B591, B198, B171, B002, B596, B192, B004, B2214]
+file: tasks/B649-bedrock-services-batch-create.yaml
+covers:
+  - "litellm/llms/bedrock/batches/transformation.py"
+  - "litellm/llms/bedrock/common_utils.py"

@@ -1,0 +1,8 @@
+id: B248
+milestone: M1 openai data plane
+title: Per-request callback selection
+status: todo
+depends_on: [B247, B189, B188]
+file: tasks/B248-dynamic-callbacks.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"

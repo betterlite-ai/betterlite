@@ -1,0 +1,9 @@
+id: B672
+milestone: M3 providers
+title: Video provider identifiers and multipart input
+status: todo
+depends_on: [B171, B997]
+file: tasks/B672-openai-video-identifiers.yaml
+covers:
+  - "litellm/llms/openai/videos/transformation.py"
+  - "litellm/types/videos/utils.py"

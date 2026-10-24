@@ -1,0 +1,8 @@
+id: B2462
+milestone: M5 API families
+title: Generic file metadata HTTP and pagination
+status: todo
+depends_on: [B1015, B173, B012, B2401, B2402]
+file: tasks/B2462-file-http-metadata.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

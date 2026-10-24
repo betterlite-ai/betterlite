@@ -1,0 +1,9 @@
+id: B1322
+milestone: M3 providers
+title: Gemini modality usage and grounding request accounting
+status: todo
+depends_on: [B1323, B171]
+file: tasks/B1322-gemini-usage.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/{vertex_and_google_ai_studio_gemini,grounding_requests}.py"
+  - "litellm/types/llms/vertex_ai.py"

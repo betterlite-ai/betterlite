@@ -1,0 +1,9 @@
+id: B972
+milestone: M5 api families
+title: Messages compaction
+status: todo
+depends_on: [B171, B968, B2432, B2201, B2401]
+file: tasks/B972-messages-compaction.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/context_management/editors/compact.py"
+  - "litellm/llms/anthropic/pass_through/context_management/dispatcher.py"

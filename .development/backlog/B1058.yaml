@@ -1,0 +1,12 @@
+id: B1058
+milestone: M5 api families
+title: Vector store contracts
+status: todo
+depends_on: [B006, B171, B1131, B2401]
+file: tasks/B1058-vector-store-contracts.yaml
+covers:
+  - "litellm/llms/base_llm/vector_store/transformation.py"
+  - "litellm/types/vector_stores.py"
+  - "litellm/vector_stores/utils.py"
+  - "litellm/types/integrations/rag/bedrock_knowledgebase.py"
+  - "litellm/integrations/vector_store_integrations/base_vector_store.py"

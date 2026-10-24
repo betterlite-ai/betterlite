@@ -1,0 +1,9 @@
+id: B1710
+milestone: M4 keys, spend and management
+title: Recover historical key attribution from tokens and user records
+status: todo
+depends_on: [B171, B700, B703, B722, B723, B860]
+file: tasks/B1710-key-attribution-recovery.yaml
+covers:
+  - "litellm/proxy/spend_tracking/key_metadata_recovery.py"
+  - "litellm/litellm_core_utils/litellm_logging.py"

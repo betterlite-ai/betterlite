@@ -1,0 +1,13 @@
+id: B968
+milestone: M5 api families
+title: Messages context clear
+status: todo
+depends_on: [B171, B958, B013]
+file: tasks/B968-messages-context-clear.yaml
+covers:
+  - "litellm/llms/anthropic/pass_through/context_management/constants.py"
+  - "litellm/llms/anthropic/pass_through/context_management/dispatcher.py"
+  - "litellm/llms/anthropic/pass_through/context_management/editors/clear_tool_uses.py"
+  - "litellm/llms/anthropic/pass_through/context_management/errors.py"
+  - "litellm/llms/anthropic/pass_through/context_management/placeholders.py"
+  - "litellm/llms/anthropic/pass_through/context_management/result.py"

@@ -1,0 +1,9 @@
+id: B915
+milestone: M5 api families
+title: Responses session history
+status: todo
+depends_on: [B069, B171, B903, B909, B1087, B726, B858, B911, B002, B004]
+file: tasks/B915-responses-session-history.yaml
+covers:
+  - "litellm/responses/litellm_completion_transformation/session_handler.py"
+  - "litellm/responses/litellm_completion_transformation/transformation.py"

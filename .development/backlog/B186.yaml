@@ -1,0 +1,8 @@
+id: B186
+milestone: M1 openai data plane
+title: Native provider error classifiers
+status: todo
+depends_on: [B185, B238, B239, B240, B241, B242]
+file: tasks/B186-native-errors.yaml
+covers:
+  - "litellm/litellm_core_utils/exception_mapping_utils.py"

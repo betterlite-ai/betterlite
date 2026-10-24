@@ -1,0 +1,8 @@
+id: B070
+milestone: M4 keys, spend and management
+title: Spend write queues, daily rollups and spend log partitions
+status: todo
+depends_on: [B002, B003, B171, B198, B204, B700, B860, B1690, B1708, B1714, B1715, B1716, B1733, B1734, B1737, B1742, B1743, B1744, B1747, B1748, B1749]
+file: tasks/B070-spend-writer.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"

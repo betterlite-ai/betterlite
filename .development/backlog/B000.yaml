@@ -1,0 +1,7 @@
+id: B000
+milestone: M0 foundation
+title: Workspace, gates and licensing
+status: done
+depends_on: []
+file: tasks/B000-workspace.yaml
+covers: []

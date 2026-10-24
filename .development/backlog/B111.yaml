@@ -1,0 +1,12 @@
+id: B111
+milestone: M7 observability
+title: Prometheus metrics
+status: todo
+depends_on: [B012]
+file: null
+covers:
+  - "litellm/integrations/{prometheus,prometheus_services,prometheus_metrics_endpoint}.py"
+  - "litellm/integrations/prometheus_helpers/**"
+  - "litellm/types/integrations/prometheus.py"
+  - "litellm/proxy/{prometheus_cleanup,prometheus_metrics_server}.py"
+  - "litellm/proxy/middleware/{prometheus_auth_middleware,billable_request_metrics_middleware}.py"

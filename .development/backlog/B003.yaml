@@ -1,0 +1,9 @@
+id: B003
+milestone: M0 foundation
+title: HTTP server, health routes and master key auth
+status: in-progress
+depends_on: [B001, B002]
+file: tasks/B003-server.yaml
+covers:
+  - "litellm/proxy/shutdown/**"
+  - "litellm/proxy/common_utils/{openai_error_payload,validation_error_body}.py"

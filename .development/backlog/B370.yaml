@@ -1,0 +1,8 @@
+id: B370
+milestone: M2 routing
+title: Responses stream fallback and continuation
+status: todo
+depends_on: [B311, B310, B080, B301]
+file: tasks/B370-responses-stream-fallback.yaml
+covers:
+  - "litellm/router.py"

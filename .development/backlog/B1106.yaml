@@ -1,0 +1,8 @@
+id: B1106
+milestone: M5 API families
+title: Principal metadata and tags
+status: todo
+depends_on: [B732, B171, B1087, B1105, B1100]
+file: tasks/B1106-request-principal-metadata.yaml
+covers:
+  - "litellm/proxy/litellm_pre_call_utils.py"

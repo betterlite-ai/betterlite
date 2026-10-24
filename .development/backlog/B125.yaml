@@ -1,0 +1,16 @@
+id: B125
+milestone: M8 platform
+title: Response caching core, in-memory and disk caches, cache API
+status: todo
+depends_on: [B016, B2226]
+file: null
+covers:
+  - "litellm/caching/{__init__,base_cache,caching,caching_handler,llm_caching_handler,in_memory_cache,dual_cache,disk_cache,_internal_lru_cache,evicted_client_closer,_embedding_router}.py"
+  - "litellm/caching/Readme.md"
+  - "litellm/_v2/**"
+  - "litellm/litellm_core_utils/specialty_caches/**"
+  - "litellm/types/caching.py"
+  - "litellm/proxy/caching_routes.py"
+  - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
+  - "litellm/types/management_endpoints/cache_settings_endpoints.py"
+  - "litellm/proxy/common_utils/{cache_coordinator,cache_pydantic_utils}.py"

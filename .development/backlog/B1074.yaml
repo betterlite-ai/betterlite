@@ -1,0 +1,8 @@
+id: B1074
+milestone: M5 api families
+title: Vector file write
+status: todo
+depends_on: [B010, B011, B012, B174, B1071, B527, B1111, B002, B2482, B2401]
+file: tasks/B1074-vector-file-write.yaml
+covers:
+  - "litellm/vector_store_files/main.py"

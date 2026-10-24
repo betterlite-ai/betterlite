@@ -1,0 +1,9 @@
+id: B2305
+milestone: M4 keys, spend and management
+title: MCP stored credential types and pinned tool decoding
+status: todo
+depends_on: [B171, B856, B2307]
+file: tasks/B2305-mcp-stored-contracts.yaml
+covers:
+  - "litellm/types/mcp.py"
+  - "litellm/types/mcp_server/mcp_server_manager.py"

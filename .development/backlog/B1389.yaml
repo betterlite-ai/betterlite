@@ -1,0 +1,8 @@
+id: B1389
+milestone: M3 providers
+title: Vertex Discovery Engine scoped vector search
+status: todo
+depends_on: [B1058, B1301, B1302, B193, B002, B171]
+file: tasks/B1389-vertex-discovery-search.yaml
+covers:
+  - "litellm/llms/vertex_ai/vector_stores/search_api/transformation.py"

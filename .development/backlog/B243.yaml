@@ -1,0 +1,8 @@
+id: B243
+milestone: M1 openai data plane
+title: Sentry JSON and representation scrubbing
+status: todo
+depends_on: [B244, B171]
+file: tasks/B243-sentry-scrubbing.yaml
+covers:
+  - "litellm/litellm_core_utils/sentry_scrubbing.py"

@@ -1,0 +1,16 @@
+id: B696
+milestone: M3 providers
+title: Azure resource and realtime operation composition
+status: todo
+depends_on: [B694, B541, B542, B543, B686, B687, B544, B545, B546, B547, B548, B171, B697]
+file: tasks/B696-azure-resource-dispatch.yaml
+covers:
+  - "litellm/llms/azure/files/handler.py"
+  - "litellm/llms/azure/batches/handler.py"
+  - "litellm/llms/azure/fine_tuning/handler.py"
+  - "litellm/llms/azure/assistants.py"
+  - "litellm/llms/azure/responses/transformation.py"
+  - "litellm/llms/azure/realtime/handler.py"
+  - "litellm/llms/azure/search/transformation.py"
+  - "litellm/llms/azure/containers/transformation.py"
+  - "litellm/llms/azure/passthrough/transformation.py"

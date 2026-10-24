@@ -1,0 +1,14 @@
+id: B080
+milestone: M5 api families
+title: Responses routes
+status: todo
+depends_on: [B003, B004, B014, B104, B124, B158, B507, B508, B921, B929, B932, B1078, B2415, B936, B937, B938, B939, B940, B941, B955, B1100, B935, B1139, B732, B855, B756, B2401]
+file: tasks/B080-responses-routes.yaml
+covers:
+  - "litellm/proxy/response_api_endpoints/endpoints.py"
+  - "litellm/responses/dispatch.py"
+  - "litellm/completion_extras/README.md"
+  - "litellm/completion_extras/__init__.py"
+  - "litellm/completion_extras/litellm_responses_transformation/__init__.py"
+  - "litellm/proxy/response_polling/__init__.py"
+  - "litellm/responses/file_search/__init__.py"

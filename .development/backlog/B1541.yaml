@@ -1,0 +1,8 @@
+id: B1541
+milestone: M3 providers
+title: Send ElevenLabs transcription multipart and retain word metadata
+status: todo
+depends_on: [B1540, B1122, B1001, B171]
+file: tasks/B1541-elevenlabs-transcription.yaml
+covers:
+  - "litellm/llms/elevenlabs/audio_transcription/**"

@@ -1,0 +1,9 @@
+id: B1343
+milestone: M3 providers
+title: Vertex multimodal embedding pairing and media usage
+status: todo
+depends_on: [B1300, B006, B171]
+file: tasks/B1343-vertex-multimodal-embeddings.yaml
+covers:
+  - "litellm/llms/vertex_ai/multimodal_embeddings/transformation.py"
+  - "litellm/types/llms/vertex_ai.py"

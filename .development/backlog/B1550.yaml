@@ -1,0 +1,8 @@
+id: B1550
+milestone: M3 providers
+title: Upload Soniox audio and poll and clean remote jobs
+status: todo
+depends_on: [B1549, B173, B1001, B171]
+file: tasks/B1550-soniox-upload-poll-cleanup.yaml
+covers:
+  - "litellm/llms/soniox/audio_transcription/handler.py"

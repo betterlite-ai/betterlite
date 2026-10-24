@@ -1,0 +1,8 @@
+id: B062
+milestone: M4 keys, spend and management
+title: Tags and tools management API
+status: todo
+depends_on: [B003, B052, B722, B724, B725, B732, B860, B1603, B1604, B1605, B1606, B1607]
+file: tasks/B062-tag-tool-management.yaml
+covers:
+  - "litellm/proxy/management_endpoints/tool_management_endpoints.py"

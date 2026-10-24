@@ -1,0 +1,9 @@
+id: B1311
+milestone: M3 providers
+title: Gemini media references and MIME hints
+status: todo
+depends_on: [B1305, B183, B1128, B171]
+file: tasks/B1311-gemini-media.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/transformation.py"
+  - "litellm/types/llms/vertex_ai.py"

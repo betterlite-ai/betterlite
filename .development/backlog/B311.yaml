@@ -1,0 +1,9 @@
+id: B311
+milestone: M2 routing
+title: Fallback before generated chat output commits
+status: todo
+depends_on: [B310, B005, B301]
+file: tasks/B311-chat-stream-fallback.yaml
+covers:
+  - "litellm/router.py"
+  - "litellm/router_utils/add_retry_fallback_headers.py"

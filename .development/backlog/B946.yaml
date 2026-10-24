@@ -1,0 +1,8 @@
+id: B946
+milestone: M5 api families
+title: Responses file search tools
+status: todo
+depends_on: [B090, B171, B902, B1087]
+file: tasks/B946-responses-file-search-tools.yaml
+covers:
+  - "litellm/responses/file_search/emulated_handler.py"

@@ -1,0 +1,8 @@
+id: B2306
+milestone: M4 keys, spend and management
+title: Resolve deployment credentials for passthrough and metadata discovery
+status: todo
+depends_on: [B061, B171, B367, B844]
+file: tasks/B2306-deployment-credential-resolution.yaml
+covers:
+  - "litellm/router.py"

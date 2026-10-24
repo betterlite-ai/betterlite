@@ -1,0 +1,9 @@
+id: B340
+milestone: M2 routing
+title: Adaptive feedback signals and caller attribution
+status: todo
+depends_on: [B376, B339, B012, B052, B301, B361]
+file: tasks/B340-adaptive-feedback.yaml
+covers:
+  - "litellm/router_strategy/adaptive_router/{signals,hooks}.py"
+  - "litellm/router_strategy/adaptive_router/adaptive_router.py"

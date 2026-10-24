@@ -1,0 +1,9 @@
+id: B996
+milestone: M5 api families
+title: Messages token route
+status: todo
+depends_on: [B013, B171, B958, B1087, B1132, B1100, B585, B732, B855, B756, B003, B1139]
+file: tasks/B996-messages-token-route.yaml
+covers:
+  - "litellm/proxy/anthropic_endpoints/endpoints.py"
+  - "litellm/proxy/anthropic_endpoints/gateway_endpoints.py"

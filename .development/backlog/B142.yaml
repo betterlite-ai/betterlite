@@ -1,0 +1,9 @@
+id: B142
+milestone: M9 agents and mcp
+title: A2A protocol client, server and agent providers
+status: todo
+depends_on: [B141]
+file: null
+covers:
+  - "litellm/a2a_protocol/**"
+  - "litellm/proxy/a2a/**"

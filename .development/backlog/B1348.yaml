@@ -1,0 +1,8 @@
+id: B1348
+milestone: M3 providers
+title: Imagen edit references, masks and recursive file inputs
+status: todo
+depends_on: [B1345, B1346, B1302, B1305, B1307, B1128, B997, B171]
+file: tasks/B1348-vertex-imagen-edit.yaml
+covers:
+  - "litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py"

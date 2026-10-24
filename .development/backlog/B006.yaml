@@ -1,0 +1,12 @@
+id: B006
+milestone: M1 openai data plane
+title: OpenAI embeddings
+status: todo
+depends_on: [B004]
+file: tasks/B006-embeddings.yaml
+covers:
+  - "litellm/embeddings/**"
+  - "litellm/llms/openai/embeddings/**"
+  - "litellm/llms/base_llm/embedding/**"
+  - "litellm/types/embedding.py"
+  - "litellm/llms/openai/openai.py"

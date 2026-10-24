@@ -1,0 +1,8 @@
+id: B1401
+milestone: M3 providers
+title: xAI interactive authorization and loopback callback
+status: todo
+depends_on: [B1400, B171]
+file: tasks/B1401-xai-oauth-login.yaml
+covers:
+  - "litellm/llms/xai/oauth.py"

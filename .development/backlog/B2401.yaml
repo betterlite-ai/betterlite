@@ -1,0 +1,7 @@
+id: B2401
+milestone: M5 API families
+title: HTTP oracle execution for SDK operations
+status: todo
+depends_on: [B001, B004, B011, B900]
+file: tasks/B2401-sdk-http-oracle.yaml
+covers: []

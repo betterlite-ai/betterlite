@@ -1,0 +1,10 @@
+id: B797
+milestone: M4 keys, spend and management
+title: User deletion and invitation creation
+status: todo
+depends_on: [B001, B002, B003, B052, B065, B116, B723, B724, B726, B732, B734, B738, B784, B790, B860, B865, B878, B1207]
+file: tasks/B797-user-delete.yaml
+covers:
+  - "litellm/proxy/management_endpoints/internal_user_endpoints.py"
+  - "litellm/proxy/management_helpers/user_invitation.py"
+  - "litellm/proxy/hooks/user_management_event_hooks.py"

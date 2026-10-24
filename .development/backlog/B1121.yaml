@@ -1,0 +1,8 @@
+id: B1121
+milestone: M5 API families
+title: Async image generation entry point
+status: todo
+depends_on: [B998, B174, B011, B2401]
+file: tasks/B1121-image-generation-plan.yaml
+covers:
+  - "litellm/images/main.py"

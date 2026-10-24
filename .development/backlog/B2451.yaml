@@ -1,0 +1,8 @@
+id: B2451
+milestone: M5 API families
+title: Image edit HTTP execution
+status: todo
+depends_on: [B997, B173, B2402, B206, B012, B2401]
+file: tasks/B2451-image-edit-http.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

@@ -1,0 +1,8 @@
+id: B257
+milestone: M1 openai data plane
+title: Catalog integrity and fetch retry policy
+status: todo
+depends_on: [B193, B009, B171]
+file: tasks/B257-catalog-fetch-policy.yaml
+covers:
+  - "litellm/litellm_core_utils/get_model_cost_map.py"

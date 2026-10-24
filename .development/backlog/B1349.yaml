@@ -1,0 +1,9 @@
+id: B1349
+milestone: M3 providers
+title: Vertex image configuration selection and billing policy
+status: todo
+depends_on: [B1306, B1345, B1346, B1347, B1348, B193, B171]
+file: tasks/B1349-vertex-image-selection-cost.yaml
+covers:
+  - "litellm/llms/vertex_ai/image_generation/{__init__,image_generation_handler,cost_calculator}.py"
+  - "litellm/llms/vertex_ai/image_edit/{__init__,cost_calculator}.py"

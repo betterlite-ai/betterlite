@@ -1,0 +1,8 @@
+id: B1666
+milestone: M4 keys, spend and management
+title: Select whole-request price tiers and coerce their rates
+status: todo
+depends_on: [B171, B204]
+file: tasks/B1666-tiered-pricing.yaml
+covers:
+  - "litellm/litellm_core_utils/llm_cost_calc/tiered_pricing.py"

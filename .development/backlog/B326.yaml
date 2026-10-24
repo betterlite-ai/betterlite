@@ -1,0 +1,8 @@
+id: B326
+milestone: M2 routing
+title: Router budget windows and lossless spend synchronization
+status: todo
+depends_on: [B383, B068, B304, B301, B361]
+file: tasks/B326-routing-budget-state.yaml
+covers:
+  - "litellm/router_strategy/budget_limiter.py"

@@ -1,0 +1,8 @@
+id: B065
+milestone: M4 keys, spend and management
+title: Attribute audit events and deliver them independently to callbacks and storage
+status: todo
+depends_on: [B002, B003, B115, B124, B165, B171, B187, B189, B191, B244, B726, B732, B860]
+file: tasks/B065-audit-delivery.yaml
+covers:
+  - "litellm/proxy/management_helpers/{audit_logs,utils}.py"

@@ -1,0 +1,9 @@
+id: B581
+milestone: M3 providers
+title: Anthropic streaming block and usage state
+status: todo
+depends_on: [B579, B005, B902, B004, B206, B171, B2201, B2214]
+file: tasks/B581-anthropic-stream-state.yaml
+covers:
+  - "litellm/llms/anthropic/chat/handler.py"
+  - "litellm/types/llms/anthropic.py"

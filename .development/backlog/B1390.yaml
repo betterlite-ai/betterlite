@@ -1,0 +1,8 @@
+id: B1390
+milestone: M3 providers
+title: Studio File Search vector records and creation
+status: todo
+depends_on: [B1058, B1331, B1384, B171]
+file: tasks/B1390-studio-file-search.yaml
+covers:
+  - "litellm/llms/gemini/vector_stores/**"

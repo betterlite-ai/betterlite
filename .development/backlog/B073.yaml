@@ -1,0 +1,14 @@
+id: B073
+milestone: M4 keys, spend and management
+title: Billing and FinOps exports
+status: todo
+depends_on: [B069, B012]
+file: null
+covers:
+  - "litellm/integrations/{focus,mavvrik_focus,cloudzero,vantage,pointfive}/**"
+  - "litellm/integrations/{lago,openmeter}.py"
+  - "litellm/proxy/spend_tracking/{cloudzero_endpoints,vantage_endpoints}.py"
+  - "litellm/types/proxy/{cloudzero_endpoints,vantage_endpoints}.py"
+  - "litellm/types/integrations/{cloudzero,pointfive}.py"
+  - "litellm/proxy/enterprise_billing/**"
+  - "litellm/llms/openai/organization_costs.py"

@@ -1,0 +1,10 @@
+id: B1379
+milestone: M3 providers
+title: Gemini Live client messages and function response records
+status: todo
+depends_on: [B1378, B1307, B1004, B171]
+file: tasks/B1379-gemini-live-client.yaml
+covers:
+  - "litellm/llms/gemini/realtime/transformation.py"
+  - "litellm/llms/gemini/common_utils.py"
+  - "litellm/types/llms/gemini.py"

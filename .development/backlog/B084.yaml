@@ -1,0 +1,9 @@
+id: B084
+milestone: M5 api families
+title: Realtime WebRTC SDP routes
+status: todo
+depends_on: [B001, B003, B014, B061, B124, B732, B856, B1010, B1012, B1087, B1103, B1139]
+file: tasks/B084-realtime-routes.yaml
+covers:
+  - "litellm/proxy/realtime_endpoints/endpoints.py"
+  - "litellm/proxy/realtime_endpoints/__init__.py"

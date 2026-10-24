@@ -1,0 +1,8 @@
+id: B172
+milestone: M1 openai data plane
+title: Outbound TLS configuration and HTTP defaults
+status: todo
+depends_on: [B171, B208]
+file: tasks/B172-http-policy.yaml
+covers:
+  - "litellm/types/llms/custom_http.py"

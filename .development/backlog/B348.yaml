@@ -1,0 +1,9 @@
+id: B348
+milestone: M2 routing
+title: Router settings and field metadata endpoints
+status: todo
+depends_on: [B016, B052, B066, B301]
+file: tasks/B348-router-settings.yaml
+covers:
+  - "litellm/proxy/management_endpoints/router_settings_endpoints.py"
+  - "litellm/types/management_endpoints/router_settings_endpoints.py"

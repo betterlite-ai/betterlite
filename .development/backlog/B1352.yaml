@@ -1,0 +1,9 @@
+id: B1352
+milestone: M3 providers
+title: Cloud speech synthesis voices, SSML and audio decoding
+status: todo
+depends_on: [B1301, B1302, B1304, B171]
+file: tasks/B1352-vertex-speech-synthesis.yaml
+covers:
+  - "litellm/llms/vertex_ai/text_to_speech/**"
+  - "litellm/types/llms/vertex_ai_text_to_speech.py"

@@ -1,0 +1,8 @@
+id: B1413
+milestone: M3 providers
+title: Codestral prompt execution and lazy FIM streaming
+status: todo
+depends_on: [B1412, B177, B173, B005, B249, B171]
+file: tasks/B1413-codestral-call.yaml
+covers:
+  - "litellm/llms/codestral/completion/handler.py"

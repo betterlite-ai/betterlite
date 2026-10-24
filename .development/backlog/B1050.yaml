@@ -1,0 +1,8 @@
+id: B1050
+milestone: M5 api families
+title: Batch create route
+status: todo
+depends_on: [B171, B1020, B1036, B1041, B1047, B1049, B1087, B1112, B1100, B162, B732, B855, B756, B1021, B1019, B1048, B003, B1139, B856, B002, B2400]
+file: tasks/B1050-batch-create-route.yaml
+covers:
+  - "litellm/proxy/batches_endpoints/endpoints.py"

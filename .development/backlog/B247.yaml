@@ -1,0 +1,8 @@
+id: B247
+milestone: M1 openai data plane
+title: Per-call logging state and callback eligibility
+status: todo
+depends_on: [B188, B189, B254, B198]
+file: tasks/B247-logging-state.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"

@@ -1,0 +1,11 @@
+id: B159
+milestone: M12 python
+title: Python embeddings, images, speech, transcription, rerank, moderation and text completion
+status: todo
+depends_on: [B158]
+file: null
+covers:
+  - "litellm/{embeddings,images,rerank_api,endpoints}/**"
+  - "litellm/types/{embedding,rerank}.py"
+  - "litellm/types/images/**"
+  - "litellm/llms/bedrock/realtime/handler.py"

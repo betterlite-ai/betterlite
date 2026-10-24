@@ -1,0 +1,9 @@
+id: B034
+milestone: M3 providers
+title: Vertex AI batches, files, fine-tuning, RAG engine, agent engine, vector stores and GenAI
+status: todo
+depends_on: [B010, B678, B1372, B1373, B1375, B1376, B1377, B1383, B1384, B1385, B1386, B1388, B1389, B1393, B1368, B1369, B206, B1015, B1025, B1058, B1064, B1032, B1033, B1034, B087, B1050, B1051, B1133, B086, B088, B1067, B900]
+file: tasks/B034-vertex-native-services.yaml
+covers:
+  - "litellm/llms/vertex_ai/{agent_engine,interactions,vector_stores}/__init__.py"
+  - "litellm/llms/vertex_ai/batches/Readme.md"

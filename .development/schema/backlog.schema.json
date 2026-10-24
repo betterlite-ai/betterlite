@@ -1,71 +1,56 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "betterlite backlog",
-  "description": "Every task, its status, its dependencies and the LiteLLM paths it covers. The architect lands every change to it.",
+  "title": "betterlite backlog entry",
+  "description": "One task in .development/backlog/<id>.yaml: its status, its dependencies and the LiteLLM paths it covers. The architect lands every change to it.",
   "type": "object",
   "properties": {
-    "tasks": {
+    "covers": {
+      "description": "Globs over the LiteLLM paths in litellm-inventory.txt whose behavior this entry reimplements. Empty for work betterlite needs that LiteLLM has no file for.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/BacklogEntry"
+        "type": "string"
       }
+    },
+    "depends_on": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
+      }
+    },
+    "file": {
+      "description": "Task file under .development/, for example tasks/B004-openai-chat.yaml. Null until the task is written.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
+    },
+    "milestone": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "$ref": "#/$defs/Status"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
     }
   },
   "additionalProperties": false,
   "required": [
-    "tasks"
+    "id",
+    "milestone",
+    "title",
+    "status",
+    "depends_on",
+    "covers"
   ],
   "$defs": {
-    "BacklogEntry": {
-      "type": "object",
-      "properties": {
-        "covers": {
-          "description": "Globs over the LiteLLM paths in litellm-inventory.txt whose behavior this entry reimplements. Empty for work betterlite needs that LiteLLM has no file for.",
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "depends_on": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
-          }
-        },
-        "file": {
-          "description": "Task file under .development/, for example tasks/B004-openai-chat.yaml. Null until the task is written.",
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "id": {
-          "type": "string",
-          "pattern": "^B([0-9]{3}|[1-9][0-9]{3,5})$"
-        },
-        "milestone": {
-          "type": "string",
-          "minLength": 1
-        },
-        "status": {
-          "$ref": "#/$defs/Status"
-        },
-        "title": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "additionalProperties": false,
-      "required": [
-        "id",
-        "milestone",
-        "title",
-        "status",
-        "depends_on",
-        "covers"
-      ]
-    },
     "Status": {
       "type": "string",
       "enum": [

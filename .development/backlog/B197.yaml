@@ -1,0 +1,8 @@
+id: B197
+milestone: M1 openai data plane
+title: Image and document token accounting
+status: todo
+depends_on: [B196, B183, B258, B193]
+file: tasks/B197-media-tokens.yaml
+covers:
+  - "litellm/litellm_core_utils/token_counter.py"

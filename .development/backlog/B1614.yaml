@@ -1,0 +1,8 @@
+id: B1614
+milestone: M4 keys, spend and management
+title: Bind CLI poll credentials to known team grants
+status: todo
+depends_on: [B003, B724, B860, B1223, B1611, B1613, B1630]
+file: tasks/B1614-cli-poll-grants.yaml
+covers:
+  - "litellm/proxy/management_endpoints/ui_sso.py"

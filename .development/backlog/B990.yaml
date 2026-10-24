@@ -1,0 +1,8 @@
+id: B990
+milestone: M5 api families
+title: Claude gateway settings
+status: todo
+depends_on: [B002, B171, B1087, B1132, B732, B855, B756, B1100, B003, B1139, B856]
+file: tasks/B990-claude-gateway-settings.yaml
+covers:
+  - "litellm/proxy/anthropic_endpoints/gateway_endpoints.py"

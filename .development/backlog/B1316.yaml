@@ -1,0 +1,8 @@
+id: B1316
+milestone: M3 providers
+title: Execute Gemini HTTP calls with Vertex or Studio authentication
+status: todo
+depends_on: [B1303, B1304, B1312, B1321, B1315, B1326, B173, B171]
+file: tasks/B1316-gemini-http-execution.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py"

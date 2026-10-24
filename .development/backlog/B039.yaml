@@ -1,0 +1,11 @@
+id: B039
+milestone: M3 providers
+title: JSON-configured OpenAI-compatible providers, M to Z
+status: todo
+depends_on: [B038]
+file: null
+covers:
+  - "litellm/llms/maritalk.py"
+  - "litellm/llms/{meta,meta_llama,moonshot,morph,nadir,nebius,novita,nscale,ovhcloud,sail,sambanova,scaleway,v0,wandb,zai}/**"
+  - "litellm/types/llms/meta.py"
+  - "litellm/main.py"

@@ -1,0 +1,8 @@
+id: B1133
+milestone: M5 API families
+title: Batch list route
+status: todo
+depends_on: [B003, B855, B1035, B1129, B1112, B171, B1087, B1100, B1020, B1019, B756, B1139, B2400]
+file: tasks/B1133-batch-list-route.yaml
+covers:
+  - "litellm/proxy/batches_endpoints/endpoints.py"

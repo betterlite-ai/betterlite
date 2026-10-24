@@ -1,0 +1,10 @@
+id: B510
+milestone: M3 providers
+title: OpenAI Responses token counting
+status: todo
+depends_on: [B173, B171, B004, B668]
+file: tasks/B510-openai-count-tokens.yaml
+covers:
+  - "litellm/llms/openai/responses/count_tokens/handler.py"
+  - "litellm/llms/openai/responses/count_tokens/token_counter.py"
+  - "litellm/llms/openai/responses/count_tokens/transformation.py"

@@ -1,0 +1,7 @@
+id: B856
+milestone: M4 keys, spend and management
+title: Management helper namespaces and comparison contracts
+status: todo
+depends_on: [B171]
+file: tasks/B856-management-oracle.yaml
+covers: []

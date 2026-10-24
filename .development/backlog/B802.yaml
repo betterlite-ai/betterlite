@@ -1,0 +1,9 @@
+id: B802
+milestone: M4 keys, spend and management
+title: Default team member budgets and bulk budget updates
+status: todo
+depends_on: [B003, B065, B171, B714, B724, B725, B732, B734, B800, B801, B829, B856, B859, B860, B862, B1202]
+file: tasks/B802-team-member-budgets.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"
+  - "litellm/proxy/management_helpers/bulk_team_member_budgets.py"

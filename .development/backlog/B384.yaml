@@ -1,0 +1,8 @@
+id: B384
+milestone: M2 routing
+title: Classifier message and reminder extraction
+status: todo
+depends_on: [B010, B301, B002]
+file: tasks/B384-classifier-message-text.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/complexity_router.py"

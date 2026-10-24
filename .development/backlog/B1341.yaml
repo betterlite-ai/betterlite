@@ -1,0 +1,8 @@
+id: B1341
+milestone: M3 providers
+title: Execute Google embedding requests and resolve native file references
+status: todo
+depends_on: [B1302, B1304, B1340, B173, B171]
+file: tasks/B1341-gemini-embedding-calls.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_handler.py"

@@ -1,0 +1,9 @@
+id: B1743
+milestone: M4 keys, spend and management
+title: Derive daily spend records and baseline targets from request evidence
+status: todo
+depends_on: [B004, B171, B204, B1693, B1694, B1697, B1733]
+file: tasks/B1743-daily-spend-records.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"
+  - "litellm/proxy/utils.py"

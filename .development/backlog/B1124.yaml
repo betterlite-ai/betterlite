@@ -1,0 +1,8 @@
+id: B1124
+milestone: M5 API families
+title: Realtime setup buffering
+status: todo
+depends_on: [B901, B1004, B1006, B1110]
+file: tasks/B1124-realtime-setup-buffer.yaml
+covers:
+  - "litellm/litellm_core_utils/realtime_streaming.py"

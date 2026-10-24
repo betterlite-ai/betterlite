@@ -1,0 +1,8 @@
+id: B235
+milestone: M1 openai data plane
+title: Media metadata and MIME inference
+status: todo
+depends_on: [B179, B171]
+file: tasks/B235-media-metadata.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/common_utils.py"

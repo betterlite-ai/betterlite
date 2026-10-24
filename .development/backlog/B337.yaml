@@ -1,0 +1,8 @@
+id: B337
+milestone: M2 routing
+title: Cache-cost-aware complexity placement
+status: todo
+depends_on: [B334, B075, B012, B301, B002]
+file: tasks/B337-cache-cost-routing.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/complexity_router.py"

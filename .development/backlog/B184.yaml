@@ -1,0 +1,8 @@
+id: B184
+milestone: M1 openai data plane
+title: Shared provider error taxonomy
+status: todo
+depends_on: [B004, B171]
+file: tasks/B184-error-types.yaml
+covers:
+  - "litellm/exceptions.py"

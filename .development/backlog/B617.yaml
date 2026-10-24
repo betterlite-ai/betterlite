@@ -1,0 +1,8 @@
+id: B617
+milestone: M3 providers
+title: Bedrock TwelveLabs Pegasus video chat
+status: todo
+depends_on: [B183, B2202, B206, B196, B682, B171]
+file: tasks/B617-bedrock-pegasus.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py"

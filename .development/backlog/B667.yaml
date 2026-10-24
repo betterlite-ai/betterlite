@@ -1,0 +1,8 @@
+id: B667
+milestone: M3 providers
+title: Bedrock realtime client and provider event pumping
+status: todo
+depends_on: [B665, B662, B171]
+file: tasks/B667-bedrock-services-realtime-bridge.yaml
+covers:
+  - "litellm/llms/bedrock/realtime/handler.py"

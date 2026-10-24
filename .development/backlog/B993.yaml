@@ -1,0 +1,8 @@
+id: B993
+milestone: M5 api families
+title: Claude plugin read
+status: todo
+depends_on: [B171, B1087, B726, B858, B1140, B003, B756, B1139, B856]
+file: tasks/B993-claude-plugin-read.yaml
+covers:
+  - "litellm/proxy/anthropic_endpoints/claude_code_endpoints/claude_code_marketplace.py"

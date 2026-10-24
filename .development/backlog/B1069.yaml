@@ -1,0 +1,8 @@
+id: B1069
+milestone: M5 api families
+title: Vector management write
+status: todo
+depends_on: [B2486, B1062, B726, B858, B732, B003, B864, B192, B1131, B010]
+file: tasks/B1069-vector-management-write.yaml
+covers:
+  - "litellm/proxy/vector_store_endpoints/management_endpoints.py"

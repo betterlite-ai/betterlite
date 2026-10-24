@@ -1,0 +1,9 @@
+id: B1223
+milestone: M4 keys, spend and management
+title: Experimental UI and CLI session token codec
+status: todo
+depends_on: [B002, B171, B720, B733, B856, B2303, B2314]
+file: tasks/B1223-session-token-codec.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/common_utils/encrypt_decrypt_utils.py"

@@ -1,0 +1,8 @@
+id: B179
+milestone: M1 openai data plane
+title: Shared message normalization and system placement
+status: todo
+depends_on: [B177, B218, B219, B220, B221]
+file: tasks/B179-message-normalization.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/{common_utils,mid_conversation_system}.py"

@@ -1,0 +1,16 @@
+id: B124
+milestone: M8 platform
+title: Remaining proxy server routes, shared proxy types and request preparation
+status: todo
+depends_on: [B052, B016, B730, B731, B733, B734, B736, B2302, B2314, B2316, B2317]
+file: null
+covers:
+  - "litellm/proxy/{__init__,proxy_server,_types,utils,plugin_routes,lambda,post_call_rules,litellm_pre_call_utils}.py"
+  - "litellm/proxy/{README.md,.gitignore}"
+  - "litellm/proxy/_experimental/post_call_rules.py"
+  - "litellm/proxy/hooks/__init__.py"
+  - "litellm/proxy/types_utils/**"
+  - "litellm/types/proxy/{README.md,litellm_pre_call_utils.py}"
+  - "litellm/proxy/common_utils/{get_routes,http_parsing_utils,path_utils,openai_endpoint_utils,json_merge_patch,resource_ownership,rbac_utils,registry_read_through,semantic_text_index,static_asset_utils,admin_ui_utils}.py"
+  - "litellm/blog_posts.json"
+  - "litellm/litellm_core_utils/get_blog_posts.py"

@@ -1,0 +1,8 @@
+id: B2315
+milestone: M4 keys, spend and management
+title: Auth repository read deadlines and structural projections
+status: todo
+depends_on: [B171, B700, B715, B856, B859, B2313]
+file: tasks/B2315-auth-read-boundaries.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"

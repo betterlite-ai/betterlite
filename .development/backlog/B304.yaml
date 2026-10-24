@@ -1,0 +1,9 @@
+id: B304
+milestone: M2 routing
+title: Router counters, callback state and batched reads
+status: todo
+depends_on: [B360, B382, B012, B301, B361, B397, B002]
+file: tasks/B304-routing-state.yaml
+covers:
+  - "litellm/router_strategy/base_routing_strategy.py"
+  - "litellm/router_utils/router_callbacks/**"

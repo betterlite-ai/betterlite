@@ -1,0 +1,8 @@
+id: B828
+milestone: M4 keys, spend and management
+title: Organization member addition, patch and deletion
+status: todo
+depends_on: [B001, B003, B052, B124, B723, B726, B732, B826, B829, B860, B865, B1227]
+file: tasks/B828-organization-members.yaml
+covers:
+  - "litellm/proxy/management_endpoints/organization_endpoints.py"

@@ -1,0 +1,9 @@
+id: B611
+milestone: M3 providers
+title: Bedrock Invoke base request preparation
+status: todo
+depends_on: [B2205, B613, B614, B617, B618, B619, B590, B682, B002, B171]
+file: tasks/B611-bedrock-invoke-request.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py"
+  - "litellm/llms/bedrock/chat/invoke_handler.py"

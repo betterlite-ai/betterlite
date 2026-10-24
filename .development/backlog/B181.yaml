@@ -1,0 +1,8 @@
+id: B181
+milestone: M1 openai data plane
+title: Bedrock message and tool conversion helpers
+status: todo
+depends_on: [B178, B179, B183, B227, B228, B229, B230, B231]
+file: tasks/B181-bedrock-prompts.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/factory.py"

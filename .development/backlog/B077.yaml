@@ -1,0 +1,9 @@
+id: B077
+milestone: M4 keys, spend and management
+title: Public endpoints and the model hub
+status: todo
+depends_on: [B060]
+file: null
+covers:
+  - "litellm/proxy/public_endpoints/**"
+  - "litellm/types/proxy/public_endpoints/**"

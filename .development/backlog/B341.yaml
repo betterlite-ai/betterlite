@@ -1,0 +1,9 @@
+id: B341
+milestone: M2 routing
+title: Adaptive learning persistence in the existing Postgres schema
+status: todo
+depends_on: [B340, B339, B051, B301, B361]
+file: tasks/B341-adaptive-persistence.yaml
+covers:
+  - "litellm/router_strategy/adaptive_router/update_queue.py"
+  - "litellm/router_strategy/adaptive_router/adaptive_router.py"

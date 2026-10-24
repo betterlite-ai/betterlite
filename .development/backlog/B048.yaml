@@ -1,0 +1,9 @@
+id: B048
+milestone: M3 providers
+title: Web search and crawl providers
+status: todo
+depends_on: [B091, B1552, B1553, B1554, B1555]
+file: null
+covers:
+  - "litellm/llms/apiserpent/__init__.py"
+  - "litellm/llms/{exa_ai,fastcrw,firecrawl,google_pse,linkup,nimble,parallel_ai,searchapi,searxng,serper,tavily,you_com,tinyfish}/**"

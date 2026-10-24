@@ -1,0 +1,11 @@
+id: B098
+milestone: M5 api families
+title: Google GenAI and Interactions APIs
+status: todo
+depends_on: [B010, B014]
+file: null
+covers:
+  - "litellm/{google_genai,interactions}/**"
+  - "litellm/llms/base_llm/{google_genai,interactions}/**"
+  - "litellm/proxy/google_endpoints/**"
+  - "litellm/types/{google_genai,interactions}/**"

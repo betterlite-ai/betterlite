@@ -1,0 +1,10 @@
+id: B532
+milestone: M3 providers
+title: Azure chat parameters and message conversion
+status: todo
+depends_on: [B531, B502, B182, B178, B193, B171, B684, B668, B205, B206, B174, B198, B2221, B2225, B2230]
+file: tasks/B532-azure-chat-params.yaml
+covers:
+  - "litellm/llms/azure/chat/gpt_transformation.py"
+  - "litellm/llms/azure/chat/gpt_5_transformation.py"
+  - "litellm/llms/azure/chat/o_series_transformation.py"

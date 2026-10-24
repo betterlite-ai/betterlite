@@ -1,0 +1,8 @@
+id: B911
+milestone: M5 api families
+title: Responses tool repair
+status: todo
+depends_on: [B171, B004, B2226, B907]
+file: tasks/B911-responses-tool-repair.yaml
+covers:
+  - "litellm/responses/litellm_completion_transformation/transformation.py"

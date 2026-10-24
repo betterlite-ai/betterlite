@@ -1,0 +1,8 @@
+id: B647
+milestone: M3 providers
+title: Bedrock batch embedding record conversion
+status: todo
+depends_on: [B627, B193, B171, B2225]
+file: tasks/B647-bedrock-services-batch-embeddings.yaml
+covers:
+  - "litellm/llms/bedrock/files/transformation.py"

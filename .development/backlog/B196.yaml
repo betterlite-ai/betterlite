@@ -1,0 +1,10 @@
+id: B196
+milestone: M1 openai data plane
+title: Text, message and tool token counting
+status: todo
+depends_on: [B195, B193, B259]
+file: tasks/B196-text-tokens.yaml
+covers:
+  - "litellm/litellm_core_utils/token_counter.py"
+  - "litellm/utils.py"
+  - "litellm/main.py"

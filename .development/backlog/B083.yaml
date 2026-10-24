@@ -1,0 +1,9 @@
+id: B083
+milestone: M5 api families
+title: Audio routes
+status: todo
+depends_on: [B014, B004, B124, B900, B1003, B1082, B1083, B1087, B1101, B1102, B1103, B003, B756, B002, B1139, B856]
+file: tasks/B083-audio-routes.yaml
+covers:
+  - "litellm/llms/base_llm/audio_transcription/transformation.py"
+  - "litellm/proxy/proxy_server.py"

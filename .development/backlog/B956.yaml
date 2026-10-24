@@ -1,0 +1,8 @@
+id: B956
+milestone: M5 api families
+title: Chat mcp plans
+status: todo
+depends_on: [B014, B171, B948, B949, B1087, B950]
+file: tasks/B956-chat-mcp-plans.yaml
+covers:
+  - "litellm/responses/mcp/chat_completions_handler.py"

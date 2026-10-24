@@ -1,0 +1,8 @@
+id: B808
+milestone: M4 keys, spend and management
+title: Add team members and update member roles and budgets
+status: todo
+depends_on: [B001, B003, B052, B732, B734, B737, B800, B801, B805, B807, B812, B860, B861, B862, B865, B878, B1206, B1231]
+file: tasks/B808-team-member-writes.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"

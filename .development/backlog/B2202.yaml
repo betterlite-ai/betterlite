@@ -1,0 +1,13 @@
+id: B2202
+milestone: M3 providers
+title: Shared provider base config and response metadata
+status: todo
+depends_on: [B002, B171]
+file: tasks/B2202-provider-base-helpers.yaml
+covers:
+  - "litellm/llms/base_llm/chat/transformation.py"
+  - "litellm/llms/base_llm/base_utils.py"
+  - "litellm/router_utils/add_retry_fallback_headers.py"
+  - "litellm/utils.py"
+  - "litellm/llms/base_llm/responses/transformation.py"
+  - "litellm/llms/base_llm/image_edit/transformation.py"

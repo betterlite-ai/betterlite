@@ -1,0 +1,10 @@
+id: B126
+milestone: M8 platform
+title: Redis, Redis Cluster and Valkey
+status: todo
+depends_on: [B125]
+file: null
+covers:
+  - "litellm/{_redis,_redis_credential_provider}.py"
+  - "litellm/caching/{redis_cache,redis_cluster_cache,redis_cluster_node_isolation,redis_batch}.py"
+  - "litellm/proxy/middleware/redis_request_batch_middleware.py"

@@ -1,0 +1,8 @@
+id: B917
+milestone: M5 api families
+title: Response chat history
+status: todo
+depends_on: [B004, B171, B902, B1138, B1136, B903, B912, B220]
+file: tasks/B917-response-chat-history.yaml
+covers:
+  - "litellm/completion_extras/litellm_responses_transformation/transformation.py"

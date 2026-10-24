@@ -1,0 +1,9 @@
+id: B751
+milestone: M4 keys, spend and management
+title: Key budget thresholds and alert inputs
+status: todo
+depends_on: [B001, B002, B003, B116, B171, B720, B732, B733, B757, B856, B860, B2321, B2325]
+file: tasks/B751-auth-key-budgets.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/user_api_key_auth.py"

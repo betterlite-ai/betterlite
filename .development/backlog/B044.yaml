@@ -1,0 +1,12 @@
+id: B044
+milestone: M3 providers
+title: litellm_proxy provider, custom providers and deprecated providers
+status: todo
+depends_on: [B002, B004, B005, B006, B010, B172, B173, B174, B184, B196, B198, B500, B164, B165, B171, B1500, B1501, B1502, B1503, B1504, B1505, B1506]
+file: tasks/B044-proxy-custom-dispatch.yaml
+covers:
+  - "litellm/llms/custom_llm.py"
+  - "litellm/llms/litellm_proxy/skills/__init__.py"
+  - "litellm/llms/litellm_proxy/skills/README.md"
+  - "litellm/types/llms/custom_llm.py"
+  - "litellm/main.py"

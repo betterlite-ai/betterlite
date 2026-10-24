@@ -1,0 +1,8 @@
+id: B1436
+milestone: M3 providers
+title: DeepInfra chat mapping and rerank inference records
+status: todo
+depends_on: [B002, B249, B503, B668, B1013, B2221, B171]
+file: tasks/B1436-deepinfra-chat-rerank.yaml
+covers:
+  - "litellm/llms/deepinfra/**"

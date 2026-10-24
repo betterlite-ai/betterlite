@@ -1,0 +1,8 @@
+id: B373
+milestone: M2 routing
+title: Bounded custom complexity dimensions
+status: todo
+depends_on: [B328, B301, B002]
+file: tasks/B373-custom-dimensions.yaml
+covers:
+  - "litellm/router_strategy/complexity_router/config.py"

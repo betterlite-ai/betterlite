@@ -1,0 +1,10 @@
+id: B041
+milestone: M3 providers
+title: Aggregators and hosted inference platforms
+status: todo
+depends_on: [B024, B186, B2222, B2220]
+file: null
+covers:
+  - "litellm/llms/{openrouter,together_ai,fireworks_ai,groq,perplexity,vercel_ai_gateway,cloudflare,nvidia_nim,edenai}/**"
+  - "litellm/types/llms/openrouter.py"
+  - "litellm/main.py"

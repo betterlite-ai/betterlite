@@ -1,0 +1,8 @@
+id: B1721
+milestone: M4 keys, spend and management
+title: Report request activity and attribute spend to live providers
+status: todo
+depends_on: [B003, B052, B174, B204, B726, B732, B844, B860]
+file: tasks/B1721-spend-activity.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_management_endpoints.py"

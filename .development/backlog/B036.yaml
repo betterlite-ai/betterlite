@@ -1,0 +1,13 @@
+id: B036
+milestone: M3 providers
+title: xAI, Mistral and Codestral
+status: todo
+depends_on: [B002, B004, B006, B010, B080, B083, B086, B087, B092, B104, B171, B186, B202, B210, B249, B323, B678, B900, B901, B921, B1001, B1032, B1033, B1034, B1050, B1051, B1125, B1133, B1139, B2230, B1400, B1401, B1402, B1403, B1404, B1405, B1406, B1407, B1408, B1409, B1410, B1411, B1412, B1413]
+file: tasks/B036-xai-mistral-provider.yaml
+covers:
+  - "litellm/llms/{xai,mistral,codestral}/**/__init__.py"
+  - "litellm/llms/mistral/embedding.py"
+  - "litellm/llms/mistral/mistral_embedding_transformation.py"
+  - "litellm/llms/mistral/ocr/**"
+  - "litellm/llms/openai/openai.py"
+  - "litellm/main.py"

@@ -1,0 +1,8 @@
+id: B2323
+milestone: M4 keys, spend and management
+title: Bounded database reconnect policy for auth reads
+status: todo
+depends_on: [B002, B171, B710, B713, B714, B856, B860]
+file: tasks/B2323-auth-database-reconnect.yaml
+covers:
+  - "litellm/proxy/utils.py"

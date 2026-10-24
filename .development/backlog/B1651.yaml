@@ -1,0 +1,8 @@
+id: B1651
+milestone: M4 keys, spend and management
+title: Quote token costs from the same resolved prices used for billing
+status: todo
+depends_on: [B003, B052, B068, B124, B171, B174, B193, B198, B204, B844]
+file: tasks/B1651-cost-estimate-route.yaml
+covers:
+  - "litellm/proxy/management_endpoints/cost_tracking_settings.py"

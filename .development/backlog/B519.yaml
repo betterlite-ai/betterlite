@@ -1,0 +1,8 @@
+id: B519
+milestone: M3 providers
+title: OpenAI assistant definitions
+status: todo
+depends_on: [B500, B173, B171, B185]
+file: tasks/B519-openai-assistants.yaml
+covers:
+  - "litellm/llms/openai/openai.py"

@@ -1,0 +1,8 @@
+id: B1713
+milestone: M4 keys, spend and management
+title: Remove credentials and prompt echoes from persisted spend content
+status: todo
+depends_on: [B171, B188, B244, B247]
+file: tasks/B1713-spend-content-sanitizing.yaml
+covers:
+  - "litellm/proxy/spend_tracking/spend_tracking_utils.py"

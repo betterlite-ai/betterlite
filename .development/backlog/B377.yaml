@@ -1,0 +1,8 @@
+id: B377
+milestone: M2 routing
+title: Automatic router identity and dependency validation
+status: todo
+depends_on: [B329, B331, B301, B361]
+file: tasks/B377-router-dependencies.yaml
+covers:
+  - "litellm/router_utils/auto_router_model_naming.py"

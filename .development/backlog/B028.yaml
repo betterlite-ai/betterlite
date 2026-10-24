@@ -1,0 +1,16 @@
+id: B028
+milestone: M3 providers
+title: Bedrock chat through Converse and Invoke, and Bedrock Messages
+status: todo
+depends_on: [B010, B038, B598, B591, B2203, B656, B625, B622, B599, B619, B620, B652, B653, B611, B610, B613, B614, B615, B616, B617, B618, B678, B680, B159, B198, B196, B249, B187, B129, B171, B2231, B2230]
+file: tasks/B028-bedrock-provider.yaml
+covers:
+  - "litellm/llms/bedrock/chat/agentcore/__init__.py"
+  - "litellm/llms/bedrock/chat/converse_like/handler.py"
+  - "litellm/llms/bedrock/chat/converse_like/transformation.py"
+  - "litellm/llms/bedrock/chat/mantle/__init__.py"
+  - "litellm/llms/bedrock/messages/readme.md"
+  - "litellm/llms/bedrock_mantle/messages/__init__.py"
+  - "litellm/llms/bedrock_mantle/responses/__init__.py"
+  - "whitelisted_bedrock_models.txt"
+  - "litellm/main.py"

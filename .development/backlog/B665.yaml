@@ -1,0 +1,9 @@
+id: B665
+milestone: M3 providers
+title: Bedrock realtime native event dispatch
+status: todo
+depends_on: [B661, B663, B664, B171, B1006, B1004, B590, B682, B187]
+file: tasks/B665-bedrock-services-realtime-events.yaml
+covers:
+  - "litellm/llms/bedrock/realtime/transformation.py"
+  - "litellm/llms/bedrock/realtime/handler.py"

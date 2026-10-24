@@ -1,0 +1,8 @@
+id: B2304
+milestone: M4 keys, spend and management
+title: Transform and strip stored callback credential fields
+status: todo
+depends_on: [B171, B244, B2303]
+file: tasks/B2304-callback-secret-fields.yaml
+covers:
+  - "litellm/proxy/common_utils/callback_utils.py"

@@ -1,0 +1,8 @@
+id: B1010
+milestone: M5 api families
+title: Realtime http calls
+status: todo
+depends_on: [B002, B012, B157, B174, B198, B528, B545, B1004, B2401, B2456]
+file: tasks/B1010-realtime-http-calls.yaml
+covers:
+  - "litellm/realtime_api/main.py"

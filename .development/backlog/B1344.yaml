@@ -1,0 +1,8 @@
+id: B1344
+milestone: M3 providers
+title: Execute Vertex text and multimodal embedding predictions
+status: todo
+depends_on: [B1302, B1303, B1304, B1342, B1343, B173]
+file: tasks/B1344-vertex-predict-embeddings.yaml
+covers:
+  - "litellm/llms/vertex_ai/{vertex_embeddings,multimodal_embeddings}/embedding_handler.py"

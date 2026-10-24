@@ -1,0 +1,8 @@
+id: B318
+milestone: M2 routing
+title: Usage v2 batched reads and pre-call accounting
+status: todo
+depends_on: [B016, B371, B382, B013, B301, B002]
+file: tasks/B318-usage-routing-v2.yaml
+covers:
+  - "litellm/router_strategy/lowest_tpm_rpm_v2.py"

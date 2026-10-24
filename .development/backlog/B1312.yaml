@@ -1,0 +1,10 @@
+id: B1312
+milestone: M3 providers
+title: Gemini conversation history and signature replay
+status: todo
+depends_on: [B1311, B1305, B232, B233, B179, B171]
+file: tasks/B1312-gemini-message-history.yaml
+covers:
+  - "litellm/llms/vertex_ai/gemini/transformation.py"
+  - "litellm/llms/vertex_ai/common_utils.py"
+  - "litellm/types/llms/vertex_ai.py"

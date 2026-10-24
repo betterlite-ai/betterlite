@@ -1,0 +1,9 @@
+id: B1664
+milestone: M4 keys, spend and management
+title: Unify PTU reservation validity, free token rates and Azure spillover
+status: todo
+depends_on: [B002, B129, B171, B204]
+file: tasks/B1664-ptu-pricing.yaml
+covers:
+  - "litellm/litellm_core_utils/ptu_pricing.py"
+  - "litellm/proxy/spend_tracking/ptu_feature_flag.py"

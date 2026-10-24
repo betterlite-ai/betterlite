@@ -1,0 +1,8 @@
+id: B1012
+milestone: M5 api families
+title: Realtime ephemeral ids
+status: todo
+depends_on: [B171, B886, B1004, B1087]
+file: tasks/B1012-realtime-ephemeral-ids.yaml
+covers:
+  - "litellm/proxy/realtime_endpoints/endpoints.py"

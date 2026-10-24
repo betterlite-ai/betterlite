@@ -1,0 +1,8 @@
+id: B758
+milestone: M4 keys, spend and management
+title: Master key startup checks and stored-secret refusal
+status: todo
+depends_on: [B002, B003, B171, B730, B732, B856]
+file: tasks/B758-master-key-boot.yaml
+covers:
+  - "litellm/proxy/auth/master_key_boot_check.py"

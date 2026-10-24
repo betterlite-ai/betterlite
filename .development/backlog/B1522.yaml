@@ -1,0 +1,10 @@
+id: B1522
+milestone: M3 providers
+title: Translate Stability generation parameters and base64 replies
+status: todo
+depends_on: [B002, B997, B171]
+file: tasks/B1522-stability-generation.yaml
+covers:
+  - "litellm/llms/stability/__init__.py"
+  - "litellm/llms/stability/image_generation/**"
+  - "litellm/types/llms/stability.py"

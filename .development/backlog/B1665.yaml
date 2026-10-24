@@ -1,0 +1,9 @@
+id: B1665
+milestone: M4 keys, spend and management
+title: Define management problem, resource and pagination envelopes
+status: todo
+depends_on: [B003, B171]
+file: tasks/B1665-management-envelopes.yaml
+covers:
+  - "litellm/types/proxy/management_endpoints/management_v1.py"
+  - "litellm/proxy/management_endpoints/management_v1/common.py"

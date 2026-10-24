@@ -1,0 +1,8 @@
+id: B608
+milestone: M3 providers
+title: Bedrock Converse event-to-chat mapping
+status: todo
+depends_on: [B605, B598, B206, B198, B005, B171]
+file: tasks/B608-bedrock-converse-events.yaml
+covers:
+  - "litellm/llms/bedrock/chat/invoke_handler.py"

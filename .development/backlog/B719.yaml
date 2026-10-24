@@ -1,0 +1,11 @@
+id: B719
+milestone: M4 keys, spend and management
+title: Runtime and offline compatibility views
+status: todo
+depends_on: [B700, B710, B860]
+file: tasks/B719-database-views.yaml
+covers:
+  - "litellm/proxy/db/create_views.py"
+  - "db_scripts/create_views.py"
+  - "db_scripts/update_unassigned_teams.py"
+  - "db_scripts/migrate_keys.py"

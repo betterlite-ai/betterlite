@@ -1,0 +1,9 @@
+id: B1692
+milestone: M4 keys, spend and management
+title: Schedule PTU reconciliation and catch up missing reserved-capacity charges
+status: todo
+depends_on: [B124, B198, B844, B860, B1664, B1690, B1691]
+file: tasks/B1692-ptu-reconciliation-job.yaml
+covers:
+  - "litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py"
+  - "litellm/proxy/proxy_server.py"

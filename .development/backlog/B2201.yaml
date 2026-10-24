@@ -1,0 +1,8 @@
+id: B2201
+milestone: M3 providers
+title: Anthropic option defaults and small projections
+status: todo
+depends_on: [B205, B206, B002, B171, B2202]
+file: tasks/B2201-anthropic-option-primitives.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"

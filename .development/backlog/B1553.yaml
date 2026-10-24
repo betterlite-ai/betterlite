@@ -1,0 +1,8 @@
+id: B1553
+milestone: M3 providers
+title: Select Brave result sections and normalize their dates
+status: todo
+depends_on: [B002, B091, B165, B171]
+file: tasks/B1553-brave-search.yaml
+covers:
+  - "litellm/llms/brave/**"

@@ -1,0 +1,9 @@
+id: B387
+milestone: M2 routing
+title: Automatic router benchmark aggregates
+status: todo
+depends_on: [B344, B051, B343, B301, B361]
+file: tasks/B387-benchmark-aggregates.yaml
+covers:
+  - "litellm/proxy/management_endpoints/auto_router_endpoints.py"
+  - "litellm/types/management_endpoints/auto_router_endpoints.py"

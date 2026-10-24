@@ -1,0 +1,8 @@
+id: B1065
+milestone: M5 api families
+title: Vector store read
+status: todo
+depends_on: [B010, B011, B012, B174, B1131, B527, B002, B2485, B2401]
+file: tasks/B1065-vector-store-read.yaml
+covers:
+  - "litellm/vector_stores/main.py"

@@ -1,0 +1,9 @@
+id: B171
+milestone: M1 openai data plane
+title: Direct helper oracle and URL path encoding
+status: todo
+depends_on: [B001]
+file: tasks/B171-helper-oracle.yaml
+covers:
+  - "litellm/llms/custom_httpx/{asgi_handler,mock_transport}.py"
+  - "litellm/litellm_core_utils/url_utils.py"

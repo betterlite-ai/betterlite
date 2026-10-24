@@ -1,0 +1,9 @@
+id: B1364
+milestone: M3 providers
+title: Studio Veo operation decoding and generated video retrieval
+status: todo
+depends_on: [B1362, B1363, B525, B672, B173, B171]
+file: tasks/B1364-studio-veo-results.yaml
+covers:
+  - "litellm/llms/gemini/videos/**"
+  - "litellm/types/llms/gemini.py"

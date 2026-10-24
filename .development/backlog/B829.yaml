@@ -1,0 +1,8 @@
+id: B829
+milestone: M4 keys, spend and management
+title: Budget create, patch and inspection routes
+status: todo
+depends_on: [B001, B003, B052, B124, B725, B732, B860, B861, B1224, B2314, B2317]
+file: tasks/B829-budget-api.yaml
+covers:
+  - "litellm/proxy/management_endpoints/budget_management_endpoints.py"

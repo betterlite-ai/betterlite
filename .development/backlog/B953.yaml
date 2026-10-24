@@ -1,0 +1,8 @@
+id: B953
+milestone: M5 api families
+title: Responses mcp stream round
+status: todo
+depends_on: [B171, B925, B949, B952, B950, B932]
+file: tasks/B953-responses-mcp-stream-round.yaml
+covers:
+  - "litellm/responses/mcp/mcp_streaming_iterator.py"

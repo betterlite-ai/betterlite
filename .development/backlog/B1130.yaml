@@ -1,0 +1,8 @@
+id: B1130
+milestone: M5 API families
+title: Assistant list and delete calls
+status: todo
+depends_on: [B010, B011, B174, B176, B519, B686, B2487, B2401]
+file: tasks/B1130-assistant-read-delete.yaml
+covers:
+  - "litellm/assistants/main.py"

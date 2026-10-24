@@ -1,0 +1,8 @@
+id: B855
+milestone: M4 keys, spend and management
+title: Authenticated request admission and budget handoff
+status: todo
+depends_on: [B001, B003, B732, B739, B743, B757, B860, B870, B880, B881, B883, B1100, B1221]
+file: tasks/B855-auth-admission.yaml
+covers:
+  - "litellm/proxy/auth/user_api_key_auth.py"

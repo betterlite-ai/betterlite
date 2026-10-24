@@ -1,0 +1,8 @@
+id: B666
+milestone: M3 providers
+title: Bedrock bidirectional realtime transport
+status: todo
+depends_on: [B594, B591, B665, B667, B661, B664, B173, B171, B595, B198, B682, B250, B191]
+file: tasks/B666-bedrock-services-realtime-transport.yaml
+covers:
+  - "litellm/llms/bedrock/realtime/handler.py"

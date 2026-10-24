@@ -1,0 +1,9 @@
+id: B540
+milestone: M3 providers
+title: Azure text completions
+status: todo
+depends_on: [B531, B171, B177, B005, B673, B249, B2237]
+file: tasks/B540-azure-completion.yaml
+covers:
+  - "litellm/llms/azure/completion/handler.py"
+  - "litellm/llms/azure/completion/transformation.py"

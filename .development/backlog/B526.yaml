@@ -1,0 +1,8 @@
+id: B526
+milestone: M3 providers
+title: OpenAI video edits extensions and characters
+status: todo
+depends_on: [B173, B171, B672, B206]
+file: tasks/B526-openai-video-edits.yaml
+covers:
+  - "litellm/llms/openai/videos/transformation.py"

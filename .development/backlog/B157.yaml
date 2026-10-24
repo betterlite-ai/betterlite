@@ -1,0 +1,11 @@
+id: B157
+milestone: M12 python
+title: The betterlite Python package over the Rust core, with LiteLLM's module-level settings
+status: todo
+depends_on: [B014, B633, B2217, B2218, B2219, B2220, B2221, B2225, B2230]
+file: null
+covers:
+  - "pyproject.toml"
+  - "litellm/{__init__,_version}.py"
+  - "litellm/py.typed"
+  - "litellm/utils.py"

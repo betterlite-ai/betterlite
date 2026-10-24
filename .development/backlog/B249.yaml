@@ -1,0 +1,9 @@
+id: B249
+milestone: M1 openai data plane
+title: Pre-call and post-call logging dispatch
+status: todo
+depends_on: [B247, B248, B191, B187, B2239]
+file: tasks/B249-logging-pre-post.yaml
+covers:
+  - "litellm/litellm_core_utils/litellm_logging.py"
+  - "litellm/main.py"

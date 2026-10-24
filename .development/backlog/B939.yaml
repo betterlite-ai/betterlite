@@ -1,0 +1,8 @@
+id: B939
+milestone: M5 api families
+title: Responses input tokens
+status: todo
+depends_on: [B003, B013, B171, B909, B934, B1087, B1100, B732, B855, B756, B1139, B014]
+file: tasks/B939-responses-input-tokens.yaml
+covers:
+  - "litellm/proxy/response_api_endpoints/endpoints.py"

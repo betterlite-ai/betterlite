@@ -1,0 +1,8 @@
+id: B1642
+milestone: M4 keys, spend and management
+title: Publish SCIM resource discovery, schemas and provider capabilities
+status: todo
+depends_on: [B003, B052, B1632, B1633, B1644]
+file: tasks/B1642-scim-discovery.yaml
+covers:
+  - "litellm/proxy/management_endpoints/scim/scim_v2.py"

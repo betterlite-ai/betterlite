@@ -1,0 +1,8 @@
+id: B2340
+milestone: M4 keys, spend and management
+title: Access-group assignment writes and cached object patches
+status: todo
+depends_on: [B141, B733, B734, B737, B821, B860, B2314]
+file: tasks/B2340-access-group-membership-effects.yaml
+covers:
+  - "litellm/proxy/management_endpoints/access_group_endpoints.py"

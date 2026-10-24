@@ -1,0 +1,8 @@
+id: B1021
+milestone: M5 api families
+title: File upload options
+status: todo
+depends_on: [B171, B1100, B1101, B1019, B002, B732]
+file: tasks/B1021-file-upload-options.yaml
+covers:
+  - "litellm/proxy/openai_files_endpoints/common_utils.py"

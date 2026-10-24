@@ -1,0 +1,13 @@
+id: B136
+milestone: M9 agents and mcp
+title: MCP gateway server, transports and server registry
+status: todo
+depends_on: [B052, B2305]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/{AGENTS.md,server.py,sse_transport.py,stdio_gate.py,mcp_server_manager.py,server_resolution.py,capabilities.py,contracts.py,operations.py,mcp_context.py,mcp_debug.py,exceptions.py,utils.py,result_conversion.py,elicitation_handler.py,sampling_handler.py,legacy_callbacks.py,tool_outcome.py,cost_calculator.py,discoverable_endpoints.py,client_allowlist.py}"
+  - "litellm/proxy/_experimental/mcp_server/faults/**"
+  - "litellm/proxy/{mcp_tools.py,mcp_registry.json}"
+  - "mcp_servers.json"
+  - "litellm/types/mcp.py"
+  - "litellm/types/mcp_server/mcp_server_manager.py"

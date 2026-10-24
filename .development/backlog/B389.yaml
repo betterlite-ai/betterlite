@@ -1,0 +1,8 @@
+id: B389
+milestone: M2 routing
+title: Latency and first-token observations
+status: todo
+depends_on: [B304, B012, B301, B002, B361]
+file: tasks/B389-latency-observations.yaml
+covers:
+  - "litellm/router_strategy/lowest_latency.py"

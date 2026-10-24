@@ -1,0 +1,8 @@
+id: B1726
+milestone: M4 keys, spend and management
+title: Authorize key, user, team and organization spend breakdowns
+status: todo
+depends_on: [B003, B204, B700, B724, B726, B732, B826, B860, B1106, B1644, B1704, B1715]
+file: tasks/B1726-scoped-spend-reports.yaml
+covers:
+  - "litellm/proxy/spend_tracking/{spend_management_endpoints,spend_tracking_utils}.py"

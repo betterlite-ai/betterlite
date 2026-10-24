@@ -1,0 +1,8 @@
+id: B307
+milestone: M2 routing
+title: Cooldown expiry and deployment health snapshots
+status: todo
+depends_on: [B360, B016, B301, B002]
+file: tasks/B307-cooldown-state.yaml
+covers:
+  - "litellm/router_utils/{cooldown_cache,health_state_cache}.py"

@@ -1,0 +1,8 @@
+id: B1113
+milestone: M5 API families
+title: Responses streaming event records
+status: todo
+depends_on: [B004, B171, B902, B1138]
+file: tasks/B1113-responses-event-records.yaml
+covers:
+  - "litellm/types/llms/openai.py"

@@ -1,0 +1,9 @@
+id: B1719
+milestone: M4 keys, spend and management
+title: Settle reservations around a spend write in the pinned order
+status: todo
+depends_on: [B070, B124, B171, B204, B732, B860, B1690, B1718]
+file: tasks/B1719-spend-settlement.yaml
+covers:
+  - "litellm/proxy/hooks/proxy_track_cost_callback.py"
+  - "litellm/litellm_core_utils/core_helpers.py"

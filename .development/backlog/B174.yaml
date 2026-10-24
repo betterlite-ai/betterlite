@@ -1,0 +1,8 @@
+id: B174
+milestone: M1 openai data plane
+title: Provider identity and model resolution
+status: todo
+depends_on: [B004, B005, B193, B209, B210, B211, B2229]
+file: tasks/B174-provider-resolution.yaml
+covers:
+  - "litellm/litellm_core_utils/get_llm_provider_logic.py"

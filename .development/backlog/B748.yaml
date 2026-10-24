@@ -1,0 +1,9 @@
+id: B748
+milestone: M4 keys, spend and management
+title: Agent model ceilings and fallback authorization
+status: todo
+depends_on: [B001, B002, B003, B171, B302, B732, B747, B856, B860, B886, B887]
+file: tasks/B748-auth-model-grants.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/fallback_model_access.py"

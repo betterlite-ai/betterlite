@@ -1,0 +1,8 @@
+id: B221
+milestone: M1 openai data plane
+title: Mid-conversation system placement
+status: todo
+depends_on: [B177, B171]
+file: tasks/B221-system-placement.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/mid_conversation_system.py"

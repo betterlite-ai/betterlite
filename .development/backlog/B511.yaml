@@ -1,0 +1,12 @@
+id: B511
+milestone: M3 providers
+title: OpenAI image generation variants
+status: todo
+depends_on: [B500, B173, B171, B004, B206, B668, B249]
+file: tasks/B511-openai-image-generation.yaml
+covers:
+  - "litellm/llms/openai/image_generation/__init__.py"
+  - "litellm/llms/openai/image_generation/dall_e_2_transformation.py"
+  - "litellm/llms/openai/image_generation/dall_e_3_transformation.py"
+  - "litellm/llms/openai/image_generation/gpt_transformation.py"
+  - "litellm/llms/openai/openai.py"

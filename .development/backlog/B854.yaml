@@ -1,0 +1,8 @@
+id: B854
+milestone: M4 keys, spend and management
+title: Refresh short-lived database credentials
+status: todo
+depends_on: [B002, B171, B710, B712, B713, B856, B860, B2307]
+file: tasks/B854-database-refresh-loop.yaml
+covers:
+  - "litellm/proxy/db/prisma_client.py"

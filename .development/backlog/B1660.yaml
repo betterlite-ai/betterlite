@@ -1,0 +1,8 @@
+id: B1660
+milestone: M4 keys, spend and management
+title: Expose effective UI settings and merge administrator patches
+status: todo
+depends_on: [B003, B052, B065, B120, B124, B125, B726, B860, B1200, B1630, B1656, B1659]
+file: tasks/B1660-ui-settings-api.yaml
+covers:
+  - "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py"

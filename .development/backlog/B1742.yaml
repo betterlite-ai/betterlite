@@ -1,0 +1,9 @@
+id: B1742
+milestone: M4 keys, spend and management
+title: Attribute queued balances to members, tags and the served access groups
+status: todo
+depends_on: [B171, B192, B204, B844, B1693, B1697, B1708, B1715, B1733]
+file: tasks/B1742-spend-entity-attribution.yaml
+covers:
+  - "litellm/proxy/db/db_spend_update_writer.py"
+  - "litellm/proxy/db/autorouter_session_rollup.py"

@@ -1,0 +1,8 @@
+id: B1357
+milestone: M3 providers
+title: Connect Chirp realtime commands and backend event decoding
+status: todo
+depends_on: [B1354, B1356, B1358, B1359, B1123, B1004, B171]
+file: tasks/B1357-chirp-realtime-adapter.yaml
+covers:
+  - "litellm/llms/vertex_ai/audio_transcription/realtime_transformation.py"

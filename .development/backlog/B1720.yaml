@@ -1,0 +1,9 @@
+id: B1720
+milestone: M4 keys, spend and management
+title: Attribute failed requests and preserve partial billed usage
+status: todo
+depends_on: [B002, B070, B171, B198, B253, B715, B732, B737, B738, B860, B882, B1105, B1106, B1667, B1708, B1713, B1714, B1719]
+file: tasks/B1720-spend-failure.yaml
+covers:
+  - "litellm/proxy/hooks/proxy_track_cost_callback.py"
+  - "litellm/proxy/utils.py"

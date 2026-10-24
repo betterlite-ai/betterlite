@@ -1,0 +1,8 @@
+id: B1374
+milestone: M3 providers
+title: Vertex batch label correlation and embedding regrouping
+status: todo
+depends_on: [B1371, B006, B171]
+file: tasks/B1374-vertex-batch-row-correlation.yaml
+covers:
+  - "litellm/llms/vertex_ai/files/transformation.py"

@@ -1,0 +1,8 @@
+id: B714
+milestone: M4 keys, spend and management
+title: Reader routing and writer-pinned transactions
+status: todo
+depends_on: [B700, B710, B713, B854, B860]
+file: tasks/B714-database-replica.yaml
+covers:
+  - "litellm/proxy/db/routing_prisma_wrapper.py"

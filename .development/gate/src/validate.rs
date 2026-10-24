@@ -10,6 +10,7 @@ use std::path::Path;
 
 use serde::de::DeserializeOwned;
 
+use crate::backlog::read_backlog;
 use crate::coverage;
 use crate::deviations;
 use crate::error::GateError;
@@ -45,7 +46,16 @@ struct Specs {
 
 fn load_specs(folder: &Path, problems: &mut Vec<String>) -> Option<Specs> {
     let catalog = load(&folder.join("checks.yaml"), problems);
-    let backlog = load(&folder.join("backlog.yaml"), problems);
+    let backlog = match read_backlog(folder) {
+        Ok((backlog, found)) => {
+            problems.extend(found);
+            Some(backlog)
+        }
+        Err(error) => {
+            problems.push(error.to_string());
+            None
+        }
+    };
     let rules = load(&folder.join("rules.yaml"), problems);
     let agents = load(&folder.join("agents.yaml"), problems);
     let litellm = load(&folder.join("litellm.yaml"), problems);

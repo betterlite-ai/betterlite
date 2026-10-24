@@ -1,0 +1,8 @@
+id: B223
+milestone: M1 openai data plane
+title: Anthropic tool invokes, caching and documents
+status: todo
+depends_on: [B178, B179, B183, B222]
+file: tasks/B223-anthropic-invokes.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/factory.py"

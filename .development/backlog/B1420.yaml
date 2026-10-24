@@ -1,0 +1,9 @@
+id: B1420
+milestone: M3 providers
+title: Voyage text and contextual embedding requests
+status: todo
+depends_on: [B002, B006, B171]
+file: tasks/B1420-voyage-contextual.yaml
+covers:
+  - "litellm/llms/voyage/embedding/transformation.py"
+  - "litellm/llms/voyage/embedding/transformation_contextual.py"

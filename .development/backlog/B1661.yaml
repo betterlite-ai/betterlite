@@ -1,0 +1,8 @@
+id: B1661
+milestone: M4 keys, spend and management
+title: Read masked SSO settings and replace their encrypted stored configuration
+status: todo
+depends_on: [B003, B052, B065, B120, B124, B244, B725, B726, B860, B1600, B1608, B1630, B1646, B1656]
+file: tasks/B1661-sso-settings-api.yaml
+covers:
+  - "litellm/proxy/ui_crud_endpoints/proxy_setting_endpoints.py"

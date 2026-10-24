@@ -1,0 +1,8 @@
+id: B1334
+milestone: M3 providers
+title: Gemini image dimensions, generation options and search tools
+status: todo
+depends_on: [B1308, B1322, B193, B171]
+file: tasks/B1334-gemini-image-policy.yaml
+covers:
+  - "litellm/llms/gemini/common_utils.py"

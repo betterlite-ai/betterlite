@@ -1,0 +1,11 @@
+id: B096
+milestone: M5 api families
+title: Evals API
+status: todo
+depends_on: [B087]
+file: null
+covers:
+  - "litellm/evals/**"
+  - "litellm/llms/base_llm/evals/**"
+  - "litellm/proxy/openai_evals_endpoints/**"
+  - "litellm/types/llms/openai_evals.py"

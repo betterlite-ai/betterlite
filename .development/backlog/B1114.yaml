@@ -1,0 +1,8 @@
+id: B1114
+milestone: M5 API families
+title: Responses provider contract
+status: todo
+depends_on: [B010, B171, B902, B1138, B1113, B2202]
+file: tasks/B1114-responses-provider-contract.yaml
+covers:
+  - "litellm/llms/base_llm/responses/transformation.py"

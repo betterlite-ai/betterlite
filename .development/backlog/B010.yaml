@@ -1,0 +1,12 @@
+id: B010
+milestone: M1 openai data plane
+title: Provider framework, provider resolution and parameter mapping
+status: todo
+depends_on: [B005, B006, B174, B175, B176, B179, B2202, B2214, B2230]
+file: tasks/B010-provider-framework.yaml
+covers:
+  - "litellm/llms/{__init__,base,README}.*"
+  - "litellm/llms/base_llm/{__init__,base_model_iterator,base_utils}.py"
+  - "litellm/llms/base_llm/{chat,bridges}/**"
+  - "litellm/types/llms/base.py"
+  - "litellm/llms/aiohttp_openai/**"

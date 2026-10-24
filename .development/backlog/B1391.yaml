@@ -1,0 +1,8 @@
+id: B1391
+milestone: M3 providers
+title: Google GenAI native guardrail text translation
+status: todo
+depends_on: [B1368, B171]
+file: tasks/B1391-google-genai-guardrail-text.yaml
+covers:
+  - "litellm/llms/gemini/google_genai/guardrail_translation/**"

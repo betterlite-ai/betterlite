@@ -1,0 +1,8 @@
+id: B2216
+milestone: M3 providers
+title: Anthropic raw catalog capability lookup
+status: todo
+depends_on: [B2203, B193, B171]
+file: tasks/B2216-anthropic-catalog-lookup.yaml
+covers:
+  - "litellm/llms/anthropic/common_utils.py"

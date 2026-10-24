@@ -1,0 +1,9 @@
+id: B687
+milestone: M3 providers
+title: Azure thread creation and retrieval
+status: todo
+depends_on: [B520, B686, B171]
+file: tasks/B687-azure-thread-messages.yaml
+covers:
+  - "litellm/llms/azure/assistants.py"
+  - "litellm/llms/azure/azure.py"

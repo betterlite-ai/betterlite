@@ -1,0 +1,8 @@
+id: B169
+milestone: M12 python
+title: Python client for the proxy's management API
+status: todo
+depends_on: [B157, B134]
+file: null
+covers:
+  - "litellm/proxy/client/*.*"

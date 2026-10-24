@@ -1,0 +1,9 @@
+id: B590
+milestone: M3 providers
+title: Bedrock AWS credential inputs and local sources
+status: todo
+depends_on: [B682, B172, B171, B2226]
+file: tasks/B590-bedrock-aws-settings.yaml
+covers:
+  - "litellm/llms/bedrock/base_aws_llm.py"
+  - "litellm/llms/bedrock/common_utils.py"

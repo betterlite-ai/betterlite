@@ -1,0 +1,10 @@
+id: B723
+milestone: M4 keys, spend and management
+title: User lookups, SCIM placeholders and organization/project readers
+status: todo
+depends_on: [B171, B700, B714, B720, B721, B856, B860, B2307]
+file: tasks/B723-user-repository.yaml
+covers:
+  - "litellm/repositories/user_repository.py"
+  - "litellm/repositories/organization_repository.py"
+  - "litellm/repositories/project_repository.py"

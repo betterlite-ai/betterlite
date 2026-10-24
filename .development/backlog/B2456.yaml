@@ -1,0 +1,8 @@
+id: B2456
+milestone: M5 API families
+title: Realtime HTTP session and SDP transport
+status: todo
+depends_on: [B012, B173, B1004, B1087, B2401, B2402]
+file: tasks/B2456-realtime-http-transport.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

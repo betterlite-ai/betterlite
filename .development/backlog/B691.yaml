@@ -1,0 +1,9 @@
+id: B691
+milestone: M3 providers
+title: Bedrock Invoke and Converse streaming HTTP helpers
+status: todo
+depends_on: [B609, B608, B607, B682, B173, B171, B249, B600]
+file: tasks/B691-bedrock-http-stream.yaml
+covers:
+  - "litellm/llms/bedrock/chat/converse_handler.py"
+  - "litellm/llms/bedrock/chat/invoke_handler.py"

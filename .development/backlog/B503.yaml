@@ -1,0 +1,8 @@
+id: B503
+milestone: M3 providers
+title: OpenAI chat media and tool sanitation
+status: todo
+depends_on: [B004, B183, B178, B219, B171, B500, B002]
+file: tasks/B503-openai-chat-content.yaml
+covers:
+  - "litellm/llms/openai/chat/gpt_transformation.py"

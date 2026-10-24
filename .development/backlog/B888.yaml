@@ -1,0 +1,13 @@
+id: B888
+milestone: M4 keys, spend and management
+title: Guardrail tool and token-inherited auth policy
+status: todo
+depends_on: [B001, B003, B192, B207, B732, B737, B753, B856, B860, B879, B1217]
+file: tasks/B888-auth-policy-support.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"
+  - "litellm/proxy/auth/user_api_key_auth.py"
+  - "litellm/proxy/guardrails/{guardrail_helpers,tool_name_extraction}.py"
+  - "litellm/llms/openai/{chat,responses}/guardrail_translation/handler.py"
+  - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
+  - "litellm/llms/base_llm/guardrail_translation/utils.py"

@@ -1,0 +1,20 @@
+id: B027
+milestone: M3 providers
+title: Anthropic provider
+status: todo
+depends_on: [B010, B584, B585, B586, B587, B588, B576, B567, B198, B196, B249, B187, B129, B171, B2230]
+file: tasks/B027-anthropic-provider.yaml
+covers:
+  - "litellm/llms/anthropic/__init__.py"
+  - "litellm/llms/anthropic/batches/__init__.py"
+  - "litellm/llms/anthropic/cache_aware_routing.py"
+  - "litellm/llms/anthropic/chat/__init__.py"
+  - "litellm/llms/anthropic/chat/guardrail_translation/__init__.py"
+  - "litellm/llms/anthropic/compaction.py"
+  - "litellm/llms/anthropic/completion/handler.py"
+  - "litellm/llms/anthropic/count_tokens/__init__.py"
+  - "litellm/llms/anthropic/files/__init__.py"
+  - "litellm/llms/anthropic/prompt_cache_prediction.py"
+  - "litellm/llms/anthropic/files/handler.py"
+  - "litellm/main.py"
+  - "litellm/llms/anthropic/chat/handler.py"

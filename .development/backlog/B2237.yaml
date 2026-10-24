@@ -1,0 +1,10 @@
+id: B2237
+milestone: M3 providers
+title: OpenAI text completion policy
+status: todo
+depends_on: [B668, B218, B004, B171, B2202]
+file: tasks/B2237-text-completion-policy.yaml
+covers:
+  - "litellm/llms/openai/completion/transformation.py"
+  - "litellm/llms/openai/completion/utils.py"
+  - "litellm/utils.py"

@@ -1,0 +1,9 @@
+id: B178
+milestone: M1 openai data plane
+title: Tool argument parsing and schema transforms
+status: todo
+depends_on: [B214, B216, B217]
+file: tasks/B178-tool-schemas.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/common_utils.py"
+  - "litellm/utils.py"

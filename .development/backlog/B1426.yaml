@@ -1,0 +1,10 @@
+id: B1426
+milestone: M3 providers
+title: JSON provider policies across chat, Responses and Messages
+status: todo
+depends_on: [B002, B218, B503, B508, B571, B668, B960, B961, B962, B2221, B1424, B1425, B171]
+file: tasks/B1426-json-provider-policies.yaml
+covers:
+  - "litellm/llms/openai_like/dynamic_config.py"
+  - "litellm/llms/openai_like/responses/**"
+  - "litellm/llms/openai_like/messages/**"

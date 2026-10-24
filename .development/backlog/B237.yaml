@@ -1,0 +1,8 @@
+id: B237
+milestone: M1 openai data plane
+title: Azure and OpenRouter error classifiers
+status: todo
+depends_on: [B184, B187, B236, B2215]
+file: tasks/B237-azure-openrouter-errors.yaml
+covers:
+  - "litellm/litellm_core_utils/exception_mapping_utils.py"

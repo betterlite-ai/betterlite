@@ -1,0 +1,8 @@
+id: B1342
+milestone: M3 providers
+title: Vertex text, tuned and BGE embedding records
+status: todo
+depends_on: [B1306, B006, B002, B171]
+file: tasks/B1342-vertex-text-embeddings.yaml
+covers:
+  - "litellm/llms/vertex_ai/vertex_embeddings/{transformation,bge,types}.py"

@@ -1,0 +1,13 @@
+id: B148
+milestone: M10 admin ui
+title: Admin UI pages for guardrails, policies and tool policies working against betterlite
+status: todo
+depends_on: [B144, B104, B079]
+file: null
+covers:
+  - "ui/litellm-dashboard/src/app/(dashboard)/{guardrails,guardrails-monitor,policies,tool-policies}/**"
+  - "ui/litellm-dashboard/src/components/{guardrails,GuardrailsMonitor,policies,ToolPolicies}/**"
+  - "ui/litellm-dashboard/src/components/{GuardrailSettingsView,ToolPoliciesView}.*"
+  - "ui/litellm-dashboard/src/components/{GuardrailSettingsView,ToolPoliciesView}.test.*"
+  - "ui/litellm-dashboard/src/data/**"
+  - "ui/litellm-dashboard/src/hooks/policies/**"

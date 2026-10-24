@@ -1,0 +1,9 @@
+id: B587
+milestone: M3 providers
+title: Anthropic batch retrieval and result projection
+status: todo
+depends_on: [B2201, B567, B580, B173, B171, B068, B190, B249, B247]
+file: tasks/B587-anthropic-batches.yaml
+covers:
+  - "litellm/llms/anthropic/batches/transformation.py"
+  - "litellm/llms/anthropic/batches/handler.py"

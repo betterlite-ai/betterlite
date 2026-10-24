@@ -1,0 +1,8 @@
+id: B1526
+milestone: M3 providers
+title: Convert Fal image edits to inline data and depth-control requests
+status: todo
+depends_on: [B1525, B997, B1120, B171]
+file: tasks/B1526-fal-image-edits.yaml
+covers:
+  - "litellm/llms/fal_ai/image_edit/**"

@@ -1,0 +1,8 @@
+id: B530
+milestone: M3 providers
+title: Azure federated OIDC token exchange
+status: todo
+depends_on: [B173, B171, B002, B673, B129, B2226]
+file: tasks/B530-azure-oidc-exchange.yaml
+covers:
+  - "litellm/llms/azure/common_utils.py"

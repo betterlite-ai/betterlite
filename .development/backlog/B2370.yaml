@@ -1,0 +1,8 @@
+id: B2370
+milestone: M4 keys, spend and management
+title: Team merge patch HTTP adapter
+status: todo
+depends_on: [B001, B003, B052, B124, B732, B801, B806, B860, B1231]
+file: tasks/B2370-team-merge-patch-route.yaml
+covers:
+  - "litellm/proxy/management_endpoints/team_endpoints.py"

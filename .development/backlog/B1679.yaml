@@ -1,0 +1,8 @@
+id: B1679
+milestone: M4 keys, spend and management
+title: Calculate batch token prices and their legacy half-rate fallback
+status: todo
+depends_on: [B171, B174, B204, B1668, B1670, B1671, B1672, B1678]
+file: tasks/B1679-batch-token-cost.yaml
+covers:
+  - "litellm/cost_calculator.py"

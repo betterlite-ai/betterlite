@@ -1,0 +1,8 @@
+id: B2318
+milestone: M4 keys, spend and management
+title: Shared team-membership loads and negative cache entries
+status: todo
+depends_on: [B125, B171, B715, B726, B733, B734, B856, B859, B860, B2315]
+file: tasks/B2318-auth-membership-load.yaml
+covers:
+  - "litellm/proxy/auth/auth_checks.py"

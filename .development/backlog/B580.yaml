@@ -1,0 +1,9 @@
+id: B580
+milestone: M3 providers
+title: Anthropic response envelope conversion
+status: todo
+depends_on: [B578, B579, B570, B567, B206, B190, B002, B171, B249]
+file: tasks/B580-anthropic-response.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"
+  - "litellm/types/llms/anthropic.py"

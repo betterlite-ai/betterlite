@@ -1,0 +1,8 @@
+id: B229
+milestone: M1 openai data plane
+title: Bedrock content order and continuation
+status: todo
+depends_on: [B179, B183]
+file: tasks/B229-bedrock-content.yaml
+covers:
+  - "litellm/litellm_core_utils/prompt_templates/factory.py"

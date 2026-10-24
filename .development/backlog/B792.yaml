@@ -1,0 +1,8 @@
+id: B792
+milestone: M4 keys, spend and management
+title: Update users and invalidate live entitlements
+status: todo
+depends_on: [B001, B002, B003, B052, B124, B720, B723, B732, B733, B789, B790, B797, B816, B860, B861, B865, B878, B892, B894, B2214, B2317]
+file: tasks/B792-user-update.yaml
+covers:
+  - "litellm/proxy/management_endpoints/internal_user_endpoints.py"

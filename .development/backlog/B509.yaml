@@ -1,0 +1,8 @@
+id: B509
+milestone: M3 providers
+title: OpenAI Responses retrieve cancel delete and compact
+status: todo
+depends_on: [B507, B508, B171, B506, B004, B206, B668, B902, B249]
+file: tasks/B509-openai-response-resources.yaml
+covers:
+  - "litellm/llms/openai/responses/transformation.py"

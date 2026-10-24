@@ -1,0 +1,9 @@
+id: B575
+milestone: M3 providers
+title: Anthropic tools and tool-choice conversion
+status: todo
+depends_on: [B217, B568, B180, B171]
+file: tasks/B575-anthropic-tools.yaml
+covers:
+  - "litellm/llms/anthropic/chat/transformation.py"
+  - "litellm/types/llms/anthropic.py"

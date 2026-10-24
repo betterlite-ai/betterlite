@@ -1,0 +1,8 @@
+id: B1513
+milestone: M3 providers
+title: Refresh Copilot API keys and discover the authenticated endpoint
+status: todo
+depends_on: [B1512, B173, B187, B171]
+file: tasks/B1513-copilot-api-key.yaml
+covers:
+  - "litellm/llms/github_copilot/authenticator.py"

@@ -1,0 +1,11 @@
+id: B710
+milestone: M4 keys, spend and management
+title: Writer and reader database URL settings
+status: todo
+depends_on: [B002, B129, B171, B700, B856, B2307]
+file: tasks/B710-database-urls.yaml
+covers:
+  - "litellm/proxy/db/db_url_settings.py"
+  - "litellm/proxy/proxy_cli.py"
+  - "litellm/proxy/utils.py"
+  - "litellm-proxy-extras/litellm_proxy_extras/utils.py"

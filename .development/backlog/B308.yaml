@@ -1,0 +1,8 @@
+id: B308
+milestone: M2 routing
+title: Cooldown error policy and callback events
+status: todo
+depends_on: [B369, B307, B304, B012, B301]
+file: tasks/B308-cooldown-policy.yaml
+covers:
+  - "litellm/router_utils/{cooldown_callbacks,cooldown_handlers}.py"

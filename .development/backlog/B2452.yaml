@@ -1,0 +1,8 @@
+id: B2452
+milestone: M5 API families
+title: Generic speech HTTP execution
+status: todo
+depends_on: [B1135, B173, B2402, B004, B206, B012, B2401]
+file: tasks/B2452-speech-http.yaml
+covers:
+  - "litellm/llms/custom_httpx/llm_http_handler.py"

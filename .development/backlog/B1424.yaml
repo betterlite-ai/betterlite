@@ -1,0 +1,10 @@
+id: B1424
+milestone: M3 providers
+title: Pinned JSON provider registry and configuration projection
+status: todo
+depends_on: [B002, B209, B171]
+file: tasks/B1424-json-provider-registry.yaml
+covers:
+  - "litellm/llms/openai_like/json_loader.py"
+  - "litellm/llms/openai_like/providers.json"
+  - "litellm/llms/openai_like/README.md"

@@ -1,0 +1,9 @@
+id: B1084
+milestone: M5 api families
+title: Speech call
+status: todo
+depends_on: [B010, B174, B176, B157, B011, B012, B1003, B1135, B2452, B514, B002, B2401]
+file: tasks/B1084-speech-call.yaml
+covers:
+  - "litellm/llms/base_llm/text_to_speech/transformation.py"
+  - "litellm/main.py"

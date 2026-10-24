@@ -1,0 +1,9 @@
+id: B1367
+milestone: M3 providers
+title: Studio native file uploads and encoded file identifiers
+status: todo
+depends_on: [B1331, B1306, B235, B516, B171]
+file: tasks/B1367-studio-native-files.yaml
+covers:
+  - "litellm/llms/gemini/files/**"
+  - "litellm/types/llms/gemini.py"

@@ -1,0 +1,8 @@
+id: B1515
+milestone: M3 providers
+title: Select Copilot Responses models and stabilize streamed item identities
+status: todo
+depends_on: [B002, B506, B507, B508, B1512, B1513, B1514, B2225, B193, B171]
+file: tasks/B1515-copilot-responses.yaml
+covers:
+  - "litellm/llms/github_copilot/responses/**"

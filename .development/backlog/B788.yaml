@@ -1,0 +1,9 @@
+id: B788
+milestone: M4 keys, spend and management
+title: Authenticate UI credentials and mint session keys
+status: todo
+depends_on: [B002, B003, B124, B171, B199, B720, B723, B732, B786, B787, B792, B856, B860, B881, B893, B1223]
+file: tasks/B788-password-login.yaml
+covers:
+  - "litellm/proxy/auth/login_utils.py"
+  - "litellm/proxy/management_endpoints/ui_sso.py"

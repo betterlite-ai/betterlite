@@ -1,0 +1,10 @@
+id: B641
+milestone: M3 providers
+title: Bedrock CountTokens transport and failure records
+status: todo
+depends_on: [B640, B595, B173, B171, B591, B682, B2203, B590]
+file: tasks/B641-bedrock-other-count-call.yaml
+covers:
+  - "litellm/llms/bedrock/count_tokens/handler.py"
+  - "litellm/llms/bedrock/count_tokens/bedrock_token_counter.py"
+  - "litellm/llms/bedrock/common_utils.py"

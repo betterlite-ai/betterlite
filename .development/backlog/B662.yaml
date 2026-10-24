@@ -1,0 +1,9 @@
+id: B662
+milestone: M3 providers
+title: Bedrock realtime audio and conversation input
+status: todo
+depends_on: [B661, B171]
+file: tasks/B662-bedrock-services-realtime-input.yaml
+covers:
+  - "litellm/llms/bedrock/realtime/transformation.py"
+  - "litellm/llms/bedrock/realtime/trigger_audio.py"

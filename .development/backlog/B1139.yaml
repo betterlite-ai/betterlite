@@ -1,0 +1,7 @@
+id: B1139
+milestone: M5 API families
+title: Stateful HTTP oracle scenarios
+status: todo
+depends_on: [B001, B126, B900, B860]
+file: tasks/B1139-http-scenarios.yaml
+covers: []
