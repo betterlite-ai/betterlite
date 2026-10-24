@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::convert::Infallible;
 use std::num::{ParseFloatError, ParseIntError};
 
 use secrecy::SecretString;
@@ -53,20 +52,13 @@ pub enum ConfigError {
     InvalidScalar { path: String, value: bool },
 }
 pub struct ConfigLoader<L> {
-    lookup: L,
+    pub lookup: L,
 }
 
 impl<L> ConfigLoader<L>
 where
     L: EnvironmentLookup,
 {
-    pub fn new(input: L) -> Self {
-        match Result::<L, Infallible>::Ok(input) {
-            Ok(lookup) => Self { lookup },
-            Err(error) => match error {},
-        }
-    }
-
     pub fn load(&self, source: &str) -> Result<Config, ConfigError> {
         let raw = parse(source)?;
         if !raw.ignored.is_empty() {
