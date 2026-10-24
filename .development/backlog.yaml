@@ -214,6 +214,7 @@ tasks:
     - B310
     - B311
     - B312
+    - B313
     file: null
     covers:
     - litellm/router_utils/{cooldown_cache,cooldown_callbacks,cooldown_handlers,fallback_event_handlers,health_state_cache}.py
@@ -1999,3 +2000,16 @@ tasks:
     file: tasks/B312-native-stream-fallback.yaml
     covers:
     - litellm/router.py
+
+  - id: B313
+    milestone: M2 routing
+    title: Fallback provider and capability generalization rules
+    status: todo
+    depends_on:
+    - B016
+    - B010
+    - B013
+    - B301
+    file: tasks/B313-model-generalizations.yaml
+    covers:
+    - litellm/litellm_core_utils/fallback_generalizations.py
