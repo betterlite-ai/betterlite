@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-config/**
   - crates/betterlite-server/**
   - tools/oracle/cases/routing/routing-budgets/**
-  - tools/oracle/src/router_probes/routing-budgets/**
+  - tools/oracle/src/router_probes/routing_budgets/**
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/litellm/probes/routing_budgets.py
   - tools/oracle/litellm/probes/registry.py
@@ -34,12 +34,13 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L915-L935
   why: MIT tag initialization contains a paid-tier gate to omit.
 dod:
-- text: Every listed case compares the production result and relevant state transitions against the pinned
-    LiteLLM implementation.
+- text: Every listed case compares production behavior against pinned LiteLLM; any declared difference
+    asserts exact reference and Rust outcomes through B361 instead of ignoring the difference.
   proof:
   - oracle
 - text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
-    weakening existing routing tests.
+    weakening existing routing tests. Name these tests with the routing_budgets prefix so the required
+    filter runs them.
   proof:
   - routing-tests
 - text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
