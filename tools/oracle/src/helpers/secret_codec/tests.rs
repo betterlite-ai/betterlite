@@ -61,3 +61,12 @@ fn recorded_logs_name_the_field_only_when_one_is_given() {
         ])
     );
 }
+
+#[test]
+fn a_plaintext_map_decodes_to_its_entries() {
+    let results = run(
+        "000102030405060708090a0b0c0d0e0f1011121314151617",
+        &json!([{"op": "decode_map", "value": {"token": "abc"}, "field": "headers"}]),
+    );
+    assert_eq!(results, json!([{"value": {"token": "abc"}, "logs": []}]));
+}

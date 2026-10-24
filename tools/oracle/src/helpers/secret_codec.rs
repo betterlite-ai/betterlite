@@ -204,14 +204,16 @@ fn call(
         }
         SecretStep::DecryptWith { value, signing_key } => {
             let key = SecretString::from(signing_key.as_str());
-            Ok(exposed(decrypt_if_encrypted_with(value, &key)))
+            let opened = decrypt_if_encrypted_with(value, &key);
+            Ok(opened.as_ref().map(SecretString::expose_secret).into())
         }
         SecretStep::EncryptBearer { value, prefix } => {
             encrypt_bearer_token(cipher, &SecretString::from(value.as_str()), prefix)
                 .map(Value::String)
         }
         SecretStep::DecryptBearer { value, prefix } => {
-            Ok(exposed(decrypt_bearer_token(cipher, value, prefix)))
+            let opened = decrypt_bearer_token(cipher, value, prefix);
+            Ok(opened.as_ref().map(SecretString::expose_secret).into())
         }
         SecretStep::EncryptMap { value, new_key } => {
             let key = new_key.as_deref().map(SecretString::from);
@@ -239,15 +241,9 @@ fn decode_map(
     Ok(decoded.map_or(Value::Null, |entries| {
         let plain = entries
             .into_iter()
-            .map(|(name, text)| (name, exposed(Some(text))));
+            .map(|(name, text)| (name, Value::from(text.expose_secret())));
         Value::Object(plain.collect())
     }))
-}
-
-fn exposed(text: Option<SecretString>) -> Value {
-    text.map_or(Value::Null, |secret| {
-        Value::String(secret.expose_secret().to_owned())
-    })
 }
 
 fn stored(value: &Value) -> StoredValue<Value> {
@@ -259,7 +255,7 @@ fn stored(value: &Value) -> StoredValue<Value> {
 
 fn plain(value: StoredValue<Value>) -> Value {
     match value {
-        StoredValue::Text(text) => exposed(Some(text)),
+        StoredValue::Text(text) => Value::from(text.expose_secret()),
         StoredValue::Other(other) => other,
     }
 }
