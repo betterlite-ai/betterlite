@@ -41,8 +41,8 @@ checks:
     run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(comparison_contract)'
   - id: comparison-corpus
     why: comparison rules are missing from the probe corpus or corpus replay fails
-    run: test -f tools/oracle/fuzz/fuzz_targets/router_probe.rs && test -f tools/oracle/fuzz/corpus/router_probe/comparison_rules.yaml
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_router_probe_corpus)'
+    run: test -f tools/oracle/fuzz/fuzz_targets/route_probe.rs && test -f tools/oracle/fuzz/corpus/route_probe/comparison_rules.yaml
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_route_probe_corpus)'
 oracle_cases:
 - tools/oracle/cases/routing/probes/comparison-exact.yaml
 - tools/oracle/cases/routing/probes/comparison-diagnostic.yaml
