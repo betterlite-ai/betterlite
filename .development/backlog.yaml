@@ -199,11 +199,9 @@ tasks:
     - B016
     - B305
     - B306
-    file: null
-    covers:
-    - litellm/timeout.py
-    - litellm/router_utils/get_retry_from_policy.py
-    - litellm/litellm_core_utils/{completion_timeout,request_timeout_resolver}.py
+    - B005
+    file: tasks/B017-routing-retries.yaml
+    covers: []
   - id: B018
     milestone: M2 routing
     title: Fallbacks, cooldowns and deployment health state

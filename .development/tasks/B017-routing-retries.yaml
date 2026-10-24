@@ -1,0 +1,87 @@
+id: B017
+title: Execute retries within the routing deadline
+description: Use B305 and B306 to add the attempt state machine around B016 dispatch. Each attempt obtains
+  a fresh eligible deployment and owns its callbacks, capacity guard and transport cancellation. Keep
+  router retries separate from provider SDK/client retry settings from B009/B010 so attempts are never
+  multiplied implicitly. Preserve the logical model group and original request across parameter merging.
+  Return the final mapped error with attempt metadata and install retry response headers on ordinary and
+  streaming successes. Restrict stream retries to an uncommitted response boundary; B311/B312 handle fallback
+  after stream acquisition. Use the existing Rust crate boundaries from B004 and B008; integrate through
+  the server when the provider dispatcher or callbacks live in another core crate. This task's source
+  slices are the linked ranges, not a port of their Python classes. Add the listed oracle cases and the
+  matching adapters to B301's component runner where state is not observable over HTTP; adapters call
+  production logic and never reproduce it. Use deterministic candidate sets or supplied random samples
+  for comparisons, and separate seeded distribution tests for random choices. Extend the existing config_yaml
+  fuzz target and committed corpus for every newly accepted config form; unsupported keys still fail by
+  full path. Keep the implementation, adapters and tests within 800 changed lines; fixtures and oracle
+  cases are budget-excluded by checks.yaml.
+scope:
+  paths:
+  - crates/betterlite-router/**
+  - crates/betterlite-config/**
+  - crates/betterlite-server/**
+  - tools/oracle/cases/routing/routing-retries/**
+  - tools/oracle/src/router_probes/routing-retries/**
+  - tools/oracle/src/router_probes/mod.rs
+  - tools/oracle/litellm/probes/routing_retries.py
+  - tools/oracle/litellm/probes/registry.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L7660-L7880
+  why: Attempt lifecycle, request precedence and last-error propagation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/add_retry_fallback_headers.py#L284-L298
+  why: Attempted/max retry headers.
+dod:
+- text: Every listed case compares the production result and relevant state transitions against the pinned
+    LiteLLM implementation.
+  proof:
+  - oracle
+- text: Focused tests cover cancellation, bounds and invalid inputs at this module's boundaries without
+    weakening existing routing tests.
+  proof:
+  - routing-tests
+- text: The newly supported config fields have valid and invalid corpus seeds, remain typed, and unknown
+    fields still fail startup.
+  proof:
+  - config-corpus
+  - routing-tests
+- text: All mutants in changed router, config or wire code are caught.
+  proof:
+  - mutants
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: routing-tests
+    why: the focused routing tests are missing or fail
+    run: cargo nextest run --locked -p betterlite-router -p betterlite-config -p betterlite-server --no-tests=fail
+      -E 'test(routing_retries)'
+  - id: config-corpus
+    why: the new configuration forms are absent from the fuzz corpus or their replay fails
+    run: test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs && test -n "$(ls -A crates/betterlite-config/fuzz/corpus/config_yaml)"
+      && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+  - id: probe-python
+    why: the task's Python oracle adapter fails strict typing or linting
+    run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/litellm/probes && uv run
+      --locked --project tools/oracle/litellm basedpyright tools/oracle/litellm/probes
+oracle_cases:
+- tools/oracle/cases/routing/routing-retries/429-then-success.yaml
+- tools/oracle/cases/routing/routing-retries/500-retries-exhausted.yaml
+- tools/oracle/cases/routing/routing-retries/request-zero-disables-policy.yaml
+- tools/oracle/cases/routing/routing-retries/deployment-retry-override.yaml
+- tools/oracle/cases/routing/routing-retries/second-error-nonretryable.yaml
+- tools/oracle/cases/routing/routing-retries/deadline-in-backoff.yaml
+- tools/oracle/cases/routing/routing-retries/stream-before-first-chunk.yaml
+- tools/oracle/cases/routing/routing-retries/disconnect-during-retry.yaml
+deviations: []
+out_of_scope:
+- Cross-model fallbacks and cooldown policy (B018).
+- Python synchronous callable wrappers (B162).
+pitfalls:
+- An exhausted retry sequence raises the latest error, not the first.
+- Always release or refund the previous attempt before reserving the next.
+- A yielded token or tool fragment must never be replayed.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
