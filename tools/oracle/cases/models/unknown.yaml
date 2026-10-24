@@ -1,0 +1,16 @@
+name: models-unknown
+config: |
+  model_list:
+    - {model_name: oracle-chat, litellm_params: {model: openai/oracle-chat}}
+env: {}
+request:
+  method: GET
+  path: /v1/models/oracle-missing
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare:
+  headers: [content-type]
+  headers_present: []
+  upstream_headers: []
+  ignore: [{pointer: /detail, why: "betterlite writes its own message, and LiteLLM's 404 body is only this detail string"}]
