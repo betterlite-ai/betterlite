@@ -1911,10 +1911,13 @@ tasks:
     milestone: M1 openai data plane
     title: Trusted controls, provider headers and affinity
     status: todo
-    depends_on: [B175]
+    depends_on:
+    - B174
+    - B213
     file: tasks/B176-provider-controls.yaml
     covers:
-      - "litellm/litellm_core_utils/{get_provider_specific_headers,get_litellm_params,llm_request_utils,provider_affinity,dot_notation_indexing}.py"
+    - >-
+      litellm/litellm_core_utils/{get_litellm_params,llm_request_utils,provider_affinity,get_provider_specific_headers}.py
   - id: B177
     milestone: M1 openai data plane
     title: Text prompt templates and local Jinja rendering
@@ -2223,3 +2226,12 @@ tasks:
     file: tasks/B212-parameter-projections.yaml
     covers:
     - litellm/litellm_core_utils/{model_param_helper,reasoning_effort_utils,service_tier_utils}.py
+  - id: B213
+    milestone: M1 openai data plane
+    title: Bounded dot-path lookup and deletion
+    status: todo
+    depends_on:
+    - B171
+    file: tasks/B213-dot-paths.yaml
+    covers:
+    - litellm/litellm_core_utils/dot_notation_indexing.py
