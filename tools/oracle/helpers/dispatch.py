@@ -1,14 +1,21 @@
 import json
 import os
 import sys
+from collections.abc import Callable
 from typing import TypeAlias, cast
 
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
+from catalog_generalizations import run as run_catalog_generalizations
 from provider_base_helpers import run as run_provider_base_helpers
 from url_path import run as run_url_path
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+RUNNERS: dict[str, Callable[[dict[str, Json]], Json]] = {
+    "catalog_generalizations": run_catalog_generalizations,
+    "provider_base_helpers": run_provider_base_helpers,
+    "url_path": run_url_path,
+}
 
 
 def object_value(value: Json, name: str) -> dict[str, Json]:
@@ -38,14 +45,12 @@ def main() -> int:
     except Exception as error:  # noqa: BLE001 - malformed protocol input is reported on stderr
         sys.stderr.write(f"invalid helper request: {error}\n")
         return 2
-    if operation not in {"url_path", "provider_base_helpers"}:
+    runner = RUNNERS.get(operation)
+    if runner is None:
         sys.stderr.write(f"unknown helper operation: {operation}\n")
         return 2
     try:
-        if operation == "url_path":
-            value = run_url_path(input_value)
-        else:
-            value = run_provider_base_helpers(input_value)
+        value = runner(input_value)
         output: dict[str, Json] = {"ok": True, "value": value}
     except Exception as error:  # noqa: BLE001 - the wire contract names every helper exception
         output = {

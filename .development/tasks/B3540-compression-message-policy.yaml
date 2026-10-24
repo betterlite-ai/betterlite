@@ -1,0 +1,169 @@
+id: B3540
+title: Compression message normalization and protected history
+description: >-
+  Build the compression module's foundation: message-to-text conversion, protected
+  cache-prefix tracking, atomic Anthropic tool-exchange validation, content
+  classification, stable retrieval keys, and line-based message truncation.
+
+  This is a pure normalization layer available to Headroom and TypeSafe guardrails
+  without making those depend on the compression orchestration. betterlite-compression
+  (a new lower crate, not depending on betterlite-core) owns the message policy
+  and numerical scoring primitives; configuration, interception state and proxy
+  re-entry belong in higher crates.
+
+  Functions to port:
+  - _normalize_call_type: canonicalize CallTypes to string
+  - _is_anthropic_call_type: check for structured message shape (anthropic_messages)
+  - _content_to_text: extract text from OpenAI/Anthropic content blocks, iteratively
+    unrolling tool_result nested content, ignoring images/documents/thinking
+  - _normalize_messages_for_compression: shallow copy messages with content replaced
+    by extracted text for scoring
+  - _extract_last_user_message: find the most recent user message's text
+  - _extract_tool_use_ids, _extract_tool_result_ids: scan for Anthropic tool ids
+  - _extract_anthropic_tool_exchange_spans: validate atomic 2-message pairs
+    (assistant tool_use immediately followed by user tool_result for all ids)
+  - _message_has_cache_control: detect prompt-cache breakpoints at message or block level
+  - _cached_prefix_indices: find all messages up to and including the last cache control
+  - get_protected_indices: combine system, last-user, last-assistant and cached-prefix
+    indices so they are never compressed
+  - detect_content_type: classify text as code, JSON or plain text
+  - extract_key: extract file path patterns from content, fall back to message_N
+  - stub_message: replace content with a brief reference to the retrieval tool
+  - truncate_message: keep first 70%/last 30% of lines with a separator
+
+  Also port the constants and regexes:
+  - _ANTHROPIC_CALL_TYPES and _SUPPORTED_CALL_TYPES constants
+  - _CODE_KEYWORDS regex for code detection
+  - _FILE_PATH_PATTERNS list for stable key extraction
+
+  Messages below compression_trigger pass through unchanged. When
+  compression_trigger * 7 // 10 is used as the default compression_target,
+  the 70% factor is rounded inline, not factored to a separate function.
+  Anthropic tool exchanges drop atomically, not as stubs. An invalid Anthropic
+  sequence (tool_use without matching tool_result) is detected before scoring.
+scope:
+  paths:
+    - crates/betterlite-compression/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L21-L33
+    why: CallType constants
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L36-L44
+    why: _normalize_call_type and _is_anthropic_call_type
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L69-L124
+    why: _content_to_text and _normalize_messages_for_compression
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L127-L205
+    why: Message extraction and Anthropic tool exchange validation functions
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L208-L243
+    why: Cache control and protected indices
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/content_detection.py#L9-L43
+    why: Content type detection and code regex
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/message_stubbing.py#L10-L112
+    why: File path patterns, key extraction, stubbing and truncation
+dod:
+  - text: Message normalization extracts text from OpenAI/Anthropic content blocks,
+      iteratively unrolling tool_result nested content and ignoring non-text blocks.
+    proof: [normalize-tests]
+  - text: Message normalization rejects unsupported call types with a ValueError
+      listing the accepted types (completion, acompletion, anthropic_messages).
+    proof: [normalize-tests]
+  - text: Protected indices (system, last-user, last-assistant, cache-prefix) are
+      returned in order and deduplicated.
+    proof: [protected-tests]
+  - text: Anthropic tool exchanges validate atomic 2-message pairs; an assistant
+      tool_use must be immediately followed by a user tool_result with all ids matched.
+    proof: [anthropic-tests]
+  - text: Content detection classifies text as code, JSON or plain text based on
+      keyword density and indentation patterns.
+    proof: [detection-tests]
+  - text: Message stubs reference the retrieval tool and preserve line count and
+      content type.
+    proof: [stub-tests]
+  - text: Message truncation keeps the first 70% and last 30% of lines with a separator.
+    proof: [truncate-tests]
+  - text: Stable retrieval keys extract file paths from content or fall back to
+      message_N, with duplicates suffixed _2, _3.
+    proof: [key-tests]
+  - text: Every mutant in the message policy functions is caught by a test.
+    proof: [mutants]
+checks:
+  optional: [mutants]
+  commands:
+    - id: normalize-tests
+      why: the message normalization tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^message_normalization::/)'
+    - id: protected-tests
+      why: the protected indices tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^protected_indices::/)'
+    - id: anthropic-tests
+      why: the Anthropic tool exchange validation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^anthropic_tool_exchange::/)'
+    - id: detection-tests
+      why: the content detection tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^content_detection::/)'
+    - id: stub-tests
+      why: the message stubbing tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^message_stubbing::/)'
+    - id: truncate-tests
+      why: the message truncation tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^truncate_message::/)'
+    - id: key-tests
+      why: the retrieval key extraction tests fail or do not exist
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^extract_key::/)'
+oracle_cases: []
+deviations:
+  - what: >-
+      Content detection regex matches code if 3+ code keywords are found or
+      >30% of lines are indented, sampled from the first 5000 characters.
+    why: >-
+      LiteLLM uses the same heuristic for code vs. text classification; the
+      exact numbers and sampling limit are preserved from the pinned commit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/content_detection.py#L32-L41
+  - what: >-
+      Message key extraction searches for file paths in the first 2000 chars:
+      patterns are "# filename", "// filename", "File: path", "--- filename",
+      and backtick-quoted filenames.
+    why: >-
+      LiteLLM limits the search to avoid expensive regex on very large content;
+      this preserves that optimization.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/message_stubbing.py#L32-L37
+  - what: >-
+      Anthropic tool exchange validation detects an invalid_anthropic_tool_sequence
+      error only; it returns empty spans and the error string, never panicking on
+      malformed content blocks.
+    why: >-
+      Malformed input is classified as invalid, allowing the caller to decide
+      whether to fail the request or pass through. LiteLLM does the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L187-L200
+  - what: >-
+      Message stub content hardcodes the retrieval tool name 'litellm_content_retrieve'
+      in the stub text: "[Compressed: {key} — {line_count} lines, {content_type}.
+      Use litellm_content_retrieve tool to get full content.]"
+    why: >-
+      This is a model-visible reference that must match the tool definition
+      in B3542. Betterlite preserves the 'litellm_content_retrieve' name verbatim
+      from LiteLLM to maintain compatibility with trained behaviors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/message_stubbing.py#L68-L71
+out_of_scope:
+  - Compression orchestration, scoring and relevance ranking, owned by B3541.
+  - Token counting, budget selection and the compress() orchestrator function,
+    owned by B3542.
+  - Retrieval tool injection and cache building, owned by B3542.
+  - Integration with the proxy and callback hooks, owned by B3543.
+pitfalls:
+  - Content detection uses a keyword regex that is compiled on every call. Use a
+    lazy_static or OnceCell to cache it, matching how LiteLLM defines the regex
+    at module scope.
+  - Anthropic tool exchanges require all tool_use ids to have matching tool_result
+    ids in the immediate next message. A single missing result invalidates the pair.
+  - Truncation uses line-based splitting (keep first 70%, last 30%) to preserve code
+    structure. Word-based truncation mangles function boundaries and indentation.
+  - Protected message indices must deduplicate and preserve order when returned.
+    The same index can be protected by multiple criteria (e.g., system role and
+    cache control).
+  - Text extraction from content blocks must handle both lists (OpenAI style) and
+    nested structures (tool_result with content field). Iterate, don't recurse.
+review_level: standard
+budget:
+  max_changed_lines: 600
+  max_new_expects: 2

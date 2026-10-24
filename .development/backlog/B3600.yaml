@@ -3,7 +3,7 @@ milestone: M5 api families
 title: Pass-through wire records and response helpers
 status: todo
 depends_on: []
-file: null
+file: tasks/B3600-passthrough-wire-helpers.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
   - "litellm/types/passthrough_endpoints/pass_through_endpoints.py"

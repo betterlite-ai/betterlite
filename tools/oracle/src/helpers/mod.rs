@@ -1,3 +1,4 @@
+mod catalog_generalizations;
 mod provider_base_helpers;
 mod url_path;
 
@@ -17,10 +18,12 @@ use crate::process::sync_litellm;
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) enum HelperCall {
-    #[serde(rename = "url_path")]
-    UrlPath(url_path::UrlPathInput),
+    #[serde(rename = "catalog_generalizations")]
+    CatalogGeneralizations(catalog_generalizations::CatalogGeneralizationsInput),
     #[serde(rename = "provider_base_helpers")]
     ProviderBaseHelpers(provider_base_helpers::BaseCall),
+    #[serde(rename = "url_path")]
+    UrlPath(url_path::UrlPathInput),
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
@@ -77,8 +80,9 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
 
 fn invoke(call: &HelperCall) -> HelperOutput {
     let result = match call {
-        HelperCall::UrlPath(input) => url_path::invoke(input),
+        HelperCall::CatalogGeneralizations(input) => return catalog_generalizations::invoke(input),
         HelperCall::ProviderBaseHelpers(input) => provider_base_helpers::invoke(input),
+        HelperCall::UrlPath(input) => url_path::invoke(input),
     };
     match result {
         Ok(value) => HelperOutput {

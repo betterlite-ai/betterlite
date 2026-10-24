@@ -1,0 +1,11 @@
+kind: helper
+name: fuzz-seed
+call:
+  catalog_generalizations:
+    rules: null
+    routing: [gpt-4o]
+    capabilities: []
+    fill_missing: []
+env: {}
+compare:
+  ignore: []

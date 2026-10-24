@@ -1,0 +1,108 @@
+id: B3189
+title: Provider form catalog from Triton through Watsonx
+description: >-
+  Preserve the twelve complete provider credential field definitions from Triton
+  through WATSONX in the bundled public endpoint form catalog. These records
+  supply ordered provider metadata including field labels, placeholders, tooltips,
+  field types, and default model names used for agent and provider form display.
+  Each provider entry lists its litellm_provider identifier, display name, and
+  credential field requirements. Preserve Vertex AI's upload field for GCP
+  credentials and Watsonx's four alternative authentication paths: IBM Cloud API
+  key, pre-generated IAM bearer token, Zen API Key for on-premises deployments,
+  and optional project/space IDs. The data order and exact field structure must
+  survive serialization so B3190's catalog loader can assemble fragments in source
+  order. Store this fragment in its own asset path crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json so parallel workers do not rewrite a shared file; B3190 later assembles all fragments in the source order. No functions or validation logic is added; this task supplies data only
+  for the provider form endpoint handler to consume.
+scope:
+  paths:
+    - crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3266-L3293
+    why: Triton provider record with api_key and api_base fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3294-L3321
+    why: TypeSafe provider with required api_key and optional api_base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3322-L3349
+    why: V0 provider with optional api_key and api_base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3350-L3377
+    why: VERCEL_AI_GATEWAY provider with optional credentials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3378-L3425
+    why: Vertex AI provider with project, location, optional api_base and credential upload field.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3426-L3453
+    why: VERTEX_AI_BETA provider with optional api_base and api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3454-L3481
+    why: Hosted vLLM with required api_base and optional api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3482-L3509
+    why: Local vLLM with optional api_base and api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3510-L3527
+    why: VolcEngine with required api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3528-L3545
+    why: Voyage AI with required api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3546-L3573
+    why: Wandb with optional api_base and api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/provider_create_fields.json#L3574-L3641
+    why: WATSONX provider with api_base, api_key, token, zen_api_key, project_id and space_id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/public_endpoints/public_endpoints.py#L399-L419
+    why: get_provider_fields consumes the assembled catalog of provider fragments from B3180-B3189.
+dod:
+  - text: All twelve provider records from Triton through WATSONX are preserved with exact field structure, order and values.
+    proof: [provider-records-present]
+  - text: Vertex AI's credential upload field is present and configured as field_type upload.
+    proof: [vertex-upload-field]
+  - text: WATSONX credential options include api_key, token, zen_api_key, project_id and space_id.
+    proof: [watsonx-credential-options]
+  - text: Every provider record includes litellm_provider, provider_display_name, and default_model_placeholder.
+    proof: [provider-metadata-complete]
+checks:
+  optional: []
+  commands:
+    - id: provider-records-present
+      why: provider records are missing, reordered, or have wrong field names
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json)" && test -n "$(git diff "$GATE_BASE" -- crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json | grep -E '^\+.*"provider":\s*"Triton"')" && test -n "$(git diff "$GATE_BASE" -- crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json | grep -E '^\+.*"litellm_provider":\s*"watsonx"')"
+    - id: vertex-upload-field
+      why: Vertex AI upload field is missing or misconfigured
+      run: test -n "$(git diff "$GATE_BASE" -- crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json | grep -A 45 'Vertex_AI' | grep -E '"field_type":\s*"upload"')"
+    - id: watsonx-credential-options
+      why: Watsonx alternative credential fields are missing or incomplete
+      run: test -n "$(git diff "$GATE_BASE" -- crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json | grep -A 60 '"provider":\s*"WATSONX"' | grep -E '"key":\s*"token"')" && test -n "$(git diff "$GATE_BASE" -- crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json | grep -A 60 '"provider":\s*"WATSONX"' | grep -E '"key":\s*"zen_api_key"')"
+    - id: provider-metadata-complete
+      why: provider metadata fields are incomplete or malformed
+      run: |
+        cat > /tmp/check_metadata.py << 'CHECKER'
+        import json
+        with open('crates/betterlite-server/assets/provider_create_fields_triton_watsonx.json') as f:
+            data = json.load(f)
+        expected = ['Triton', 'TypeSafe', 'V0', 'VERCEL_AI_GATEWAY', 'Vertex_AI', 'VERTEX_AI_BETA', 'Hosted_Vllm', 'VLLM', 'VolcEngine', 'Voyage', 'WANDB', 'WATSONX']
+        actual = [p.get('provider') for p in data]
+        if actual != expected:
+            print(f"Provider mismatch: expected {expected}, got {actual}")
+            exit(1)
+        for provider in data:
+            if not provider.get('litellm_provider'):
+                print(f"{provider.get('provider')} missing litellm_provider")
+                exit(1)
+            if not provider.get('provider_display_name'):
+                print(f"{provider.get('provider')} missing provider_display_name")
+                exit(1)
+            if not provider.get('default_model_placeholder'):
+                print(f"{provider.get('provider')} missing default_model_placeholder")
+                exit(1)
+        CHECKER
+        uv run --with pyyaml python /tmp/check_metadata.py
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - B3190 owns the catalog loader, fragment assembly, and the get_provider_fields handler that consumes this catalog.
+  - B3191 inherits the Vertex_AI record from B3190's assembled catalog for agent form credential inheritance.
+  - B003 registers the HTTP handlers that serve the assembled provider forms.
+pitfalls:
+  - 'Vertex AI''s upload field type is "upload", not "password" or "text"; it renders as a file selector in the UI.'
+  - 'Watsonx offers four mutually-exclusive credential paths: api_key, token, zen_api_key, or pair of project_id/space_id; all are optional because users supply one.'
+  - 'The default_model_placeholder must be preserved exactly as written, including model names like "watsonx/ibm/granite-3-3-8b-instruct", since it displays in the form.'
+  - 'Provider records are part of a JSON array; every record except the last is followed by a comma, and the array ends with ]. This serialization syntax must survive.'
+  - 'The litellm_provider field must match LiteLLM''s internal provider identifier exactly; mismatches break routing in B3190.'
+  - 'TypeSafe and Triton have placeholders in api_base; these are user-facing hints and must not be rewritten or removed.'
+budget:
+  max_changed_lines: 650
+  max_new_expects: 0
+review_level: standard

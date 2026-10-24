@@ -1,0 +1,16 @@
+kind: helper
+name: fuzz-seed
+call:
+  catalog_generalizations:
+    rules:
+      - {name: base, pattern: "^claude-", model_info: {litellm_provider: anthropic, mode: chat}}
+      - {name: child, pattern: "claude-x", extends: base, model_info: {supports_vision: true}, fill_missing_for_providers: [anthropic]}
+      - {pattern: "(", model_info: {}}
+      - 7
+    routing: [claude-x-1, ""]
+    capabilities: [claude-x-1]
+    fill_missing:
+      - {model: claude-x-1, provider: anthropic}
+env: {}
+compare:
+  ignore: []

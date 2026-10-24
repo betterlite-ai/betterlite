@@ -1,0 +1,78 @@
+id: B3541
+title: BM25 and embedding relevance scoring for compression
+description: >-
+  Build the BM25 prefix expansion scorer, embedding executor integration, and min-max weighted score combination for message relevance ranking in compression.
+  Implement in betterlite-compression (new crate) as a pure scoring library with no route registration or HTTP endpoints.
+
+  BM25 scorer: tokenize text on word boundaries (lowercase, alphanumeric + underscore), extract message content (text blocks and string values), compute term frequency inverse document frequency with parameter k1=1.5 and b=0.75, then use prefix-based term matching (4+ character matches) to handle stemming without a stemmer.
+  Preserve exact-match preference: exact terms always score higher than prefix matches; repeated query-term contributions sum across all matched document tokens.
+  Zero-norm handling: if both query and document vector norms are 0 in cosine similarity, return 0.0 (not NaN).
+
+  Embedding scorer: call B014's native single-call embedding executor via litellm.embedding(**kwargs), truncate texts to 30,000 characters (keeping first and last halves), use the `empty` placeholder for texts whose content is empty after stripping whitespace, and compute cosine similarity as dot product divided by vector norms.
+  Embedding parameter overrides: forward all supplied embedding_model_params to the embedding call, and set caching=true only when the DualCache instance is not None (parameter passthrough, not caching logic).
+
+  Score combination: min-max normalize both scores independently (handling zero-range by returning all-zeros), then compute weighted average with bm25_weight=0.4 (embedding gets 0.6).
+  The source calls compress() after normalization, so the output is a single unified relevance score per message, not the two separate score lists.
+
+  Own the re-exports at litellm/compression/scoring/__init__.py.
+  Count: BM25 80 lines + embedding scorer 66 + score combination 17 + re-exports 3 = 166 lines.
+  The larger task budget accounts for behavior test cases, integration with B014's executor, and parameter handling fixtures.
+scope:
+  paths:
+    - crates/betterlite-compression/**
+    - tools/oracle/cases/compression/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/bm25.py#L13-L119
+    why: BM25 tokenization, content extraction, document frequency, IDF, and prefix-expansion term frequency with exact-match preference.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/embedding_scorer.py#L14-L96
+    why: Embedding content extraction, text truncation to 30,000 chars, empty placeholder, cosine similarity with zero-norm handling, and litellm.embedding() call with caching parameter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/compress.py#L246-L265
+    why: Score combination min-max normalization and weighted average with bm25_weight=0.4.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/compression/scoring/__init__.py#L1-L4
+    why: Re-exports of bm25_score_messages and embedding_score_messages.
+dod:
+  - text: BM25 scorer tokenizes text on word boundaries, extracts message content including nested tool_result blocks iteratively, and scores with k1=1.5, b=0.75 parameters.
+    proof: [bm25-behavior-tests]
+  - text: BM25 prefix matching preserves exact-match preference and sums repeated query-term contributions across all matched tokens, with minimum 4-character prefix length.
+    proof: [bm25-behavior-tests]
+  - text: Embedding scorer calls B014's executor with caching set only when cache is not None, truncates texts to 30k chars keeping first/last halves, and uses `empty` placeholder for zero-length content.
+    proof: [embedding-behavior-tests]
+  - text: Cosine similarity returns 0.0 when either vector norm is zero, and computes correctly for nonzero vectors.
+    proof: [embedding-behavior-tests]
+  - text: Score combination normalizes both score lists independently with zero-range handling, then computes weighted average with bm25_weight=0.4.
+    proof: [score-combination-tests]
+  - text: All embedding_model_params overrides are forwarded to the embedding executor call.
+    proof: [embedding-behavior-tests]
+checks:
+  optional: []
+  commands:
+    - id: bm25-behavior-tests
+      why: BM25 tokenization, exact-match preference, prefix matching and term frequency tests must pass.
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^bm25_scoring::/)'
+    - id: embedding-behavior-tests
+      why: Embedding content extraction, text truncation, cache parameter handling, cosine similarity and executor integration tests must pass.
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^embedding_scoring::/)'
+    - id: score-combination-tests
+      why: Min-max normalization, zero-range handling and weighted average tests must pass.
+      run: cargo nextest run --locked -p betterlite-compression --no-tests=fail -E 'test(/^score_combination::/)'
+oracle_cases: []
+deviations:
+  - what: The embeddings call is to B014's native single-call executor, not HTTP embeddings routes. Parameter passthrough and caching logic belong in the compression orchestration layer above this scorer.
+    why: Embeddings are a dependency for relevance scoring; the full embedding API surface (model selection, caching semantics, error handling) lives in B014 and higher layers.
+out_of_scope:
+  - B3540 owns message normalization, content detection, extraction helpers (tool_use_ids, tool_result_ids, anthropic tool exchanges) and cache_control breakpoint detection.
+  - B3542 owns the token-budget selection logic that uses these scores; this task only computes relevance scores.
+  - B014 owns the embedding executor and its caching contracts; this task only calls it with supplied parameters.
+  - Embedding caching behavior and DualCache semantics belong to B2226; this task only passes the cache instance to detect whether caching should be enabled.
+pitfalls:
+  - BM25 prefix expansion only applies to terms with 4+ characters; shorter terms use exact matching only.
+  - Cosine similarity with zero norms must return 0.0, not NaN or panic on zero division.
+  - Text truncation keeps first 15,000 and last 15,000 characters of a 30,000-char max; the middle "...\n" marker is extra overhead (output can be 5 chars over the stated max, e.g. 30,005 for a 30,000 cap).
+  - Empty placeholder `empty` is the exact string used for text whose content is empty after stripping whitespace, preserving indices for scoring all messages.
+  - Caching parameter is set to `true` only when DualCache instance is not None; missing cache instance means caching=false.
+  - Min-max normalization with zero range (all scores equal) returns all zeros, not the equal value (different from keeping the original).
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0
+review_level: standard

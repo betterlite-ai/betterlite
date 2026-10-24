@@ -3,7 +3,7 @@ milestone: M4 keys, spend and management
 title: Provider form catalog from Triton through Watsonx
 status: todo
 depends_on: []
-file: null
+file: tasks/B3189-provider-fields-triton-watsonx.yaml
 covers:
   - "litellm/proxy/public_endpoints/provider_create_fields.json"
 parent: B077
