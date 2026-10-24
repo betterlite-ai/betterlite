@@ -191,6 +191,7 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-http",
+ "betterlite-paths",
  "clap",
  "futures-util",
  "reqwest",

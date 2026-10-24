@@ -41,9 +41,10 @@ fn document(json: &str) -> Document {
     "tools[ +0_1 ].x",
     Ok(r#"{"tools": [{"name": "t1", "x": 1}, {"name": "t2"}, "text"]}"#)
 )]
-#[case::control_space_index(
+#[case::control_separator_is_not_space(TOOLS, "tools[\u{1c}1\u{1f}].x", Ok(TOOLS))]
+#[case::unicode_space_index(
     TOOLS,
-    "tools[\u{1c}1\u{1f}].x",
+    "tools[\u{3000}1\u{85}].x",
     Ok(r#"{"tools": [{"name": "t1", "x": 1}, {"name": "t2"}, "text"]}"#)
 )]
 #[case::negative_zero_index(

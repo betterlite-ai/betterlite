@@ -53,9 +53,7 @@ fn bracket(content: &str) -> Segment {
 }
 
 fn python_index(content: &str) -> Option<usize> {
-    let trimmed = content.trim_matches(|character: char| {
-        character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
-    });
+    let trimmed = content.trim_matches(char::is_whitespace);
     let (negative, unsigned) = trimmed.strip_prefix('-').map_or_else(
         || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
         |digits| (true, digits),
